@@ -7,8 +7,10 @@
 - [x] Start script (`scripts/start_openttd_server.sh`)
 - [x] `allow_insecure_admin_login = true` for pyopenttdadmin compatibility
 - [x] Document server setup/run steps (README.md)
-- [ ] GameScript scaffold (Squirrel) — loads into server, basic message handling
-- [ ] GS message protocol: correlation IDs, JSON serialization, chunking
+- [x] GameScript scaffold — loads into server, handles admin port events
+- [x] GS message protocol: correlation IDs, JSON serialization, chunking (CHUNK_SIZE=10)
+- [x] Config patching: start script patches `[game_scripts]` and `secrets.cfg` before launch
+- [x] GS symlink into `~/Documents/OpenTTD/game/` for discovery
 
 ### 2. Game Bridge
 - [x] Async Python admin port client — connect, auth, subscribe, rcon (`src/nttd/bridge/admin_client.py`)
@@ -16,26 +18,46 @@
 - [x] Welcome packet → map dimensions, landscape, start date
 - [x] Company info + economy subscriptions
 - [x] Date tracking from server updates
-- [ ] GS message send/receive with correlation-based request/response
+- [x] GS message send/receive with correlation-based request/response
+- [x] Null-terminator stripping for GS response JSON parsing
+- [x] Chunked response reassembly with `_chunk`/`_total` ordering
+- [x] GAMESCRIPT subscription for receiving GS responses
 - [ ] Reconnect + resync logic (currently: connect once, no auto-reconnect)
 - [ ] Detect save/load/newgame and notify agents of world reset
 
-### 3. Observation Layer
+### 3. GameScript Commands (40+ implemented)
+- [x] Query commands: ping, get_date, get_map_size, get_tile_info
+- [x] Entity queries: get_towns, get_town_info, get_industries, get_industry_info, get_companies
+- [x] Company-scoped queries: get_stations, get_vehicles, get_engines
+- [x] Reference queries: get_cargo_types, get_rail_types, get_road_types
+- [x] Smart queries: scan_town_area, find_bus_stop_spots, find_depot_spots
+- [x] Road building: build_road, build_road_line, build_road_depot, build_road_stop
+- [x] Rail building: build_rail (2-tile + 3-tile), build_rail_station, build_rail_depot, build_rail_signal
+- [x] Other building: build_airport, build_dock, build_bridge, build_tunnel, demolish_tile
+- [x] Vehicles: buy_vehicle, sell_vehicle, start_vehicle, stop_vehicle, send_to_depot, clone_vehicle, refit_vehicle
+- [x] Orders: add_order, get_orders
+- [x] Error handling with GSError.GetLastErrorString()
+- [x] GSCompanyMode for all company-scoped operations
+- [x] Automatic response chunking for large arrays
+- [x] Live end-to-end verified: all query commands tested against real OpenTTD 15.2 server
+
+### 4. Observation Layer
 - [x] Canonical state model: game, company, town, industry, station, vehicle (`src/nttd/schemas/`)
 - [x] Snapshot with epoch tagging: game_date, tick, snapshot_id (`src/nttd/schemas/snapshot.py`)
 - [x] WorldState in-memory store, bridge writes, API reads (`src/nttd/state/world.py`)
-- [ ] GS query functions for state domains not on admin port (vehicles, stations, industries, towns)
+- [x] GS query endpoints for all state domains (`/state/gs/query`)
+- [ ] Populate WorldState from GS queries (currently: admin port data only, GS queries are pass-through)
 - [ ] Delta detection via snapshot diffing
 - [ ] Compressed/summary views for LLMs
 
-### 4. Action Layer
+### 5. Action Layer
 - [x] JSON action envelope schema: action_id, company_id, mode, action_type, parameters (`src/nttd/schemas/action_envelope.py`)
 - [x] Action result tracking with status lifecycle (`src/nttd/schemas/action_result.py`, `src/nttd/actions/tracker.py`)
+- [x] GS execute endpoint (`/actions/gs/execute`) — direct GameScript command execution
 - [ ] Action validation against current game state (currently: stub)
-- [ ] Action → GS command translation pipeline
-- [ ] Action execution via GameScript (build, buy, order, start/stop)
+- [ ] Action envelope → GS command translation (currently: agents use GS commands directly)
 
-### 5. Agent Connection API
+### 6. Agent Connection API
 - [x] `/agents/connect` — register agent, declare company scope
 - [x] `/agents/{id}/disconnect`, `/agents/{id}/status`, `/agents/list`
 - [x] Subscription registration by entity type, event type, cadence
@@ -44,18 +66,18 @@
 - [x] Ping/pong keepalive on WebSocket
 - [x] Reject WebSocket for unknown agents (code 4004)
 
-### 6. FastAPI Service
+### 7. FastAPI Service
 - [x] Control API: `/session/status`, `pause`, `unpause`, `speed`, `mode`, `stop`, `heartbeat/interval`, `rcon`
 - [x] Observation API: `/state/full`, `/state/company/{id}`, `/state/towns`, `industries`, `stations`, `vehicles`
 - [x] Action API: `/actions/submit`, `validate`, `{id}/status`, `recent`
+- [x] GS pass-through: `/state/gs/query`, `/actions/gs/execute`
 - [x] Health endpoint with OpenTTD connection status
 - [x] Async lifespan: connect bridge on startup, disconnect on shutdown
 - [x] Offline mode fallback when OpenTTD not available
-- [ ] Published JSON schemas (OpenAPI auto-generated, but not explicitly documented/versioned)
 - [ ] `/session/save`, `/session/load` endpoints
 - [ ] `/actions/batch_submit`, `/actions/{id}/cancel` endpoints
 
-### 7. Runtime Modes
+### 8. Runtime Modes
 - [x] Heartbeat mode — pause → snapshot → notify observers → unpause → wait N game-days → repeat
 - [x] Async real-time mode — game runs continuously, periodic snapshots pushed every 2s
 - [x] Game speed control via `/session/speed`
@@ -64,50 +86,45 @@
 - [ ] Assisted mode — human triggers AI via command, pause/plan/execute/unpause (skeleton only)
 - [ ] Heartbeat mode: collect actions from agents before unpausing (currently: notify only)
 
-### 8. Logging & Observability
-- [ ] Structured logging (SQLite or JSON files) — currently: basic Python logging only
-- [ ] Log: observations, actions, validation results, execution results, errors
-- [ ] Basic dashboard (Streamlit or Dash) — game state, KPIs, action timeline
-
-### 9. Gym Wrapper
-- [ ] Single-agent Gym env (heartbeat mode)
-- [ ] `reset()`, `step(action)`, observation/action spaces, reward signal
-
-### 10. Example Agent Client
+### 9. Example Agent Client
 - [x] Plain Python script: connect → subscribe → observe → act (`examples/agent_client.py`)
 - [x] REST mode and WebSocket mode (`--ws` flag)
 - [x] Demonstrates the full API flow
 - [x] Serves as documentation for agent builders
 
-### 11. Tests
+### 10. Tests
 - [x] API tests: health, session status, pause/unpause, speed, mode, agent lifecycle, full state, submit action (10 tests)
 - [x] WebSocket tests: reject unknown agent, ping/pong
-- [x] Live end-to-end test verified: OpenTTD server + nttd API + live game state flowing
+- [x] Live end-to-end test verified: OpenTTD server + nttd API + GS communication working
+
+### 11. Project Setup
+- [x] GitHub repo (private, `deepsaia/nttd`)
+- [x] `.gitignore` — Python, OpenTTD runtime files, secrets, save games
+- [x] README with full setup, API reference, GS command reference, architecture
 
 ---
 
 ## Phase 1 — Remaining Work (Priority Order)
 
-1. **GameScript scaffold** — Squirrel script that loads into OpenTTD, handles message protocol with correlation IDs. This unlocks vehicle/station/industry/town queries and action execution.
-2. **Action execution pipeline** — translate action envelopes → GS commands, execute, return results.
-3. **State enrichment via GS** — query vehicles, stations, industries, towns through GameScript to populate WorldState beyond what the admin port provides.
-4. **Assisted mode skeleton** — human triggers AI via chat/command, game pauses, AI plans, human approves, execute, unpause.
-5. **Heartbeat action collection** — wait for agent actions after snapshot delivery before unpausing.
-6. **Reconnect logic** — auto-reconnect bridge on connection loss, resync state.
+1. **State enrichment via GS** — periodically query GS for towns/industries/vehicles/stations and populate WorldState, so `/state/*` endpoints return rich data (not just admin port basics).
+2. **Action envelope → GS translation** — map action envelope `action_type` field to GS commands, so agents can use the typed action API instead of raw GS commands.
+3. **Heartbeat action collection** — after delivering snapshot, wait for agent actions before unpausing.
+4. **Assisted mode** — human triggers AI via chat/command, game pauses, AI plans, human approves, execute, unpause.
+5. **Reconnect logic** — auto-reconnect bridge on connection loss, resync state.
+6. **Save/load endpoints** — `/session/save`, `/session/load` via rcon.
 7. **Structured logging** — log observations, actions, results to SQLite or JSON.
 8. **Gym wrapper** — single-agent heartbeat env with reset/step/reward.
 9. **Basic dashboard** — Streamlit prototype showing game state, KPIs, action timeline.
-10. **Save/load endpoints** — `/session/save`, `/session/load` via rcon.
 
 ---
 
 ## Phase 2 — Production Research Platform
 
-- [ ] Per-company isolation (GSCompanyMode orchestration)
+- [ ] Per-company isolation (GSCompanyMode orchestration across agents)
 - [ ] Advanced subscriptions (region-based, backpressure, coalescing)
 - [ ] PettingZoo multi-agent wrapper
 - [ ] Event-driven delta detection (GS polling + snapshot diffing)
-- [ ] Compound action decomposition (pathfinding, rail corridor builder)
+- [ ] Compound action decomposition (A* pathfinding, rail corridor builder)
 - [ ] Idempotency keys + precondition hashes
 - [ ] Circuit breakers per company
 - [ ] Redis/NATS event bus + Postgres for durable logs
