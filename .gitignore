@@ -1,0 +1,37 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+venv/
+
+# python-version
+.python-version
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+
+# OpenTTD — ignore everything auto-generated, keep only our config and scripts.
+# Root-level strays (from runs before ottd_config/ existed)
+favs.cfg
+hotkeys.cfg
+hs.dat
+private.cfg
+windows.cfg
+secrets.cfg
+*.sav
+
+# ottd_config/ — ignore all auto-generated files, whitelist what we need
+ottd_config/*
+!ottd_config/openttd.cfg
+!ottd_config/game/
+ottd_config/game/*
+!ottd_config/game/nttd-gs/
+!ottd_config/scripts/
