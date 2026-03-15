@@ -3,8 +3,9 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
-from nttd.api.dependencies import admin_client, orchestrator, world
+from nttd.api.dependencies import admin_client, agent_registry, orchestrator, world
 from nttd.schemas.game import GameState, RuntimeMode
 
 logger = logging.getLogger(__name__)
@@ -85,14 +86,31 @@ def set_heartbeat_interval(days: int) -> dict[str, int]:
     return {"heartbeat_interval_days": days}
 
 
+class HeartbeatActionRequest(BaseModel):
+    agent_id: str | None = None
+    action: str
+    params: dict[str, Any] = {}
+
+
 @router.post("/heartbeat/action")
-async def submit_heartbeat_action(action: dict[str, Any]) -> dict[str, bool]:
+async def submit_heartbeat_action(request: HeartbeatActionRequest) -> dict[str, bool]:
     """Submit an action to be executed in the current heartbeat window.
 
     Agents call this during the action window between snapshot delivery and unpause.
-    Format: { "action": "buy_vehicle", "params": { "company_id": 0, ... } }
+    If agent_id is provided, company_id in params is checked against the agent's scope.
     """
-    orchestrator.submit_heartbeat_action(action)
+    if request.agent_id is not None:
+        status = agent_registry.get(request.agent_id)
+        if status is None:
+            raise HTTPException(status_code=404, detail=f"Agent {request.agent_id} not found")
+        if status.company_scope:
+            company_id = request.params.get("company_id")
+            if company_id is not None and company_id not in status.company_scope:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Agent {request.agent_id} not authorized for company {company_id}",
+                )
+    orchestrator.submit_heartbeat_action({"action": request.action, "params": request.params})
     return {"queued": True}
 
 
@@ -157,3 +175,39 @@ async def cancel_assist() -> dict[str, str]:
     """Cancel the assist session and unpause without executing anything."""
     await orchestrator.cancel_assist()
     return {"status": "cancelled"}
+
+
+@router.post("/scenario")
+async def load_scenario(config_path: str | None = None) -> dict[str, Any]:
+    """Load scenario from a HOCON config file and apply settings to the orchestrator.
+
+    config_path: path to a .conf file (default: config/scenario.conf in project root).
+    Returns the loaded scenario name and active end conditions.
+    """
+    from nttd.config import scenario_config  # noqa: PLC0415
+
+    config = scenario_config.load(config_path)
+    orchestrator.load_scenario(config)
+
+    ec = config.end_conditions
+    return {
+        "scenario": config.name,
+        "description": config.description,
+        "heartbeat_interval_days": config.heartbeat.interval_days,
+        "action_window_seconds": config.heartbeat.action_window_seconds,
+        "game_speed": config.heartbeat.game_speed,
+        "end_conditions": {
+            "logic": ec.logic,
+            "time_limit": {"enabled": ec.time_limit.enabled, "wall_minutes": ec.time_limit.wall_minutes},
+            "game_date_limit": {"enabled": ec.game_date_limit.enabled, "end_year": ec.game_date_limit.end_year},
+            "revenue_threshold": {
+                "enabled": ec.revenue_threshold.enabled,
+                "total_revenue": ec.revenue_threshold.total_revenue,
+            },
+            "cargo_threshold": {
+                "enabled": ec.cargo_threshold.enabled,
+                "total_cargo_delivered": ec.cargo_threshold.total_cargo_delivered,
+            },
+            "max_heartbeats": {"enabled": ec.max_heartbeats.enabled, "count": ec.max_heartbeats.count},
+        },
+    }

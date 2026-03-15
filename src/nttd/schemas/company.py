@@ -10,5 +10,6 @@ class Company(BaseModel):
     loan: int = 0
     value: int = 0
     income: int = 0
+    profit_last_year: int = 0
     is_ai: bool = False
     is_active: bool = True

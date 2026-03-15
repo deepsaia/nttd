@@ -3,7 +3,8 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from nttd.api.dependencies import agent_registry, world
+from nttd.api.dependencies import agent_registry, snapshot_broker_registry
+from nttd.schemas.snapshot import StateSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -43,41 +44,37 @@ async def agent_websocket(websocket: WebSocket, agent_id: str) -> None:
 
 
 async def _push_loop(agent_id: str, websocket: WebSocket) -> None:
-    """Push snapshots to connected agent based on their subscription cadence."""
+    """Push snapshots to agent when broker delivers the next heartbeat snapshot."""
+    broker = snapshot_broker_registry.get(agent_id)
+    if broker is None:
+        return
+
     while True:
-        subs = agent_registry.get_subscriptions(agent_id)
-        if not subs:
-            await asyncio.sleep(2.0)
-            continue
-
-        # Use the minimum cadence (in game-days) across all subscriptions
-        min_cadence = min(s.cadence for s in subs)
-        interval = max(1.0, min_cadence * 0.5)  # rough: 1 game-day ~ 0.5s at normal speed
-
-        await asyncio.sleep(interval)
-
-        snapshot = world.snapshot()
         try:
+            snapshot = await broker.wait_for_snapshot()
             await websocket.send_json({
                 "type": "snapshot",
                 "data": snapshot.model_dump(),
             })
+        except asyncio.CancelledError:
+            break
         except Exception:
             break
 
 
-async def broadcast_snapshot() -> None:
-    """Broadcast a snapshot to all connected WebSocket agents."""
-    if not _ws_connections:
-        return
-    snapshot = world.snapshot()
-    payload = {"type": "snapshot", "data": snapshot.model_dump()}
+async def broadcast_snapshot(snapshot: StateSnapshot) -> None:
+    """Push a snapshot to all registered agent brokers. Called by orchestrator observers."""
+    for agent_id, broker in snapshot_broker_registry.items():
+        await broker.push_snapshot(snapshot)
+
+    # Also push directly to any connected WebSockets whose broker may be missing
     disconnected = []
     for agent_id, ws in _ws_connections.items():
-        try:
-            await ws.send_json(payload)
-        except Exception:
-            disconnected.append(agent_id)
+        if agent_id not in snapshot_broker_registry:
+            try:
+                await ws.send_json({"type": "snapshot", "data": snapshot.model_dump()})
+            except Exception:
+                disconnected.append(agent_id)
     for agent_id in disconnected:
         _ws_connections.pop(agent_id, None)
         task = _push_tasks.pop(agent_id, None)

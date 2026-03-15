@@ -53,8 +53,10 @@ class Bridge:
         company.money = packet.money
         company.loan = packet.current_loan
         company.income = packet.income
-        if packet.quarterly_info:
+        if packet.quarterly_info and len(packet.quarterly_info) > 0:
             company.value = packet.quarterly_info[0].get("company_value", 0)
+        if packet.quarterly_info and len(packet.quarterly_info) > 1:
+            company.profit_last_year = packet.quarterly_info[1].get("income", 0)
         self.world.update_company(company)
 
     def _on_company_remove(self, packet: CompanyRemovePacket) -> None:

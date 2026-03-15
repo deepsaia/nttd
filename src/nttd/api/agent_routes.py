@@ -1,14 +1,17 @@
 from fastapi import APIRouter, HTTPException
 
-from nttd.api.dependencies import agent_registry
+from nttd.api.dependencies import agent_registry, snapshot_broker_registry
 from nttd.schemas.agent import AgentRegistration, AgentStatus, Subscription
+from nttd.state.snapshot_broker import AgentSnapshotBroker
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 @router.post("/connect", response_model=AgentStatus)
 def connect_agent(registration: AgentRegistration) -> AgentStatus:
-    return agent_registry.connect(registration)
+    status = agent_registry.connect(registration)
+    snapshot_broker_registry[registration.agent_id] = AgentSnapshotBroker()
+    return status
 
 
 @router.post("/{agent_id}/disconnect")
@@ -16,6 +19,7 @@ def disconnect_agent(agent_id: str) -> dict[str, bool]:
     removed = agent_registry.disconnect(agent_id)
     if not removed:
         raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
+    snapshot_broker_registry.pop(agent_id, None)
     return {"disconnected": True}
 
 

@@ -5,8 +5,10 @@ from typing import Any
 from nttd.schemas.company import Company
 from nttd.schemas.game import GameState, RuntimeMode
 from nttd.schemas.industry import Industry, IndustryProduction
+from nttd.schemas.route import Route
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.station import CargoWaiting, Station
+from nttd.schemas.subsidy import Subsidy
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Order, Vehicle
 
@@ -23,6 +25,7 @@ class WorldState:
         self.industries: dict[int, Industry] = {}
         self.stations: dict[int, Station] = {}
         self.vehicles: dict[int, Vehicle] = {}
+        self.subsidies: list[Subsidy] = []
 
     def snapshot(self) -> StateSnapshot:
         self.game.snapshot_id = uuid.uuid4().hex[:12]
@@ -33,6 +36,8 @@ class WorldState:
             industries=list(self.industries.values()),
             stations=list(self.stations.values()),
             vehicles=list(self.vehicles.values()),
+            routes=self._derive_routes(),
+            subsidies=list(self.subsidies),
         )
 
     def set_mode(self, mode: RuntimeMode) -> None:
@@ -178,3 +183,50 @@ class WorldState:
                 orders=orders,
             )
         logger.debug("WorldState: refreshed %d vehicles for company %d", len(seen), company_id)
+
+    def _derive_routes(self) -> list[Route]:
+        """Group vehicles with identical ordered station sequences into Route objects.
+
+        A route is uniquely identified by (company_id, vehicle_type, tuple of station IDs).
+        This is derived each snapshot — no extra GS round-trip needed.
+        """
+        seen: dict[tuple[int, str, tuple[int, ...]], Route] = {}
+        counter = 0
+        for v in self.vehicles.values():
+            station_ids = tuple(o.destination for o in v.orders if o.is_goto_station)
+            if not station_ids:
+                continue
+            key = (v.company_id, v.type, station_ids)
+            if key not in seen:
+                counter += 1
+                seen[key] = Route(
+                    route_id=counter,
+                    company_id=v.company_id,
+                    vehicle_type=v.type,
+                    station_ids=list(station_ids),
+                )
+            seen[key].vehicle_count += 1
+            seen[key].total_profit_this_year += v.profit_this_year
+            seen[key].total_profit_last_year += v.profit_last_year
+        return list(seen.values())
+
+    def apply_gs_subsidies(self, results: list[dict[str, Any]]) -> None:
+        """Populate subsidies list from GS get_subsidies result."""
+        _type_map = {0: "industry", 1: "town"}
+        self.subsidies = [
+            Subsidy(
+                id=r.get("id", 0),
+                cargo_id=r.get("cargo_id", 0),
+                cargo_label=r.get("cargo_label", ""),
+                src_type=_type_map.get(r.get("src_type", -1), ""),
+                src_id=r.get("src_id", 0),
+                src_name=r.get("src_name", ""),
+                dst_type=_type_map.get(r.get("dst_type", -1), ""),
+                dst_id=r.get("dst_id", 0),
+                dst_name=r.get("dst_name", ""),
+                value=r.get("value", 0),
+                remaining_years=r.get("remaining_years", 0),
+            )
+            for r in results
+        ]
+        logger.debug("WorldState: refreshed %d subsidies", len(self.subsidies))

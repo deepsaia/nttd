@@ -8,8 +8,9 @@ from fastapi import FastAPI
 
 from nttd.api.action_routes import router as action_router
 from nttd.api.agent_routes import router as agent_router
+from nttd.api.benchmark_routes import router as benchmark_router
 from nttd.api.control_routes import router as control_router
-from nttd.api.dependencies import admin_client, bridge, event_logger, orchestrator
+from nttd.api.dependencies import action_tracker, admin_client, bridge, event_logger, orchestrator
 from nttd.api.observation_routes import _metrics
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.ws_routes import broadcast_snapshot
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         orchestrator.event_logger = event_logger
 
+    orchestrator.action_tracker = action_tracker
     orchestrator.add_observer(broadcast_snapshot)
     orchestrator.add_observer(_metrics.record)
 
@@ -90,6 +92,7 @@ app.include_router(agent_router)
 app.include_router(observation_router)
 app.include_router(action_router)
 app.include_router(ws_router)
+app.include_router(benchmark_router)
 
 
 @app.get("/health")

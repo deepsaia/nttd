@@ -39,6 +39,9 @@ class ActionTracker:
     def get_result(self, action_id: str) -> ActionResult | None:
         return self._results.get(action_id)
 
+    def get_envelope(self, action_id: str) -> ActionEnvelope | None:
+        return self._actions.get(action_id)
+
     def get_recent(self, limit: int = 50) -> list[ActionResult]:
         return list(self._results.values())[-limit:]
 
