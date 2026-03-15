@@ -9,7 +9,8 @@ from fastapi import FastAPI
 from nttd.api.action_routes import router as action_router
 from nttd.api.agent_routes import router as agent_router
 from nttd.api.control_routes import router as control_router
-from nttd.api.dependencies import admin_client, bridge, orchestrator
+from nttd.api.dependencies import admin_client, bridge, event_logger, orchestrator
+from nttd.api.observation_routes import _metrics
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.ws_routes import broadcast_snapshot
 from nttd.api.ws_routes import router as ws_router
@@ -19,22 +20,44 @@ logger = logging.getLogger(__name__)
 ADMIN_HOST = os.environ.get("NTTD_ADMIN_HOST", "127.0.0.1")
 ADMIN_PORT = int(os.environ.get("NTTD_ADMIN_PORT", "3977"))
 ADMIN_PASSWORD = os.environ.get("NTTD_ADMIN_PASSWORD", "nttd")
+USE_TENSORBOARD = os.environ.get("NTTD_TENSORBOARD", "").lower() in ("1", "true", "yes")
+
+
+async def _post_connect() -> None:
+    """Called after every (re)connect to resubscribe and sync initial state."""
+    if admin_client.welcome:
+        bridge.apply_welcome(admin_client.welcome)
+    await admin_client.subscribe_defaults()
+    logger.info("nttd subscriptions registered")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+
+    # Wire event logger into orchestrator and action routes
+    if USE_TENSORBOARD:
+        from nttd.logging.event_logger import EventLogger  # noqa: PLC0415
+        tb_logger = EventLogger(use_tensorboard=True)
+        orchestrator.event_logger = tb_logger
+    else:
+        orchestrator.event_logger = event_logger
+
+    orchestrator.add_observer(broadcast_snapshot)
+    orchestrator.add_observer(_metrics.record)
 
     admin_client.host = ADMIN_HOST
     admin_client.port = ADMIN_PORT
 
-    orchestrator.add_observer(broadcast_snapshot)
+    # Register post-connect callback for reconnects
+    admin_client.on_reconnect(_post_connect)
 
     ok = await admin_client.connect(password=ADMIN_PASSWORD, name="nttd")
     if ok:
-        if admin_client.welcome:
-            bridge.apply_welcome(admin_client.welcome)
-        await admin_client.subscribe_defaults()
+        await _post_connect()
         poll_task = asyncio.create_task(admin_client.poll_loop())
         logger.info("nttd connected to OpenTTD at %s:%d", ADMIN_HOST, ADMIN_PORT)
     else:
@@ -50,6 +73,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await poll_task
         except asyncio.CancelledError:
             pass
+
+    event_logger.close()
     logger.info("nttd shut down")
 
 
@@ -69,5 +94,7 @@ app.include_router(ws_router)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    connected = admin_client.connected
-    return {"status": "ok", "openttd": "connected" if connected else "disconnected"}
+    return {
+        "status": "ok",
+        "openttd": "connected" if admin_client.connected else "disconnected",
+    }

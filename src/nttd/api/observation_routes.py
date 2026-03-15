@@ -3,12 +3,15 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from nttd.api.dependencies import admin_client, world
+from nttd.dashboard.metrics import MetricsWriter
 from nttd.schemas.company import Company
 from nttd.schemas.industry import Industry
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.station import Station
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Vehicle
+
+_metrics = MetricsWriter()
 
 router = APIRouter(prefix="/state", tags=["observation"])
 
@@ -44,6 +47,12 @@ def get_stations() -> list[Station]:
 @router.get("/vehicles", response_model=list[Vehicle])
 def get_vehicles() -> list[Vehicle]:
     return list(world.vehicles.values())
+
+
+@router.get("/metrics")
+def get_metrics() -> dict[str, Any]:
+    """Latest per-company game metrics snapshot. Suitable for dashboards and monitoring."""
+    return _metrics.get_latest()
 
 
 @router.post("/gs/query")

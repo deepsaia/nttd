@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from nttd.api.dependencies import action_tracker, admin_client
+from nttd.api.dependencies import action_tracker, admin_client, event_logger
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
 
@@ -54,6 +54,7 @@ _KNOWN_ACTIONS: set[str] = {
 async def submit_action(envelope: ActionEnvelope) -> ActionResult:
     """Submit an action. If action_type maps to a GS command, execute it immediately."""
     action_tracker.submit(envelope)
+    event_logger.log_action_submitted(envelope)
 
     if envelope.action_type not in _KNOWN_ACTIONS:
         return ActionResult(
@@ -82,11 +83,13 @@ async def submit_action(envelope: ActionEnvelope) -> ActionResult:
                 envelope.action_id, ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result", {}),
             )
-            return ActionResult(
+            result = ActionResult(
                 action_id=envelope.action_id,
                 status=ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result") or {},
             )
+            event_logger.log_action_result(result)
+            return result
         else:
             error = gs_result.get("error", "GS returned failure")
             action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, error)

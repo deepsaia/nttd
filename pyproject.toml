@@ -19,6 +19,14 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
 ]
+rl = [
+    "gymnasium>=1.0.0",
+    "numpy>=2.0",
+    "requests>=2.32",
+]
+dashboard = [
+    "tensorboardX>=2.6",
+]
 
 [build-system]
 requires = ["hatchling"]

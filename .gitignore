@@ -36,3 +36,6 @@ ottd_config/*
 ottd_config/game/*
 !ottd_config/game/nttd-gs/
 !ottd_config/scripts/
+
+# nttd runtime output
+runs/

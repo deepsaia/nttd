@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from pyopenttdadmin.enums import (
     AdminUpdateFrequency,
@@ -24,6 +24,9 @@ from pyopenttdadmin.packet import (
 
 logger = logging.getLogger(__name__)
 
+_RECONNECT_BASE_DELAY = 2.0   # seconds before first retry
+_RECONNECT_MAX_DELAY  = 30.0  # cap on backoff
+
 
 class AdminGameScriptPacket(Packet):
     """Packet to send JSON data to the in-game GameScript (ADMIN_GAMESCRIPT, type 6)."""
@@ -38,7 +41,7 @@ class AdminGameScriptPacket(Packet):
 
 
 class AdminClient:
-    """Async TCP client for the OpenTTD admin port."""
+    """Async TCP client for the OpenTTD admin port with auto-reconnect."""
 
     def __init__(self, host: str = "127.0.0.1", port: int = 3977) -> None:
         self.host = host
@@ -50,49 +53,88 @@ class AdminClient:
         self._rcon_buffer: list[str] = []
         self._rcon_event: asyncio.Event = asyncio.Event()
         self.welcome: WelcomePacket | None = None
-        # GameScript response tracking: correlation_id -> (chunks_collected, total_chunks, asyncio.Event)
+
+        # Credentials stored for reconnect
+        self._password: str = ""
+        self._name: str = "nttd"
+
+        # Callbacks fired after each successful (re)connect
+        self._reconnect_callbacks: list[Callable[[], Any]] = []
+
+        # GameScript response tracking
         self._gs_responses: dict[str, list[dict[str, Any]]] = {}
         self._gs_events: dict[str, asyncio.Event] = {}
         self._gs_totals: dict[str, int] = {}
         self._gs_counter: int = 0
 
+        # Set to True to suppress reconnect after an intentional disconnect()
+        self._intentional_disconnect = False
+
     @property
     def connected(self) -> bool:
         return self._connected
 
+    def on_reconnect(self, callback: Callable[[], Any]) -> None:
+        """Register a callback to be called after every successful (re)connect."""
+        self._reconnect_callbacks.append(callback)
+
     async def connect(self, password: str, name: str = "nttd") -> bool:
+        self._password = password
+        self._name = name
+        self._intentional_disconnect = False
+        return await self._connect_once()
+
+    async def _connect_once(self) -> bool:
         try:
             self._reader, self._writer = await asyncio.open_connection(self.host, self.port)
         except OSError as e:
             logger.error("Failed to connect to %s:%d: %s", self.host, self.port, e)
             return False
 
-        join_packet = AdminJoinPacket(password, name, "1")
+        join_packet = AdminJoinPacket(self._password, self._name, "1")
         await self._send(join_packet)
 
-        # Wait for protocol + welcome
         protocol = await self._recv_one()
         if not isinstance(protocol, ProtocolPacket):
             logger.error("Expected ProtocolPacket, got %s", type(protocol).__name__)
             return False
-        logger.info("Server protocol version: %d", protocol.version)
 
         welcome = await self._recv_one()
         if not isinstance(welcome, WelcomePacket):
             logger.error("Expected WelcomePacket, got %s", type(welcome).__name__)
             return False
-        logger.info(
-            "Connected to %s (OpenTTD %s, map %dx%d, date %d)",
-            welcome.server_name,
-            welcome.version,
-            welcome.mapwidth,
-            welcome.mapheight,
-            welcome.startdate,
-        )
 
+        logger.info(
+            "Connected to %s (OpenTTD %s, map %dx%d)",
+            welcome.server_name, welcome.version, welcome.mapwidth, welcome.mapheight,
+        )
         self.welcome = welcome
         self._connected = True
         return True
+
+    async def _reconnect_loop(self) -> None:
+        """Exponential backoff reconnect loop, called after an unexpected disconnect."""
+        delay = _RECONNECT_BASE_DELAY
+        attempt = 0
+
+        while not self._intentional_disconnect:
+            attempt += 1
+            logger.info("Reconnect attempt %d in %.0fs...", attempt, delay)
+            await asyncio.sleep(delay)
+
+            if await self._connect_once():
+                logger.info("Reconnected to OpenTTD (attempt %d)", attempt)
+                # Fire all registered post-reconnect callbacks
+                for cb in self._reconnect_callbacks:
+                    try:
+                        result = cb()
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception:
+                        logger.exception("Reconnect callback failed")
+                return
+
+            delay = min(delay * 2, _RECONNECT_MAX_DELAY)
 
     async def subscribe(self, update_type: AdminUpdateType, frequency: AdminUpdateFrequency) -> None:
         packet = AdminSubscribePacket(update_type, frequency)
@@ -125,21 +167,17 @@ class AdminClient:
     async def send_gamescript(
         self, action: str, params: dict[str, Any] | None = None, timeout: float = 10.0
     ) -> dict[str, Any]:
-        """Send a command to the GameScript and wait for the correlated response.
-
-        Returns the parsed response dict. Handles chunked responses automatically.
-        """
+        """Send a command to the GameScript and wait for the correlated response."""
         self._gs_counter += 1
         correlation_id = f"gs_{self._gs_counter}"
 
-        msg = {"id": correlation_id, "action": action}
+        msg: dict[str, Any] = {"id": correlation_id, "action": action}
         if params:
             msg["params"] = params
 
-        # Set up response tracking
         self._gs_responses[correlation_id] = []
         self._gs_events[correlation_id] = asyncio.Event()
-        self._gs_totals[correlation_id] = 1  # default: single response
+        self._gs_totals[correlation_id] = 1
 
         json_str = json.dumps(msg)
         packet = AdminGameScriptPacket(json_str)
@@ -149,20 +187,18 @@ class AdminClient:
             await asyncio.wait_for(self._gs_events[correlation_id].wait(), timeout=timeout)
         except asyncio.TimeoutError:
             logger.warning("GameScript command timed out: %s (id=%s)", action, correlation_id)
-            return {"id": correlation_id, "success": False, "error": "timeout", "message": "Response timed out"}
+            return {"id": correlation_id, "success": False, "error": "timeout"}
         finally:
-            event = self._gs_events.pop(correlation_id, None)  # noqa: F841
-            total = self._gs_totals.pop(correlation_id, None)  # noqa: F841
+            self._gs_events.pop(correlation_id, None)
+            self._gs_totals.pop(correlation_id, None)
 
         chunks = self._gs_responses.pop(correlation_id, [])
         if not chunks:
-            return {"id": correlation_id, "success": False, "error": "empty", "message": "No response received"}
+            return {"id": correlation_id, "success": False, "error": "empty"}
 
-        # If single response, return it directly
         if len(chunks) == 1:
             return chunks[0]
 
-        # Reassemble chunked array response, sorted by _chunk index
         chunks.sort(key=lambda c: c.get("_chunk", 0))
         merged_result: list[Any] = []
         for chunk in chunks:
@@ -175,17 +211,13 @@ class AdminClient:
         return {"id": correlation_id, "success": chunks[0].get("success", True), "result": merged_result}
 
     def _handle_gs_response(self, data: dict[str, Any]) -> None:
-        """Handle an incoming GameScript response packet."""
         cid = data.get("id", "")
         if cid not in self._gs_events:
-            logger.debug("Received GS response for unknown id: %s", cid)
+            logger.debug("GS response for unknown id: %s", cid)
             return
-
-        # Track chunked responses
         total = data.get("_total", 1)
         self._gs_totals[cid] = total
         self._gs_responses[cid].append(data)
-
         if len(self._gs_responses[cid]) >= total:
             self._gs_events[cid].set()
 
@@ -195,13 +227,25 @@ class AdminClient:
         self._handlers[packet_type].append(handler)
 
     async def poll_loop(self) -> None:
-        while self._connected:
+        """Main receive loop. On unexpected disconnect, triggers reconnect."""
+        while True:
+            if not self._connected:
+                break
+
             try:
                 packet = await self._recv_one()
-            except (ConnectionError, asyncio.IncompleteReadError):
-                if self._connected:
-                    logger.error("Connection lost")
+            except (ConnectionError, asyncio.IncompleteReadError, OSError):
+                if self._intentional_disconnect:
+                    break
+                logger.error("Connection lost — will attempt reconnect")
                 self._connected = False
+                # Cancel pending GS requests
+                for event in self._gs_events.values():
+                    event.set()
+                await self._reconnect_loop()
+                if self._connected:
+                    # Resume poll loop after successful reconnect
+                    continue
                 break
 
             if packet is None:
@@ -210,6 +254,10 @@ class AdminClient:
             if isinstance(packet, ShutdownPacket):
                 logger.info("Server shutting down")
                 self._connected = False
+                if not self._intentional_disconnect:
+                    await self._reconnect_loop()
+                    if self._connected:
+                        continue
                 break
 
             if isinstance(packet, RconPacket):
@@ -227,12 +275,13 @@ class AdminClient:
                     logger.debug("GS response: %s", data)
                     self._handle_gs_response(data)
                 except (json.JSONDecodeError, AttributeError) as e:
-                    logger.warning("Failed to parse GameScript packet: %s (raw=%r)", e, packet.json)
+                    logger.warning("Failed to parse GS packet: %s (raw=%r)", e, packet.json)
                 continue
 
             await self._dispatch(packet)
 
     async def disconnect(self) -> None:
+        self._intentional_disconnect = True
         self._connected = False
         if self._writer is not None:
             self._writer.close()
