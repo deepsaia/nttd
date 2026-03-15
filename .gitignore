@@ -31,6 +31,7 @@ secrets.cfg
 # ottd_config/ — ignore all auto-generated files, whitelist what we need
 ottd_config/*
 !ottd_config/openttd.cfg
+!ottd_config/README.md
 !ottd_config/game/
 ottd_config/game/*
 !ottd_config/game/nttd-gs/
