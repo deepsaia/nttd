@@ -4,16 +4,15 @@
 // and sends JSON responses back. Large array responses are automatically
 // chunked to stay under the ~1400 byte admin port packet limit.
 //
-// Command format:  { "id": "gs_1", "action": "get_towns", "params": { ... } }
-// Response format: { "id": "gs_1", "success": true, "result": { ... } }
-// Chunked format:  { "id": "gs_1", "success": true, "result": [...], "_chunk": 0, "_total": 3 }
+// Command:  { "id": "gs_1", "action": "get_towns", "params": { ... } }
+// Response: { "id": "gs_1", "success": true, "result": { ... } }
+// Chunked:  { "id": "gs_1", "success": true, "result": [...], "_chunk": 0, "_total": 3 }
 
 class NttdGS extends GSController {
   CHUNK_SIZE = 10;
 
   function Start() {
-    GSLog.Info("nttd GameScript started (v1)");
-
+    GSLog.Info("nttd GameScript v1 started");
     while (true) {
       this._HandleEvents();
       this.Sleep(1);
@@ -37,7 +36,7 @@ class NttdGS extends GSController {
       local data = admin_event.GetObject();
 
       if (data == null || !("id" in data) || !("action" in data)) {
-        GSLog.Warning("Invalid command: missing id or action");
+        GSLog.Warning("nttd: invalid command (missing id or action)");
         continue;
       }
 
@@ -47,11 +46,10 @@ class NttdGS extends GSController {
   }
 
   // ---------------------------------------------------------------------------
-  // Response sending with automatic chunking
+  // Response sending — automatic chunking for large arrays
   // ---------------------------------------------------------------------------
 
   function _SendResponse(id, result) {
-    // Chunk large array results
     if ("success" in result && result.success &&
         "result" in result && result.result != null &&
         typeof result.result == "array" && result.result.len() > this.CHUNK_SIZE) {
@@ -65,22 +63,13 @@ class NttdGS extends GSController {
         if (end > arr.len()) end = arr.len();
 
         local chunk = [];
-        for (local i = start; i < end; i++) {
-          chunk.append(arr[i]);
-        }
+        for (local i = start; i < end; i++) chunk.append(arr[i]);
 
-        GSAdmin.Send({
-          id = id,
-          success = true,
-          result = chunk,
-          _chunk = ci,
-          _total = total
-        });
+        GSAdmin.Send({ id = id, success = true, result = chunk, _chunk = ci, _total = total });
       }
       return;
     }
 
-    // Single-packet response
     local resp = { id = id };
     if ("success" in result) resp.rawset("success", result.success);
     if ("error" in result && result.error != null) resp.rawset("error", result.error);
@@ -98,7 +87,8 @@ class NttdGS extends GSController {
 
     try {
       switch (action) {
-        // Queries
+
+        // ---- QUERIES -------------------------------------------------------
         case "ping":              return { success = true, result = { pong = true } };
         case "get_date":          return this.CmdGetDate();
         case "get_map_size":      return this.CmdGetMapSize();
@@ -108,55 +98,125 @@ class NttdGS extends GSController {
         case "get_industries":    return this.CmdGetIndustries();
         case "get_industry_info": return this.CmdGetIndustryInfo(p);
         case "get_companies":     return this.CmdGetCompanies();
+        case "get_company_finance": return this.CmdGetCompanyFinance(p);
         case "get_stations":      return this.CmdGetStations(p);
+        case "get_station_info":  return this.CmdGetStationInfo(p);
+        case "get_waypoints":     return this.CmdGetWaypoints(p);
         case "get_vehicles":      return this.CmdGetVehicles(p);
+        case "get_vehicle_info":  return this.CmdGetVehicleInfo(p);
         case "get_engines":       return this.CmdGetEngines(p);
         case "get_cargo_types":   return this.CmdGetCargoTypes();
         case "get_rail_types":    return this.CmdGetRailTypes();
         case "get_road_types":    return this.CmdGetRoadTypes();
+        case "get_groups":        return this.CmdGetGroups(p);
+        case "get_signs":         return this.CmdGetSigns();
+        case "get_subsidies":     return this.CmdGetSubsidies();
+        case "get_airport_types": return this.CmdGetAirportTypes();
+        case "get_bridge_types":  return this.CmdGetBridgeTypes();
 
-        // Smart queries
+        // ---- SMART QUERIES -------------------------------------------------
         case "scan_town_area":      return this.CmdScanTownArea(p);
         case "find_bus_stop_spots": return this.CmdFindBusStopSpots(p);
         case "find_depot_spots":    return this.CmdFindDepotSpots(p);
 
-        // Building — road
-        case "build_road":       return this.CmdBuildRoad(p);
-        case "build_road_line":  return this.CmdBuildRoadLine(p);
-        case "build_road_depot": return this.CmdBuildRoadDepot(p);
-        case "build_road_stop":  return this.CmdBuildRoadStop(p);
+        // ---- BUILDING: ROAD ------------------------------------------------
+        case "build_road":        return this.CmdBuildRoad(p);
+        case "build_road_line":   return this.CmdBuildRoadLine(p);
+        case "build_road_depot":  return this.CmdBuildRoadDepot(p);
+        case "build_road_stop":   return this.CmdBuildRoadStop(p);
+        case "remove_road":       return this.CmdRemoveRoad(p);
+        case "remove_road_depot": return this.CmdRemoveRoadDepot(p);
+        case "remove_road_stop":  return this.CmdRemoveRoadStop(p);
 
-        // Building — rail
-        case "build_rail":         return this.CmdBuildRail(p);
-        case "build_rail_station": return this.CmdBuildRailStation(p);
-        case "build_rail_depot":   return this.CmdBuildRailDepot(p);
-        case "build_rail_signal":  return this.CmdBuildRailSignal(p);
+        // ---- BUILDING: RAIL ------------------------------------------------
+        case "build_rail":          return this.CmdBuildRail(p);
+        case "build_rail_track":    return this.CmdBuildRailTrack(p);
+        case "build_rail_station":  return this.CmdBuildRailStation(p);
+        case "build_rail_depot":    return this.CmdBuildRailDepot(p);
+        case "build_rail_signal":   return this.CmdBuildRailSignal(p);
+        case "build_rail_waypoint": return this.CmdBuildRailWaypoint(p);
+        case "remove_rail":         return this.CmdRemoveRail(p);
+        case "remove_rail_track":   return this.CmdRemoveRailTrack(p);
+        case "remove_signal":       return this.CmdRemoveSignal(p);
+        case "remove_rail_station": return this.CmdRemoveRailStation(p);
+        case "convert_rail":        return this.CmdConvertRail(p);
 
-        // Building — other
-        case "build_airport":  return this.CmdBuildAirport(p);
-        case "build_dock":     return this.CmdBuildDock(p);
-        case "build_bridge":   return this.CmdBuildBridge(p);
-        case "build_tunnel":   return this.CmdBuildTunnel(p);
-        case "demolish_tile":  return this.CmdDemolishTile(p);
+        // ---- BUILDING: MARINE ----------------------------------------------
+        case "build_canal":        return this.CmdBuildCanal(p);
+        case "build_lock":         return this.CmdBuildLock(p);
+        case "build_buoy":         return this.CmdBuildBuoy(p);
+        case "build_water_depot":  return this.CmdBuildWaterDepot(p);
+        case "remove_canal":       return this.CmdRemoveCanal(p);
+        case "remove_lock":        return this.CmdRemoveLock(p);
+        case "remove_buoy":        return this.CmdRemoveBuoy(p);
+        case "remove_water_depot": return this.CmdRemoveWaterDepot(p);
 
-        // Vehicles
-        case "buy_vehicle":    return this.CmdBuyVehicle(p);
-        case "sell_vehicle":   return this.CmdSellVehicle(p);
-        case "start_vehicle":  return this.CmdStartVehicle(p);
-        case "stop_vehicle":   return this.CmdStopVehicle(p);
-        case "send_to_depot":  return this.CmdSendToDepot(p);
-        case "clone_vehicle":  return this.CmdCloneVehicle(p);
-        case "refit_vehicle":  return this.CmdRefitVehicle(p);
+        // ---- BUILDING: OTHER -----------------------------------------------
+        case "build_airport":     return this.CmdBuildAirport(p);
+        case "remove_airport":    return this.CmdRemoveAirport(p);
+        case "open_close_airport":return this.CmdOpenCloseAirport(p);
+        case "build_dock":        return this.CmdBuildDock(p);
+        case "build_bridge":      return this.CmdBuildBridge(p);
+        case "build_tunnel":      return this.CmdBuildTunnel(p);
+        case "demolish_tile":     return this.CmdDemolishTile(p);
 
-        // Orders
-        case "add_order":  return this.CmdAddOrder(p);
-        case "get_orders": return this.CmdGetOrders(p);
+        // ---- COMPANY -------------------------------------------------------
+        case "build_company_hq":  return this.CmdBuildCompanyHQ(p);
+        case "set_loan":          return this.CmdSetLoan(p);
+        case "rename_company":    return this.CmdRenameCompany(p);
+
+        // ---- TOWN (GS-exclusive) -------------------------------------------
+        case "found_town":          return this.CmdFoundTown(p);
+        case "expand_town":         return this.CmdExpandTown(p);
+        case "set_town_growth":     return this.CmdSetTownGrowth(p);
+        case "perform_town_action": return this.CmdPerformTownAction(p);
+        case "get_town_rating":     return this.CmdGetTownRating(p);
+        case "change_town_rating":  return this.CmdChangeTownRating(p);
+        case "set_cargo_goal":      return this.CmdSetCargoGoal(p);
+
+        // ---- SUBSIDIES (GS-exclusive) --------------------------------------
+        case "create_subsidy": return this.CmdCreateSubsidy(p);
+
+        // ---- SIGNS ---------------------------------------------------------
+        case "build_sign":  return this.CmdBuildSign(p);
+        case "remove_sign": return this.CmdRemoveSign(p);
+
+        // ---- VEHICLE GROUPS ------------------------------------------------
+        case "create_group":     return this.CmdCreateGroup(p);
+        case "delete_group":     return this.CmdDeleteGroup(p);
+        case "move_to_group":    return this.CmdMoveToGroup(p);
+        case "set_auto_replace": return this.CmdSetAutoReplace(p);
+
+        // ---- VEHICLES ------------------------------------------------------
+        case "buy_vehicle":          return this.CmdBuyVehicle(p);
+        case "sell_vehicle":         return this.CmdSellVehicle(p);
+        case "sell_wagon":           return this.CmdSellWagon(p);
+        case "move_wagon":           return this.CmdMoveWagon(p);
+        case "start_vehicle":        return this.CmdStartVehicle(p);
+        case "stop_vehicle":         return this.CmdStopVehicle(p);
+        case "send_to_depot":        return this.CmdSendToDepot(p);
+        case "send_to_depot_service":return this.CmdSendToDepotService(p);
+        case "clone_vehicle":        return this.CmdCloneVehicle(p);
+        case "refit_vehicle":        return this.CmdRefitVehicle(p);
+        case "reverse_vehicle":      return this.CmdReverseVehicle(p);
+        case "rename_vehicle":       return this.CmdRenameVehicle(p);
+
+        // ---- ORDERS --------------------------------------------------------
+        case "add_order":       return this.CmdAddOrder(p);
+        case "insert_order":    return this.CmdInsertOrder(p);
+        case "remove_order":    return this.CmdRemoveOrder(p);
+        case "skip_to_order":   return this.CmdSkipToOrder(p);
+        case "move_order":      return this.CmdMoveOrder(p);
+        case "set_order_flags": return this.CmdSetOrderFlags(p);
+        case "share_orders":    return this.CmdShareOrders(p);
+        case "copy_orders":     return this.CmdCopyOrders(p);
+        case "get_orders":      return this.CmdGetOrders(p);
 
         default:
           return { success = false, error = "Unknown action: " + action };
       }
     } catch (e) {
-      GSLog.Warning("Error in " + action + ": " + e);
+      GSLog.Warning("nttd error in '" + action + "': " + e);
       return { success = false, error = "" + e };
     }
   }
@@ -166,11 +226,12 @@ class NttdGS extends GSController {
   // ===========================================================================
 
   function CmdGetDate() {
+    local d = GSDate.GetCurrentDate();
     return { success = true, result = {
-      date = GSDate.GetCurrentDate(),
-      year = GSDate.GetYear(GSDate.GetCurrentDate()),
-      month = GSDate.GetMonth(GSDate.GetCurrentDate()),
-      day = GSDate.GetDayOfMonth(GSDate.GetCurrentDate())
+      date = d,
+      year = GSDate.GetYear(d),
+      month = GSDate.GetMonth(d),
+      day = GSDate.GetDayOfMonth(d)
     }};
   }
 
@@ -185,10 +246,7 @@ class NttdGS extends GSController {
 
   function CmdGetTileInfo(p) {
     local tile = GSMap.GetTileIndex(p.x, p.y);
-    if (!GSMap.IsValidTile(tile)) {
-      return { success = false, error = "Invalid tile" };
-    }
-
+    if (!GSMap.IsValidTile(tile)) return { success = false, error = "Invalid tile" };
     return { success = true, result = {
       x = p.x, y = p.y,
       height = GSTile.GetMaxHeight(tile),
@@ -198,71 +256,76 @@ class NttdGS extends GSController {
       is_water = GSTile.IsWaterTile(tile),
       is_coast = GSTile.IsCoastTile(tile),
       has_tree = GSTile.HasTreeOnTile(tile),
+      is_road = GSRoad.IsRoadTile(tile),
+      is_rail = GSRail.IsRailTile(tile),
+      is_station = GSStation.GetStationID(tile) != GSStation.STATION_INVALID,
       owner = GSTile.GetOwner(tile)
     }};
   }
 
   function CmdGetTowns() {
     local towns = [];
-    local list = GSTownList();
-    foreach (id, _ in list) {
+    foreach (id, _ in GSTownList()) {
       local loc = GSTown.GetLocation(id);
       towns.append({
-        id = id,
-        name = GSTown.GetName(id),
+        id = id, name = GSTown.GetName(id),
         population = GSTown.GetPopulation(id),
-        x = GSMap.GetTileX(loc),
-        y = GSMap.GetTileY(loc)
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc)
       });
     }
     return { success = true, result = towns };
   }
 
   function CmdGetTownInfo(p) {
-    if (!GSTown.IsValidTown(p.town_id)) {
-      return { success = false, error = "Invalid town ID" };
-    }
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
     local loc = GSTown.GetLocation(p.town_id);
     return { success = true, result = {
       id = p.town_id,
       name = GSTown.GetName(p.town_id),
       population = GSTown.GetPopulation(p.town_id),
       houses = GSTown.GetHouseCount(p.town_id),
-      x = GSMap.GetTileX(loc),
-      y = GSMap.GetTileY(loc),
+      x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
       is_city = GSTown.IsCity(p.town_id),
-      growth_rate = GSTown.GetGrowthRate(p.town_id)
+      growth_rate = GSTown.GetGrowthRate(p.town_id),
+      has_statue = GSTown.HasStatue(p.town_id),
+      road_layout = GSTown.GetRoadLayout(p.town_id),
+      exclusive_rights_company = GSTown.GetExclusiveRightsCompany(p.town_id),
+      exclusive_rights_duration = GSTown.GetExclusiveRightsDuration(p.town_id),
+      fund_buildings_duration = GSTown.GetFundBuildingsDuration(p.town_id)
+    }};
+  }
+
+  function CmdGetTownRating(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    local cid = p.company_id;
+    return { success = true, result = {
+      town_id = p.town_id,
+      company_id = cid,
+      rating = GSTown.GetRating(p.town_id, cid),
+      detailed_rating = GSTown.GetDetailedRating(p.town_id, cid)
     }};
   }
 
   function CmdGetIndustries() {
     local industries = [];
-    local list = GSIndustryList();
-    foreach (id, _ in list) {
+    foreach (id, _ in GSIndustryList()) {
       local loc = GSIndustry.GetLocation(id);
       local itype = GSIndustry.GetIndustryType(id);
       industries.append({
-        id = id,
-        name = GSIndustry.GetName(id),
-        type_id = itype,
-        type_name = GSIndustryType.GetName(itype),
-        x = GSMap.GetTileX(loc),
-        y = GSMap.GetTileY(loc)
+        id = id, name = GSIndustry.GetName(id),
+        type_id = itype, type_name = GSIndustryType.GetName(itype),
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc)
       });
     }
     return { success = true, result = industries };
   }
 
   function CmdGetIndustryInfo(p) {
-    if (!GSIndustry.IsValidIndustry(p.industry_id)) {
-      return { success = false, error = "Invalid industry ID" };
-    }
+    if (!GSIndustry.IsValidIndustry(p.industry_id)) return { success = false, error = "Invalid industry ID" };
     local loc = GSIndustry.GetLocation(p.industry_id);
     local itype = GSIndustry.GetIndustryType(p.industry_id);
-
     local produced = [];
-    local cargo_list = GSCargoList();
-    foreach (cargo_id, _ in cargo_list) {
+    foreach (cargo_id, _ in GSCargoList()) {
       local last = GSIndustry.GetLastMonthProduction(p.industry_id, cargo_id);
       if (last > 0) {
         produced.append({
@@ -273,14 +336,10 @@ class NttdGS extends GSController {
         });
       }
     }
-
     return { success = true, result = {
-      id = p.industry_id,
-      name = GSIndustry.GetName(p.industry_id),
-      type_id = itype,
-      type_name = GSIndustryType.GetName(itype),
-      x = GSMap.GetTileX(loc),
-      y = GSMap.GetTileY(loc),
+      id = p.industry_id, name = GSIndustry.GetName(p.industry_id),
+      type_id = itype, type_name = GSIndustryType.GetName(itype),
+      x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
       is_raw = GSIndustryType.IsRawIndustry(itype),
       is_processing = GSIndustryType.IsProcessingIndustry(itype),
       production = produced
@@ -291,12 +350,13 @@ class NttdGS extends GSController {
     local companies = [];
     for (local cid = GSCompany.COMPANY_FIRST; cid <= GSCompany.COMPANY_LAST; cid++) {
       if (!GSCompany.ResolveCompanyID(cid)) continue;
+      local cm = GSCompanyMode(cid);
       local hq = GSCompany.GetCompanyHQ(cid);
       companies.append({
-        id = cid,
-        name = GSCompany.GetName(cid),
+        id = cid, name = GSCompany.GetName(cid),
         money = GSCompany.GetBankBalance(cid),
-        loan = GSCompany.GetLoanAmount(cid),
+        loan = GSCompany.GetLoanAmount(),
+        max_loan = GSCompany.GetMaxLoanAmount(),
         hq_x = GSMap.IsValidTile(hq) ? GSMap.GetTileX(hq) : -1,
         hq_y = GSMap.IsValidTile(hq) ? GSMap.GetTileY(hq) : -1
       });
@@ -304,17 +364,31 @@ class NttdGS extends GSController {
     return { success = true, result = companies };
   }
 
+  function CmdGetCompanyFinance(p) {
+    local cid = p.company_id;
+    if (!GSCompany.ResolveCompanyID(cid)) return { success = false, error = "Invalid company ID" };
+    return { success = true, result = {
+      company_id = cid,
+      balance = GSCompany.GetBankBalance(cid),
+      loan = GSCompany.GetLoanAmount(),
+      max_loan = GSCompany.GetMaxLoanAmount(),
+      q1_income = GSCompany.GetQuarterlyIncome(cid, 1),
+      q1_expenses = GSCompany.GetQuarterlyExpenses(cid, 1),
+      q1_value = GSCompany.GetQuarterlyCompanyValue(cid, 1),
+      q2_income = GSCompany.GetQuarterlyIncome(cid, 2),
+      q2_expenses = GSCompany.GetQuarterlyExpenses(cid, 2),
+      q2_value = GSCompany.GetQuarterlyCompanyValue(cid, 2)
+    }};
+  }
+
   function CmdGetStations(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local stations = [];
-    local list = GSStationList(GSStation.STATION_ANY);
-    foreach (id, _ in list) {
+    foreach (id, _ in GSStationList(GSStation.STATION_ANY)) {
       local loc = GSBaseStation.GetLocation(id);
       stations.append({
-        id = id,
-        name = GSBaseStation.GetName(id),
-        x = GSMap.GetTileX(loc),
-        y = GSMap.GetTileY(loc),
+        id = id, name = GSBaseStation.GetName(id),
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
         has_rail = GSStation.HasStationType(id, GSStation.STATION_TRAIN),
         has_truck = GSStation.HasStationType(id, GSStation.STATION_TRUCK_STOP),
         has_bus = GSStation.HasStationType(id, GSStation.STATION_BUS_STOP),
@@ -325,61 +399,128 @@ class NttdGS extends GSController {
     return { success = true, result = stations };
   }
 
+  function CmdGetStationInfo(p) {
+    if (!GSStation.IsValidStation(p.station_id)) return { success = false, error = "Invalid station ID" };
+    local loc = GSBaseStation.GetLocation(p.station_id);
+    local cargo_waiting = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      local waiting = GSStation.GetCargoWaiting(p.station_id, cargo_id);
+      if (waiting > 0) {
+        cargo_waiting.append({
+          cargo_id = cargo_id,
+          cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          waiting = waiting
+        });
+      }
+    }
+    return { success = true, result = {
+      id = p.station_id, name = GSBaseStation.GetName(p.station_id),
+      x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
+      has_rail = GSStation.HasStationType(p.station_id, GSStation.STATION_TRAIN),
+      has_truck = GSStation.HasStationType(p.station_id, GSStation.STATION_TRUCK_STOP),
+      has_bus = GSStation.HasStationType(p.station_id, GSStation.STATION_BUS_STOP),
+      has_airport = GSStation.HasStationType(p.station_id, GSStation.STATION_AIRPORT),
+      has_dock = GSStation.HasStationType(p.station_id, GSStation.STATION_DOCK),
+      cargo_waiting = cargo_waiting
+    }};
+  }
+
+  function CmdGetWaypoints(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local waypoints = [];
+    foreach (id, _ in GSWaypointList(GSWaypoint.WAYPOINT_ANY)) {
+      local loc = GSBaseStation.GetLocation(id);
+      waypoints.append({
+        id = id, name = GSBaseStation.GetName(id),
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
+        is_rail = GSWaypoint.HasWaypointType(id, GSWaypoint.WAYPOINT_RAIL),
+        is_buoy = GSWaypoint.HasWaypointType(id, GSWaypoint.WAYPOINT_BUOY)
+      });
+    }
+    return { success = true, result = waypoints };
+  }
+
   function CmdGetVehicles(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local vehicles = [];
-    local list = GSVehicleList();
     local filter_type = ("vehicle_type" in p) ? p.vehicle_type : null;
-
-    foreach (id, _ in list) {
+    foreach (id, _ in GSVehicleList()) {
       if (filter_type != null) {
-        local vt = GSVehicle.GetVehicleType(id);
-        local tn = "";
-        switch (vt) {
-          case GSVehicle.VT_RAIL:  tn = "train"; break;
-          case GSVehicle.VT_ROAD:  tn = "road"; break;
-          case GSVehicle.VT_WATER: tn = "ship"; break;
-          case GSVehicle.VT_AIR:   tn = "aircraft"; break;
-        }
+        local tn = this._VehicleTypeName(GSVehicle.GetVehicleType(id));
         if (tn != filter_type) continue;
       }
-
       local loc = GSVehicle.GetLocation(id);
       vehicles.append({
-        id = id,
-        name = GSVehicle.GetName(id),
+        id = id, name = GSVehicle.GetName(id),
         type = GSVehicle.GetVehicleType(id),
-        x = GSMap.GetTileX(loc),
-        y = GSMap.GetTileY(loc),
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
         engine_id = GSVehicle.GetEngineType(id),
         age = GSVehicle.GetAge(id),
+        max_age = GSVehicle.GetMaxAge(id),
         profit_this_year = GSVehicle.GetProfitThisYear(id),
         profit_last_year = GSVehicle.GetProfitLastYear(id),
+        current_speed = GSVehicle.GetCurrentSpeed(id),
         state = GSVehicle.GetState(id),
         in_depot = GSVehicle.IsStoppedInDepot(id),
-        order_count = GSOrder.GetOrderCount(id)
+        order_count = GSOrder.GetOrderCount(id),
+        is_articulated = GSVehicle.IsArticulated(id)
       });
     }
     return { success = true, result = vehicles };
   }
 
+  function CmdGetVehicleInfo(p) {
+    if (!GSVehicle.IsValidVehicle(p.vehicle_id)) return { success = false, error = "Invalid vehicle ID" };
+    local vid = p.vehicle_id;
+    local loc = GSVehicle.GetLocation(vid);
+    local orders = [];
+    local order_count = GSOrder.GetOrderCount(vid);
+    for (local i = 0; i < order_count; i++) {
+      orders.append({
+        index = i,
+        destination = GSOrder.GetOrderDestination(vid, i),
+        flags = GSOrder.GetOrderFlags(vid, i),
+        is_goto_station = GSOrder.IsGotoStationOrder(vid, i),
+        is_goto_depot = GSOrder.IsGotoDepotOrder(vid, i),
+        is_goto_waypoint = GSOrder.IsGotoWaypointOrder(vid, i),
+        is_conditional = GSOrder.IsConditionalOrder(vid, i)
+      });
+    }
+    local cargo_loads = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      local cap = GSVehicle.GetCapacity(vid, cargo_id);
+      local load = GSVehicle.GetCargoLoad(vid, cargo_id);
+      if (cap > 0) cargo_loads.append({ cargo_id = cargo_id, capacity = cap, loaded = load });
+    }
+    return { success = true, result = {
+      id = vid, name = GSVehicle.GetName(vid),
+      type = GSVehicle.GetVehicleType(vid),
+      engine_id = GSVehicle.GetEngineType(vid),
+      x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
+      age = GSVehicle.GetAge(vid),
+      max_age = GSVehicle.GetMaxAge(vid),
+      age_left = GSVehicle.GetAgeLeft(vid),
+      profit_this_year = GSVehicle.GetProfitThisYear(vid),
+      profit_last_year = GSVehicle.GetProfitLastYear(vid),
+      current_speed = GSVehicle.GetCurrentSpeed(vid),
+      state = GSVehicle.GetState(vid),
+      in_depot = GSVehicle.IsStoppedInDepot(vid),
+      is_articulated = GSVehicle.IsArticulated(vid),
+      has_shared_orders = GSOrder.HasSharedOrders(vid),
+      length = GSVehicle.GetLength(vid),
+      cargo = cargo_loads,
+      orders = orders
+    }};
+  }
+
   function CmdGetEngines(p) {
     local type_str = ("vehicle_type" in p) ? p.vehicle_type : "train";
-    local vt = GSVehicle.VT_RAIL;
-    switch (type_str) {
-      case "train":    vt = GSVehicle.VT_RAIL; break;
-      case "road":     vt = GSVehicle.VT_ROAD; break;
-      case "ship":     vt = GSVehicle.VT_WATER; break;
-      case "aircraft": vt = GSVehicle.VT_AIR; break;
-    }
-
+    local vt = this._VehicleTypeEnum(type_str);
     local engines = [];
-    local list = GSEngineList(vt);
-    foreach (id, _ in list) {
+    foreach (id, _ in GSEngineList(vt)) {
       if (!GSEngine.IsBuildable(id)) continue;
       engines.append({
-        id = id,
-        name = GSEngine.GetName(id),
+        id = id, name = GSEngine.GetName(id),
         cargo_type = GSEngine.GetCargoType(id),
         capacity = GSEngine.GetCapacity(id),
         max_speed = GSEngine.GetMaxSpeed(id),
@@ -396,11 +537,9 @@ class NttdGS extends GSController {
 
   function CmdGetCargoTypes() {
     local cargos = [];
-    local list = GSCargoList();
-    foreach (id, _ in list) {
+    foreach (id, _ in GSCargoList()) {
       cargos.append({
-        id = id,
-        label = GSCargo.GetCargoLabel(id),
+        id = id, label = GSCargo.GetCargoLabel(id),
         name = GSCargo.GetName(id),
         is_freight = GSCargo.IsFreight(id)
       });
@@ -410,8 +549,7 @@ class NttdGS extends GSController {
 
   function CmdGetRailTypes() {
     local types = [];
-    local list = GSRailTypeList();
-    foreach (id, _ in list) {
+    foreach (id, _ in GSRailTypeList()) {
       types.append({ id = id, name = GSRail.GetName(id) });
     }
     return { success = true, result = types };
@@ -419,15 +557,88 @@ class NttdGS extends GSController {
 
   function CmdGetRoadTypes() {
     local types = [];
-    local road_list = GSRoadTypeList(GSRoad.ROADTRAMTYPES_ROAD);
-    foreach (id, _ in road_list) {
+    foreach (id, _ in GSRoadTypeList(GSRoad.ROADTRAMTYPES_ROAD)) {
       types.append({ id = id, name = GSRoad.GetName(id), is_tram = false });
     }
-    local tram_list = GSRoadTypeList(GSRoad.ROADTRAMTYPES_TRAM);
-    foreach (id, _ in tram_list) {
+    foreach (id, _ in GSRoadTypeList(GSRoad.ROADTRAMTYPES_TRAM)) {
       types.append({ id = id, name = GSRoad.GetName(id), is_tram = true });
     }
     return { success = true, result = types };
+  }
+
+  function CmdGetAirportTypes() {
+    local types = [];
+    for (local t = 0; t < 16; t++) {
+      if (!GSAirport.IsValidAirportType(t)) continue;
+      types.append({
+        id = t,
+        width = GSAirport.GetAirportWidth(t),
+        height = GSAirport.GetAirportHeight(t),
+        coverage = GSAirport.GetAirportCoverageRadius(t)
+      });
+    }
+    return { success = true, result = types };
+  }
+
+  function CmdGetBridgeTypes() {
+    local types = [];
+    foreach (id, _ in GSBridgeList()) {
+      types.append({
+        id = id,
+        name = GSBridge.GetName(id, GSVehicle.VT_ROAD),
+        max_length = GSBridge.GetMaxLength(id),
+        min_length = GSBridge.GetMinLength(id),
+        max_speed = GSBridge.GetMaxSpeed(id),
+        price = GSBridge.GetPrice(id, 4)
+      });
+    }
+    return { success = true, result = types };
+  }
+
+  function CmdGetGroups(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local groups = [];
+    foreach (id, _ in GSGroupList()) {
+      local vt = GSGroup.GetVehicleType(id);
+      groups.append({
+        id = id, name = GSGroup.GetName(id),
+        vehicle_type = this._VehicleTypeName(vt),
+        parent_id = GSGroup.GetParent(id),
+        profit_this_year = GSGroup.GetProfitThisYear(id),
+        profit_last_year = GSGroup.GetProfitLastYear(id)
+      });
+    }
+    return { success = true, result = groups };
+  }
+
+  function CmdGetSigns() {
+    local signs = [];
+    foreach (id, _ in GSSignList()) {
+      local loc = GSSign.GetLocation(id);
+      signs.append({
+        id = id, name = GSSign.GetName(id),
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc)
+      });
+    }
+    return { success = true, result = signs };
+  }
+
+  function CmdGetSubsidies() {
+    local subsidies = [];
+    foreach (id, _ in GSSubsidyList()) {
+      if (!GSSubsidy.IsValidSubsidy(id)) continue;
+      subsidies.append({
+        id = id,
+        is_awarded = GSSubsidy.IsAwarded(id),
+        cargo_type = GSSubsidy.GetCargoType(id),
+        source_type = GSSubsidy.GetSourceType(id),
+        source_index = GSSubsidy.GetSourceIndex(id),
+        destination_type = GSSubsidy.GetDestinationType(id),
+        destination_index = GSSubsidy.GetDestinationIndex(id),
+        remaining = GSSubsidy.GetExpireDate(id) - GSDate.GetCurrentDate()
+      });
+    }
+    return { success = true, result = subsidies };
   }
 
   // ===========================================================================
@@ -435,126 +646,78 @@ class NttdGS extends GSController {
   // ===========================================================================
 
   function CmdScanTownArea(p) {
-    if (!GSTown.IsValidTown(p.town_id)) {
-      return { success = false, error = "Invalid town ID" };
-    }
-
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
     local radius = ("radius" in p) ? p.radius : 15;
     local loc = GSTown.GetLocation(p.town_id);
-    local cx = GSMap.GetTileX(loc);
-    local cy = GSMap.GetTileY(loc);
-
-    local buildable = [];
-    local roads = [];
-    local buildings = [];
-    local water = [];
-
+    local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
+    local buildable = [], roads = [], buildings = [], water = [];
     for (local dy = -radius; dy <= radius; dy++) {
       for (local dx = -radius; dx <= radius; dx++) {
-        local x = cx + dx;
-        local y = cy + dy;
+        local x = cx + dx, y = cy + dy;
         local tile = GSMap.GetTileIndex(x, y);
         if (!GSMap.IsValidTile(tile)) continue;
-
         if (GSTile.IsWaterTile(tile) || GSTile.IsCoastTile(tile)) {
           water.append({ x = x, y = y });
         } else if (GSRoad.IsRoadTile(tile)) {
           roads.append({ x = x, y = y });
         } else if (GSTile.IsBuildable(tile)) {
-          buildable.append({
-            x = x, y = y,
-            height = GSTile.GetMaxHeight(tile),
-            slope = GSTile.GetSlope(tile)
-          });
+          buildable.append({ x = x, y = y, height = GSTile.GetMaxHeight(tile), slope = GSTile.GetSlope(tile) });
         } else {
           buildings.append({ x = x, y = y });
         }
       }
     }
-
     return { success = true, result = {
       town_name = GSTown.GetName(p.town_id),
       center_x = cx, center_y = cy, radius = radius,
-      buildable = buildable, roads = roads,
-      buildings = buildings, water = water,
-      counts = {
-        buildable = buildable.len(), roads = roads.len(),
-        buildings = buildings.len(), water = water.len()
-      }
+      buildable = buildable, roads = roads, buildings = buildings, water = water,
+      counts = { buildable = buildable.len(), roads = roads.len(), buildings = buildings.len(), water = water.len() }
     }};
   }
 
   function CmdFindBusStopSpots(p) {
-    if (!GSTown.IsValidTown(p.town_id)) {
-      return { success = false, error = "Invalid town ID" };
-    }
-
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
     local radius = ("radius" in p) ? p.radius : 15;
     local max_results = ("max_results" in p) ? p.max_results : 10;
     local loc = GSTown.GetLocation(p.town_id);
-    local cx = GSMap.GetTileX(loc);
-    local cy = GSMap.GetTileY(loc);
+    local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
     local spots = [];
-
     for (local dy = -radius; dy <= radius; dy++) {
       for (local dx = -radius; dx <= radius; dx++) {
-        local x = cx + dx;
-        local y = cy + dy;
+        local x = cx + dx, y = cy + dy;
         local tile = GSMap.GetTileIndex(x, y);
-        if (!GSMap.IsValidTile(tile)) continue;
-        if (!GSTile.IsBuildable(tile)) continue;
-
+        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
-
-        spots.append({
-          x = x, y = y,
-          distance = abs(dx) + abs(dy),
-          adjacent_road_x = adj[0].nx,
-          adjacent_road_y = adj[0].ny,
-          adjacent_road_count = adj.len()
-        });
+        spots.append({ x = x, y = y, distance = abs(dx) + abs(dy),
+          adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
+          adjacent_road_count = adj.len() });
       }
     }
-
     this._SortByDistance(spots);
     if (spots.len() > max_results) spots = spots.slice(0, max_results);
     return { success = true, result = spots };
   }
 
   function CmdFindDepotSpots(p) {
-    if (!GSTown.IsValidTown(p.town_id)) {
-      return { success = false, error = "Invalid town ID" };
-    }
-
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
     local radius = ("radius" in p) ? p.radius : 15;
     local max_results = ("max_results" in p) ? p.max_results : 5;
     local loc = GSTown.GetLocation(p.town_id);
-    local cx = GSMap.GetTileX(loc);
-    local cy = GSMap.GetTileY(loc);
+    local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
     local spots = [];
-
     for (local dy = -radius; dy <= radius; dy++) {
       for (local dx = -radius; dx <= radius; dx++) {
-        local x = cx + dx;
-        local y = cy + dy;
+        local x = cx + dx, y = cy + dy;
         local tile = GSMap.GetTileIndex(x, y);
-        if (!GSMap.IsValidTile(tile)) continue;
-        if (!GSTile.IsBuildable(tile)) continue;
-
+        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
-
-        spots.append({
-          x = x, y = y,
-          distance = abs(dx) + abs(dy),
-          adjacent_road_x = adj[0].nx,
-          adjacent_road_y = adj[0].ny,
-          depot_direction = adj[0].dir
-        });
+        spots.append({ x = x, y = y, distance = abs(dx) + abs(dy),
+          adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
+          depot_direction = adj[0].dir });
       }
     }
-
     this._SortByDistance(spots);
     if (spots.len() > max_results) spots = spots.slice(0, max_results);
     return { success = true, result = spots };
@@ -566,15 +729,12 @@ class NttdGS extends GSController {
 
   function CmdBuildRoad(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
-    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     GSRoad.SetCurrentRoadType(road_type);
-
+    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
+    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
     if (GSRoad.BuildRoad(from_tile, to_tile)) {
-      return { success = true, result = {
-        from = [p.from_x, p.from_y], to = [p.to_x, p.to_y]
-      }};
+      return { success = true, result = { from = [p.from_x, p.from_y], to = [p.to_x, p.to_y] } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -583,70 +743,37 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     GSRoad.SetCurrentRoadType(road_type);
-
-    local x1 = p.from_x, y1 = p.from_y;
-    local x2 = p.to_x, y2 = p.to_y;
-
-    if (x1 != x2 && y1 != y2) {
-      return { success = false, error = "Only straight lines supported (same x or same y)" };
-    }
-    if (x1 == x2 && y1 == y2) {
-      return { success = false, error = "Start and end are the same tile" };
-    }
-
-    local built = 0;
-    local failed = [];
-
+    local x1 = p.from_x, y1 = p.from_y, x2 = p.to_x, y2 = p.to_y;
+    if (x1 != x2 && y1 != y2) return { success = false, error = "Only straight lines (same x or same y)" };
+    if (x1 == x2 && y1 == y2) return { success = false, error = "Start and end are the same tile" };
+    local built = 0, failed = [];
     if (x1 == x2) {
       local step = (y2 > y1) ? 1 : -1;
       for (local y = y1; ; y += step) {
-        local ft = GSMap.GetTileIndex(x1, y);
-        local tt = GSMap.GetTileIndex(x1, y + step);
-        if (GSRoad.BuildRoad(ft, tt)) {
-          built++;
-        } else {
-          local err = GSError.GetLastErrorString();
-          if (err != "ERR_ALREADY_BUILT") {
-            failed.append({ x = x1, y = y, error = err });
-          } else {
-            built++;
-          }
-        }
+        local ft = GSMap.GetTileIndex(x1, y), tt = GSMap.GetTileIndex(x1, y + step);
+        if (GSRoad.BuildRoad(ft, tt)) { built++; }
+        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x1, y = y, error = err }); } else { built++; } }
         if (y + step == y2) break;
       }
     } else {
       local step = (x2 > x1) ? 1 : -1;
       for (local x = x1; ; x += step) {
-        local ft = GSMap.GetTileIndex(x, y1);
-        local tt = GSMap.GetTileIndex(x + step, y1);
-        if (GSRoad.BuildRoad(ft, tt)) {
-          built++;
-        } else {
-          local err = GSError.GetLastErrorString();
-          if (err != "ERR_ALREADY_BUILT") {
-            failed.append({ x = x, y = y1, error = err });
-          } else {
-            built++;
-          }
-        }
+        local ft = GSMap.GetTileIndex(x, y1), tt = GSMap.GetTileIndex(x + step, y1);
+        if (GSRoad.BuildRoad(ft, tt)) { built++; }
+        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x, y = y1, error = err }); } else { built++; } }
         if (x + step == x2) break;
       }
     }
-
-    return { success = true, result = {
-      built = built, failed = failed, total = built + failed.len()
-    }};
+    return { success = true, result = { built = built, failed = failed, total = built + failed.len() } };
   }
 
   function CmdBuildRoadDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     local dir = ("direction" in p) ? p.direction : 0;
     GSRoad.SetCurrentRoadType(road_type);
-
-    local front = this._GetAdjacentTile(tile, dir);
-    if (GSRoad.BuildRoadDepot(tile, front)) {
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRoad.BuildRoadDepot(tile, this._GetAdjacentTile(tile, dir))) {
       return { success = true, result = { tile = [p.x, p.y] } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
@@ -654,29 +781,44 @@ class NttdGS extends GSController {
 
   function CmdBuildRoadStop(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     local is_truck = ("is_truck_stop" in p) ? p.is_truck_stop : false;
     local is_dt = ("is_drive_through" in p) ? p.is_drive_through : false;
     local dir = ("direction" in p) ? p.direction : 0;
     GSRoad.SetCurrentRoadType(road_type);
-
+    local tile = GSMap.GetTileIndex(p.x, p.y);
     local front = this._GetAdjacentTile(tile, dir);
     local stop_type = is_truck ? GSRoad.ROADVEHTYPE_TRUCK : GSRoad.ROADVEHTYPE_BUS;
+    local ok = is_dt
+      ? GSRoad.BuildDriveThroughRoadStation(tile, front, stop_type, GSStation.STATION_NEW)
+      : GSRoad.BuildRoadStation(tile, front, stop_type, GSStation.STATION_NEW);
+    if (ok) return { success = true, result = { tile = [p.x, p.y], type = is_truck ? "truck" : "bus" } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
 
-    local ok = false;
-    if (is_dt) {
-      ok = GSRoad.BuildDriveThroughRoadStation(tile, front, stop_type, GSStation.STATION_NEW);
-    } else {
-      ok = GSRoad.BuildRoadStation(tile, front, stop_type, GSStation.STATION_NEW);
+  function CmdRemoveRoad(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local road_type = ("road_type" in p) ? p.road_type : 0;
+    GSRoad.SetCurrentRoadType(road_type);
+    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
+    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
+    if (GSRoad.RemoveRoad(from_tile, to_tile)) {
+      return { success = true, result = { from = [p.from_x, p.from_y], to = [p.to_x, p.to_y] } };
     }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
 
-    if (ok) {
-      return { success = true, result = {
-        tile = [p.x, p.y],
-        type = is_truck ? "truck" : "bus"
-      }};
-    }
+  function CmdRemoveRoadDepot(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRoad.RemoveRoadDepot(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveRoadStop(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRoad.RemoveRoadStation(tile)) return { success = true, result = { tile = [p.x, p.y] } };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -688,63 +830,56 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;
     GSRail.SetCurrentRailType(rail_type);
-
-    // 3-tile mode: prev -> curr -> next
     if ("prev_x" in p && "x" in p && "next_x" in p) {
       local prev = GSMap.GetTileIndex(p.prev_x, p.prev_y);
       local curr = GSMap.GetTileIndex(p.x, p.y);
       local next = GSMap.GetTileIndex(p.next_x, p.next_y);
-      if (GSRail.BuildRail(prev, curr, next)) {
-        return { success = true, result = { tile = [p.x, p.y] } };
-      }
+      if (GSRail.BuildRail(prev, curr, next)) return { success = true, result = { tile = [p.x, p.y] } };
       return { success = false, error = GSError.GetLastErrorString() };
     }
-
-    // 2-tile mode: from -> to
     local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
     local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
-    local dx = p.to_x - p.from_x;
-    local dy = p.to_y - p.from_y;
+    local dx = p.to_x - p.from_x, dy = p.to_y - p.from_y;
     local before = GSMap.GetTileIndex(p.from_x - dx, p.from_y - dy);
     local after = GSMap.GetTileIndex(p.to_x + dx, p.to_y + dy);
     local ok1 = GSRail.BuildRail(before, from_tile, to_tile);
     local ok2 = GSRail.BuildRail(from_tile, to_tile, after);
+    if (ok1 || ok2) return { success = true, result = { from = [p.from_x, p.from_y], to = [p.to_x, p.to_y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
 
-    if (ok1 || ok2) {
-      return { success = true, result = {
-        from = [p.from_x, p.from_y], to = [p.to_x, p.to_y]
-      }};
-    }
+  function CmdBuildRailTrack(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    local track = ("track" in p) ? p.track : GSRail.RAILTRACK_NE_SW;
+    GSRail.SetCurrentRailType(rail_type);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRail.BuildRailTrack(tile, track)) return { success = true, result = { tile = [p.x, p.y] } };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdBuildRailStation(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;
     local dir = ("direction" in p) ? p.direction : 0;
     local platforms = ("num_platforms" in p) ? p.num_platforms : 2;
     local length = ("platform_length" in p) ? p.platform_length : 5;
     GSRail.SetCurrentRailType(rail_type);
-
+    local tile = GSMap.GetTileIndex(p.x, p.y);
     local track = (dir == 1) ? GSRail.RAILTRACK_NW_SE : GSRail.RAILTRACK_NE_SW;
     if (GSRail.BuildRailStation(tile, track, platforms, length, GSStation.STATION_NEW)) {
-      return { success = true, result = {
-        tile = [p.x, p.y], platforms = platforms, length = length
-      }};
+      return { success = true, result = { tile = [p.x, p.y], platforms = platforms, length = length } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdBuildRailDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;
     local dir = ("direction" in p) ? p.direction : 0;
     GSRail.SetCurrentRailType(rail_type);
-
-    local front = this._GetAdjacentTile(tile, dir);
-    if (GSRail.BuildRailDepot(tile, front)) {
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRail.BuildRailDepot(tile, this._GetAdjacentTile(tile, dir))) {
       return { success = true, result = { tile = [p.x, p.y] } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
@@ -752,12 +887,121 @@ class NttdGS extends GSController {
 
   function CmdBuildRailSignal(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
     local signal_type = ("signal_type" in p) ? p.signal_type : 0;
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRail.BuildSignal(tile, tile, signal_type)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
 
-    if (GSRail.BuildSignal(tile, tile, signal_type)) {
+  function CmdBuildRailWaypoint(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRail.BuildRailWaypoint(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveRail(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
+    if (GSRail.RemoveRail(from_tile, tile, to_tile)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveRailTrack(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local track = ("track" in p) ? p.track : GSRail.RAILTRACK_NE_SW;
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSRail.RemoveRailTrack(tile, track)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveSignal(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    local front_tile = GSMap.GetTileIndex(p.front_x, p.front_y);
+    if (GSRail.RemoveSignal(tile, front_tile)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveRailStation(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
+    local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
+    local keep_rail = ("keep_rail" in p) ? p.keep_rail : false;
+    if (GSRail.RemoveRailStationTileRectangle(tile1, tile2, keep_rail)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdConvertRail(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
+    local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
+    if (GSRail.ConvertRailType(tile1, tile2, p.rail_type)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  // ===========================================================================
+  // BUILDING — MARINE
+  // ===========================================================================
+
+  function CmdBuildCanal(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSMarine.BuildCanal(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdBuildLock(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSMarine.BuildLock(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdBuildBuoy(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSMarine.BuildBuoy(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdBuildWaterDepot(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    local dir = ("direction" in p) ? p.direction : 0;
+    if (GSMarine.BuildWaterDepot(tile, this._GetAdjacentTile(tile, dir))) {
       return { success = true, result = { tile = [p.x, p.y] } };
     }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveCanal(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSMarine.RemoveCanal(tile)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveLock(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSMarine.RemoveLock(tile)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveBuoy(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSMarine.RemoveBuoy(tile)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveWaterDepot(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSMarine.RemoveWaterDepot(tile)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -767,11 +1011,25 @@ class NttdGS extends GSController {
 
   function CmdBuildAirport(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
     local airport_type = ("airport_type" in p) ? p.airport_type : 0;
-
+    local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSAirport.BuildAirport(tile, airport_type, GSStation.STATION_NEW)) {
       return { success = true, result = { tile = [p.x, p.y], type = airport_type } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveAirport(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSAirport.RemoveAirport(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdOpenCloseAirport(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSAirport.OpenCloseAirport(p.station_id)) {
+      return { success = true, result = { station_id = p.station_id } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -779,10 +1037,7 @@ class NttdGS extends GSController {
   function CmdBuildDock(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
-
-    if (GSMarine.BuildDock(tile, GSStation.STATION_NEW)) {
-      return { success = true, result = { tile = [p.x, p.y] } };
-    }
+    if (GSMarine.BuildDock(tile, GSStation.STATION_NEW)) return { success = true, result = { tile = [p.x, p.y] } };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -792,15 +1047,9 @@ class NttdGS extends GSController {
     local end_tile = GSMap.GetTileIndex(p.end_x, p.end_y);
     local bridge_type = ("bridge_type" in p) ? p.bridge_type : 0;
     local transport = ("transport_type" in p) ? p.transport_type : "road";
-
-    local vt = GSVehicle.VT_ROAD;
-    if (transport == "rail") vt = GSVehicle.VT_RAIL;
-    else if (transport == "water") vt = GSVehicle.VT_WATER;
-
+    local vt = (transport == "rail") ? GSVehicle.VT_RAIL : (transport == "water") ? GSVehicle.VT_WATER : GSVehicle.VT_ROAD;
     if (GSBridge.BuildBridge(vt, bridge_type, start_tile, end_tile)) {
-      return { success = true, result = {
-        start = [p.start_x, p.start_y], end_pos = [p.end_x, p.end_y]
-      }};
+      return { success = true, result = { start = [p.start_x, p.start_y], end_pos = [p.end_x, p.end_y] } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -809,10 +1058,7 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     local transport = ("transport_type" in p) ? p.transport_type : "rail";
-
-    local vt = GSVehicle.VT_RAIL;
-    if (transport == "road") vt = GSVehicle.VT_ROAD;
-
+    local vt = (transport == "road") ? GSVehicle.VT_ROAD : GSVehicle.VT_RAIL;
     if (GSTunnel.BuildTunnel(vt, tile)) {
       local exit_tile = GSTunnel.GetOtherTunnelEnd(tile);
       return { success = true, result = {
@@ -826,9 +1072,174 @@ class NttdGS extends GSController {
   function CmdDemolishTile(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSTile.DemolishTile(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
 
-    if (GSTile.DemolishTile(tile)) {
-      return { success = true, result = { tile = [p.x, p.y] } };
+  // ===========================================================================
+  // COMPANY MANAGEMENT
+  // ===========================================================================
+
+  function CmdBuildCompanyHQ(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (GSCompany.BuildCompanyHQ(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSetLoan(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSCompany.SetLoanAmount(p.amount)) {
+      return { success = true, result = {
+        loan = GSCompany.GetLoanAmount(),
+        balance = GSCompany.GetBankBalance(p.company_id)
+      }};
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRenameCompany(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSCompany.SetName(p.name)) return { success = true, result = { name = p.name } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  // ===========================================================================
+  // TOWN COMMANDS (GS-exclusive)
+  // ===========================================================================
+
+  function CmdFoundTown(p) {
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    local size = ("size" in p) ? p.size : GSTown.TOWN_SIZE_SMALL;
+    local is_city = ("is_city" in p) ? p.is_city : false;
+    local layout = ("road_layout" in p) ? p.road_layout : GSTown.ROAD_LAYOUT_ORIGINAL;
+    local name = ("name" in p) ? p.name : null;
+    local tid = GSTown.FoundTown(tile, size, is_city, layout, name);
+    if (GSTown.IsValidTown(tid)) {
+      local loc = GSTown.GetLocation(tid);
+      return { success = true, result = {
+        town_id = tid, name = GSTown.GetName(tid),
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc)
+      }};
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdExpandTown(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    local houses = ("houses" in p) ? p.houses : 5;
+    if (GSTown.ExpandTown(p.town_id, houses)) {
+      return { success = true, result = {
+        town_id = p.town_id,
+        population = GSTown.GetPopulation(p.town_id)
+      }};
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSetTownGrowth(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    if (GSTown.SetGrowthRate(p.town_id, p.days)) {
+      return { success = true, result = { town_id = p.town_id, growth_rate = p.days } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdPerformTownAction(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    if (!GSTown.IsActionAvailable(p.town_id, p.action)) {
+      return { success = false, error = "Action not available for this town" };
+    }
+    if (GSTown.PerformTownAction(p.town_id, p.action)) {
+      return { success = true, result = { town_id = p.town_id, action = p.action } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdChangeTownRating(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    if (GSTown.ChangeRating(p.town_id, p.company_id, p.delta)) {
+      return { success = true, result = {
+        town_id = p.town_id, company_id = p.company_id,
+        new_rating = GSTown.GetRating(p.town_id, p.company_id)
+      }};
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSetCargoGoal(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    if (GSTown.SetCargoGoal(p.town_id, p.town_effect, p.goal)) {
+      return { success = true, result = { town_id = p.town_id, town_effect = p.town_effect, goal = p.goal } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  // ===========================================================================
+  // SUBSIDIES (GS-exclusive)
+  // ===========================================================================
+
+  function CmdCreateSubsidy(p) {
+    local cargo = p.cargo_type;
+    local from_type = p.from_type;
+    local from_id = p.from_id;
+    local to_type = p.to_type;
+    local to_id = p.to_id;
+    if (GSSubsidy.Create(cargo, from_type, from_id, to_type, to_id)) {
+      return { success = true, result = {} };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  // ===========================================================================
+  // SIGNS
+  // ===========================================================================
+
+  function CmdBuildSign(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    local sid = GSSign.BuildSign(tile, p.name);
+    if (GSSign.IsValidSign(sid)) {
+      return { success = true, result = { sign_id = sid, name = p.name } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveSign(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSSign.RemoveSign(p.sign_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  // ===========================================================================
+  // VEHICLE GROUPS
+  // ===========================================================================
+
+  function CmdCreateGroup(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local vt = this._VehicleTypeEnum(("vehicle_type" in p) ? p.vehicle_type : "train");
+    local parent_gid = ("parent_group_id" in p) ? p.parent_group_id : GSGroup.GROUP_INVALID;
+    local gid = GSGroup.CreateGroup(vt, parent_gid);
+    if (GSGroup.IsValidGroup(gid)) return { success = true, result = { group_id = gid } };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdDeleteGroup(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSGroup.DeleteGroup(p.group_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdMoveToGroup(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSGroup.MoveVehicle(p.group_id, p.vehicle_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSetAutoReplace(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSGroup.SetAutoReplace(p.group_id, p.engine_id_old, p.engine_id_new)) {
+      return { success = true, result = {} };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -840,56 +1251,63 @@ class NttdGS extends GSController {
   function CmdBuyVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local depot_tile = GSMap.GetTileIndex(p.depot_x, p.depot_y);
-
     local vid = GSVehicle.BuildVehicle(depot_tile, p.engine_id);
     if (GSVehicle.IsValidVehicle(vid)) {
-      return { success = true, result = {
-        vehicle_id = vid, name = GSVehicle.GetName(vid)
-      }};
+      return { success = true, result = { vehicle_id = vid, name = GSVehicle.GetName(vid) } };
     }
-    local err = GSError.GetLastErrorString();
-    if (err == "ERR_NONE" && GSEngine.IsWagon(p.engine_id)) {
-      return { success = true, result = {
-        vehicle_id = vid, note = "Wagon auto-attached to train in depot"
-      }};
-    }
-    return { success = false, error = err };
+    return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdSellVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.SellVehicle(p.vehicle_id)) {
-      return { success = true, result = {} };
-    }
+    if (GSVehicle.SellVehicle(p.vehicle_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSellWagon(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local sell_chain = ("sell_chain" in p) ? p.sell_chain : false;
+    local ok = sell_chain
+      ? GSVehicle.SellWagonChain(p.vehicle_id, p.wagon)
+      : GSVehicle.SellWagon(p.vehicle_id, p.wagon);
+    if (ok) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdMoveWagon(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local move_chain = ("move_chain" in p) ? p.move_chain : false;
+    local ok = move_chain
+      ? GSVehicle.MoveWagonChain(p.source_vehicle_id, p.source_wagon, p.dest_vehicle_id, p.dest_wagon)
+      : GSVehicle.MoveWagon(p.source_vehicle_id, p.source_wagon, p.dest_vehicle_id, p.dest_wagon);
+    if (ok) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdStartVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) {
-      return { success = true, result = {
-        running = !GSVehicle.IsStoppedInDepot(p.vehicle_id)
-      }};
+      return { success = true, result = { running = !GSVehicle.IsStoppedInDepot(p.vehicle_id) } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdStopVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.IsStoppedInDepot(p.vehicle_id)) {
-      return { success = true, result = { already_stopped = true } };
-    }
-    if (GSVehicle.StartStopVehicle(p.vehicle_id)) {
-      return { success = true, result = {} };
-    }
+    if (GSVehicle.IsStoppedInDepot(p.vehicle_id)) return { success = true, result = { already_stopped = true } };
+    if (GSVehicle.StartStopVehicle(p.vehicle_id)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdSendToDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.SendVehicleToDepot(p.vehicle_id)) {
-      return { success = true, result = {} };
-    }
+    if (GSVehicle.SendVehicleToDepot(p.vehicle_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSendToDepotService(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSVehicle.SendVehicleToDepotForServicing(p.vehicle_id)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -897,20 +1315,29 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local depot = GSVehicle.GetLocation(p.vehicle_id);
     local share = ("share_orders" in p) ? p.share_orders : true;
-
     local cid = GSVehicle.CloneVehicle(depot, p.vehicle_id, share);
     if (GSVehicle.IsValidVehicle(cid)) {
-      return { success = true, result = {
-        vehicle_id = cid, name = GSVehicle.GetName(cid)
-      }};
+      return { success = true, result = { vehicle_id = cid, name = GSVehicle.GetName(cid) } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdRefitVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.RefitVehicle(p.vehicle_id, p.cargo_id)) {
-      return { success = true, result = {} };
+    if (GSVehicle.RefitVehicle(p.vehicle_id, p.cargo_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdReverseVehicle(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSVehicle.ReverseVehicle(p.vehicle_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRenameVehicle(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSVehicle.SetName(p.vehicle_id, p.name)) {
+      return { success = true, result = { vehicle_id = p.vehicle_id, name = p.name } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -923,14 +1350,60 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local flags = ("order_flags" in p) ? p.order_flags : 0;
     local dest = GSStation.GetLocation(p.station_id);
-    if (!GSMap.IsValidTile(dest)) {
-      return { success = false, error = "Invalid station_id" };
-    }
-
+    if (!GSMap.IsValidTile(dest)) return { success = false, error = "Invalid station_id" };
     if (GSOrder.AppendOrder(p.vehicle_id, dest, flags)) {
-      return { success = true, result = {
-        order_count = GSOrder.GetOrderCount(p.vehicle_id)
-      }};
+      return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdInsertOrder(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local flags = ("order_flags" in p) ? p.order_flags : 0;
+    local dest = GSStation.GetLocation(p.station_id);
+    if (!GSMap.IsValidTile(dest)) return { success = false, error = "Invalid station_id" };
+    if (GSOrder.InsertOrder(p.vehicle_id, p.order_position, dest, flags)) {
+      return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdRemoveOrder(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSOrder.RemoveOrder(p.vehicle_id, p.order_position)) {
+      return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
+    }
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSkipToOrder(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSOrder.SkipToOrder(p.vehicle_id, p.order_position)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdMoveOrder(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSOrder.MoveOrder(p.vehicle_id, p.from_position, p.to_position)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdSetOrderFlags(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSOrder.SetOrderFlags(p.vehicle_id, p.order_position, p.order_flags)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdShareOrders(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSOrder.ShareOrders(p.vehicle_id, p.main_vehicle_id)) return { success = true, result = {} };
+    return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdCopyOrders(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    if (GSOrder.CopyOrders(p.vehicle_id, p.main_vehicle_id)) {
+      return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -940,18 +1413,18 @@ class NttdGS extends GSController {
     local vid = p.vehicle_id;
     local count = GSOrder.GetOrderCount(vid);
     local orders = [];
-
     for (local i = 0; i < count; i++) {
       orders.append({
         index = i,
         destination = GSOrder.GetOrderDestination(vid, i),
-        flags = GSOrder.GetOrderFlags(vid, i)
+        flags = GSOrder.GetOrderFlags(vid, i),
+        is_goto_station = GSOrder.IsGotoStationOrder(vid, i),
+        is_goto_depot = GSOrder.IsGotoDepotOrder(vid, i),
+        is_goto_waypoint = GSOrder.IsGotoWaypointOrder(vid, i),
+        is_conditional = GSOrder.IsConditionalOrder(vid, i)
       });
     }
-
-    return { success = true, result = {
-      vehicle_id = vid, order_count = count, orders = orders
-    }};
+    return { success = true, result = { vehicle_id = vid, order_count = count, orders = orders } };
   }
 
   // ===========================================================================
@@ -977,12 +1450,9 @@ class NttdGS extends GSController {
     ];
     local results = [];
     foreach (o in offsets) {
-      local nx = x + o.dx;
-      local ny = y + o.dy;
+      local nx = x + o.dx, ny = y + o.dy;
       local t = GSMap.GetTileIndex(nx, ny);
-      if (GSMap.IsValidTile(t) && GSRoad.IsRoadTile(t)) {
-        results.append({ nx = nx, ny = ny, dir = o.dir });
-      }
+      if (GSMap.IsValidTile(t) && GSRoad.IsRoadTile(t)) results.append({ nx = nx, ny = ny, dir = o.dir });
     }
     return results;
   }
@@ -991,11 +1461,28 @@ class NttdGS extends GSController {
     for (local i = 1; i < arr.len(); i++) {
       local key = arr[i];
       local j = i - 1;
-      while (j >= 0 && arr[j].distance > key.distance) {
-        arr[j + 1] = arr[j];
-        j--;
-      }
+      while (j >= 0 && arr[j].distance > key.distance) { arr[j + 1] = arr[j]; j--; }
       arr[j + 1] = key;
     }
+  }
+
+  function _VehicleTypeName(vt) {
+    switch (vt) {
+      case GSVehicle.VT_RAIL:  return "train";
+      case GSVehicle.VT_ROAD:  return "road";
+      case GSVehicle.VT_WATER: return "ship";
+      case GSVehicle.VT_AIR:   return "aircraft";
+    }
+    return "unknown";
+  }
+
+  function _VehicleTypeEnum(type_str) {
+    switch (type_str) {
+      case "train":    return GSVehicle.VT_RAIL;
+      case "road":     return GSVehicle.VT_ROAD;
+      case "ship":     return GSVehicle.VT_WATER;
+      case "aircraft": return GSVehicle.VT_AIR;
+    }
+    return GSVehicle.VT_RAIL;
   }
 }

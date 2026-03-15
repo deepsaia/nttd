@@ -114,7 +114,7 @@
 6. **Save/load endpoints** — `/session/save`, `/session/load` via rcon.
 7. **Structured logging** — log observations, actions, results to SQLite or JSON.
 8. **Gym wrapper** — single-agent heartbeat env with reset/step/reward.
-9. **Basic dashboard** — Streamlit prototype showing game state, KPIs, action timeline.
+9. **Basic dashboard** — A tensorboardx dashboard prototype showing game state, KPIs, action timeline.
 
 ---
 

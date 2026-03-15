@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from typing import Any
 
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
@@ -19,20 +20,27 @@ class ActionTracker:
         self._trim()
         return result
 
-    def update_status(self, action_id: str, status: ActionStatus, error: str = "") -> ActionResult | None:
+    def update_result(
+        self,
+        action_id: str,
+        status: ActionStatus,
+        error: str = "",
+        changed_entities: dict[str, Any] | None = None,
+    ) -> ActionResult | None:
         result = self._results.get(action_id)
         if result is None:
             return None
         result.status = status
         result.error = error
+        if changed_entities:
+            result.changed_entities = changed_entities
         return result
 
     def get_result(self, action_id: str) -> ActionResult | None:
         return self._results.get(action_id)
 
     def get_recent(self, limit: int = 50) -> list[ActionResult]:
-        items = list(self._results.values())
-        return items[-limit:]
+        return list(self._results.values())[-limit:]
 
     def _trim(self) -> None:
         while len(self._actions) > self._max_history:
