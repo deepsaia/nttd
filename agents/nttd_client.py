@@ -6,8 +6,6 @@ from typing import Any
 import requests
 import websockets
 
-from nttd.schemas.snapshot import StateSnapshot
-
 logger = logging.getLogger(__name__)
 
 _WS_RECONNECT_BASE = 2.0
@@ -19,6 +17,9 @@ class NttdClient:
 
     HTTP calls use requests (sync, safe to call from executor).
     WebSocket listener runs as an asyncio task managed by start_ws() / stop().
+
+    WebSocket delivers lightweight "heartbeat" trigger messages; actual game
+    state is fetched via HTTP tool calls (see agents/tools.py).
     """
 
     def __init__(
@@ -31,8 +32,10 @@ class NttdClient:
         self.base_url = base_url.rstrip("/")
         self.agent_id = agent_id
         self.company_id = company_id
-        self._history: deque[StateSnapshot] = deque(maxlen=snapshot_history_len)
-        self._snapshot_queue: asyncio.Queue[StateSnapshot] = asyncio.Queue(maxsize=1)
+        # Rolling history of compact snapshots (dicts) for trend data
+        self._history: deque[dict[str, Any]] = deque(maxlen=snapshot_history_len)
+        # Queue: agent's run() loop blocks here waiting for each heartbeat beat
+        self._snapshot_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1)
         self._ws_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
@@ -76,34 +79,44 @@ class NttdClient:
         self.unregister()
 
     async def _ws_loop(self) -> None:
+        import json as _json
+
         ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://")
         backoff = _WS_RECONNECT_BASE
         while True:
             try:
-                async with websockets.connect(f"{ws_url}/ws/{self.agent_id}") as ws:
+                async with websockets.connect(
+                    f"{ws_url}/ws/{self.agent_id}",
+                    ping_interval=None,   # server sends keepalive pings; disable client auto-ping
+                ) as ws:
                     backoff = _WS_RECONNECT_BASE
                     logger.info("WebSocket connected for agent %s", self.agent_id)
                     async for raw in ws:
-                        import json
-                        msg = json.loads(raw)
-                        if msg.get("type") == "snapshot":
-                            snap = StateSnapshot.model_validate(msg["data"])
-                            self._history.append(snap)
-                            # Drop old unread snapshot and enqueue newest
+                        msg = _json.loads(raw)
+                        msg_type = msg.get("type")
+
+                        if msg_type == "heartbeat":
+                            # Lightweight trigger from server — no full state serialization
+                            self._history.append(msg)
                             try:
-                                self._snapshot_queue.put_nowait(snap)
+                                self._snapshot_queue.put_nowait(msg)
                             except asyncio.QueueFull:
                                 try:
                                     self._snapshot_queue.get_nowait()
                                 except asyncio.QueueEmpty:
                                     pass
-                                self._snapshot_queue.put_nowait(snap)
+                                self._snapshot_queue.put_nowait(msg)
+
+                        elif msg_type == "ping":
+                            # Application-level keepalive from server — ignore
+                            pass
+
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as exc:
                 logger.warning(
-                    "WebSocket disconnected for %s, reconnecting in %.0fs",
-                    self.agent_id, backoff,
+                    "WebSocket error for %s, reconnecting in %.0fs: %s",
+                    self.agent_id, backoff, exc,
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, _WS_RECONNECT_CAP)
@@ -113,11 +126,18 @@ class NttdClient:
     # Snapshot access
     # ------------------------------------------------------------------
 
-    async def wait_for_snapshot(self) -> StateSnapshot:
-        """Block until the next heartbeat snapshot arrives."""
+    async def wait_for_snapshot(self) -> dict[str, Any]:
+        """Block until the next heartbeat trigger arrives.
+
+        Returns a lightweight trigger dict:
+          {type, game_date, paused, mode, companies, towns, vehicles}
+
+        Use HTTP tool calls (NttdTools) to fetch full game state.
+        """
         return await self._snapshot_queue.get()
 
-    def get_snapshot_history(self, n: int = 5) -> list[StateSnapshot]:
+    def get_snapshot_history(self, n: int = 5) -> list[dict[str, Any]]:
+        """Last N heartbeat trigger dicts, newest first."""
         snaps = list(self._history)
         return list(reversed(snaps[-n:]))
 

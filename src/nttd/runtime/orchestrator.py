@@ -111,7 +111,12 @@ class Orchestrator:
                 logger.exception("Observer error")
 
     async def _refresh_world_from_gs(self) -> None:
-        """Pull all world entities from GS and update WorldState."""
+        """Pull all world entities from GS and update WorldState.
+
+        Companies are always refreshed first so that subsequent per-company
+        queries (stations, vehicles, financials) operate on a current roster,
+        even when companies were created after the initial admin-port connection.
+        """
         if not self.client.connected:
             return
         try:
@@ -123,14 +128,31 @@ class Orchestrator:
             if r.get("success") and isinstance(r.get("result"), list):
                 self.world.apply_gs_industries(r["result"])
 
+            # Refresh company roster first — guarantees world.companies is current
+            # regardless of whether COMPANY_INFO admin-port events were received.
+            r = await self.client.send_gamescript("get_companies", timeout=10.0)
+            if r.get("success") and isinstance(r.get("result"), list):
+                self.world.apply_gs_companies(r["result"])
+
             for company in list(self.world.companies.values()):
                 if not company.is_active:
                     continue
-                r = await self.client.send_gamescript("get_stations", {"company_id": company.id}, timeout=15.0)
+
+                r = await self.client.send_gamescript(
+                    "get_company_finance", {"company_id": company.id}, timeout=10.0
+                )
+                if r.get("success") and isinstance(r.get("result"), dict):
+                    self.world.apply_gs_company_finance(company.id, r["result"])
+
+                r = await self.client.send_gamescript(
+                    "get_stations", {"company_id": company.id}, timeout=15.0
+                )
                 if r.get("success") and isinstance(r.get("result"), list):
                     self.world.apply_gs_stations(company.id, r["result"])
 
-                r = await self.client.send_gamescript("get_vehicles", {"company_id": company.id}, timeout=15.0)
+                r = await self.client.send_gamescript(
+                    "get_vehicles", {"company_id": company.id}, timeout=15.0
+                )
                 if r.get("success") and isinstance(r.get("result"), list):
                     self.world.apply_gs_vehicles(company.id, r["result"])
 

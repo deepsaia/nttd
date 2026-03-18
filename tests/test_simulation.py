@@ -37,7 +37,6 @@ def _make_mock_client(world: WorldState) -> MagicMock:
 
     async def fake_gs(action: str, params: dict | None = None, timeout: float = 10.0) -> dict[str, Any]:
         logger.info("[GS]   action=%s params=%s", action, params)
-        # Return minimal valid payloads per action type
         if action == "get_towns":
             return {"success": True, "result": [
                 {"id": 0, "name": "Testville", "population": 1200, "houses": 50, "x": 10, "y": 10,
@@ -45,9 +44,17 @@ def _make_mock_client(world: WorldState) -> MagicMock:
             ]}
         if action == "get_industries":
             return {"success": True, "result": []}
+        if action == "get_companies":
+            return {"success": True, "result": [
+                {"id": 0, "name": "Test Corp", "is_ai": False, "color": 0, "manager": "Bot"},
+            ]}
+        if action == "get_company_finance":
+            return {"success": True, "result": {
+                "balance": 100_000, "loan": 50_000, "income": 5_000, "value": 200_000,
+            }}
         if action in ("get_stations", "get_vehicles", "get_subsidies"):
             return {"success": True, "result": []}
-        # Any build action
+        # Any build/GS action
         return {"success": True, "result": {"built": action}}
 
     client.send_rcon = AsyncMock(side_effect=fake_rcon)

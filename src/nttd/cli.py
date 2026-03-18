@@ -127,7 +127,15 @@ def run(
         title="nttd running — Ctrl-C to stop",
     ))
 
-    # 5. Block — logs stream to terminal naturally
+    # 5. Print agent start instructions
+    console.print(
+        "\n[bold]To start agents[/] (in separate terminals):\n"
+        "  [cyan]uv run python agents/scripted_agent.py --company-id 0[/]\n"
+        "  [cyan]uv run python agents/langchain_agent.py --company-id 1 --react[/]\n"
+        "  [cyan]uv run nttd agent scripted --company-id 0[/]  (shortcut)\n"
+    )
+
+    # 6. Block — logs stream to terminal naturally
     try:
         procs[0].wait()
     except (KeyboardInterrupt, SystemExit):
@@ -399,6 +407,64 @@ def scenario(
         + _format_end_conditions(cfg.get("end_conditions", {})),
         title="Active Scenario",
     ))
+
+
+# ---------------------------------------------------------------------------
+# agent  (shortcut to start any agent type)
+# ---------------------------------------------------------------------------
+
+@app.command()
+def agent(
+    agent_type: Annotated[str, typer.Argument(help="scripted | langchain | langgraph")],
+    company_id: Annotated[int, typer.Option("--company-id", "-c", help="Company ID to control")] = 0,
+    agent_id: Annotated[Optional[str], typer.Option("--agent-id", help="Override agent ID")] = None,
+    base_url: Annotated[str, typer.Option("--url", help="nttd server base URL")] = _DEFAULT_BASE_URL,
+    model: Annotated[str, typer.Option("--model", help="LLM model (langchain/langgraph)")] = "gpt-4o-mini",
+    react: Annotated[bool, typer.Option("--react", help="Use ReAct tool-calling mode (langchain)")] = False,
+    planner_interval: Annotated[int, typer.Option("--planner-interval", help="Planner interval (langgraph)")] = 5,
+) -> None:
+    """Start an agent and connect it to the running nttd server.
+
+    Examples:
+      nttd agent scripted --company-id 0
+      nttd agent langchain --company-id 0 --model gpt-4o-mini --react
+      nttd agent langgraph --company-id 1 --planner-interval 5
+
+    The agent connects to the heartbeat loop and calls decide() on every beat.
+    Run this in a separate terminal while nttd is running.
+    """
+    import asyncio
+
+    _check_server(base_url)
+
+    agent_type = agent_type.lower()
+    if agent_type == "scripted":
+        from agents.scripted_agent import ScriptedAgent
+        a = ScriptedAgent(base_url=base_url, company_id=company_id, agent_id=agent_id)
+    elif agent_type in ("langchain", "lc"):
+        from agents.langchain_agent import LangChainNttdAgent
+        a = LangChainNttdAgent(
+            base_url=base_url, company_id=company_id, agent_id=agent_id,
+            model=model, use_react=react,
+        )
+    elif agent_type in ("langgraph", "lg"):
+        from agents.langgraph_agent import LangGraphNttdAgent
+        a = LangGraphNttdAgent(
+            base_url=base_url, company_id=company_id, agent_id=agent_id,
+            model=model, planner_interval=planner_interval,
+        )
+    else:
+        console.print(f"[red]Unknown agent type: {agent_type}[/]  (use: scripted | langchain | langgraph)")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[bold]Starting {agent_type} agent[/]  "
+        f"company=[cyan]{company_id}[/]  server=[cyan]{base_url}[/]"
+    )
+    try:
+        asyncio.run(a.run())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Agent stopped.[/]")
 
 
 # ---------------------------------------------------------------------------

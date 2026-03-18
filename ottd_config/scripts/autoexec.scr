@@ -1,3 +1,3 @@
-; nttd autoexec — runs when OpenTTD starts with this config directory.
-; Sets up the nttd GameScript for the next new game.
-; After this, run 'newgame' to start a game with the GS active.
+# nttd autoexec — runs when OpenTTD starts with this config directory.
+# OpenTTD console scripts use '#' for comments, not ';'.
+# Add console commands below (e.g. 'setting ...') if needed at startup.

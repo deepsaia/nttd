@@ -192,7 +192,8 @@ class WorldState:
         """
         seen: dict[tuple[int, str, tuple[int, ...]], Route] = {}
         counter = 0
-        for v in self.vehicles.values():
+        # Snapshot the values to avoid RuntimeError if dict is modified concurrently
+        for v in list(self.vehicles.values()):
             station_ids = tuple(o.destination for o in v.orders if o.is_goto_station)
             if not station_ids:
                 continue
@@ -209,6 +210,64 @@ class WorldState:
             seen[key].total_profit_this_year += v.profit_this_year
             seen[key].total_profit_last_year += v.profit_last_year
         return list(seen.values())
+
+    def apply_gs_companies(self, results: list[dict[str, Any]]) -> None:
+        """Populate companies dict from GS get_companies result.
+
+        Merges with existing entries so admin-port financial data (money/loan/income)
+        written by the Bridge is preserved when GS doesn't include those fields.
+        Companies absent from the GS result are marked inactive.
+        """
+        seen: set[int] = set()
+        for r in results:
+            cid = r.get("id")
+            if cid is None:
+                continue
+            seen.add(cid)
+            company = self.companies.get(cid)
+            if company is None:
+                company = Company(id=cid)
+            company.name = r.get("name", company.name)
+            company.manager = r.get("manager", company.manager)
+            company.color = r.get("color", company.color)
+            company.is_ai = r.get("is_ai", company.is_ai)
+            company.is_active = True
+            # Financial fields — present in some GS builds
+            if "balance" in r:
+                company.money = r["balance"]
+            if "loan" in r:
+                company.loan = r["loan"]
+            if "income" in r:
+                company.income = r["income"]
+            if "value" in r:
+                company.value = r["value"]
+            self.companies[cid] = company
+        for cid in list(self.companies.keys()):
+            if cid not in seen:
+                self.companies[cid].is_active = False
+        logger.debug("WorldState: refreshed %d companies from GS", len(seen))
+
+    def apply_gs_company_finance(self, company_id: int, result: dict[str, Any]) -> None:
+        """Merge financial data from GS get_company_finance into an existing company entry.
+
+        GS CmdGetCompanyFinance returns: balance, loan, q1_income, q1_value, q2_income, q2_value.
+        We map these to Company fields, falling back to existing values when absent.
+        """
+        company = self.companies.get(company_id)
+        if company is None:
+            return
+
+        def _int(val: Any, default: int) -> int:
+            try:
+                return int(val) if val is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        company.money = _int(result.get("balance"), company.money)
+        company.loan = _int(result.get("loan"), company.loan)
+        # GS returns quarterly income; use q1 as the current-period income
+        company.income = _int(result.get("q1_income", result.get("income")), company.income)
+        company.value = _int(result.get("q1_value", result.get("value")), company.value)
 
     def apply_gs_subsidies(self, results: list[dict[str, Any]]) -> None:
         """Populate subsidies list from GS get_subsidies result."""

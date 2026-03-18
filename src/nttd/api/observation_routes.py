@@ -27,12 +27,12 @@ router = APIRouter(prefix="/state", tags=["observation"])
 
 
 @router.get("/full", response_model=StateSnapshot)
-def get_full_state() -> StateSnapshot:
+async def get_full_state() -> StateSnapshot:
     return world.snapshot()
 
 
 @router.get("/company/{company_id}", response_model=Company)
-def get_company(company_id: int) -> Company:
+async def get_company(company_id: int) -> Company:
     company = world.companies.get(company_id)
     if company is None:
         raise HTTPException(status_code=404, detail=f"Company {company_id} not found")
@@ -40,33 +40,33 @@ def get_company(company_id: int) -> Company:
 
 
 @router.get("/towns", response_model=list[Town])
-def get_towns() -> list[Town]:
+async def get_towns() -> list[Town]:
     return list(world.towns.values())
 
 
 @router.get("/industries", response_model=list[Industry])
-def get_industries() -> list[Industry]:
+async def get_industries() -> list[Industry]:
     return list(world.industries.values())
 
 
 @router.get("/stations", response_model=list[Station])
-def get_stations() -> list[Station]:
+async def get_stations() -> list[Station]:
     return list(world.stations.values())
 
 
 @router.get("/vehicles", response_model=list[Vehicle])
-def get_vehicles() -> list[Vehicle]:
+async def get_vehicles() -> list[Vehicle]:
     return list(world.vehicles.values())
 
 
 @router.get("/metrics")
-def get_metrics() -> dict[str, Any]:
+async def get_metrics() -> dict[str, Any]:
     """Latest per-company game metrics snapshot. Suitable for dashboards and monitoring."""
     return _metrics.get_latest()
 
 
 @router.get("/compact", response_model=CompactSnapshot)
-def get_compact_state(company_id: int = -1) -> CompactSnapshot:
+async def get_compact_state(company_id: int = -1) -> CompactSnapshot:
     """LLM-friendly summary of the current game state (~1-3 KB)."""
     game = world.game
     stations = list(world.stations.values())

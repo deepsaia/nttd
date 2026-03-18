@@ -44,21 +44,41 @@ async def agent_websocket(websocket: WebSocket, agent_id: str) -> None:
 
 
 async def _push_loop(agent_id: str, websocket: WebSocket) -> None:
-    """Push snapshots to agent when broker delivers the next heartbeat snapshot."""
+    """Deliver heartbeat triggers to agents.
+
+    Sends a lightweight trigger on every heartbeat beat instead of the full
+    state snapshot.  Agents use HTTP tool calls to fetch whatever state slices
+    they need.  This keeps WebSocket messages small and deterministic.
+    """
     broker = snapshot_broker_registry.get(agent_id)
     if broker is None:
         return
 
     while True:
         try:
-            snapshot = await broker.wait_for_snapshot()
-            await websocket.send_json({
-                "type": "snapshot",
-                "data": snapshot.model_dump(),
-            })
+            # Wait for next heartbeat beat (or keepalive timeout)
+            try:
+                snapshot = await asyncio.wait_for(
+                    broker.wait_for_snapshot(), timeout=20.0
+                )
+                # Send lightweight trigger — NOT the full state dump
+                await websocket.send_json({
+                    "type": "heartbeat",
+                    "game_date": snapshot.game.game_date,
+                    "paused": snapshot.game.paused,
+                    "mode": snapshot.game.mode,
+                    "companies": len(snapshot.companies),
+                    "towns": len(snapshot.towns),
+                    "vehicles": len(snapshot.vehicles),
+                })
+            except asyncio.TimeoutError:
+                # No heartbeat in 20 s — send a keepalive so the connection
+                # stays alive between long heartbeat intervals
+                await websocket.send_json({"type": "ping"})
         except asyncio.CancelledError:
             break
         except Exception:
+            logger.warning("Push loop error for agent %s — stopping", agent_id, exc_info=True)
             break
 
 
