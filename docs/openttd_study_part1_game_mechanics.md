@@ -29,12 +29,19 @@ OpenTTD is a transport simulation where players build and manage transport netwo
 
 ### 1.3 Four Climates
 
-| Climate | Cargo Types | Special Requirements |
-|---------|------------|---------------------|
-| **Temperate** | Coal, Goods, Grain, Iron Ore, Mail, Livestock, Oil, Passengers, Steel, Valuables, Wood | None |
-| **Sub-Arctic** | Coal, Food, Goods, Gold, Livestock, Mail, Oil, Paper, Passengers, Wheat, Wood | Towns above snow line need food |
-| **Sub-Tropical** | Copper Ore, Diamonds, Food, Fruit, Goods, Mail, Maize, Oil, Passengers, Rubber, Water, Wood | Desert towns need food + water |
-| **Toyland** | Batteries, Bubbles, Candyfloss, Cola, Fizzy Drinks, Mail, Passengers, Plastic, Sugar, Sweets, Toffee, Toys | None |
+| Climate          | Coal | Goods | Grain | Iron Ore | Mail | Livestock | Oil | Passengers | Steel | Valuables | Wood | Food | Gold | Paper | Wheat | Copper Ore | Diamonds | Fruit | Maize | Rubber | Water | Batteries | Bubbles | Candyfloss | Cola | Fizzy Drinks | Plastic | Sugar | Sweets | Toffee | Toys |
+| ---------------- | ---- | ----- | ----- | -------- | ---- | --------- | --- | ---------- | ----- | --------- | ---- | ---- | ---- | ----- | ----- | ---------- | -------- | ----- | ----- | ------ | ----- | --------- | ------- | ---------- | ---- | ------------ | ------- | ----- | ------ | ------ | ---- |
+| **Temperate**    | ✓    | ✓     | ✓     | ✓        | ✓    | ✓         | ✓   | ✓          | ✓     | ✓         | ✓    | -    | -    | -     | -     | -          | -        | -     | -     | -      | -     | -         | -       | -          | -    | -            | -       | -     | -      | -      | -    |
+| **Sub-Arctic**   | ✓    | ✓     | -     | -        | ✓    | ✓         | ✓   | ✓          | -     | -         | ✓    | ✓    | ✓    | ✓     | ✓     | -          | -        | -     | -     | -      | -     | -         | -       | -          | -    | -            | -       | -     | -      | -      | -    |
+| **Sub-Tropical** | -    | ✓     | -     | -        | ✓    | -         | ✓   | ✓          | -     | -         | ✓    | ✓    | -    | -     | -     | ✓          | ✓        | ✓     | ✓     | ✓      | ✓     | -         | -       | -          | -    | -            | -       | -     | -      | -      | -    |
+| **Toyland**      | -    | -     | -     | -        | ✓    | -         | -   | ✓          | -     | -         | -    | -    | -    | -     | -     | -          | -        | -     | -     | -      | -     | ✓         | ✓       | ✓          | ✓    | ✓            | ✓       | ✓     | ✓      | ✓      | ✓    |
+
+
+#### Special Requirements
+- Temperate: None
+- Sub-Arctic: Towns above snow line need food
+- Sub-Tropical: Desert towns need food + water
+- Toyland: None
 
 ---
 
