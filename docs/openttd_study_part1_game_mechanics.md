@@ -29,13 +29,39 @@ OpenTTD is a transport simulation where players build and manage transport netwo
 
 ### 1.3 Four Climates
 
-| Climate          | Coal | Goods | Grain | Iron Ore | Mail | Livestock | Oil | Passengers | Steel | Valuables | Wood | Food | Gold | Paper | Wheat | Copper Ore | Diamonds | Fruit | Maize | Rubber | Water | Batteries | Bubbles | Candyfloss | Cola | Fizzy Drinks | Plastic | Sugar | Sweets | Toffee | Toys |
-| ---------------- | ---- | ----- | ----- | -------- | ---- | --------- | --- | ---------- | ----- | --------- | ---- | ---- | ---- | ----- | ----- | ---------- | -------- | ----- | ----- | ------ | ----- | --------- | ------- | ---------- | ---- | ------------ | ------- | ----- | ------ | ------ | ---- |
-| **Temperate**    | ✓    | ✓     | ✓     | ✓        | ✓    | ✓         | ✓   | ✓          | ✓     | ✓         | ✓    | -    | -    | -     | -     | -          | -        | -     | -     | -      | -     | -         | -       | -          | -    | -            | -       | -     | -      | -      | -    |
-| **Sub-Arctic**   | ✓    | ✓     | -     | -        | ✓    | ✓         | ✓   | ✓          | -     | -         | ✓    | ✓    | ✓    | ✓     | ✓     | -          | -        | -     | -     | -      | -     | -         | -       | -          | -    | -            | -       | -     | -      | -      | -    |
-| **Sub-Tropical** | -    | ✓     | -     | -        | ✓    | -         | ✓   | ✓          | -     | -         | ✓    | ✓    | -    | -     | -     | ✓          | ✓        | ✓     | ✓     | ✓      | ✓     | -         | -       | -          | -    | -            | -       | -     | -      | -      | -    |
-| **Toyland**      | -    | -     | -     | -        | ✓    | -         | -   | ✓          | -     | -         | -    | -    | -    | -     | -     | -          | -        | -     | -     | -      | -     | ✓         | ✓       | ✓          | ✓    | ✓            | ✓       | ✓     | ✓      | ✓      | ✓    |
-
+| Cargo Type   | Temperate | Sub-Arctic | Sub-Tropical | Toyland |
+| ------------ | --------- | ---------- | ------------ | ------- |
+| Coal         | ✓         | ✓          | -            | -       |
+| Goods        | ✓         | ✓          | ✓            | -       |
+| Grain        | ✓         | -          | -            | -       |
+| Iron Ore     | ✓         | -          | -            | -       |
+| Mail         | ✓         | ✓          | ✓            | ✓       |
+| Livestock    | ✓         | ✓          | -            | -       |
+| Oil          | ✓         | ✓          | ✓            | -       |
+| Passengers   | ✓         | ✓          | ✓            | ✓       |
+| Steel        | ✓         | -          | -            | -       |
+| Valuables    | ✓         | -          | -            | -       |
+| Wood         | ✓         | ✓          | ✓            | -       |
+| Food         | -         | ✓          | ✓            | -       |
+| Gold         | -         | ✓          | -            | -       |
+| Paper        | -         | ✓          | -            | -       |
+| Wheat        | -         | ✓          | -            | -       |
+| Copper Ore   | -         | -          | ✓            | -       |
+| Diamonds     | -         | -          | ✓            | -       |
+| Fruit        | -         | -          | ✓            | -       |
+| Maize        | -         | -          | ✓            | -       |
+| Rubber       | -         | -          | ✓            | -       |
+| Water        | -         | -          | ✓            | -       |
+| Batteries    | -         | -          | -            | ✓       |
+| Bubbles      | -         | -          | -            | ✓       |
+| Candyfloss   | -         | -          | -            | ✓       |
+| Cola         | -         | -          | -            | ✓       |
+| Fizzy Drinks | -         | -          | -            | ✓       |
+| Plastic      | -         | -          | -            | ✓       |
+| Sugar        | -         | -          | -            | ✓       |
+| Sweets       | -         | -          | -            | ✓       |
+| Toffee       | -         | -          | -            | ✓       |
+| Toys         | -         | -          | -            | ✓       |
 
 #### Special Requirements
 - Temperate: None
