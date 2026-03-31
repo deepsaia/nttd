@@ -1786,7 +1786,8 @@ Currently nttd stores everything in-memory (`WorldState`, `ActionTracker`, `Even
 
 **Start with SQLite** because:
 - Zero infrastructure (single file, no server process)
-- Python stdlib `sqlite3` or `aiosqlite` for async
+- Python stdlib `sqlalchemy` or `sqlite3` or `aiosqlite` for async
+- We should take care of async operationson sqlite.
 - Good enough for single-server nttd deployments
 - JSON column support via `json_extract()`
 
