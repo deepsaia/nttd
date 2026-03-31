@@ -2,7 +2,7 @@
 
 > Companion to Parts 1-3. Covers multiplayer mechanics, LLM agent integration, admin client architecture, game state management, and technical constraint mitigation strategies.
 >
-> **Primary sources**: OpenTTD C++ source (`/Users/228496/exp/openTTD`), OpenTTD wiki, nttd codebase, docs.openttd.org GS/AI API references.
+> **Primary sources**: OpenTTD C++ source (`[openTTD](https://github.com/OpenTTD/OpenTTD)`), OpenTTD wiki, nttd codebase, docs.openttd.org GS/AI API references.
 
 ---
 
