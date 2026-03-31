@@ -1233,8 +1233,8 @@ We can build agent-to-agent messaging on top of these primitives:
 Agent A                    nttd Server                    Agent B
    │                          │                              │
    │  POST /messages/send     │                              │
-   │  { to: "agent_b",       │                              │
-   │    body: "..." }        │                              │
+   │  { to: "agent_b",        │                              │
+   │    body: "..." }         │                              │
    │─────────────────────────>│                              │
    │                          │  Store in message queue      │
    │                          │  Push via WebSocket          │
@@ -1314,16 +1314,16 @@ The Admin Console is a web-based dashboard for managing OpenTTD multiplayer sess
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Admin Console (React)                        │
-│                                                                  │
-│  ┌─────────────┐ ┌──────────────┐ ┌──────────────┐ ┌─────────┐│
-│  │ Session     │ │ Players &    │ │ Metrics &    │ │ Leader- ││
-│  │ Management  │ │ Agents       │ │ Timeline     │ │ board   ││
-│  │ (Page 1)   │ │ (Page 2)     │ │ (Page 3)     │ │ (Page 4)││
-│  └──────┬──────┘ └──────┬───────┘ └──────┬───────┘ └────┬────┘│
-│         └────────────────┼───────────────┼───────────────┘     │
-│                          │               │                      │
-│                    REST API + WebSocket                          │
+│                     Admin Console (React)                       │
+│                                                                 │
+│  ┌─────────────┐ ┌──────────────┐ ┌──────────────┐ ┌─────────┐  │
+│  │ Session     │ │ Players &    │ │ Metrics &    │ │ Leader- │  │
+│  │ Management  │ │ Agents       │ │ Timeline     │ │ board   │  │
+│  │ (Page 1)    │ │ (Page 2)     │ │ (Page 3)     │ │ (Page 4)│  │
+│  └──────┬──────┘ └──────┬───────┘ └──────┬───────┘ └────┬────┘  │
+│         └───────────────┼────────────────┼──────────────┘       │
+│                         │                │                      │
+│                        REST API + WebSocket                     │
 └──────────────────────────┼───────────────┼──────────────────────┘
                            │               │
                     ┌──────▼───────────────▼──────┐
@@ -1334,7 +1334,7 @@ The Admin Console is a web-based dashboard for managing OpenTTD multiplayer sess
                            Admin Port (3977)
                                   │
                     ┌─────────────▼───────────────┐
-                    │    OpenTTD Dedicated Server  │
+                    │    OpenTTD Dedicated Server │
                     └─────────────────────────────┘
 ```
 
@@ -1674,30 +1674,30 @@ GET /metrics/session/summary
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Game: Day 120, Year 1951  │  Speed: 50%  │  ▶ Playing     │
+│  Game: Day 120, Year 1951  │  Speed: 50%  │  ▶ Playing      │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
+│                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Company Balance Over Time (line chart)               │   │
+│  │  Company Balance Over Time (line chart)              │   │
 │  │  — Company 0 (blue)  — Company 1 (red)               │   │
-│  │  ═══════════════════════════════════════              │   │
+│  │  ═══════════════════════════════════════             │   │
 │  │  Y: £0 ... £500K    X: Day 1 ... Day 120             │   │
 │  └──────────────────────────────────────────────────────┘   │
-│                                                              │
+│                                                             │
 │  ┌────────────────────┐  ┌───────────────────────────────┐  │
 │  │ Vehicle Counts     │  │ Revenue by Type (stacked bar) │  │
 │  │ (bar chart)        │  │ Train | Road | Air | Ship     │  │
 │  └────────────────────┘  └───────────────────────────────┘  │
-│                                                              │
+│                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Timeline Scrubber                                    │   │
-│  │  |====●========================|                      │   │
-│  │  Day 1            Day 60          Day 120             │   │
-│  │                                                       │   │
-│  │  Events: ▲ Vehicle crashed  ★ Subsidy offered         │   │
+│  │  Timeline Scrubber                                   │   │
+│  │  |====●========================|                     │   │
+│  │  Day 1            Day 60          Day 120            │   │
+│  │                                                      │   │
+│  │  Events: ▲ Vehicle crashed  ★ Subsidy offered        │   │
 │  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  Filters: [Company ▼] [Metric ▼] [Resolution ▼] [Apply]    │
+│                                                             │
+│  Filters: [Company ▼] [Metric ▼] [Resolution ▼] [Apply]     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -1995,7 +1995,7 @@ class SessionRecorder:
 Agent                    nttd Server                       GS
   │                         │                               │
   │ POST /pathfind          │                               │
-  │ { from, to, type }     │                               │
+  │ { from, to, type }      │                               │
   │────────────────────────>│                               │
   │                         │  Check tile cache             │
   │                         │  If miss: query GS            │
@@ -2006,14 +2006,14 @@ Agent                    nttd Server                       GS
   │                         │                               │
   │                         │  Run A* on cached graph       │
   │                         │                               │
-  │ { path: [...tiles],    │                               │
-  │   cost: 15000,         │                               │
-  │   bridges: [...],      │                               │
-  │   tunnels: [...] }     │                               │
+  │ { path: [...tiles],     │                               │
+  │   cost: 15000,          │                               │
+  │   bridges: [...],       │                               │
+  │   tunnels: [...] }      │                               │
   │<────────────────────────│                               │
   │                         │                               │
   │ POST /actions/submit    │                               │
-  │ (build_road per tile)  │                               │
+  │ (build_road per tile)   │                               │
   │────────────────────────>│  Execute via GS               │
 ```
 
@@ -2349,7 +2349,7 @@ The leaderboard shows performance comparison across players in a session and acr
 #### Per-Session Leaderboard
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────────┐
 │  Session: "4-Agent Competition" │ Map: 256x256 Temperate │ 365 days    │
 ├──────┬──────────┬──────────┬────────┬────────┬──────────┬──────────────┤
 │ Rank │ Player   │ Type     │ Value  │ Rating │ Cargo    │ Vehicles     │
@@ -2614,18 +2614,18 @@ nttd Server                         Admin Console (React)
     │                                      │
     │  WebSocket /ws/admin                 │
     │─────────────────────────────────────>│  useWebSocket() hook
-    │  { type: "state_update",            │
-    │    game_date: 730120, ... }         │  Updates Zustand store
+    │  { type: "state_update",             │
+    │    game_date: 730120, ... }          │  Updates Zustand store
     │                                      │  Triggers re-renders
     │                                      │
-    │  GET /metrics/timeseries            │
+    │  GET /metrics/timeseries             │
     │<─────────────────────────────────────│  useMetrics() hook
-    │  [{ date: 730001, value: ... }]     │  Feeds Recharts
+    │  [{ date: 730001, value: ... }]      │  Feeds Recharts
     │─────────────────────────────────────>│
     │                                      │
-    │  GET /state/full                    │
+    │  GET /state/full                     │
     │<─────────────────────────────────────│  Periodic poll (fallback)
-    │  { companies: [...], ... }          │
+    │  { companies: [...], ... }           │
     │─────────────────────────────────────>│
 ```
 
