@@ -2260,13 +2260,13 @@ Every command from every agent and human is tracked with:
 ```
 Agent A (Company 0)          Agent B (Company 1)
     │                            │
-    ├─ Fetch state ──────┐      ├─ Fetch state ──────┐
-    │                    │      │                    │     ← These run in PARALLEL
-    ├─ Submit action ◄───┘      ├─ Submit action ◄───┘       (different companies)
+    ├─ Fetch state ──────┐       ├─ Fetch state ──────┐
+    │                    │       │                    │     ← These run in PARALLEL
+    ├─ Submit action ◄───┘       ├─ Submit action ◄───┘       (different companies)
     │                            │
-    ├─ Fetch state ──────┐      ├─ Fetch state ──────┐
-    │                    │      │                    │
-    ├─ Submit action ◄───┘      ├─ Submit action ◄───┘
+    ├─ Fetch state ──────┐       ├─ Fetch state ──────┐
+    │                    │       │                    │
+    ├─ Submit action ◄───┘       ├─ Submit action ◄───┘
     │                            │
     ▼                            ▼
 ```
