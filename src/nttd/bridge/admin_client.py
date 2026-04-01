@@ -70,6 +70,9 @@ class AdminClient:
         # Set to True to suppress reconnect after an intentional disconnect()
         self._intentional_disconnect = False
 
+        # Callbacks for unsolicited GS game events (_event=true)
+        self._event_callbacks: list[Callable[[dict[str, Any]], Any]] = []
+
     @property
     def connected(self) -> bool:
         return self._connected
@@ -77,6 +80,20 @@ class AdminClient:
     def on_reconnect(self, callback: Callable[[], Any]) -> None:
         """Register a callback to be called after every successful (re)connect."""
         self._reconnect_callbacks.append(callback)
+
+    def on_game_event(self, callback: Callable[[dict[str, Any]], Any]) -> None:
+        """Register a callback for unsolicited GS game events."""
+        self._event_callbacks.append(callback)
+
+    async def health_ping(self) -> bool:
+        """Ping the GS to verify the connection is alive."""
+        if not self._connected:
+            return False
+        try:
+            result = await self.send_gamescript("ping", timeout=5.0)
+            return result.get("success", False)
+        except Exception:
+            return False
 
     async def connect(self, password: str, name: str = "nttd") -> bool:
         self._password = password
@@ -211,6 +228,15 @@ class AdminClient:
         return {"id": correlation_id, "success": chunks[0].get("success", True), "result": merged_result}
 
     def _handle_gs_response(self, data: dict[str, Any]) -> None:
+        # Unsolicited game event from GS event listener
+        if data.get("_event"):
+            for cb in self._event_callbacks:
+                try:
+                    cb(data)
+                except Exception:
+                    logger.exception("GS event callback error")
+            return
+
         cid = data.get("id", "")
         if cid not in self._gs_events:
             logger.debug("GS response for unknown id: %s", cid)

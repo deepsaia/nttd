@@ -365,6 +365,9 @@ class NttdGS extends GSController {
         // ---- ENGINE DETAILS (2.2.16) --------------------------------------
         case "get_engine_details": return this.CmdGetEngineDetails(p);
 
+        // ---- TILE AREA (2.4.6) -------------------------------------------
+        case "get_tile_area": return this.CmdGetTileArea(p);
+
         default:
           return { success = false, error = "Unknown action: " + action };
       }
@@ -2108,6 +2111,44 @@ class NttdGS extends GSController {
       road_type = GSEngine.GetRoadType(eid),
       can_refit = GSEngine.CanRefitCargo(eid, GSEngine.GetCargoType(eid)),
     }};
+  }
+
+  // ===========================================================================
+  // TILE AREA (2.4.6) — batch tile scan for pathfinding cache
+  // ===========================================================================
+
+  function CmdGetTileArea(p) {
+    if (!("x1" in p) || !("y1" in p) || !("x2" in p) || !("y2" in p))
+      return { success = false, error = "params.x1, y1, x2, y2 required" };
+
+    local x1 = p.x1, y1 = p.y1, x2 = p.x2, y2 = p.y2;
+    local max_tiles = ("max_tiles" in p) ? p.max_tiles : 400;
+
+    if ((x2 - x1) * (y2 - y1) > max_tiles)
+      return { success = false, error = "Area too large (max " + max_tiles + " tiles)" };
+
+    local tiles = [];
+    for (local x = x1; x < x2; x++) {
+      for (local y = y1; y < y2; y++) {
+        local tile = GSMap.GetTileIndex(x, y);
+        if (!GSMap.IsValidTile(tile)) continue;
+
+        tiles.append({
+          x = x, y = y,
+          height = GSTile.GetMaxHeight(tile),
+          slope = GSTile.GetSlope(tile),
+          buildable = GSTile.IsBuildable(tile),
+          water = GSTile.IsWaterTile(tile),
+          coast = GSTile.IsCoastTile(tile),
+          has_road = GSRoad.IsRoadTile(tile),
+          has_rail = GSRail.IsRailTile(tile),
+          owner = GSTile.GetOwner(tile),
+          is_station = GSStation.GetStationID(tile) != GSStation.STATION_INVALID,
+          has_tree = GSTile.HasTreeOnTile(tile),
+        });
+      }
+    }
+    return { success = true, result = tiles };
   }
 
   // ===========================================================================

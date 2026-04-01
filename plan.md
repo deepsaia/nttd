@@ -235,36 +235,31 @@ Entity data (for dashboard):
 ### 2.4 Pathfinding Service
 **Ref**: `docs/openttd_study_part4...md` §14
 
-- [ ] **2.4.1** Tile cache: `src/nttd/pathfinding/tile_cache.py` — in-memory 2D array of tile data
-  - Load from GS via batched `get_tile_info` / new `get_tile_area` command
-  - Invalidate on construction commands
-- [ ] **2.4.2** A* core: `src/nttd/pathfinding/astar.py` — generic A* with pluggable cost functions
-  - Priority queue (heapq), visited set, path reconstruction
-  - Max iterations limit to prevent runaway searches
-- [ ] **2.4.3** Road pathfinder: `src/nttd/pathfinding/road.py`
-  - Cost model: flat 100, slope +200, bridge +150/tile, tunnel +120/tile
-  - Bridge/tunnel detection as neighbor options
-- [ ] **2.4.4** Rail pathfinder: `src/nttd/pathfinding/rail.py`
-  - Direction-aware state (x, y, direction)
-  - Cost model aligned with YAPF: curves, slopes, crossings
-- [ ] **2.4.5** Water pathfinder: `src/nttd/pathfinding/water.py`
-  - Existing water tiles = free, canal construction = expensive
-  - Hierarchical: region-level then tile-level
-- [ ] **2.4.6** New GS commands: `get_tile_area` (batch tile scan for cache loading)
-- [ ] **2.4.7** API endpoint: `POST /pathfind` with transport_type, from/to, options
+- [x] **2.4.1** Tile cache: `src/nttd/pathfinding/tile_cache.py` — 2D array, batch loading via GS
+  - `load_area`, `load_full`, `load_corridor` (with margin), `invalidate_area/tile`
+- [x] **2.4.2** A* core: `src/nttd/pathfinding/astar.py` — generic A* with CostFunction protocol
+  - Priority queue (heapq), visited set, path reconstruction, max_iterations limit
+- [x] **2.4.3** Road pathfinder: `src/nttd/pathfinding/road.py`
+  - Cost model: flat=100, slope=+200, crossing=+300, demolish=+500
+- [x] **2.4.4** Rail pathfinder: `src/nttd/pathfinding/rail.py`
+  - Direction-aware state (x, y, direction), no 180° turns, curve penalties
+- [x] **2.4.5** Water pathfinder: `src/nttd/pathfinding/water.py`
+  - Water=50, canal=500, lock=800, coast=100
+- [x] **2.4.6** GS command: `get_tile_area` — batch tile scan (up to 400 tiles per call)
+- [x] **2.4.7** API endpoint: `POST /admin/pathfind` with transport_type, from/to, options
+- [x] **2.4.8** Service layer: `src/nttd/pathfinding/service.py` — orchestrates cache + A*
 
 ### 2.5 Connection & Concurrency Hardening
 **Ref**: `docs/openttd_study_part4...md` §15, §17
 
-- [ ] **2.5.1** Auto-reconnect with exponential backoff (already partial, needs completion)
-- [ ] **2.5.2** Save/load detection → clear WorldState, notify agents
-- [ ] **2.5.3** Per-company asyncio.Lock for action serialization
-- [ ] **2.5.4** WebSocket connection manager: handle 150+ concurrent connections
-  - Lightweight trigger messages only (not full snapshots)
-  - Agent fetches state via REST after trigger
-- [ ] **2.5.5** GS query pipeline: send next query while waiting for response
-- [ ] **2.5.6** Staggered refresh: companies every cycle, towns/industries every 5 cycles
-- [ ] **2.5.7** Health check ping to admin port (periodic PING/PONG)
+- [x] **2.5.1** Auto-reconnect with exponential backoff (already in admin_client.py)
+- [ ] **2.5.2** Save/load detection → clear WorldState, notify agents [deferred — needs protocol analysis]
+- [x] **2.5.3** Per-company asyncio.Lock: `src/nttd/runtime/company_lock.py` — CompanyLockManager
+  - Wired into orchestrator `_execute_actions`, serializes same-company actions
+- [x] **2.5.4** WebSocket connection manager (already exists in ws_routes.py, lightweight triggers)
+- [ ] **2.5.5** GS query pipeline: send next query while waiting for response [deferred — optimization]
+- [x] **2.5.6** Staggered refresh: companies every cycle, towns/industries every 5 cycles
+- [x] **2.5.7** Health ping: `admin_client.health_ping()` + GS event forwarding via `on_game_event()`
 
 ---
 

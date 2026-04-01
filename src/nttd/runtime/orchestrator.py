@@ -11,6 +11,7 @@ from typing import Any
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
+from nttd.runtime.company_lock import CompanyLockManager
 from nttd.runtime.end_conditions import EndConditionChecker
 from nttd.schemas.action_envelope import ActionEnvelope, ActionMode
 from nttd.schemas.action_result import ActionStatus
@@ -21,6 +22,7 @@ from nttd.state.world import WorldState
 logger = logging.getLogger(__name__)
 
 _GS_REFRESH_INTERVAL_REALTIME = 10.0   # seconds between GS refreshes in async_realtime mode
+_STAGGER_INTERVAL = 5                  # refresh towns/industries every N cycles
 
 # OpenTTD at default tick rate (30 fps) with minutes_per_calendar_year=12:
 #   1 game-year = 12 real minutes → 1 game-day ≈ 1.97s.
@@ -60,6 +62,12 @@ class Orchestrator:
         self._end_checker: EndConditionChecker = EndConditionChecker(EndConditionsConfig())
         # Notified when the simulation ends due to an end condition
         self.on_end: list[Any] = []
+
+        # Per-company locks for action serialization (2.5.3)
+        self.company_locks: CompanyLockManager = CompanyLockManager()
+
+        # Staggered refresh counter (2.5.6)
+        self._refresh_cycle: int = 0
 
     @property
     def mode(self) -> RuntimeMode:
@@ -111,22 +119,24 @@ class Orchestrator:
                 logger.exception("Observer error")
 
     async def _refresh_world_from_gs(self) -> None:
-        """Pull all world entities from GS and update WorldState.
+        """Pull world entities from GS and update WorldState.
 
-        Companies are always refreshed first so that subsequent per-company
-        queries (stations, vehicles, financials) operate on a current roster,
-        even when companies were created after the initial admin-port connection.
+        Companies, stations, vehicles are refreshed every cycle.
+        Towns and industries are staggered (every N cycles) since they change slowly.
         """
         if not self.client.connected:
             return
+        self._refresh_cycle += 1
         try:
-            r = await self.client.send_gamescript("get_towns", timeout=15.0)
-            if r.get("success") and isinstance(r.get("result"), list):
-                self.world.apply_gs_towns(r["result"])
+            # Towns and industries change slowly — refresh every N cycles
+            if self._refresh_cycle % _STAGGER_INTERVAL == 1:
+                r = await self.client.send_gamescript("get_towns", timeout=15.0)
+                if r.get("success") and isinstance(r.get("result"), list):
+                    self.world.apply_gs_towns(r["result"])
 
-            r = await self.client.send_gamescript("get_industries", timeout=15.0)
-            if r.get("success") and isinstance(r.get("result"), list):
-                self.world.apply_gs_industries(r["result"])
+                r = await self.client.send_gamescript("get_industries", timeout=15.0)
+                if r.get("success") and isinstance(r.get("result"), list):
+                    self.world.apply_gs_industries(r["result"])
 
             # Refresh company roster first — guarantees world.companies is current
             # regardless of whether COMPANY_INFO admin-port events were received.
@@ -164,16 +174,20 @@ class Orchestrator:
             logger.exception("GS world refresh failed")
 
     async def _execute_actions(self, actions: list[dict[str, Any]]) -> None:
-        """Execute a list of GS action dicts, tracking each in ActionTracker."""
+        """Execute a list of GS action dicts, tracking each in ActionTracker.
+
+        Uses per-company locks to serialize same-company actions.
+        """
         for action in actions:
             gs_action = action.get("action")
             gs_params = action.get("params", {})
             if not gs_action:
                 continue
 
+            company_id = gs_params.get("company_id", -1)
             envelope = ActionEnvelope(
                 action_id=f"hb_{uuid.uuid4().hex[:8]}",
-                company_id=gs_params.get("company_id", -1),
+                company_id=company_id,
                 action_type=gs_action,
                 parameters=gs_params,
                 mode=ActionMode.ATOMIC,
@@ -188,27 +202,31 @@ class Orchestrator:
                     )
                 continue
 
+            lock = self.company_locks.get_lock(company_id)
             try:
-                result = await self.client.send_gamescript(gs_action, gs_params)
-                if self.event_logger:
-                    self.event_logger.log_gs_command(gs_action, gs_params, result)
-                if result.get("success"):
-                    if self.action_tracker:
-                        self.action_tracker.update_result(
-                            envelope.action_id, ActionStatus.SUCCESS,
-                            changed_entities=result.get("result") or {},
-                        )
-                    logger.info("Action %s succeeded", gs_action)
-                else:
-                    error = result.get("error", "GS returned failure")
-                    if self.action_tracker:
-                        self.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, error)
-                    logger.warning("Action %s failed: %s", gs_action, error)
+                async with lock:
+                    result = await self.client.send_gamescript(gs_action, gs_params)
+                    if self.event_logger:
+                        self.event_logger.log_gs_command(gs_action, gs_params, result)
+                    if result.get("success"):
+                        if self.action_tracker:
+                            self.action_tracker.update_result(
+                                envelope.action_id, ActionStatus.SUCCESS,
+                                changed_entities=result.get("result") or {},
+                            )
+                        logger.info("Action %s succeeded", gs_action)
+                    else:
+                        error = result.get("error", "GS returned failure")
+                        if self.action_tracker:
+                            self.action_tracker.update_result(
+                                envelope.action_id, ActionStatus.FAILED, error,
+                            )
+                        logger.warning("Action %s failed: %s", gs_action, error)
             except Exception:
                 logger.exception("Failed to execute action: %s", gs_action)
                 if self.action_tracker:
                     self.action_tracker.update_result(
-                        envelope.action_id, ActionStatus.FAILED, "exception during execution"
+                        envelope.action_id, ActionStatus.FAILED, "exception during execution",
                     )
 
     # -------------------------------------------------------------------------

@@ -371,3 +371,51 @@ async def deity_change_town_rating(request: DeityTownRatingRequest) -> dict[str,
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
     return result.get("result", {})
+
+
+# ---------------------------------------------------------------------------
+# 2.4.7: Pathfinding
+# ---------------------------------------------------------------------------
+
+class PathfindRequest(BaseModel):
+    from_x: int
+    from_y: int
+    to_x: int
+    to_y: int
+    transport_type: str = "road"
+    company_id: int = -1
+    avoid_demolish: bool = False
+    max_iterations: int = 50_000
+    corridor_margin: int = 10
+
+
+@router.post("/pathfind")
+async def run_pathfind(request: PathfindRequest) -> dict[str, Any]:
+    from nttd.pathfinding import service as pf_service  # noqa: PLC0415
+
+    if not admin_client.connected:
+        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
+
+    # Initialize cache if needed
+    if pf_service.get_cache() is None:
+        if world.game.map_x > 0 and world.game.map_y > 0:
+            pf_service.init_cache(world.game.map_x, world.game.map_y)
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="Map dimensions not available yet",
+            )
+
+    result = await pf_service.pathfind(
+        from_x=request.from_x,
+        from_y=request.from_y,
+        to_x=request.to_x,
+        to_y=request.to_y,
+        transport_type=request.transport_type,
+        gs_client=admin_client,
+        company_id=request.company_id,
+        avoid_demolish=request.avoid_demolish,
+        max_iterations=request.max_iterations,
+        corridor_margin=request.corridor_margin,
+    )
+    return result
