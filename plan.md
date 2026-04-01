@@ -269,59 +269,60 @@ Entity data (for dashboard):
 > **Goal**: Full spectate milestone — start AI game, watch from browser.
 
 ### 3.1 Project Setup
-- [ ] **3.1.1** Initialize: `admin-console/` with Vite + React + TypeScript + Tailwind
-- [ ] **3.1.2** Yarn v4 configuration
-- [ ] **3.1.3** API client module: typed HTTP client wrapping all nttd endpoints
-- [ ] **3.1.4** WebSocket hook: `useWebSocket()` — connect to `/ws/admin`, parse triggers
-- [ ] **3.1.5** Zustand store: `gameStore.ts` — real-time game state, companies, events
-- [ ] **3.1.6** React Router: 4 pages (Session, Players, Metrics, Leaderboard)
-- [ ] **3.1.7** Vite proxy config for API + WebSocket to nttd backend
+- [x] **3.1.1** Initialize: `admin-console/` with Vite + React + TypeScript + Tailwind + MUI
+- [x] **3.1.2** Yarn v4 (Berry) configuration — per-project, no global changes
+- [x] **3.1.3** API client module: typed HTTP client wrapping all nttd endpoints (`src/api/client.ts`)
+- [x] **3.1.4** WebSocket hook: `useWebSocket()` — connect to `/ws/admin`, parse triggers, auto-reconnect
+- [x] **3.1.5** Zustand store: `gameStore.ts` — real-time game state, companies, events (ring buffer 200)
+  - `themeStore.ts` — dark/light mode toggle with localStorage persistence
+- [x] **3.1.6** React Router: 4 pages (Session, Players, Metrics, Leaderboard) + Sidebar navigation
+- [x] **3.1.7** Vite proxy config for API (`/api` → `:8000`) + WebSocket (`/ws` → `:8000`)
 
 ### 3.2 Page 1 — Session Management
 **Ref**: `docs/openttd_study_part4...md` §11.2
 
-- [ ] **3.2.1** Session creation form: all settings grouped by category (Map, Towns, Industries, Finance, Vehicles, Network, Difficulty, Signals)
-- [ ] **3.2.2** Session presets: save/load settings configurations
-- [ ] **3.2.3** Session list: active + completed sessions with status badges
-- [ ] **3.2.4** Session controls: Start, Stop, Pause/Unpause, Save, Load, Speed slider
-- [ ] **3.2.5** AI opponents selector: count + speed (launches via rcon `start_ai`)
-- [ ] **3.2.6** Connection info display: server IP, port, how to join from OpenTTD client
+- [x] **3.2.1** Session creation form: settings grouped by category (Map, Economy, Vehicles, AI)
+- [ ] **3.2.2** Session presets: save/load settings configurations [deferred — needs backend preset storage]
+- [x] **3.2.3** Session list: active + completed sessions with status badges, select/delete
+- [x] **3.2.4** Session controls: Start, Stop, Save, Load + Top bar Pause/Unpause + Speed slider
+- [x] **3.2.5** AI opponents selector: count dropdown (0-14) on start
+- [x] **3.2.6** Connection info display: server IP, port, map size, landscape
 
 ### 3.3 Page 2 — Players & Agents
 **Ref**: `docs/openttd_study_part4...md` §11.3
 
-- [ ] **3.3.1** Connected agents panel: list with company, status, action count
-- [ ] **3.3.2** Connected humans panel: list with company, name (from rcon `clients`)
-- [ ] **3.3.3** Spectators panel
-- [ ] **3.3.4** Agent launch dialog: select type, company, config
-- [ ] **3.3.5** Move/kick/disconnect controls
-- [ ] **3.3.6** Live event feed: scrolling log of actions, events, chat, system messages
-- [ ] **3.3.7** Message center: view/send chat, view agent-to-agent messages
+- [x] **3.3.1** Connected agents panel: list with company scope, subscriptions, online status
+- [x] **3.3.2** Connected humans panel: list with company, name, client ID
+- [x] **3.3.3** Spectators panel (company_id=255 clients)
+- [ ] **3.3.4** Agent launch dialog: select type, company, config [deferred to Phase 4]
+- [x] **3.3.5** Move/kick controls (with confirmation prompts)
+- [x] **3.3.6** Live event feed: scrolling log from WebSocket events (ring buffer 200)
+- [x] **3.3.7** Message center: view history + send chat messages
 
 ### 3.4 Page 3 — Metrics & Timeline
 **Ref**: `docs/openttd_study_part4...md` §12.4
 
-- [ ] **3.4.1** Time-series line charts (Recharts): balance, income, value over time per company
-- [ ] **3.4.2** Stacked bar charts: revenue by vehicle type
-- [ ] **3.4.3** Pie charts: expense breakdown per company
-- [ ] **3.4.4** Vehicle/station counts bar charts
-- [ ] **3.4.5** Timeline scrubber: drag to any game date, see state at that point
-- [ ] **3.4.6** Event markers on timeline (crashes, subsidies, bankruptcies)
-- [ ] **3.4.7** Filters: company, metric type, date range, resolution
-- [ ] **3.4.8** Data export: CSV download for selected metrics
+- [x] **3.4.1** Time-series line charts (Recharts): balance, income, value over time per company
+- [ ] **3.4.2** Stacked bar charts: revenue by vehicle type [deferred — needs finance_revenue data]
+- [ ] **3.4.3** Pie charts: expense breakdown per company [deferred — needs finance_expenses data]
+- [x] **3.4.4** Performance rating bar chart + cargo delivered bar chart
+- [ ] **3.4.5** Timeline scrubber: drag to any game date, see state at that point [deferred]
+- [ ] **3.4.6** Event markers on timeline (crashes, subsidies, bankruptcies) [deferred]
+- [x] **3.4.7** Filters: company selector (all or individual)
+- [ ] **3.4.8** Data export: CSV download for selected metrics [deferred]
 
 ### 3.5 Page 4 — Leaderboard
 **Ref**: `docs/openttd_study_part4...md` §16
 
-- [ ] **3.5.1** Per-session leaderboard table: rank, player, type, value, rating, cargo, vehicles
-- [ ] **3.5.2** Cross-session leaderboard: aggregate stats per participant
-- [ ] **3.5.3** Sortable columns (TanStack Table)
-- [ ] **3.5.4** Participant detail view: session history, per-session performance
+- [x] **3.5.1** Per-session leaderboard table: rank, company, player, balance, value, rating, cargo, actions, success rate
+- [x] **3.5.2** Cross-session leaderboard: aggregate stats per participant (sessions, avg rank, total cargo, avg success)
+- [x] **3.5.3** Sortable columns (MUI TableSortLabel)
+- [ ] **3.5.4** Participant detail view: session history, per-session performance [deferred]
 
 ### 3.6 Top Bar (Global)
-- [ ] **3.6.1** Game status: current date, speed, paused/playing indicator
-- [ ] **3.6.2** Connection status: OpenTTD connected/disconnected
-- [ ] **3.6.3** Quick controls: pause/play toggle, speed slider
+- [x] **3.6.1** Game status: current date, speed, paused/playing indicator, company count, mode
+- [x] **3.6.2** Connection status: OpenTTD connected/disconnected chip
+- [x] **3.6.3** Quick controls: pause/play toggle, speed slider, dark/light mode toggle
 
 ---
 
