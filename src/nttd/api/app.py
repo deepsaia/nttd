@@ -15,9 +15,12 @@ from nttd.api.observation_routes import _metrics
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.ws_routes import broadcast_snapshot
 from nttd.api.ws_routes import router as ws_router
+from nttd.db.engine import init_engine, close_engine
+from nttd.db.migrations import apply_migrations
 
 logger = logging.getLogger(__name__)
 
+DB_PATH = os.environ.get("NTTD_DB_PATH", "nttd.db")
 ADMIN_HOST = os.environ.get("NTTD_ADMIN_HOST", "127.0.0.1")
 ADMIN_PORT = int(os.environ.get("NTTD_ADMIN_PORT", "3977"))
 ADMIN_PASSWORD = os.environ.get("NTTD_ADMIN_PASSWORD", "nttd")
@@ -38,6 +41,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+
+    # Initialize database
+    await init_engine(DB_PATH)
+    await apply_migrations()
 
     # Wire event logger into orchestrator and action routes
     if USE_TENSORBOARD:
@@ -76,6 +83,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except asyncio.CancelledError:
             pass
 
+    await close_engine()
     event_logger.close()
     logger.info("nttd shut down")
 

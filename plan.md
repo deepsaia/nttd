@@ -83,8 +83,8 @@
 ### 2.1 Database Layer
 **Ref**: `docs/openttd_study_part4...md` §13
 
-- [ ] **2.1.1** Create `src/nttd/db/` package with `engine.py` (SQLAlchemy Core + aiosqlite, WAL mode)
-- [ ] **2.1.2** Schema definition: `src/nttd/db/schema.sql` — fully normalized tables:
+- [x] **2.1.1** Create `src/nttd/db/` package with `engine.py` (SQLAlchemy Core + aiosqlite, WAL mode)
+- [x] **2.1.2** Schema definition: `src/nttd/db/tables.py` — 25 fully normalized SQLAlchemy tables:
   - `sessions` — id, name, status, settings columns (not JSON), timestamps
   - `session_settings` — key/value pairs per session (map_x, landscape, max_trains, etc.)
   - `participants` — session_id FK, type, participant_id, company_id, name, timestamps
@@ -111,14 +111,15 @@
   - `cargo_flows` — session_id FK, game_date, company_id, cargo_id, town_or_industry_id, entity_type (town/industry), direction (delivery/pickup), amount (from GSCargoMonitor delta counters)
   - `infrastructure` — session_id FK, game_date, company_id, rail_pieces, road_pieces, water_pieces, station_pieces, airport_pieces, rail_cost, road_cost, water_cost, station_cost, airport_cost
   - `leaderboard` — session_id FK, company_id, participant_id, rank, final_value, final_rating, total_cargo, total_actions, success_rate
-- [ ] **2.1.3** Migration system: `src/nttd/db/migrations/` (simple numbered SQL files, auto-apply on startup)
-- [ ] **2.1.4** Repository layer: `src/nttd/db/repositories/` — one module per entity (sessions, metrics, actions, etc.)
-  - Each repo: `insert_*()`, `get_*()`, `query_*()` methods
-  - Batch insert support for performance
-- [ ] **2.1.5** Session recorder: `src/nttd/db/recorder.py` — ingests snapshots, extracts metrics, writes to all tables
-  - Hooks into orchestrator observers
-  - Batch writes (flush every 50 records or 1 second)
-- [ ] **2.1.6** Indexes for query performance:
+- [x] **2.1.3** Migration system: `src/nttd/db/migrations.py` — auto-applies `metadata.create_all` on startup. Wired into `app.py` lifespan.
+- [x] **2.1.4** Repository layer: `src/nttd/db/repositories/` — session_repo, metrics_repo, action_repo, event_repo, entity_repo
+  - Each repo: `get_*()`, `query_*()`, `list_*()` methods with filters
+  - Batch insert via SessionRecorder's background flush
+- [x] **2.1.5** Session recorder: `src/nttd/db/recorder.py` — background flush pattern (1s interval, 5000 max buffer)
+  - Parquet writer for full snapshots (`src/nttd/db/parquet_writer.py`), zstd compression
+  - Normalized data to SQLite, full snapshots to Parquet (no gzip blobs in DB)
+  - Wired into `app.py` lifespan (DB init + migrations on startup, close on shutdown)
+- [x] **2.1.6** Indexes for query performance:
   - `(session_id, game_date)` on all time-series tables
   - `(session_id, company_id, game_date)` on company-scoped tables
   - `(session_id, participant_id)` on actions and messages

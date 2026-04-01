@@ -19,6 +19,7 @@ dependencies = [
     "setuptools>=40,<72",
     "sqlalchemy>=2.0",
     "aiosqlite>=0.20",
+    "pyarrow>=18.0",
 ]
 
 [project.optional-dependencies]

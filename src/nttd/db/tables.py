@@ -81,7 +81,6 @@ snapshots = Table(
     Column("game_date", Integer, nullable=False),
     Column("tick", Integer, nullable=True),
     Column("captured_at", DateTime, server_default=func.now()),
-    Column("compressed_state", Text, nullable=True),
     Index("idx_snapshots_session_date", "session_id", "game_date"),
 )
 
