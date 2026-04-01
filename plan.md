@@ -129,96 +129,108 @@
 
 High priority (needed for realistic gameplay and admin console):
 
-- [ ] **2.2.1** `get_game_settings` — read any game setting by key name (`GSGameSettings.GetValue()`)
-- [ ] **2.2.2** `set_game_setting` — write game setting (`GSGameSettings.SetValue()`) [deity]
-- [ ] **2.2.3** `get_expense_breakdown` — loop over 13 `ExpensesType` values per company
-- [ ] **2.2.4** `get_infrastructure_costs` — `GSInfrastructure.GetMonthly*Costs()` + piece counts
-- [ ] **2.2.5** `get_cargo_flows` — `GSCargoMonitor.Get*Amount()` per company/cargo/town/industry
-- [ ] **2.2.6** `estimate_cost` — `GSTestMode` + `GSAccounting` wrapper for dry-run cost estimation
-- [ ] **2.2.7** `get_clients` — `GSClient` methods: list connected clients, their companies, names
-- [ ] **2.2.8** `change_bank_balance` — `GSCompany.ChangeBankBalance()` [deity]
-- [ ] **2.2.9** `set_max_loan` — `GSCompany.SetMaxLoanAmountForCompany()` [deity]
+- [x] **2.2.1** `get_game_settings` — read any game setting by key name (`GSGameSettings.GetValue()`)
+- [x] **2.2.2** `set_game_setting` — write game setting (`GSGameSettings.SetValue()`) [deity]
+- [x] **2.2.3** `get_expense_breakdown` — quarterly financials per company
+- [x] **2.2.4** `get_infrastructure_costs` — `GSInfrastructure.GetMonthly*Costs()` + piece counts
+- [x] **2.2.5** `get_cargo_flows` — `GSCargoMonitor.Get*Amount()` per company/cargo/town/industry
+- [x] **2.2.6** `estimate_cost` — `GSTestMode` + `GSAccounting` wrapper for dry-run cost estimation
+- [x] **2.2.7** `get_clients` — `GSClient` methods: list connected clients, their companies, names
+- [x] **2.2.8** `change_bank_balance` — `GSCompany.ChangeBankBalance()` [deity]
+- [x] **2.2.9** `set_max_loan` — `GSCompany.SetMaxLoanAmountForCompany()` [deity]
 
 Medium priority (advanced gameplay):
 
-- [ ] **2.2.10** Conditional orders: `set_order_condition`, `set_order_compare_function`, `set_order_compare_value`
-- [ ] **2.2.11** Terraform: `raise_tile`, `lower_tile`, `level_tiles` (`GSTile.*`)
-- [ ] **2.2.12** `plant_tree`, `plant_tree_rectangle` (`GSTile.*`)
-- [ ] **2.2.13** `build_one_way_road`, `build_one_way_road_full` (`GSRoad.*`)
-- [ ] **2.2.14** `convert_road_type` (`GSRoad.ConvertRoadType()`)
-- [ ] **2.2.15** `set_stop_location` — train platform stop position (NEAR/MIDDLE/FAR)
-- [ ] **2.2.16** `get_engine_details` — running cost, capacity, speed, reliability (`GSEngine.*`)
+- [x] **2.2.10** Conditional orders: `set_order_condition`, `set_order_compare_function`, `set_order_compare_value`
+- [x] **2.2.11** Terraform: `raise_tile`, `lower_tile`, `level_tiles` (`GSTile.*`)
+- [x] **2.2.12** `plant_tree`, `plant_tree_rectangle` (`GSTile.*`)
+- [x] **2.2.13** `build_one_way_road`, `build_one_way_road_full` (`GSRoad.*`)
+- [x] **2.2.14** `convert_road_type` (`GSRoad.ConvertRoadType()`)
+- [x] **2.2.15** `set_stop_location` — train platform stop position (NEAR/MIDDLE/FAR)
+- [x] **2.2.16** `get_engine_details` — running cost, capacity, speed, reliability (`GSEngine.*`)
 
 Query enrichment (extend existing commands):
 
-- [ ] **2.2.17** Enrich `get_stations` — add cargo ratings, coverage tiles
-- [ ] **2.2.18** Enrich `get_vehicles` — add running costs, cargo capacity, age vs max_age
-- [ ] **2.2.19** Enrich `get_companies` — add performance rating, quarterly history
-- [ ] **2.2.20** Enrich `get_industries` — add accepting cargo types, stockpile levels
+- [x] **2.2.17** Enrich `get_stations` — added cargo ratings
+- [x] **2.2.18** Enrich `get_vehicles` — added running costs, capacity, running state
+- [x] **2.2.19** Enrich `get_companies` — added performance rating, quarterly income/expenses/cargo, company value
+- [x] **2.2.20** Enrich `get_industries` — added is_raw/is_processing to list; accepted cargo + stockpile to detail
 
 Event monitoring (new GS-side event handler):
 
-- [ ] **2.2.21** GS event listener: catch all 35 event types, forward via `GSAdmin.Send()`
-  - Vehicle crashed/lost, subsidy offered/awarded/expired, industry open/close, company bankruptcy, goal events
-  - Each event → JSON packet → admin port → nttd → DB + WebSocket
+- [x] **2.2.21** GS event listener: catch 18 event types, forward via `GSAdmin.Send()`
+  - Vehicle crashed/lost/unprofitable/autorenewed, subsidy offered/awarded/expired, industry open/close
+  - Company new/in_trouble/bankrupt/merger, town founded, station first vehicle, zeppeliner crash
+  - Each event → JSON packet → admin port → nttd
 
 ### 2.3 Admin API Endpoints
 **Ref**: `docs/openttd_study_part4...md` §11, §12, §16, §18.4
 
 Session management:
 
-- [ ] **2.3.1** `POST /admin/sessions/new` — create session with full settings, generate session_id, persist to DB
-- [ ] **2.3.2** `GET /admin/sessions` — list all sessions (active + completed)
-- [ ] **2.3.3** `GET /admin/sessions/{id}` — session details, participants, status
-- [ ] **2.3.4** `POST /admin/sessions/{id}/settings` — update settings (pre-game or mid-game via rcon)
-- [ ] **2.3.5** `POST /admin/sessions/{id}/start` — apply settings via rcon, start game (newgame or load)
-- [ ] **2.3.6** `POST /admin/sessions/{id}/stop` — end session, compute leaderboard, persist results
-- [ ] **2.3.7** `DELETE /admin/sessions/{id}` — archive/delete session data
+- [x] **2.3.1** `POST /admin/sessions/new` — create session, persist to DB
+- [x] **2.3.2** `GET /admin/sessions` — list all sessions (active + completed)
+- [x] **2.3.3** `GET /admin/sessions/{id}` — session details, participants, settings
+- [x] **2.3.4** `POST /admin/sessions/{id}/settings` — update settings + apply via rcon
+- [x] **2.3.5** `POST /admin/sessions/{id}/start` — apply settings, AI opponents, newgame/load
+- [x] **2.3.6** `POST /admin/sessions/{id}/stop` — end session, pause game
+- [x] **2.3.7** `DELETE /admin/sessions/{id}` — archive session
 
 Player/agent management:
 
-- [ ] **2.3.8** `GET /admin/clients` — connected game clients (humans) via rcon `clients`
-- [ ] **2.3.9** `POST /admin/clients/{id}/move` — move client to company via rcon `move`
-- [ ] **2.3.10** `POST /admin/clients/{id}/kick` — kick client via rcon `kick`
-- [ ] **2.3.11** `POST /admin/agents/{id}/launch` — start an agent process (subprocess)
-- [ ] **2.3.12** `POST /admin/agents/{id}/stop` — stop agent process
-- [ ] **2.3.13** `GET /admin/spectators` — list spectators (clients with company_id=255)
+- [x] **2.3.8** `GET /admin/clients` — connected game clients via GS get_clients
+- [x] **2.3.9** `POST /admin/clients/{id}/move` — move client to company via rcon
+- [x] **2.3.10** `POST /admin/clients/{id}/kick` — kick client via rcon
+- [ ] **2.3.11** `POST /admin/agents/{id}/launch` — start an agent process (subprocess) [deferred to Phase 4]
+- [ ] **2.3.12** `POST /admin/agents/{id}/stop` — stop agent process [deferred to Phase 4]
+- [x] **2.3.13** `GET /admin/spectators` — list spectators (company_id=255)
 
 Deity operations:
 
-- [ ] **2.3.14** `POST /admin/deity/change_balance` — inject/remove money
-- [ ] **2.3.15** `POST /admin/deity/set_max_loan` — per-company loan limit
-- [ ] **2.3.16** `POST /admin/deity/found_town` — create new town
-- [ ] **2.3.17** `POST /admin/deity/expand_town` — grow town
-- [ ] **2.3.18** `POST /admin/deity/set_town_growth` — control growth rate
-- [ ] **2.3.19** `POST /admin/deity/create_subsidy` — offer subsidy
-- [ ] **2.3.20** `POST /admin/deity/change_town_rating` — modify company town rating
-- [ ] **2.3.21** `POST /admin/deity/set_setting` — modify game setting at runtime
+- [x] **2.3.14** `POST /admin/deity/change_balance` — inject/remove money
+- [x] **2.3.15** `POST /admin/deity/set_max_loan` — per-company loan limit
+- [x] **2.3.16** `POST /admin/deity/found_town` — create new town
+- [x] **2.3.17** `POST /admin/deity/expand_town` — grow town
+- [x] **2.3.18** `POST /admin/deity/set_town_growth` — control growth rate
+- [x] **2.3.19** `POST /admin/deity/create_subsidy` — offer subsidy
+- [x] **2.3.20** `POST /admin/deity/change_town_rating` — modify company town rating
+- [x] **2.3.21** `POST /admin/deity/set_setting` — modify game setting at runtime
 
 Metrics/data:
 
-- [ ] **2.3.22** `GET /metrics/timeseries` — time-series query with filters (metric, company, date range, resolution)
-- [ ] **2.3.23** `GET /metrics/latest` — current values for all companies
-- [ ] **2.3.24** `GET /metrics/comparison` — compare companies at a given date
-- [ ] **2.3.25** `GET /metrics/agent/{id}/performance` — agent action stats
+- [x] **2.3.22** `GET /metrics/timeseries` — time-series query with filters
+- [x] **2.3.23** `GET /metrics/latest` — current values for all companies
+- [x] **2.3.24** `GET /metrics/comparison` — compare companies at a given date
+- [x] **2.3.25** `GET /metrics/agent/{id}/performance` — agent action stats
+- [x] `GET /metrics/finances` — financial time-series per company
+- [x] `GET /metrics/available` — list distinct metric names
 
 Messages:
 
-- [ ] **2.3.26** `POST /messages/send` — agent-to-agent or broadcast
-- [ ] **2.3.27** `GET /messages/history` — paginated message log
-- [ ] **2.3.28** `GET /messages/inbox/{agent_id}` — poll messages
+- [x] **2.3.26** `POST /messages/send` — agent-to-agent or broadcast
+- [x] **2.3.27** `GET /messages/history` — paginated message log
+- [x] **2.3.28** `GET /messages/inbox/{agent_id}` — poll messages
 
 Leaderboard:
 
-- [ ] **2.3.29** `GET /leaderboard/session/{id}` — per-session rankings
-- [ ] **2.3.30** `GET /leaderboard/global` — cross-session rankings
-- [ ] **2.3.31** `POST /leaderboard/compute/{id}` — recompute session rankings
+- [x] **2.3.29** `GET /leaderboard/session/{id}` — per-session rankings
+- [x] **2.3.30** `GET /leaderboard/global` — cross-session aggregate rankings
+- [x] **2.3.31** `POST /leaderboard/compute/{id}` — recompute session rankings
 
 Replay:
 
-- [ ] **2.3.32** `GET /replay/sessions/{id}/snapshots` — all snapshots for timeline scrubbing
-- [ ] **2.3.33** `GET /replay/sessions/{id}/actions` — all actions
-- [ ] **2.3.34** `GET /replay/sessions/{id}/export` — full session export (ZIP)
+- [x] **2.3.32** `GET /replay/sessions/{id}/snapshots` — snapshot metadata for timeline
+- [x] **2.3.33** `GET /replay/sessions/{id}/actions` — all actions
+- [x] `GET /replay/sessions/{id}/events` — all events
+- [ ] **2.3.34** `GET /replay/sessions/{id}/export` — full session export (ZIP) [deferred]
+
+Entity data (for dashboard):
+
+- [x] `GET /admin/data/towns` — latest town snapshot
+- [x] `GET /admin/data/industries` — latest industry snapshot
+- [x] `GET /admin/data/stations` — latest station snapshot (filterable by company)
+- [x] `GET /admin/data/vehicles` — latest vehicle snapshot (filterable by company)
+- [x] `GET /admin/data/subsidies` — latest subsidy snapshot
 
 ### 2.4 Pathfinding Service
 **Ref**: `docs/openttd_study_part4...md` §14

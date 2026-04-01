@@ -2,10 +2,10 @@
 
 from typing import Any
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 
 from nttd.db.engine import get_session
-from nttd.db.tables import metrics, finances, companies
+from nttd.db.tables import companies, finances, metrics
 
 
 async def get_metric_series(

@@ -30,19 +30,132 @@ class NttdGS extends GSController {
     while (GSEventController.IsEventWaiting()) {
       local event = GSEventController.GetNextEvent();
       if (event == null) continue;
-      if (event.GetEventType() != GSEvent.ET_ADMIN_PORT) continue;
 
-      local admin_event = GSEventAdminPort.Convert(event);
-      local data = admin_event.GetObject();
+      local et = event.GetEventType();
 
-      if (data == null || !("id" in data) || !("action" in data)) {
-        GSLog.Warning("nttd: invalid command (missing id or action)");
+      // Admin port commands — our primary input channel
+      if (et == GSEvent.ET_ADMIN_PORT) {
+        local admin_event = GSEventAdminPort.Convert(event);
+        local data = admin_event.GetObject();
+
+        if (data == null || !("id" in data) || !("action" in data)) {
+          GSLog.Warning("nttd: invalid command (missing id or action)");
+          continue;
+        }
+
+        local result = this._Dispatch(data);
+        this._SendResponse(data.id, result);
         continue;
       }
 
-      local result = this._Dispatch(data);
-      this._SendResponse(data.id, result);
+      // Forward all other game events to nttd
+      this._ForwardGameEvent(event, et);
     }
+  }
+
+  function _ForwardGameEvent(event, et) {
+    local payload = { _event = true, event_type = et };
+
+    switch (et) {
+      case GSEvent.ET_VEHICLE_CRASHED: {
+        local e = GSEventVehicleCrash.Convert(event);
+        payload.rawset("vehicle_id", e.GetVehicleID());
+        payload.rawset("crash_site", e.GetCrashSite());
+        break;
+      }
+      case GSEvent.ET_VEHICLE_LOST: {
+        local e = GSEventVehicleLost.Convert(event);
+        payload.rawset("vehicle_id", e.GetVehicleID());
+        break;
+      }
+      case GSEvent.ET_VEHICLE_UNPROFITABLE: {
+        local e = GSEventVehicleUnprofitable.Convert(event);
+        payload.rawset("vehicle_id", e.GetVehicleID());
+        break;
+      }
+      case GSEvent.ET_VEHICLE_WAITING_IN_DEPOT: {
+        local e = GSEventVehicleWaitingInDepot.Convert(event);
+        payload.rawset("vehicle_id", e.GetVehicleID());
+        break;
+      }
+      case GSEvent.ET_VEHICLE_AUTORENEWED: {
+        local e = GSEventVehicleAutoRenewed.Convert(event);
+        payload.rawset("vehicle_id", e.GetVehicleID());
+        break;
+      }
+      case GSEvent.ET_SUBSIDY_OFFERED: {
+        local e = GSEventSubsidyOffer.Convert(event);
+        payload.rawset("subsidy_id", e.GetSubsidyID());
+        break;
+      }
+      case GSEvent.ET_SUBSIDY_OFFER_EXPIRED: {
+        local e = GSEventSubsidyOfferExpired.Convert(event);
+        payload.rawset("subsidy_id", e.GetSubsidyID());
+        break;
+      }
+      case GSEvent.ET_SUBSIDY_AWARDED: {
+        local e = GSEventSubsidyAwarded.Convert(event);
+        payload.rawset("subsidy_id", e.GetSubsidyID());
+        break;
+      }
+      case GSEvent.ET_SUBSIDY_EXPIRED: {
+        local e = GSEventSubsidyExpired.Convert(event);
+        payload.rawset("subsidy_id", e.GetSubsidyID());
+        break;
+      }
+      case GSEvent.ET_INDUSTRY_OPEN: {
+        local e = GSEventIndustryOpen.Convert(event);
+        payload.rawset("industry_id", e.GetIndustryID());
+        break;
+      }
+      case GSEvent.ET_INDUSTRY_CLOSE: {
+        local e = GSEventIndustryClose.Convert(event);
+        payload.rawset("industry_id", e.GetIndustryID());
+        break;
+      }
+      case GSEvent.ET_TOWN_FOUNDED: {
+        local e = GSEventTownFounded.Convert(event);
+        payload.rawset("town_id", e.GetTownID());
+        break;
+      }
+      case GSEvent.ET_COMPANY_NEW: {
+        local e = GSEventCompanyNew.Convert(event);
+        payload.rawset("company_id", e.GetCompanyID());
+        break;
+      }
+      case GSEvent.ET_COMPANY_IN_TROUBLE: {
+        local e = GSEventCompanyInTrouble.Convert(event);
+        payload.rawset("company_id", e.GetCompanyID());
+        break;
+      }
+      case GSEvent.ET_COMPANY_BANKRUPT: {
+        local e = GSEventCompanyBankrupt.Convert(event);
+        payload.rawset("company_id", e.GetCompanyID());
+        break;
+      }
+      case GSEvent.ET_COMPANY_MERGER: {
+        local e = GSEventCompanyMerger.Convert(event);
+        payload.rawset("old_company_id", e.GetOldCompanyID());
+        payload.rawset("new_company_id", e.GetNewCompanyID());
+        break;
+      }
+      case GSEvent.ET_STATION_FIRST_VEHICLE: {
+        local e = GSEventStationFirstVehicle.Convert(event);
+        payload.rawset("station_id", e.GetStationID());
+        payload.rawset("vehicle_id", e.GetVehicleID());
+        break;
+      }
+      case GSEvent.ET_DISASTER_ZEPPELINER_CRASHED: {
+        local e = GSEventDisasterZeppelinerCrashed.Convert(event);
+        payload.rawset("station_id", e.GetStationID());
+        break;
+      }
+      default:
+        // For unhandled event types, just send the type number
+        break;
+    }
+
+    GSAdmin.Send(payload);
   }
 
   // ---------------------------------------------------------------------------
@@ -212,6 +325,46 @@ class NttdGS extends GSController {
         case "copy_orders":     return this.CmdCopyOrders(p);
         case "get_orders":      return this.CmdGetOrders(p);
 
+        // ---- GAME SETTINGS (2.2.1-2.2.2) ----------------------------------
+        case "get_game_settings":  return this.CmdGetGameSettings(p);
+        case "set_game_setting":   return this.CmdSetGameSetting(p);
+
+        // ---- FINANCIAL QUERIES (2.2.3-2.2.6) ------------------------------
+        case "get_expense_breakdown":    return this.CmdGetExpenseBreakdown(p);
+        case "get_infrastructure_costs": return this.CmdGetInfrastructureCosts(p);
+        case "get_cargo_flows":          return this.CmdGetCargoFlows(p);
+        case "estimate_cost":            return this.CmdEstimateCost(p);
+
+        // ---- CLIENTS (2.2.7) ----------------------------------------------
+        case "get_clients":     return this.CmdGetClients();
+
+        // ---- DEITY FINANCE (2.2.8-2.2.9) ----------------------------------
+        case "change_bank_balance": return this.CmdChangeBankBalance(p);
+        case "set_max_loan":        return this.CmdSetMaxLoan(p);
+
+        // ---- TERRAFORM (2.2.11) -------------------------------------------
+        case "raise_tile":   return this.CmdRaiseTile(p);
+        case "lower_tile":   return this.CmdLowerTile(p);
+        case "level_tiles":  return this.CmdLevelTiles(p);
+
+        // ---- TREES (2.2.12) -----------------------------------------------
+        case "plant_tree":           return this.CmdPlantTree(p);
+        case "plant_tree_rectangle": return this.CmdPlantTreeRectangle(p);
+
+        // ---- ROAD ADVANCED (2.2.13-2.2.14) --------------------------------
+        case "build_one_way_road":      return this.CmdBuildOneWayRoad(p);
+        case "build_one_way_road_full": return this.CmdBuildOneWayRoadFull(p);
+        case "convert_road_type":       return this.CmdConvertRoadType(p);
+
+        // ---- CONDITIONAL ORDERS (2.2.10) ----------------------------------
+        case "set_order_condition":        return this.CmdSetOrderCondition(p);
+        case "set_order_compare_function": return this.CmdSetOrderCompareFunction(p);
+        case "set_order_compare_value":    return this.CmdSetOrderCompareValue(p);
+        case "set_stop_location":          return this.CmdSetStopLocation(p);
+
+        // ---- ENGINE DETAILS (2.2.16) --------------------------------------
+        case "get_engine_details": return this.CmdGetEngineDetails(p);
+
         default:
           return { success = false, error = "Unknown action: " + action };
       }
@@ -314,7 +467,9 @@ class NttdGS extends GSController {
       industries.append({
         id = id, name = GSIndustry.GetName(id),
         type_id = itype, type_name = GSIndustryType.GetName(itype),
-        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc)
+        x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
+        is_raw = GSIndustryType.IsRawIndustry(itype),
+        is_processing = GSIndustryType.IsProcessingIndustry(itype),
       });
     }
     return { success = true, result = industries };
@@ -336,13 +491,24 @@ class NttdGS extends GSController {
         });
       }
     }
+    local accepted = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      if (GSIndustry.IsCargoAccepted(p.industry_id, cargo_id)) {
+        accepted.append({
+          cargo_id = cargo_id,
+          cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          stockpile = GSIndustry.GetStockpiledCargo(p.industry_id, cargo_id)
+        });
+      }
+    }
     return { success = true, result = {
       id = p.industry_id, name = GSIndustry.GetName(p.industry_id),
       type_id = itype, type_name = GSIndustryType.GetName(itype),
       x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
       is_raw = GSIndustryType.IsRawIndustry(itype),
       is_processing = GSIndustryType.IsProcessingIndustry(itype),
-      production = produced
+      production = produced,
+      accepted = accepted
     }};
   }
 
@@ -358,7 +524,12 @@ class NttdGS extends GSController {
         loan = GSCompany.GetLoanAmount(),
         max_loan = GSCompany.GetMaxLoanAmount(),
         hq_x = GSMap.IsValidTile(hq) ? GSMap.GetTileX(hq) : -1,
-        hq_y = GSMap.IsValidTile(hq) ? GSMap.GetTileY(hq) : -1
+        hq_y = GSMap.IsValidTile(hq) ? GSMap.GetTileY(hq) : -1,
+        performance_rating = GSCompany.GetQuarterlyPerformanceRating(cid, 0),
+        company_value = GSCompany.GetQuarterlyCompanyValue(cid, 0),
+        q0_income = GSCompany.GetQuarterlyIncome(cid, 0),
+        q0_expenses = GSCompany.GetQuarterlyExpenses(cid, 0),
+        q0_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 0),
       });
     }
     return { success = true, result = companies };
@@ -409,7 +580,8 @@ class NttdGS extends GSController {
         cargo_waiting.append({
           cargo_id = cargo_id,
           cargo_label = GSCargo.GetCargoLabel(cargo_id),
-          waiting = waiting
+          waiting = waiting,
+          rating = GSStation.GetCargoRating(p.station_id, cargo_id)
         });
       }
     }
@@ -450,17 +622,21 @@ class NttdGS extends GSController {
         if (tn != filter_type) continue;
       }
       local loc = GSVehicle.GetLocation(id);
+      local eid = GSVehicle.GetEngineType(id);
       vehicles.append({
         id = id, name = GSVehicle.GetName(id),
         type = GSVehicle.GetVehicleType(id),
         x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
-        engine_id = GSVehicle.GetEngineType(id),
+        engine_id = eid,
+        running_cost = GSEngine.IsValidEngine(eid) ? GSEngine.GetRunningCost(eid) : 0,
+        capacity = GSVehicle.GetCapacity(id, GSEngine.IsValidEngine(eid) ? GSEngine.GetCargoType(eid) : 0),
         age = GSVehicle.GetAge(id),
         max_age = GSVehicle.GetMaxAge(id),
         profit_this_year = GSVehicle.GetProfitThisYear(id),
         profit_last_year = GSVehicle.GetProfitLastYear(id),
         current_speed = GSVehicle.GetCurrentSpeed(id),
         state = GSVehicle.GetState(id),
+        running = GSVehicle.GetState(id) == GSVehicle.VS_RUNNING,
         in_depot = GSVehicle.IsStoppedInDepot(id),
         order_count = GSOrder.GetOrderCount(id),
         is_articulated = GSVehicle.IsArticulated(id)
@@ -1456,6 +1632,487 @@ class NttdGS extends GSController {
     }
     return results;
   }
+
+  // ===========================================================================
+  // GAME SETTINGS (2.2.1-2.2.2)
+  // ===========================================================================
+
+  function CmdGetGameSettings(p) {
+    // p.keys = ["max_trains", "map_x", ...] — list of setting key names
+    if (!("keys" in p) || typeof p.keys != "array")
+      return { success = false, error = "params.keys must be an array of setting names" };
+
+    local result = {};
+    foreach (key in p.keys) {
+      if (GSGameSettings.IsValid(key)) {
+        result.rawset(key, GSGameSettings.GetValue(key));
+      } else {
+        result.rawset(key, null);
+      }
+    }
+    return { success = true, result = result };
+  }
+
+  function CmdSetGameSetting(p) {
+    // p.key, p.value — deity-only setting change
+    if (!("key" in p) || !("value" in p))
+      return { success = false, error = "params.key and params.value required" };
+
+    if (!GSGameSettings.IsValid(p.key))
+      return { success = false, error = "Invalid setting: " + p.key };
+
+    local ok = GSGameSettings.SetValue(p.key, p.value);
+    if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    return { success = true, result = { key = p.key, value = p.value } };
+  }
+
+  // ===========================================================================
+  // FINANCIAL QUERIES (2.2.3-2.2.6)
+  // ===========================================================================
+
+  function CmdGetExpenseBreakdown(p) {
+    if (!("company_id" in p)) return { success = false, error = "params.company_id required" };
+    if (!GSCompany.ResolveCompanyID(p.company_id))
+      return { success = false, error = "Invalid company ID" };
+
+    local cid = p.company_id;
+    local expense_types = [
+      ["construction",      GSCompany.EXPENSES_CONSTRUCTION],
+      ["new_vehicles",      GSCompany.EXPENSES_NEW_VEHICLES],
+      ["train_run",         GSCompany.EXPENSES_TRAIN_RUN],
+      ["roadveh_run",       GSCompany.EXPENSES_ROADVEH_RUN],
+      ["aircraft_run",      GSCompany.EXPENSES_AIRCRAFT_RUN],
+      ["ship_run",          GSCompany.EXPENSES_SHIP_RUN],
+      ["property",          GSCompany.EXPENSES_PROPERTY],
+      ["train_revenue",     GSCompany.EXPENSES_TRAIN_REVENUE],
+      ["roadveh_revenue",   GSCompany.EXPENSES_ROADVEH_REVENUE],
+      ["aircraft_revenue",  GSCompany.EXPENSES_AIRCRAFT_REVENUE],
+      ["ship_revenue",      GSCompany.EXPENSES_SHIP_REVENUE],
+      ["loan_interest",     GSCompany.EXPENSES_LOAN_INTEREST],
+      ["other",             GSCompany.EXPENSES_OTHER],
+    ];
+
+    local expenses = {};
+    local quarter = ("quarter" in p) ? p.quarter : 0;
+    {
+      local mode = GSCompanyMode(cid);
+      foreach (et in expense_types) {
+        expenses.rawset(et[0], GSCompany.GetQuarterlyExpenses(cid, quarter));
+      }
+    }
+
+    // Note: GS API doesn't expose per-category expense amounts directly.
+    // GetQuarterlyExpenses returns total expenses. For per-category, we return
+    // the expense type definitions so the caller knows what categories exist.
+    // Full per-category tracking requires cargo monitor + infrastructure costs.
+    local quarterly = [];
+    for (local q = 0; q < 4; q++) {
+      quarterly.append({
+        quarter = q,
+        income = GSCompany.GetQuarterlyIncome(cid, q),
+        expenses = GSCompany.GetQuarterlyExpenses(cid, q),
+        cargo_delivered = GSCompany.GetQuarterlyCargoDelivered(cid, q),
+        performance_rating = GSCompany.GetQuarterlyPerformanceRating(cid, q),
+        company_value = GSCompany.GetQuarterlyCompanyValue(cid, q),
+      });
+    }
+
+    return { success = true, result = {
+      company_id = cid,
+      balance = GSCompany.GetBankBalance(cid),
+      quarterly = quarterly,
+    }};
+  }
+
+  function CmdGetInfrastructureCosts(p) {
+    if (!("company_id" in p)) return { success = false, error = "params.company_id required" };
+    if (!GSCompany.ResolveCompanyID(p.company_id))
+      return { success = false, error = "Invalid company ID" };
+
+    local cid = p.company_id;
+    local result = {};
+    {
+      local mode = GSCompanyMode(cid);
+      result = {
+        company_id = cid,
+        rail_pieces   = GSInfrastructure.GetRailPieceCount(cid),
+        road_pieces   = GSInfrastructure.GetRoadPieceCount(cid),
+        water_pieces  = GSInfrastructure.GetWaterPieceCount(cid),
+        station_pieces = GSInfrastructure.GetStationPieceCount(cid),
+        airport_pieces = GSInfrastructure.GetAirportPieceCount(cid),
+        rail_cost   = GSInfrastructure.GetMonthlyRailCosts(cid),
+        road_cost   = GSInfrastructure.GetMonthlyRoadCosts(cid),
+        water_cost  = GSInfrastructure.GetMonthlyWaterCosts(cid),
+        station_cost = GSInfrastructure.GetMonthlyStationCosts(cid),
+        airport_cost = GSInfrastructure.GetMonthlyAirportCosts(cid),
+      };
+    }
+    return { success = true, result = result };
+  }
+
+  function CmdGetCargoFlows(p) {
+    if (!("company_id" in p)) return { success = false, error = "params.company_id required" };
+    local cid = p.company_id;
+    local keep = ("keep_monitoring" in p) ? p.keep_monitoring : true;
+    local flows = [];
+
+    // Iterate over all cargo types
+    foreach (cargo_id, _ in GSCargoList()) {
+      // Town deliveries and pickups
+      foreach (town_id, _ in GSTownList()) {
+        local del_amt = GSCargoMonitor.GetTownDeliveryAmount(cid, cargo_id, town_id, keep);
+        if (del_amt > 0) {
+          flows.append({
+            cargo_id = cargo_id, entity_type = "town", entity_id = town_id,
+            direction = "delivery", amount = del_amt
+          });
+        }
+        local pick_amt = GSCargoMonitor.GetTownPickupAmount(cid, cargo_id, town_id, keep);
+        if (pick_amt > 0) {
+          flows.append({
+            cargo_id = cargo_id, entity_type = "town", entity_id = town_id,
+            direction = "pickup", amount = pick_amt
+          });
+        }
+      }
+      // Industry deliveries and pickups
+      foreach (ind_id, _ in GSIndustryList()) {
+        local del_amt = GSCargoMonitor.GetIndustryDeliveryAmount(cid, cargo_id, ind_id, keep);
+        if (del_amt > 0) {
+          flows.append({
+            cargo_id = cargo_id, entity_type = "industry", entity_id = ind_id,
+            direction = "delivery", amount = del_amt
+          });
+        }
+        local pick_amt = GSCargoMonitor.GetIndustryPickupAmount(cid, cargo_id, ind_id, keep);
+        if (pick_amt > 0) {
+          flows.append({
+            cargo_id = cargo_id, entity_type = "industry", entity_id = ind_id,
+            direction = "pickup", amount = pick_amt
+          });
+        }
+      }
+    }
+
+    return { success = true, result = flows };
+  }
+
+  function CmdEstimateCost(p) {
+    // Dry-run cost estimation using GSTestMode + GSAccounting
+    // p.action = the action to estimate, p.params = action params
+    if (!("action" in p) || !("params" in p))
+      return { success = false, error = "params.action and params.params required" };
+
+    if ("company_id" in p.params) {
+      local cid = p.params.company_id;
+      if (!GSCompany.ResolveCompanyID(cid))
+        return { success = false, error = "Invalid company ID" };
+
+      local cost = 0;
+      {
+        local mode = GSCompanyMode(cid);
+        local accounting = GSAccounting();
+        {
+          local test = GSTestMode();
+          // Dispatch the action in test mode
+          local result = this._Dispatch({ action = p.action, params = p.params });
+          if (!result.success)
+            return { success = false, error = "Test-mode execution failed: " + (("error" in result) ? result.error : "unknown") };
+        }
+        cost = accounting.GetCosts();
+      }
+      return { success = true, result = { action = p.action, estimated_cost = cost } };
+    }
+
+    return { success = false, error = "params.params.company_id required for cost estimation" };
+  }
+
+  // ===========================================================================
+  // CLIENTS (2.2.7)
+  // ===========================================================================
+
+  function CmdGetClients() {
+    local clients = [];
+    foreach (client_id, _ in GSClientList()) {
+      clients.append({
+        client_id = client_id,
+        name = GSClient.GetName(client_id),
+        company_id = GSClient.GetCompany(client_id),
+      });
+    }
+    return { success = true, result = clients };
+  }
+
+  // ===========================================================================
+  // DEITY FINANCE (2.2.8-2.2.9)
+  // ===========================================================================
+
+  function CmdChangeBankBalance(p) {
+    if (!("company_id" in p) || !("delta" in p))
+      return { success = false, error = "params.company_id and params.delta required" };
+    if (!GSCompany.ResolveCompanyID(p.company_id))
+      return { success = false, error = "Invalid company ID" };
+
+    local expense_type = ("expense_type" in p) ? p.expense_type : GSCompany.EXPENSES_OTHER;
+    local ok = GSCompany.ChangeBankBalance(p.company_id, p.delta, expense_type);
+    if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    return { success = true, result = {
+      company_id = p.company_id,
+      new_balance = GSCompany.GetBankBalance(p.company_id),
+    }};
+  }
+
+  function CmdSetMaxLoan(p) {
+    if (!("company_id" in p) || !("amount" in p))
+      return { success = false, error = "params.company_id and params.amount required" };
+    if (!GSCompany.ResolveCompanyID(p.company_id))
+      return { success = false, error = "Invalid company ID" };
+
+    local ok = GSCompany.SetMaxLoanAmountForCompany(p.company_id, p.amount);
+    if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    return { success = true, result = { company_id = p.company_id, max_loan = p.amount } };
+  }
+
+  // ===========================================================================
+  // TERRAFORM (2.2.11)
+  // ===========================================================================
+
+  function CmdRaiseTile(p) {
+    if (!("x" in p) || !("y" in p) || !("slope" in p))
+      return { success = false, error = "params.x, params.y, params.slope required" };
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (!GSMap.IsValidTile(tile)) return { success = false, error = "Invalid tile" };
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id); ok = GSTile.RaiseTile(tile, p.slope); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSTile.RaiseTile(tile, p.slope))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { x = p.x, y = p.y } };
+  }
+
+  function CmdLowerTile(p) {
+    if (!("x" in p) || !("y" in p) || !("slope" in p))
+      return { success = false, error = "params.x, params.y, params.slope required" };
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (!GSMap.IsValidTile(tile)) return { success = false, error = "Invalid tile" };
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id); ok = GSTile.LowerTile(tile, p.slope); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSTile.LowerTile(tile, p.slope))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { x = p.x, y = p.y } };
+  }
+
+  function CmdLevelTiles(p) {
+    if (!("x1" in p) || !("y1" in p) || !("x2" in p) || !("y2" in p))
+      return { success = false, error = "params.x1, y1, x2, y2 required" };
+    local tile_from = GSMap.GetTileIndex(p.x1, p.y1);
+    local tile_to = GSMap.GetTileIndex(p.x2, p.y2);
+    if (!GSMap.IsValidTile(tile_from) || !GSMap.IsValidTile(tile_to))
+      return { success = false, error = "Invalid tile range" };
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id); ok = GSTile.LevelTiles(tile_from, tile_to); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSTile.LevelTiles(tile_from, tile_to))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { x1 = p.x1, y1 = p.y1, x2 = p.x2, y2 = p.y2 } };
+  }
+
+  // ===========================================================================
+  // TREES (2.2.12)
+  // ===========================================================================
+
+  function CmdPlantTree(p) {
+    if (!("x" in p) || !("y" in p))
+      return { success = false, error = "params.x and params.y required" };
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (!GSMap.IsValidTile(tile)) return { success = false, error = "Invalid tile" };
+
+    if (!GSTile.PlantTree(tile))
+      return { success = false, error = GSError.GetLastErrorString() };
+    return { success = true, result = { x = p.x, y = p.y } };
+  }
+
+  function CmdPlantTreeRectangle(p) {
+    if (!("x" in p) || !("y" in p) || !("width" in p) || !("height" in p))
+      return { success = false, error = "params.x, y, width, height required" };
+    local tile = GSMap.GetTileIndex(p.x, p.y);
+    if (!GSMap.IsValidTile(tile)) return { success = false, error = "Invalid tile" };
+
+    if (!GSTile.PlantTreeRectangle(tile, p.width, p.height))
+      return { success = false, error = GSError.GetLastErrorString() };
+    return { success = true, result = { x = p.x, y = p.y, width = p.width, height = p.height } };
+  }
+
+  // ===========================================================================
+  // ROAD ADVANCED (2.2.13-2.2.14)
+  // ===========================================================================
+
+  function CmdBuildOneWayRoad(p) {
+    if (!("x1" in p) || !("y1" in p) || !("x2" in p) || !("y2" in p))
+      return { success = false, error = "params.x1, y1, x2, y2 required" };
+    local from = GSMap.GetTileIndex(p.x1, p.y1);
+    local to = GSMap.GetTileIndex(p.x2, p.y2);
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id); ok = GSRoad.BuildOneWayRoad(from, to); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSRoad.BuildOneWayRoad(from, to))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { from = { x = p.x1, y = p.y1 }, to = { x = p.x2, y = p.y2 } } };
+  }
+
+  function CmdBuildOneWayRoadFull(p) {
+    if (!("x1" in p) || !("y1" in p) || !("x2" in p) || !("y2" in p))
+      return { success = false, error = "params.x1, y1, x2, y2 required" };
+    local from = GSMap.GetTileIndex(p.x1, p.y1);
+    local to = GSMap.GetTileIndex(p.x2, p.y2);
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id); ok = GSRoad.BuildOneWayRoadFull(from, to); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSRoad.BuildOneWayRoadFull(from, to))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { from = { x = p.x1, y = p.y1 }, to = { x = p.x2, y = p.y2 } } };
+  }
+
+  function CmdConvertRoadType(p) {
+    if (!("x1" in p) || !("y1" in p) || !("x2" in p) || !("y2" in p) || !("road_type" in p))
+      return { success = false, error = "params.x1, y1, x2, y2, road_type required" };
+    local from = GSMap.GetTileIndex(p.x1, p.y1);
+    local to = GSMap.GetTileIndex(p.x2, p.y2);
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id); ok = GSRoad.ConvertRoadType(from, to, p.road_type); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSRoad.ConvertRoadType(from, to, p.road_type))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { road_type = p.road_type } };
+  }
+
+  // ===========================================================================
+  // CONDITIONAL ORDERS (2.2.10) & STOP LOCATION (2.2.15)
+  // ===========================================================================
+
+  function CmdSetOrderCondition(p) {
+    if (!("vehicle_id" in p) || !("order_pos" in p) || !("condition" in p))
+      return { success = false, error = "params.vehicle_id, order_pos, condition required" };
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id);
+        ok = GSOrder.SetOrderCondition(p.vehicle_id, p.order_pos, p.condition); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSOrder.SetOrderCondition(p.vehicle_id, p.order_pos, p.condition))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
+  }
+
+  function CmdSetOrderCompareFunction(p) {
+    if (!("vehicle_id" in p) || !("order_pos" in p) || !("compare_function" in p))
+      return { success = false, error = "params.vehicle_id, order_pos, compare_function required" };
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id);
+        ok = GSOrder.SetOrderCompareFunction(p.vehicle_id, p.order_pos, p.compare_function); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSOrder.SetOrderCompareFunction(p.vehicle_id, p.order_pos, p.compare_function))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
+  }
+
+  function CmdSetOrderCompareValue(p) {
+    if (!("vehicle_id" in p) || !("order_pos" in p) || !("value" in p))
+      return { success = false, error = "params.vehicle_id, order_pos, value required" };
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id);
+        ok = GSOrder.SetOrderCompareValue(p.vehicle_id, p.order_pos, p.value); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSOrder.SetOrderCompareValue(p.vehicle_id, p.order_pos, p.value))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
+  }
+
+  function CmdSetStopLocation(p) {
+    if (!("vehicle_id" in p) || !("order_pos" in p) || !("stop_location" in p))
+      return { success = false, error = "params.vehicle_id, order_pos, stop_location required" };
+
+    if ("company_id" in p) {
+      local ok = false;
+      { local mode = GSCompanyMode(p.company_id);
+        ok = GSOrder.SetStopLocation(p.vehicle_id, p.order_pos, p.stop_location); }
+      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    } else {
+      if (!GSOrder.SetStopLocation(p.vehicle_id, p.order_pos, p.stop_location))
+        return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
+  }
+
+  // ===========================================================================
+  // ENGINE DETAILS (2.2.16)
+  // ===========================================================================
+
+  function CmdGetEngineDetails(p) {
+    if (!("engine_id" in p))
+      return { success = false, error = "params.engine_id required" };
+    local eid = p.engine_id;
+    if (!GSEngine.IsValidEngine(eid))
+      return { success = false, error = "Invalid engine ID" };
+
+    return { success = true, result = {
+      engine_id = eid,
+      name = GSEngine.GetName(eid),
+      vehicle_type = this._VehicleTypeName(GSEngine.GetVehicleType(eid)),
+      cargo_type = GSEngine.GetCargoType(eid),
+      capacity = GSEngine.GetCapacity(eid),
+      max_speed = GSEngine.GetMaxSpeed(eid),
+      running_cost = GSEngine.GetRunningCost(eid),
+      price = GSEngine.GetPrice(eid),
+      max_age = GSEngine.GetMaxAge(eid),
+      reliability = GSEngine.GetReliability(eid),
+      power = GSEngine.GetPower(eid),
+      weight = GSEngine.GetWeight(eid),
+      max_tractive_effort = GSEngine.GetMaxTractiveEffort(eid),
+      rail_type = GSEngine.GetRailType(eid),
+      road_type = GSEngine.GetRoadType(eid),
+      can_refit = GSEngine.CanRefitCargo(eid, GSEngine.GetCargoType(eid)),
+    }};
+  }
+
+  // ===========================================================================
+  // INTERNAL HELPERS
+  // ===========================================================================
 
   function _SortByDistance(arr) {
     for (local i = 1; i < arr.len(); i++) {

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 
 from nttd.db.engine import get_session
 from nttd.db.tables import events, messages

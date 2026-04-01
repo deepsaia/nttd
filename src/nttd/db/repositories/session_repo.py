@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import insert, select, update
 
 from nttd.db.engine import get_session
-from nttd.db.tables import sessions, session_settings, participants
+from nttd.db.tables import participants, session_settings, sessions
 
 
 async def create_session(

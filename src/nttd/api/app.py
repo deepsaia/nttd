@@ -7,15 +7,17 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 
 from nttd.api.action_routes import router as action_router
+from nttd.api.admin_routes import router as admin_router
 from nttd.api.agent_routes import router as agent_router
 from nttd.api.benchmark_routes import router as benchmark_router
 from nttd.api.control_routes import router as control_router
 from nttd.api.dependencies import action_tracker, admin_client, bridge, event_logger, orchestrator
+from nttd.api.metrics_routes import router as metrics_router
 from nttd.api.observation_routes import _metrics
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.ws_routes import broadcast_snapshot
 from nttd.api.ws_routes import router as ws_router
-from nttd.db.engine import init_engine, close_engine
+from nttd.db.engine import close_engine, init_engine
 from nttd.db.migrations import apply_migrations
 
 logger = logging.getLogger(__name__)
@@ -96,9 +98,11 @@ app = FastAPI(
 )
 
 app.include_router(control_router)
+app.include_router(admin_router)
 app.include_router(agent_router)
 app.include_router(observation_router)
 app.include_router(action_router)
+app.include_router(metrics_router)
 app.include_router(ws_router)
 app.include_router(benchmark_router)
 

@@ -14,8 +14,8 @@ from typing import Any
 
 from sqlalchemy import insert
 
-from nttd.db.engine import get_session
 from nttd.db import tables
+from nttd.db.engine import get_session
 from nttd.db.parquet_writer import ParquetWriter
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult
@@ -29,7 +29,10 @@ _MAX_BUFFER_SIZE: int = 5000
 
 class SessionRecorder:
 
-    def __init__(self, session_id: str, flush_interval: float = _FLUSH_INTERVAL_SECONDS, data_dir: str = "data/sessions"):
+    def __init__(
+        self, session_id: str, flush_interval: float = _FLUSH_INTERVAL_SECONDS,
+        data_dir: str = "data/sessions",
+    ):
         self.session_id: str = session_id
         self._flush_interval: float = flush_interval
         self._buffers: dict[str, list[dict[str, Any]]] = {}
@@ -338,13 +341,15 @@ class SessionRecorder:
 
     def _record_metrics(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
         rows: list[dict[str, Any]] = []
+        base = {"session_id": sid, "game_date": game_date}
         for c in snapshot.companies:
+            cb = {**base, "company_id": c.id}
             rows.extend([
-                {"session_id": sid, "game_date": game_date, "company_id": c.id, "metric_name": "balance", "metric_value": float(c.money)},
-                {"session_id": sid, "game_date": game_date, "company_id": c.id, "metric_name": "loan", "metric_value": float(c.loan)},
-                {"session_id": sid, "game_date": game_date, "company_id": c.id, "metric_name": "income", "metric_value": float(c.income)},
-                {"session_id": sid, "game_date": game_date, "company_id": c.id, "metric_name": "company_value", "metric_value": float(c.value)},
-                {"session_id": sid, "game_date": game_date, "company_id": c.id, "metric_name": "profit_last_year", "metric_value": float(c.profit_last_year)},
+                {**cb, "metric_name": "balance", "metric_value": float(c.money)},
+                {**cb, "metric_name": "loan", "metric_value": float(c.loan)},
+                {**cb, "metric_name": "income", "metric_value": float(c.income)},
+                {**cb, "metric_name": "company_value", "metric_value": float(c.value)},
+                {**cb, "metric_name": "profit_last_year", "metric_value": float(c.profit_last_year)},
             ])
 
         vehicle_counts: dict[tuple[int, str], int] = {}
@@ -352,16 +357,25 @@ class SessionRecorder:
             key = (v.company_id, v.type)
             vehicle_counts[key] = vehicle_counts.get(key, 0) + 1
         for (cid, vtype), count in vehicle_counts.items():
-            rows.append({"session_id": sid, "game_date": game_date, "company_id": cid, "metric_name": f"vehicles_{vtype}", "metric_value": float(count)})
+            rows.append({
+                **base, "company_id": cid,
+                "metric_name": f"vehicles_{vtype}", "metric_value": float(count),
+            })
 
         station_counts: dict[int, int] = {}
         for s in snapshot.stations:
             station_counts[s.company_id] = station_counts.get(s.company_id, 0) + 1
         for cid, count in station_counts.items():
-            rows.append({"session_id": sid, "game_date": game_date, "company_id": cid, "metric_name": "stations", "metric_value": float(count)})
+            rows.append({
+                **base, "company_id": cid,
+                "metric_name": "stations", "metric_value": float(count),
+            })
 
         total_pop = sum(t.population for t in snapshot.towns)
-        rows.append({"session_id": sid, "game_date": game_date, "company_id": None, "metric_name": "total_population", "metric_value": float(total_pop)})
+        rows.append({
+            **base, "company_id": None,
+            "metric_name": "total_population", "metric_value": float(total_pop),
+        })
 
         self._append("metrics", rows)
 

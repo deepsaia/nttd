@@ -2,18 +2,18 @@
 
 from typing import Any
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 
 from nttd.db.engine import get_session
 from nttd.db.tables import (
-    towns,
     industries,
     industry_production,
-    stations,
     station_cargo,
-    vehicles,
-    vehicle_orders,
+    stations,
     subsidies,
+    towns,
+    vehicle_orders,
+    vehicles,
 )
 
 
