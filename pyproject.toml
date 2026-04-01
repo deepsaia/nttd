@@ -17,6 +17,8 @@ dependencies = [
     "tensorboardx>=2.6.4",
     "tensorboard>=2.14",
     "setuptools>=40,<72",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]
