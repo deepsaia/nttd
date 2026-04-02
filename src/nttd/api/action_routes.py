@@ -1,19 +1,18 @@
+"""Session-scoped action routes: submit, validate, track actions."""
+
 import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from nttd.api.dependencies import action_tracker, admin_client, event_logger
+import nttd.api.dependencies as deps
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/actions", tags=["actions"])
+router = APIRouter(prefix="/sessions/{session_id}/actions", tags=["actions"])
 
 # Maps action_type → GS action name.
-# action_type uses snake_case names that match GS commands directly,
-# so the mapping is 1:1 for most cases. The company_id from the envelope
-# is merged into params automatically.
 _KNOWN_ACTIONS: set[str] = {
     # Building — road
     "build_road", "build_road_line", "build_road_depot", "build_road_stop",
@@ -51,10 +50,11 @@ _KNOWN_ACTIONS: set[str] = {
 
 
 @router.post("/submit", response_model=ActionResult)
-async def submit_action(envelope: ActionEnvelope) -> ActionResult:
+async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResult:
     """Submit an action. If action_type maps to a GS command, execute it immediately."""
-    action_tracker.submit(envelope)
-    event_logger.log_action_submitted(envelope)
+    runtime = deps.get_runtime(session_id)
+    runtime.action_tracker.submit(envelope)
+    runtime.event_logger.log_action_submitted(envelope)
 
     if envelope.action_type not in _KNOWN_ACTIONS:
         return ActionResult(
@@ -63,8 +63,8 @@ async def submit_action(envelope: ActionEnvelope) -> ActionResult:
             error=f"Unknown action_type: {envelope.action_type}",
         )
 
-    if not admin_client.connected:
-        action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, "Not connected to OpenTTD")
+    if not runtime.admin_client.connected:
+        runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, "Not connected to OpenTTD")
         return ActionResult(
             action_id=envelope.action_id,
             status=ActionStatus.FAILED,
@@ -75,11 +75,11 @@ async def submit_action(envelope: ActionEnvelope) -> ActionResult:
     params = dict(envelope.parameters)
     params.setdefault("company_id", envelope.company_id)
 
-    action_tracker.update_result(envelope.action_id, ActionStatus.EXECUTING)
+    runtime.action_tracker.update_result(envelope.action_id, ActionStatus.EXECUTING)
     try:
-        gs_result = await admin_client.send_gamescript(envelope.action_type, params)
+        gs_result = await runtime.admin_client.send_gamescript(envelope.action_type, params)
         if gs_result.get("success"):
-            action_tracker.update_result(
+            runtime.action_tracker.update_result(
                 envelope.action_id, ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result", {}),
             )
@@ -88,11 +88,11 @@ async def submit_action(envelope: ActionEnvelope) -> ActionResult:
                 status=ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result") or {},
             )
-            event_logger.log_action_result(result)
+            runtime.event_logger.log_action_result(result)
             return result
         else:
             error = gs_result.get("error", "GS returned failure")
-            action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, error)
+            runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, error)
             return ActionResult(
                 action_id=envelope.action_id,
                 status=ActionStatus.FAILED,
@@ -100,7 +100,7 @@ async def submit_action(envelope: ActionEnvelope) -> ActionResult:
             )
     except Exception as exc:
         logger.exception("Action execution failed: %s", envelope.action_type)
-        action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, str(exc))
+        runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, str(exc))
         return ActionResult(
             action_id=envelope.action_id,
             status=ActionStatus.FAILED,
@@ -109,8 +109,9 @@ async def submit_action(envelope: ActionEnvelope) -> ActionResult:
 
 
 @router.post("/validate", response_model=ActionResult)
-async def validate_action(envelope: ActionEnvelope) -> ActionResult:
+async def validate_action(session_id: str, envelope: ActionEnvelope) -> ActionResult:
     """Validate an action without executing it."""
+    deps.get_runtime(session_id)  # verify session is running
     if envelope.action_type not in _KNOWN_ACTIONS:
         return ActionResult(
             action_id=envelope.action_id,
@@ -121,21 +122,24 @@ async def validate_action(envelope: ActionEnvelope) -> ActionResult:
 
 
 @router.get("/{action_id}/status", response_model=ActionResult)
-def get_action_status(action_id: str) -> ActionResult:
-    result = action_tracker.get_result(action_id)
+def get_action_status(session_id: str, action_id: str) -> ActionResult:
+    runtime = deps.get_runtime(session_id)
+    result = runtime.action_tracker.get_result(action_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Action {action_id} not found")
     return result
 
 
 @router.get("/recent", response_model=list[ActionResult])
-def get_recent_actions(limit: int = 50) -> list[ActionResult]:
-    return action_tracker.get_recent(limit)
+def get_recent_actions(session_id: str, limit: int = 50) -> list[ActionResult]:
+    runtime = deps.get_runtime(session_id)
+    return runtime.action_tracker.get_recent(limit)
 
 
 @router.post("/gs/execute")
-async def gs_execute(action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def gs_execute(session_id: str, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Execute a raw GS command directly (bypasses action tracking)."""
-    if not admin_client.connected:
+    runtime = deps.get_runtime(session_id)
+    if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    return await admin_client.send_gamescript(action, params)
+    return await runtime.admin_client.send_gamescript(action, params)

@@ -1,40 +1,35 @@
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from pathlib import Path
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI
 
+import nttd.api.dependencies as deps
 from nttd.api.action_routes import router as action_router
 from nttd.api.admin_routes import router as admin_router
 from nttd.api.agent_routes import router as agent_router
 from nttd.api.benchmark_routes import router as benchmark_router
 from nttd.api.control_routes import router as control_router
-from nttd.api.dependencies import action_tracker, admin_client, bridge, event_logger, orchestrator
 from nttd.api.metrics_routes import router as metrics_router
-from nttd.api.observation_routes import _metrics
 from nttd.api.observation_routes import router as observation_router
-from nttd.api.ws_routes import broadcast_snapshot
 from nttd.api.ws_routes import router as ws_router
 from nttd.db.engine import close_engine, init_engine
 from nttd.db.migrations import apply_migrations
+from nttd.runtime.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("NTTD_DB_PATH", "nttd.db")
-ADMIN_HOST = os.environ.get("NTTD_ADMIN_HOST", "127.0.0.1")
-ADMIN_PORT = int(os.environ.get("NTTD_ADMIN_PORT", "3977"))
 ADMIN_PASSWORD = os.environ.get("NTTD_ADMIN_PASSWORD", "nttd")
-USE_TENSORBOARD = os.environ.get("NTTD_TENSORBOARD", "").lower() in ("1", "true", "yes")
-
-
-async def _post_connect() -> None:
-    """Called after every (re)connect to resubscribe and sync initial state."""
-    if admin_client.welcome:
-        bridge.apply_welcome(admin_client.welcome)
-    await admin_client.subscribe_defaults()
-    logger.info("nttd subscriptions registered")
+OPENTTD_BINARY = os.environ.get(
+    "NTTD_OPENTTD_BINARY",
+    "/Applications/OpenTTD.app/Contents/MacOS/openttd",
+)
+BASE_CONFIG_DIR = Path(os.environ.get("NTTD_BASE_CONFIG", "ottd_config"))
+SESSIONS_DIR = Path(os.environ.get("NTTD_SESSIONS_DIR", "runs"))
+PORT_RANGE_START = int(os.environ.get("NTTD_PORT_RANGE_START", "4000"))
 
 
 @asynccontextmanager
@@ -48,52 +43,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_engine(DB_PATH)
     await apply_migrations()
 
-    # Wire event logger into orchestrator and action routes
-    if USE_TENSORBOARD:
-        from nttd.logging.event_logger import EventLogger  # noqa: PLC0415
-        tb_logger = EventLogger(use_tensorboard=True)
-        orchestrator.event_logger = tb_logger
-    else:
-        orchestrator.event_logger = event_logger
+    # Initialize session manager
+    deps.session_manager = SessionManager(
+        openttd_binary=OPENTTD_BINARY,
+        base_config_dir=BASE_CONFIG_DIR,
+        sessions_dir=SESSIONS_DIR,
+        admin_password=ADMIN_PASSWORD,
+        port_range_start=PORT_RANGE_START,
+    )
 
-    orchestrator.action_tracker = action_tracker
-    orchestrator.add_observer(broadcast_snapshot)
-    orchestrator.add_observer(_metrics.record)
-
-    admin_client.host = ADMIN_HOST
-    admin_client.port = ADMIN_PORT
-
-    # Register post-connect callback for reconnects
-    admin_client.on_reconnect(_post_connect)
-
-    ok = await admin_client.connect(password=ADMIN_PASSWORD, name="nttd")
-    if ok:
-        await _post_connect()
-        poll_task = asyncio.create_task(admin_client.poll_loop())
-        logger.info("nttd connected to OpenTTD at %s:%d", ADMIN_HOST, ADMIN_PORT)
-    else:
-        poll_task = None
-        logger.warning("nttd running without OpenTTD connection (offline mode)")
+    # Recover any sessions that were running before nttd restarted
+    await deps.session_manager.recover_orphans()
+    logger.info(
+        "nttd started (binary=%s, base_config=%s, sessions_dir=%s, ports=%d+)",
+        OPENTTD_BINARY, BASE_CONFIG_DIR, SESSIONS_DIR, PORT_RANGE_START,
+    )
 
     yield
 
-    if poll_task is not None:
-        await admin_client.disconnect()
-        poll_task.cancel()
-        try:
-            await poll_task
-        except asyncio.CancelledError:
-            pass
-
+    # Shut down all running sessions (triggered by uvicorn on SIGINT/SIGTERM)
+    logger.info("Shutting down nttd...")
+    if deps.session_manager:
+        await deps.session_manager.shutdown_all()
     await close_engine()
-    event_logger.close()
     logger.info("nttd shut down")
 
 
 app = FastAPI(
     title="nttd",
     description="Agent-agnostic API server for OpenTTD AI simulation",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -108,8 +87,13 @@ app.include_router(benchmark_router)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, Any]:
+    mgr = deps.session_manager
+    if mgr is None:
+        return {"status": "starting"}
+    running = mgr.list_running()
     return {
         "status": "ok",
-        "openttd": "connected" if admin_client.connected else "disconnected",
+        "active_sessions": len(running),
+        "sessions": running,
     }

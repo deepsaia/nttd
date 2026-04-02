@@ -28,38 +28,7 @@ function del<T>(path: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Session management
-// ---------------------------------------------------------------------------
-export function getGameStatus() {
-  return get<GameStatus>('/session/status');
-}
-
-export function pauseGame() {
-  return post<{ status: string }>('/session/pause');
-}
-
-export function unpauseGame() {
-  return post<{ status: string }>('/session/unpause');
-}
-
-export function setGameSpeed(speed: number) {
-  return post<{ speed: number }>('/session/speed', { speed });
-}
-
-export function sendRcon(command: string) {
-  return post<{ response: string[] }>('/session/rcon', { command });
-}
-
-export function saveGame(filename: string) {
-  return post<{ response: string[] }>('/session/save', { filename });
-}
-
-export function loadGame(filename: string) {
-  return post<{ response: string[] }>('/session/load', { filename });
-}
-
-// ---------------------------------------------------------------------------
-// Admin sessions
+// Session lifecycle (admin)
 // ---------------------------------------------------------------------------
 export function createSession(name: string, settings: Record<string, string> = {}) {
   return post<{ session_id: string }>('/admin/sessions/new', { name, settings });
@@ -79,7 +48,7 @@ export function updateSettings(id: string, settings: Record<string, string>) {
 }
 
 export function startSession(id: string, mode = 'newgame', aiOpponents = 0) {
-  return post<{ response: string[] }>(`/admin/sessions/${id}/start`, {
+  return post<StartSessionResponse>(`/admin/sessions/${id}/start`, {
     mode,
     ai_opponents: aiOpponents,
   });
@@ -94,67 +63,100 @@ export function deleteSession(id: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Clients / Players
+// Session-scoped: Control
 // ---------------------------------------------------------------------------
-export function getClients() {
-  return get<{ clients: GameClient[]; connected: boolean }>('/admin/clients');
+export function getGameStatus(sessionId: string) {
+  return get<GameStatus>(`/sessions/${sessionId}/status`);
 }
 
-export function getSpectators() {
-  return get<{ spectators: GameClient[] }>('/admin/spectators');
+export function pauseGame(sessionId: string) {
+  return post<{ paused: boolean }>(`/sessions/${sessionId}/pause`);
 }
 
-export function moveClient(clientId: number, companyId: number) {
-  return post<{ response: string[] }>(`/admin/clients/${clientId}/move?company_id=${companyId}`);
+export function unpauseGame(sessionId: string) {
+  return post<{ paused: boolean }>(`/sessions/${sessionId}/unpause`);
 }
 
-export function kickClient(clientId: number, reason = '') {
-  return post<{ response: string[] }>(`/admin/clients/${clientId}/kick?reason=${reason}`);
+export function setGameSpeed(sessionId: string, speed: number) {
+  return post<{ speed: number }>(`/sessions/${sessionId}/speed?speed=${speed}`);
 }
 
-// ---------------------------------------------------------------------------
-// Agents
-// ---------------------------------------------------------------------------
-export function listAgents() {
-  return get<Agent[]>('/agents/list').then((data) => ({ agents: Array.isArray(data) ? data : [] }));
+export function sendRcon(sessionId: string, command: string) {
+  return post<{ response: string[] }>(`/sessions/${sessionId}/rcon?command=${encodeURIComponent(command)}`);
 }
 
-// ---------------------------------------------------------------------------
-// Observation
-// ---------------------------------------------------------------------------
-export function getFullState() {
-  return get<FullState>('/state/full');
+export function saveGame(sessionId: string, filename: string) {
+  return post<{ response: string[] }>(`/sessions/${sessionId}/save?filename=${encodeURIComponent(filename)}`);
 }
 
-export function getCompanyState(companyId: number) {
-  return get<CompanyDetail>(`/state/company/${companyId}`);
+export function loadGame(sessionId: string, filename: string) {
+  return post<{ response: string[] }>(`/sessions/${sessionId}/load?filename=${encodeURIComponent(filename)}`);
 }
 
 // ---------------------------------------------------------------------------
-// Deity operations
+// Session-scoped: Clients / Players
 // ---------------------------------------------------------------------------
-export function deityChangeBalance(companyId: number, delta: number) {
-  return post('/admin/deity/change_balance', { company_id: companyId, delta });
+export function getClients(sessionId: string) {
+  return get<{ clients: GameClient[]; connected: boolean }>(`/admin/sessions/${sessionId}/clients`);
 }
 
-export function deitySetMaxLoan(companyId: number, amount: number) {
-  return post('/admin/deity/set_max_loan', { company_id: companyId, amount });
+export function getSpectators(sessionId: string) {
+  return get<{ spectators: GameClient[] }>(`/admin/sessions/${sessionId}/spectators`);
 }
 
-export function deitySetSetting(key: string, value: number) {
-  return post('/admin/deity/set_setting', { key, value });
+export function moveClient(sessionId: string, clientId: number, companyId: number) {
+  return post<{ response: string[] }>(`/admin/sessions/${sessionId}/clients/${clientId}/move?company_id=${companyId}`);
 }
 
-export function deityFoundTown(params: Record<string, unknown>) {
-  return post('/admin/deity/found_town', params);
-}
-
-export function deityCreateSubsidy(params: Record<string, unknown>) {
-  return post('/admin/deity/create_subsidy', params);
+export function kickClient(sessionId: string, clientId: number, reason = '') {
+  return post<{ response: string[] }>(`/admin/sessions/${sessionId}/clients/${clientId}/kick?reason=${reason}`);
 }
 
 // ---------------------------------------------------------------------------
-// Metrics
+// Session-scoped: Agents
+// ---------------------------------------------------------------------------
+export function listAgents(sessionId: string) {
+  return get<Agent[]>(`/sessions/${sessionId}/agents/list`).then((data) => ({
+    agents: Array.isArray(data) ? data : [],
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Session-scoped: Observation
+// ---------------------------------------------------------------------------
+export function getFullState(sessionId: string) {
+  return get<FullState>(`/sessions/${sessionId}/state/full`);
+}
+
+export function getCompanyState(sessionId: string, companyId: number) {
+  return get<CompanyDetail>(`/sessions/${sessionId}/state/company/${companyId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Session-scoped: Deity operations
+// ---------------------------------------------------------------------------
+export function deityChangeBalance(sessionId: string, companyId: number, delta: number) {
+  return post(`/admin/sessions/${sessionId}/deity/change_balance`, { company_id: companyId, delta });
+}
+
+export function deitySetMaxLoan(sessionId: string, companyId: number, amount: number) {
+  return post(`/admin/sessions/${sessionId}/deity/set_max_loan`, { company_id: companyId, amount });
+}
+
+export function deitySetSetting(sessionId: string, key: string, value: number) {
+  return post(`/admin/sessions/${sessionId}/deity/set_setting`, { key, value });
+}
+
+export function deityFoundTown(sessionId: string, params: Record<string, unknown>) {
+  return post(`/admin/sessions/${sessionId}/deity/found_town`, params);
+}
+
+export function deityCreateSubsidy(sessionId: string, params: Record<string, unknown>) {
+  return post(`/admin/sessions/${sessionId}/deity/create_subsidy`, params);
+}
+
+// ---------------------------------------------------------------------------
+// Metrics (session_id as query param — unchanged)
 // ---------------------------------------------------------------------------
 export function getTimeseries(sessionId: string, metricName: string, companyId?: number) {
   let qs = `?session_id=${sessionId}&metric_name=${metricName}`;
@@ -257,11 +259,9 @@ export interface GameStatus {
   paused: boolean;
   mode: string;
   speed: number;
-  map_x: number;
-  map_y: number;
+  map_width: number;
+  map_height: number;
   landscape: string;
-  companies: number;
-  connected: boolean;
 }
 
 export interface Session {
@@ -270,6 +270,7 @@ export interface Session {
   status: string;
   created_at: string;
   ended_at: string | null;
+  running?: boolean;
 }
 
 export interface SessionDetail extends Session {
@@ -278,6 +279,16 @@ export interface SessionDetail extends Session {
   game_start_date: number | null;
   game_end_date: number | null;
   end_reason: string | null;
+  game_port: number | null;
+  admin_port: number | null;
+}
+
+export interface StartSessionResponse {
+  session_id: string;
+  status: string;
+  game_port: number;
+  admin_port: number;
+  pid: number | null;
 }
 
 export interface Participant {
@@ -475,7 +486,6 @@ export interface Subsidy {
 
 export interface HealthResponse {
   status: string;
-  connected: boolean;
-  game_date: number;
-  mode: string;
+  active_sessions: number;
+  sessions: { session_id: string; game_port: number; admin_port: number; connected: boolean }[];
 }

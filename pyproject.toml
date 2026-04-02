@@ -20,6 +20,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "aiosqlite>=0.20",
     "pyarrow>=18.0",
+    "greenlet>=3.3.2",
 ]
 
 [project.optional-dependencies]

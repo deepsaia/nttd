@@ -9,13 +9,42 @@
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Database | **SQLite** (fully normalized, ~20+ tables) → PostgreSQL later | Normalized for fast time-series queries, proper FK relationships, space-efficient. No JSON blobs for queryable data. |
+| **Session = Server** | Each session is its own OpenTTD dedicated server process with unique ports | Full isolation between sessions. Humans/agents connect to a specific session's game port. Multiple simultaneous games. |
+| Database | **SQLite** (fully normalized, ~25 tables) → PostgreSQL later | Normalized for fast time-series queries, proper FK relationships, space-efficient. |
 | DB middle-layer | **Yes** — all reads from DB, not live state | Decouples ingestion from visualization. Dashboard reads DB. WebSocket = notification only. |
-| Frontend | **React + Vite + Yarn (v4) + TypeScript + MUI,Tailwind** | Modern stack, good charting ecosystem (Recharts/Tremor). |
-| Transport | **TCP only** (admin port + HTTP + WebSocket) | UDP unnecessary at our data rates (~0.5Hz). Admin port is TCP. Reliable delivery needed for actions. |
+| Frontend | **React + Vite + Yarn (v4) + TypeScript + MUI + Tailwind** | Modern stack, good charting ecosystem. |
+| Transport | **TCP only** (admin port + HTTP + WebSocket) | UDP unnecessary at our data rates. Admin port is TCP. |
 | Snapshot storage | **Normalized tables** + compressed JSON blob per snapshot for replay | Metrics/actions/events in proper columns. Full snapshot as parquet for replay only. |
 | Concurrency model | **Per-company asyncio.Lock** for action serialization | 15 companies × 10 agents = 150 connections. Cross-company parallel, intra-company serial. |
-| Primary runtime | **Async real-time** | Game runs continuously, agents observe and act in real-time. No pause/unpause cycle as of now. But we can define the run-time say 10 minutes or 60 minutes or define a goal, say, until one of the companies reach 1 million revenue. |
+| Primary runtime | **Async real-time** | Game runs continuously, agents observe and act in real-time. |
+
+### Multi-Server Session Architecture
+
+```
+nttd (FastAPI)
+├── SessionManager (singleton, initialized in app.py lifespan)
+│   ├── Session "ses_abc" (active)
+│   │   ├── OpenTTD process (PID 12345)
+│   │   ├── AdminClient → 127.0.0.1:4001
+│   │   ├── WorldState, Bridge, Orchestrator, ActionTracker, AgentRegistry
+│   │   ├── game_port = 4000  ← humans/agents connect here via OpenTTD client
+│   │   └── config_dir = runs/ses_abc/
+│   ├── Session "ses_def" (active)
+│   │   ├── OpenTTD process (PID 12346)
+│   │   ├── AdminClient → 127.0.0.1:4003
+│   │   ├── game_port = 4002
+│   │   └── config_dir = runs/ses_def/
+│   └── Session "ses_old" (archived, no process)
+└── DB (session records, settings, participants, metrics)
+```
+
+**Session lifecycle**: `pending` → `active` (server running) → `archived` (server stopped)
+
+**Port allocation**: Even ports for game (4000, 4002, 4004...), odd for admin (4001, 4003, 4005...). Checks both registry and OS availability.
+
+**Orphan recovery**: On nttd restart, checks DB for active sessions with PIDs, reconnects if alive, marks crashed if dead.
+
+**Per-session config**: Each session gets its own config directory under `runs/`, with patched ports and symlinked shared resources (GS, AI, baseset, newgrf).
 
 ---
 
@@ -75,270 +104,191 @@
 
 ---
 
-## Phase 2 — Backend Engine (Current)
+## Phase 2 — Backend Engine (Completed)
 
-> Build the data layer, missing GS commands, admin APIs, and pathfinding.
-> **Goal**: Solid backend that the admin console can consume.
+> Build the data layer, missing GS commands, admin APIs, pathfinding, and multi-server architecture.
 
 ### 2.1 Database Layer
 **Ref**: `docs/openttd_study_part4...md` §13
 
-- [x] **2.1.1** Create `src/nttd/db/` package with `engine.py` (SQLAlchemy Core + aiosqlite, WAL mode)
-- [x] **2.1.2** Schema definition: `src/nttd/db/tables.py` — 25 fully normalized SQLAlchemy tables:
-  - `sessions` — id, name, status, settings columns (not JSON), timestamps
-  - `session_settings` — key/value pairs per session (map_x, landscape, max_trains, etc.)
-  - `participants` — session_id FK, type, participant_id, company_id, name, timestamps
-  - `snapshots` — session_id FK, game_date, tick, compressed_json (replay only)
-  - `companies` — session_id FK, game_date, company_id, name, balance, loan, income, expenses, value, rating (one row per company per snapshot)
-  - `company_expenses` — session_id FK, game_date, company_id, category (13 expense types), amount
-  - `towns` — session_id FK, game_date, town_id, name, population, x, y, is_city, growth_rate
-  - `industries` — session_id FK, game_date, industry_id, type_name, x, y, production columns
-  - `industry_production` — session_id FK, game_date, industry_id, cargo_id, produced, transported_pct
-  - `stations` — session_id FK, game_date, station_id, company_id, name, x, y, facility flags
-  - `station_cargo` — session_id FK, game_date, station_id, cargo_id, waiting, rating
-  - `vehicles` — session_id FK, game_date, vehicle_id, company_id, type, engine_id, profit, speed, running, in_depot
-  - `vehicle_orders` — session_id FK, game_date, vehicle_id, order_index, destination_id, order_type, flags
-  - `subsidies` — session_id FK, game_date, subsidy_id, cargo_id, src_type, src_id, dst_type, dst_id, remaining
-  - `actions` — session_id FK, participant_id, company_id, game_date, action_type, status, error, cost, submitted_at, completed_at
-  - `action_parameters` — action_id FK, param_key, param_value (normalized key-value)
-  - `events` — session_id FK, game_date, event_type, company_id, columns per event type
-  - `messages` — session_id FK, game_date, type, from_id, to_id, company_id, body
-  - `metrics` — session_id FK, game_date, company_id (nullable), metric_name, metric_value
-  - `finances` — session_id FK, game_date, company_id, balance, loan, max_loan, income, expenses, company_value, performance_rating, cargo_delivered (per-snapshot financial summary — the "balance sheet" row)
-  - `finance_revenue` — session_id FK, game_date, company_id, source (train/roadveh/aircraft/ship), amount (revenue broken down by vehicle type)
-  - `finance_expenses` — session_id FK, game_date, company_id, category (construction/new_vehicles/train_run/roadveh_run/aircraft_run/ship_run/property/loan_interest/other), amount (maps to 13 GSCompany.ExpensesType values)
-  - `finance_quarterly` — session_id FK, quarter_date, company_id, q_income, q_expenses, q_cargo_delivered, q_performance_rating, q_company_value (quarterly aggregated — from GSCompany.GetQuarterly* methods)
-  - `cargo_flows` — session_id FK, game_date, company_id, cargo_id, town_or_industry_id, entity_type (town/industry), direction (delivery/pickup), amount (from GSCargoMonitor delta counters)
-  - `infrastructure` — session_id FK, game_date, company_id, rail_pieces, road_pieces, water_pieces, station_pieces, airport_pieces, rail_cost, road_cost, water_cost, station_cost, airport_cost
-  - `leaderboard` — session_id FK, company_id, participant_id, rank, final_value, final_rating, total_cargo, total_actions, success_rate
-- [x] **2.1.3** Migration system: `src/nttd/db/migrations.py` — auto-applies `metadata.create_all` on startup. Wired into `app.py` lifespan.
+- [x] **2.1.1** `src/nttd/db/` package with `engine.py` (SQLAlchemy Core + aiosqlite, WAL mode)
+- [x] **2.1.2** Schema: `src/nttd/db/tables.py` — 25 normalized tables (sessions, session_settings, participants, snapshots, companies, towns, industries, stations, vehicles, actions, events, messages, metrics, finances, leaderboard, etc.)
+- [x] **2.1.3** Migration system: `src/nttd/db/migrations.py` — auto-applies on startup, ALTER TABLE for new columns (game_port, admin_port, pid)
 - [x] **2.1.4** Repository layer: `src/nttd/db/repositories/` — session_repo, metrics_repo, action_repo, event_repo, entity_repo
-  - Each repo: `get_*()`, `query_*()`, `list_*()` methods with filters
-  - Batch insert via SessionRecorder's background flush
-- [x] **2.1.5** Session recorder: `src/nttd/db/recorder.py` — background flush pattern (1s interval, 5000 max buffer)
-  - Parquet writer for full snapshots (`src/nttd/db/parquet_writer.py`), zstd compression
-  - Normalized data to SQLite, full snapshots to Parquet (no gzip blobs in DB)
-  - Wired into `app.py` lifespan (DB init + migrations on startup, close on shutdown)
-- [x] **2.1.6** Indexes for query performance:
-  - `(session_id, game_date)` on all time-series tables
-  - `(session_id, company_id, game_date)` on company-scoped tables
-  - `(session_id, participant_id)` on actions and messages
+- [x] **2.1.5** Session recorder: background flush (1s interval, 5000 max buffer) + Parquet writer
+- [x] **2.1.6** Indexes on `(session_id, game_date)`, `(session_id, company_id, game_date)`, `(session_id, participant_id)`
 
 ### 2.2 Missing GS Commands
-**Ref**: `docs/openttd_study_part3...md` §4-5, `docs/openttd_study_part4...md` §4.3, §9
+**Ref**: `docs/openttd_study_part3...md` §4-5
 
-High priority (needed for realistic gameplay and admin console):
+- [x] All high-priority: `get_game_settings`, `set_game_setting`, `get_expense_breakdown`, `get_infrastructure_costs`, `get_cargo_flows`, `estimate_cost`, `get_clients`, `change_bank_balance`, `set_max_loan`
+- [x] All medium-priority: conditional orders, terraform, one-way roads, convert road type, stop location, engine details
+- [x] Query enrichment: stations (cargo ratings), vehicles (running costs/capacity), companies (quarterly), industries (accepted cargo)
+- [x] Event monitoring: 18 event types forwarded via GS → admin port → nttd
 
-- [x] **2.2.1** `get_game_settings` — read any game setting by key name (`GSGameSettings.GetValue()`)
-- [x] **2.2.2** `set_game_setting` — write game setting (`GSGameSettings.SetValue()`) [deity]
-- [x] **2.2.3** `get_expense_breakdown` — quarterly financials per company
-- [x] **2.2.4** `get_infrastructure_costs` — `GSInfrastructure.GetMonthly*Costs()` + piece counts
-- [x] **2.2.5** `get_cargo_flows` — `GSCargoMonitor.Get*Amount()` per company/cargo/town/industry
-- [x] **2.2.6** `estimate_cost` — `GSTestMode` + `GSAccounting` wrapper for dry-run cost estimation
-- [x] **2.2.7** `get_clients` — `GSClient` methods: list connected clients, their companies, names
-- [x] **2.2.8** `change_bank_balance` — `GSCompany.ChangeBankBalance()` [deity]
-- [x] **2.2.9** `set_max_loan` — `GSCompany.SetMaxLoanAmountForCompany()` [deity]
-
-Medium priority (advanced gameplay):
-
-- [x] **2.2.10** Conditional orders: `set_order_condition`, `set_order_compare_function`, `set_order_compare_value`
-- [x] **2.2.11** Terraform: `raise_tile`, `lower_tile`, `level_tiles` (`GSTile.*`)
-- [x] **2.2.12** `plant_tree`, `plant_tree_rectangle` (`GSTile.*`)
-- [x] **2.2.13** `build_one_way_road`, `build_one_way_road_full` (`GSRoad.*`)
-- [x] **2.2.14** `convert_road_type` (`GSRoad.ConvertRoadType()`)
-- [x] **2.2.15** `set_stop_location` — train platform stop position (NEAR/MIDDLE/FAR)
-- [x] **2.2.16** `get_engine_details` — running cost, capacity, speed, reliability (`GSEngine.*`)
-
-Query enrichment (extend existing commands):
-
-- [x] **2.2.17** Enrich `get_stations` — added cargo ratings
-- [x] **2.2.18** Enrich `get_vehicles` — added running costs, capacity, running state
-- [x] **2.2.19** Enrich `get_companies` — added performance rating, quarterly income/expenses/cargo, company value
-- [x] **2.2.20** Enrich `get_industries` — added is_raw/is_processing to list; accepted cargo + stockpile to detail
-
-Event monitoring (new GS-side event handler):
-
-- [x] **2.2.21** GS event listener: catch 18 event types, forward via `GSAdmin.Send()`
-  - Vehicle crashed/lost/unprofitable/autorenewed, subsidy offered/awarded/expired, industry open/close
-  - Company new/in_trouble/bankrupt/merger, town founded, station first vehicle, zeppeliner crash
-  - Each event → JSON packet → admin port → nttd
-
-### 2.3 Admin API Endpoints
+### 2.3 Admin API Endpoints (All Session-Scoped)
 **Ref**: `docs/openttd_study_part4...md` §11, §12, §16, §18.4
 
-Session management:
+All routes are session-scoped — each takes `{session_id}` as a path parameter and resolves the per-session runtime.
 
-- [x] **2.3.1** `POST /admin/sessions/new` — create session, persist to DB
-- [x] **2.3.2** `GET /admin/sessions` — list all sessions (active + completed)
-- [x] **2.3.3** `GET /admin/sessions/{id}` — session details, participants, settings
-- [x] **2.3.4** `POST /admin/sessions/{id}/settings` — update settings + apply via rcon
-- [x] **2.3.5** `POST /admin/sessions/{id}/start` — apply settings, AI opponents, newgame/load
-- [x] **2.3.6** `POST /admin/sessions/{id}/stop` — end session, pause game
-- [x] **2.3.7** `DELETE /admin/sessions/{id}` — archive session
+Session lifecycle:
+- [x] `POST /admin/sessions/new` — create session (status=pending, stores all settings including defaults)
+- [x] `GET /admin/sessions` — list sessions (enriched with `running` boolean from SessionManager)
+- [x] `GET /admin/sessions/{id}` — session details with settings, participants, ports, running state
+- [x] `POST /admin/sessions/{id}/settings` — update settings (applies live if session is running)
+- [x] `POST /admin/sessions/{id}/start` — spawns OpenTTD server, allocates ports, connects admin client, applies settings, returns game_port/admin_port/pid
+- [x] `POST /admin/sessions/{id}/stop` — kills OpenTTD process, auto-archives session
+- [x] `DELETE /admin/sessions/{id}` — stops if running, deletes from DB
 
-Player/agent management:
+Session-scoped control (`/sessions/{id}/...`):
+- [x] `GET /sessions/{id}/status` — game state (date, paused, mode, speed, map dims)
+- [x] `POST /sessions/{id}/pause|unpause|speed|mode|rcon|save|load`
+- [x] `POST /sessions/{id}/heartbeat/action|interval|action_window`
+- [x] `POST /sessions/{id}/assist|assist/approve|assist/cancel`
+- [x] `POST /sessions/{id}/scenario`
 
-- [x] **2.3.8** `GET /admin/clients` — connected game clients via GS get_clients
-- [x] **2.3.9** `POST /admin/clients/{id}/move` — move client to company via rcon
-- [x] **2.3.10** `POST /admin/clients/{id}/kick` — kick client via rcon
-- [ ] **2.3.11** `POST /admin/agents/{id}/launch` — start an agent process (subprocess) [deferred to Phase 4]
-- [ ] **2.3.12** `POST /admin/agents/{id}/stop` — stop agent process [deferred to Phase 4]
-- [x] **2.3.13** `GET /admin/spectators` — list spectators (company_id=255)
+Session-scoped players:
+- [x] `GET /admin/sessions/{id}/clients` — connected game clients
+- [x] `POST /admin/sessions/{id}/clients/{cid}/move|kick`
+- [x] `GET /admin/sessions/{id}/spectators`
 
-Deity operations:
+Session-scoped deity:
+- [x] `POST /admin/sessions/{id}/deity/change_balance|set_max_loan|set_setting|found_town|expand_town|set_town_growth|create_subsidy|change_town_rating`
 
-- [x] **2.3.14** `POST /admin/deity/change_balance` — inject/remove money
-- [x] **2.3.15** `POST /admin/deity/set_max_loan` — per-company loan limit
-- [x] **2.3.16** `POST /admin/deity/found_town` — create new town
-- [x] **2.3.17** `POST /admin/deity/expand_town` — grow town
-- [x] **2.3.18** `POST /admin/deity/set_town_growth` — control growth rate
-- [x] **2.3.19** `POST /admin/deity/create_subsidy` — offer subsidy
-- [x] **2.3.20** `POST /admin/deity/change_town_rating` — modify company town rating
-- [x] **2.3.21** `POST /admin/deity/set_setting` — modify game setting at runtime
+Session-scoped observation (`/sessions/{id}/state/...`):
+- [x] `GET /sessions/{id}/state/full|compact|company/{cid}|towns|industries|stations|vehicles|metrics`
+- [x] `POST /sessions/{id}/state/gs/query`
 
-Metrics/data:
+Session-scoped actions (`/sessions/{id}/actions/...`):
+- [x] `POST /sessions/{id}/actions/submit|validate|gs/execute`
+- [x] `GET /sessions/{id}/actions/{aid}/status|recent`
 
-- [x] **2.3.22** `GET /metrics/timeseries` — time-series query with filters
-- [x] **2.3.23** `GET /metrics/latest` — current values for all companies
-- [x] **2.3.24** `GET /metrics/comparison` — compare companies at a given date
-- [x] **2.3.25** `GET /metrics/agent/{id}/performance` — agent action stats
-- [x] `GET /metrics/finances` — financial time-series per company
-- [x] `GET /metrics/available` — list distinct metric names
+Session-scoped agents (`/sessions/{id}/agents/...`):
+- [x] `POST /sessions/{id}/agents/connect|{aid}/disconnect`
+- [x] `GET /sessions/{id}/agents/list|{aid}/status|{aid}/subscriptions`
 
-Messages:
+Session-scoped WebSocket:
+- [x] `WS /ws/{session_id}/admin` — admin console event notifications
+- [x] `WS /ws/{session_id}/{agent_id}` — agent heartbeat push
 
-- [x] **2.3.26** `POST /messages/send` — agent-to-agent or broadcast
-- [x] **2.3.27** `GET /messages/history` — paginated message log
-- [x] **2.3.28** `GET /messages/inbox/{agent_id}` — poll messages
+Session-scoped benchmark (`/sessions/{id}/benchmark/...`):
+- [x] `POST /sessions/{id}/benchmark/setup|reset|export`
+- [x] `GET /sessions/{id}/benchmark/results`
 
-Leaderboard:
+Session-scoped pathfinding:
+- [x] `POST /admin/sessions/{id}/pathfind`
 
-- [x] **2.3.29** `GET /leaderboard/session/{id}` — per-session rankings
-- [x] **2.3.30** `GET /leaderboard/global` — cross-session aggregate rankings
-- [x] **2.3.31** `POST /leaderboard/compute/{id}` — recompute session rankings
+Metrics/messages/leaderboard/replay (session_id as query/path param — DB-backed, no runtime needed):
+- [x] `GET /metrics/timeseries|latest|comparison|finances|available`
+- [x] `POST /messages/send`, `GET /messages/history|inbox/{agent_id}`
+- [x] `GET /leaderboard/session/{id}|global`, `POST /leaderboard/compute/{id}`
+- [x] `GET /replay/sessions/{id}/snapshots|actions|events`
+- [x] `GET /data/towns|industries|stations|vehicles|subsidies`
 
-Replay:
+### 2.4 Multi-Server Session Architecture
+- [x] **2.4.1** DB schema: `game_port`, `admin_port`, `pid` columns on sessions table
+- [x] **2.4.2** Config builder: `src/nttd/runtime/config_builder.py` — per-session config dir with patched ports, symlinked shared resources
+- [x] **2.4.3** SessionRuntime: `src/nttd/runtime/session_runtime.py` — bundles AdminClient, WorldState, Bridge, Orchestrator, ActionTracker, AgentRegistry, EventLogger, process handle
+- [x] **2.4.4** SessionManager: `src/nttd/runtime/session_manager.py` — port allocation, start/stop lifecycle, orphan recovery, shutdown_all
+- [x] **2.4.5** Dependencies: `src/nttd/api/dependencies.py` — `session_manager` singleton + `get_runtime(session_id)` helper (replaced all old global singletons)
+- [x] **2.4.6** App lifespan: creates SessionManager with env vars (NTTD_OPENTTD_BINARY, NTTD_BASE_CONFIG, NTTD_SESSIONS_DIR, NTTD_PORT_RANGE_START, NTTD_ADMIN_PASSWORD), runs orphan recovery on startup, shutdown_all on exit
+- [x] **2.4.7** All route files updated for session scope (admin, control, observation, action, agent, ws, benchmark, pathfinding)
 
-- [x] **2.3.32** `GET /replay/sessions/{id}/snapshots` — snapshot metadata for timeline
-- [x] **2.3.33** `GET /replay/sessions/{id}/actions` — all actions
-- [x] `GET /replay/sessions/{id}/events` — all events
-- [ ] **2.3.34** `GET /replay/sessions/{id}/export` — full session export (ZIP) [deferred]
-
-Entity data (for dashboard):
-
-- [x] `GET /admin/data/towns` — latest town snapshot
-- [x] `GET /admin/data/industries` — latest industry snapshot
-- [x] `GET /admin/data/stations` — latest station snapshot (filterable by company)
-- [x] `GET /admin/data/vehicles` — latest vehicle snapshot (filterable by company)
-- [x] `GET /admin/data/subsidies` — latest subsidy snapshot
-
-### 2.4 Pathfinding Service
+### 2.5 Pathfinding Service
 **Ref**: `docs/openttd_study_part4...md` §14
 
-- [x] **2.4.1** Tile cache: `src/nttd/pathfinding/tile_cache.py` — 2D array, batch loading via GS
-  - `load_area`, `load_full`, `load_corridor` (with margin), `invalidate_area/tile`
-- [x] **2.4.2** A* core: `src/nttd/pathfinding/astar.py` — generic A* with CostFunction protocol
-  - Priority queue (heapq), visited set, path reconstruction, max_iterations limit
-- [x] **2.4.3** Road pathfinder: `src/nttd/pathfinding/road.py`
-  - Cost model: flat=100, slope=+200, crossing=+300, demolish=+500
-- [x] **2.4.4** Rail pathfinder: `src/nttd/pathfinding/rail.py`
-  - Direction-aware state (x, y, direction), no 180° turns, curve penalties
-- [x] **2.4.5** Water pathfinder: `src/nttd/pathfinding/water.py`
-  - Water=50, canal=500, lock=800, coast=100
-- [x] **2.4.6** GS command: `get_tile_area` — batch tile scan (up to 400 tiles per call)
-- [x] **2.4.7** API endpoint: `POST /admin/pathfind` with transport_type, from/to, options
-- [x] **2.4.8** Service layer: `src/nttd/pathfinding/service.py` — orchestrates cache + A*
+- [x] Tile cache, A* core, road/rail/water pathfinders
+- [x] GS batch tile scan, API endpoint, service layer
 
-### 2.5 Connection & Concurrency Hardening
-**Ref**: `docs/openttd_study_part4...md` §15, §17
-
-- [x] **2.5.1** Auto-reconnect with exponential backoff (already in admin_client.py)
-- [ ] **2.5.2** Save/load detection → clear WorldState, notify agents [deferred — needs protocol analysis]
-- [x] **2.5.3** Per-company asyncio.Lock: `src/nttd/runtime/company_lock.py` — CompanyLockManager
-  - Wired into orchestrator `_execute_actions`, serializes same-company actions
-- [x] **2.5.4** WebSocket connection manager (already exists in ws_routes.py, lightweight triggers)
-- [ ] **2.5.5** GS query pipeline: send next query while waiting for response [deferred — optimization]
-- [x] **2.5.6** Staggered refresh: companies every cycle, towns/industries every 5 cycles
-- [x] **2.5.7** Health ping: `admin_client.health_ping()` + GS event forwarding via `on_game_event()`
+### 2.6 Connection & Concurrency Hardening
+- [x] Auto-reconnect with exponential backoff
+- [x] Per-company asyncio.Lock
+- [x] Staggered refresh, health ping
+- [ ] **2.6.1** Save/load detection → clear WorldState, notify agents [deferred]
+- [ ] **2.6.2** GS query pipeline: send next query while waiting for response [deferred — optimization]
 
 ---
 
-## Phase 3 — Admin Console Frontend
+## Phase 3 — Admin Console Frontend (Current)
 
-> React + Vite + Yarn + TypeScript + Tailwind
-> **Goal**: Full spectate milestone — start AI game, watch from browser.
+> React + Vite + Yarn + TypeScript + Tailwind + MUI
+> **Goal**: Full spectate milestone — create session, start game, join from OpenTTD client, watch from browser.
 
 ### 3.1 Project Setup
 - [x] **3.1.1** Initialize: `admin-console/` with Vite + React + TypeScript + Tailwind + MUI
-- [x] **3.1.2** Yarn v4 (Berry) configuration — per-project, no global changes
-- [x] **3.1.3** API client module: typed HTTP client wrapping all nttd endpoints (`src/api/client.ts`)
-- [x] **3.1.4** WebSocket hook: `useWebSocket()` — connect to `/ws/admin`, parse triggers, auto-reconnect
-- [x] **3.1.5** Zustand store: `gameStore.ts` — real-time game state, companies, events (ring buffer 200)
-  - `themeStore.ts` — dark/light mode toggle with localStorage persistence
+- [x] **3.1.2** Yarn v4 (Berry) configuration
+- [x] **3.1.3** API client module: typed HTTP client wrapping all session-scoped endpoints (`src/api/client.ts`)
+- [x] **3.1.4** WebSocket hook: `useWebSocket()` — connects to `/ws/{sessionId}/admin`, session-aware, auto-reconnect
+- [x] **3.1.5** Zustand store: `gameStore.ts` — `activeSessionId`, game state, companies, events
 - [x] **3.1.6** React Router: 4 pages (Session, Players, Metrics, Leaderboard) + Sidebar navigation
 - [x] **3.1.7** Vite proxy config for API (`/api` → `:8000`) + WebSocket (`/ws` → `:8000`)
+- [x] **3.1.8** Session-aware poller: `usePoller()` — polls `/health` for connectivity, session-scoped endpoints only when `activeSessionId` is set
 
 ### 3.2 Page 1 — Session Management
-**Ref**: `docs/openttd_study_part4...md` §11.2
-
-- [x] **3.2.1** Session creation form: settings grouped by category (Map, Economy, Vehicles, AI)
-- [ ] **3.2.2** Session presets: save/load settings configurations [deferred — needs backend preset storage]
-- [x] **3.2.3** Session list: active + completed sessions with status badges, select/delete
-- [x] **3.2.4** Session controls: Start, Stop, Save, Load + Top bar Pause/Unpause + Speed slider
-- [x] **3.2.5** AI opponents selector: count dropdown (0-14) on start
-- [x] **3.2.6** Connection info display: server IP, port, map size, landscape
+- [x] **3.2.1** Session creation form: comprehensive settings with 5 groups (World Generation, Towns & Industries, Economy, Vehicles, AI Competitors), ~25 settings
+  - All settings use OpenTTD integer values (landscape=0-3, town_name=0-20, etc.)
+  - Defaults match OpenTTD game defaults (flat terrain, 64x64 map, medium rivers, etc.)
+  - Options ordered with default first in dropdowns
+  - Conditional fields (custom height, custom town count, custom industry count, custom sea level)
+  - All defaults + user selections stored to DB on create (complete settings snapshot)
+- [x] **3.2.2** Session list: shows status badges + green dot for running sessions
+- [x] **3.2.3** Session detail view: full settings display (all fields, not just non-defaults), edit mode for pending sessions
+- [x] **3.2.4** Session controls: Start Game (spawns OpenTTD server), Stop (kills process + auto-archives)
+- [x] **3.2.5** Delete confirmation dialog for archived sessions (no separate archive button)
+- [x] **3.2.6** How to Join card: dynamic port from session (`127.0.0.1:{game_port}`), step-by-step instructions
+- [x] **3.2.7** Save/Load game for active sessions
+- [x] **3.2.8** Loading state during session start (~3-5s while OpenTTD boots)
+- [ ] **3.2.9** Session presets: save/load settings configurations [deferred]
 
 ### 3.3 Page 2 — Players & Agents
-**Ref**: `docs/openttd_study_part4...md` §11.3
-
 - [x] **3.3.1** Connected agents panel: list with company scope, subscriptions, online status
 - [x] **3.3.2** Connected humans panel: list with company, name, client ID
 - [x] **3.3.3** Spectators panel (company_id=255 clients)
-- [ ] **3.3.4** Agent launch dialog: select type, company, config [deferred to Phase 4]
-- [x] **3.3.5** Move/kick controls (with confirmation prompts)
-- [x] **3.3.6** Live event feed: scrolling log from WebSocket events (ring buffer 200)
-- [x] **3.3.7** Message center: view history + send chat messages
+- [x] **3.3.4** Move/kick controls (session-aware, with confirmation prompts)
+- [x] **3.3.5** Live event feed: scrolling log from WebSocket events
+- [x] **3.3.6** Message center: view history + send chat messages
+- [ ] **3.3.7** Agent launch dialog: select type, company, config [deferred to Phase 4]
 
 ### 3.4 Page 3 — Metrics & Timeline
-**Ref**: `docs/openttd_study_part4...md` §12.4
-
 - [x] **3.4.1** Time-series line charts (Recharts): balance, income, value over time per company
-- [ ] **3.4.2** Stacked bar charts: revenue by vehicle type [deferred — needs finance_revenue data]
-- [ ] **3.4.3** Pie charts: expense breakdown per company [deferred — needs finance_expenses data]
-- [x] **3.4.4** Performance rating bar chart + cargo delivered bar chart
-- [ ] **3.4.5** Timeline scrubber: drag to any game date, see state at that point [deferred]
-- [ ] **3.4.6** Event markers on timeline (crashes, subsidies, bankruptcies) [deferred]
-- [x] **3.4.7** Filters: company selector (all or individual)
-- [ ] **3.4.8** Data export: CSV download for selected metrics [deferred]
+- [x] **3.4.2** Performance rating bar chart + cargo delivered bar chart
+- [x] **3.4.3** Filters: company selector (all or individual)
+- [ ] **3.4.4** Stacked bar charts: revenue by vehicle type [deferred]
+- [ ] **3.4.5** Pie charts: expense breakdown per company [deferred]
+- [ ] **3.4.6** Timeline scrubber + event markers [deferred]
 
 ### 3.5 Page 4 — Leaderboard
-**Ref**: `docs/openttd_study_part4...md` §16
-
-- [x] **3.5.1** Per-session leaderboard table: rank, company, player, balance, value, rating, cargo, actions, success rate
-- [x] **3.5.2** Cross-session leaderboard: aggregate stats per participant (sessions, avg rank, total cargo, avg success)
-- [x] **3.5.3** Sortable columns (MUI TableSortLabel)
-- [ ] **3.5.4** Participant detail view: session history, per-session performance [deferred]
+- [x] **3.5.1** Per-session leaderboard table
+- [x] **3.5.2** Cross-session leaderboard
+- [x] **3.5.3** Sortable columns
+- [ ] **3.5.4** Participant detail view [deferred]
 
 ### 3.6 Top Bar (Global)
-- [x] **3.6.1** Game status: current date, speed, paused/playing indicator, company count, mode
-- [x] **3.6.2** Connection status: OpenTTD connected/disconnected chip
-- [x] **3.6.3** Quick controls: pause/play toggle, speed slider, dark/light mode toggle
+- [x] **3.6.1** Game status: date, speed, paused/playing, company count (session-aware, only shows for active session)
+- [x] **3.6.2** Connection status: nttd health check (not per-session OpenTTD connection)
+- [x] **3.6.3** Quick controls: pause/play toggle, speed slider, dark/light mode toggle (all session-scoped)
+
+### 3.7 Remaining Frontend Work
+- [ ] **3.7.1** OpenTTD server log forwarding (pipe subprocess stdout to nttd logger)
+- [ ] **3.7.2** AI selection per competitor slot (list available AIs, assign to each slot)
+- [ ] **3.7.3** Session reconnect on page reload (persist activeSessionId to localStorage)
+- [ ] **3.7.4** Real-time entity data on dashboard (towns, industries, stations, vehicles from DB)
 
 ---
 
 ## Phase 4 — Agent Integration
 
-> After admin console works with AI-only games, integrate LLM agents.
+> After admin console works with human + AI games, integrate LLM agents.
 
 ### 4.1 Agent Framework Updates
-- [ ] **4.1.1** Update agent base class for async real-time mode (no heartbeat, continuous loop)
+- [ ] **4.1.1** Update agent base class for async real-time mode
 - [ ] **4.1.2** Agent authentication (API keys)
-- [ ] **4.1.3** Agent self-registration flow
+- [ ] **4.1.3** Agent self-registration flow (connects to specific session)
 - [ ] **4.1.4** Per-company action serialization with same-company multi-agent support
 - [ ] **4.1.5** Agent-to-agent messaging integration
 
 ### 4.2 Pathfinding Integration
-- [ ] **4.2.1** Agent tools for pathfinding (`POST /pathfind`)
+- [ ] **4.2.1** Agent tools for pathfinding (`POST /sessions/{id}/pathfind`)
 - [ ] **4.2.2** Compound action builder: plan route → pathfind → build → deploy vehicles
 
 ### 4.3 Stress Testing
@@ -352,7 +302,6 @@ Entity data (for dashboard):
 
 - [ ] PostgreSQL migration (swap SQLite connection string)
 - [ ] TimescaleDB for time-series optimization
-- [ ] Multiple concurrent sessions (separate nttd process per session)
 - [ ] Tournament mode (queue sessions, aggregate leaderboard)
 - [ ] Gym/PettingZoo wrappers for RL training
 - [ ] Training data export (Parquet format)
@@ -361,14 +310,29 @@ Entity data (for dashboard):
 
 ---
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NTTD_DB_PATH` | `nttd.db` | SQLite database file path |
+| `NTTD_OPENTTD_BINARY` | `/Applications/OpenTTD.app/Contents/MacOS/openttd` | Path to OpenTTD binary |
+| `NTTD_BASE_CONFIG` | `ottd_config` | Template config directory |
+| `NTTD_SESSIONS_DIR` | `runs` | Where per-session config dirs are created |
+| `NTTD_PORT_RANGE_START` | `4000` | Starting port for allocation (even=game, odd=admin) |
+| `NTTD_ADMIN_PASSWORD` | `nttd` | Admin password for all sessions |
+
+---
+
 ## Milestone Targets
 
-| Milestone | Deliverable | Depends On |
-|-----------|------------|------------|
-| **M1: Backend DB** | DB schema, recorder, metrics API | Phase 2.1 |
-| **M2: Missing GS** | All high-priority GS commands, event forwarding | Phase 2.2 |
-| **M3: Admin API** | All admin/deity/metrics/leaderboard endpoints | Phase 2.3, M1, M2 |
-| **M4: Pathfinding** | A* service for road/rail/water | Phase 2.4 |
-| **M5: Console MVP** | Full spectate: start AI game, watch live, replay | Phase 3, M3 |
-| **M6: Agents** | LLM agents playing via console, multi-agent same company | Phase 4, M5 |
-| **M7: Scale** | 150 connections, PostgreSQL, Docker | Phase 5, M6 |
+| Milestone | Deliverable | Status |
+|-----------|------------|--------|
+| **M1: Backend DB** | DB schema, recorder, metrics API | Done |
+| **M2: Missing GS** | All GS commands, event forwarding | Done |
+| **M3: Admin API** | All admin/deity/metrics/leaderboard endpoints | Done |
+| **M4: Pathfinding** | A* service for road/rail/water | Done |
+| **M5: Multi-Server** | Each session = own OpenTTD server, port isolation, orphan recovery | Done |
+| **M6: Console MVP** | Create session → start game → join from OpenTTD client → spectate/play | Done |
+| **M7: Game Loop** | Settings stored, defaults correct, archive on stop, full detail view | Done |
+| **M8: Agents** | LLM agents playing via console, multi-agent same company | Phase 4 |
+| **M9: Scale** | 150 connections, PostgreSQL, Docker | Phase 5 |

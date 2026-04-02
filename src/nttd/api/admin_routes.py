@@ -1,16 +1,18 @@
 """Admin API endpoints for session management, player management, and deity operations.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §11
+Each session is its own OpenTTD server. Starting a session spawns a server process;
+stopping it kills the process. All operations target a specific session's runtime.
 """
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from nttd.api.dependencies import admin_client, orchestrator, world
+import nttd.api.dependencies as deps
 from nttd.db.repositories import session_repo
 
 logger = logging.getLogger(__name__)
@@ -79,29 +81,39 @@ class DeityTownRatingRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 2.3.1-2.3.7: Session management
+# Session lifecycle
 # ---------------------------------------------------------------------------
 
 @router.post("/sessions/new")
 async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
-    game_date = world.game.game_date if world.game.game_date > 0 else None
 
     await session_repo.create_session(
         session_id=session_id,
         name=request.name or f"Session {session_id[:8]}",
-        game_start_date=game_date,
+        status="pending",
     )
 
     if request.settings:
         await session_repo.upsert_settings(session_id, request.settings)
 
-    return {"session_id": session_id, "status": "active"}
+    return {"session_id": session_id, "status": "pending"}
 
 
 @router.get("/sessions")
 async def list_sessions(status: str | None = None, limit: int = 50) -> dict[str, Any]:
     sessions = await session_repo.list_sessions(status=status, limit=limit)
+
+    # Enrich with running state from session manager
+    mgr = deps.session_manager
+    for s in sessions:
+        sid = s.get("session_id")
+        if mgr and sid:
+            rt = mgr.get_runtime(sid)
+            s["running"] = rt is not None and rt.connected
+        else:
+            s["running"] = False
+
     return {"sessions": sessions, "count": len(sessions)}
 
 
@@ -114,7 +126,17 @@ async def get_session(session_id: str) -> dict[str, Any]:
     settings = await session_repo.get_settings(session_id)
     participants = await session_repo.list_participants(session_id)
 
-    return {**session, "settings": settings, "participants": participants}
+    # Add runtime state
+    mgr = deps.session_manager
+    runtime = mgr.get_runtime(session_id) if mgr else None
+    running = runtime is not None and runtime.connected
+
+    return {
+        **session,
+        "settings": settings,
+        "participants": participants,
+        "running": running,
+    }
 
 
 @router.post("/sessions/{session_id}/settings")
@@ -125,12 +147,16 @@ async def update_settings(session_id: str, request: UpdateSettingsRequest) -> di
 
     await session_repo.upsert_settings(session_id, request.settings)
 
-    # Apply settings to OpenTTD via rcon if connected
-    if admin_client.connected:
+    # Apply live to running session
+    mgr = deps.session_manager
+    runtime = mgr.get_runtime(session_id) if mgr else None
+    applied = False
+    if runtime and runtime.connected:
         for key, value in request.settings.items():
-            await admin_client.send_rcon(f"setting {key} {value}")
+            await runtime.admin_client.send_rcon(f"setting {key} {value}")
+        applied = True
 
-    return {"session_id": session_id, "settings": request.settings, "applied": admin_client.connected}
+    return {"session_id": session_id, "settings": request.settings, "applied": applied}
 
 
 @router.post("/sessions/{session_id}/start")
@@ -139,28 +165,37 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
+    mgr = deps.session_manager
+    if mgr is None:
+        raise HTTPException(status_code=503, detail="Session manager not ready")
 
-    # Apply stored settings via rcon
+    if mgr.get_runtime(session_id):
+        raise HTTPException(status_code=409, detail="Session is already running")
+
+    # Stamp the session name with start time in local timezone
+    current_name = session.get("name", "")
+    now = datetime.now().astimezone()
+    ts = now.strftime("%d%b%Y-%H%M%S%Z").lower()  # e.g. 01apr2026-193901pdt
+    stamped_name = f"{current_name}-{ts}" if current_name else ts
+    await session_repo.update_session_name(session_id, stamped_name)
+
+    # Get stored settings
     settings = await session_repo.get_settings(session_id)
-    for key, value in settings.items():
-        await admin_client.send_rcon(f"setting {key} {value}")
 
-    # Start AI opponents
-    if request.ai_opponents > 0:
-        await admin_client.send_rcon("setting ai_in_multiplayer true")
-        await admin_client.send_rcon(f"setting max_no_competitors {request.ai_opponents}")
+    # Start the OpenTTD server (spawns process, connects admin client)
+    try:
+        runtime = await mgr.start_session(session_id, settings)
+    except Exception as e:
+        logger.exception("Failed to start session %s", session_id)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
-    # Start game
-    if request.mode == "newgame":
-        response = await admin_client.send_rcon("newgame")
-    elif request.mode == "load" and request.savefile:
-        response = await admin_client.send_rcon(f"load {request.savefile}")
-    else:
-        response = ["Game already running"]
-
-    return {"session_id": session_id, "mode": request.mode, "response": response}
+    return {
+        "session_id": session_id,
+        "status": "active",
+        "game_port": runtime.game_port,
+        "admin_port": runtime.admin_port,
+        "pid": runtime.process.pid if runtime.process else None,
+    }
 
 
 @router.post("/sessions/{session_id}/stop")
@@ -169,19 +204,14 @@ async def stop_session(session_id: str, end_reason: str = "manual") -> dict[str,
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    game_date = world.game.game_date if world.game.game_date > 0 else None
+    mgr = deps.session_manager
+    if mgr:
+        await mgr.stop_session(session_id, end_reason=end_reason)
 
-    orchestrator.stop()
-    await session_repo.end_session(
-        session_id=session_id,
-        end_reason=end_reason,
-        game_end_date=game_date,
-    )
+    # Auto-archive on stop
+    await session_repo.archive_session(session_id)
 
-    if admin_client.connected:
-        await admin_client.send_rcon("pause")
-
-    return {"session_id": session_id, "status": "ended", "end_reason": end_reason}
+    return {"session_id": session_id, "status": "archived", "end_reason": end_reason}
 
 
 @router.delete("/sessions/{session_id}")
@@ -190,51 +220,47 @@ async def delete_session(session_id: str) -> dict[str, str]:
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Mark as archived rather than deleting data
-    await session_repo.end_session(session_id=session_id, end_reason="archived")
-    return {"session_id": session_id, "status": "archived"}
+    # Stop if running
+    mgr = deps.session_manager
+    if mgr and mgr.get_runtime(session_id):
+        await mgr.stop_session(session_id, end_reason="deleted")
+
+    await session_repo.delete_session(session_id)
+    return {"session_id": session_id, "status": "deleted"}
 
 
 # ---------------------------------------------------------------------------
-# 2.3.8-2.3.13: Player / agent management
+# Session-scoped: Player / client management
 # ---------------------------------------------------------------------------
 
-@router.get("/clients")
-async def get_clients() -> dict[str, Any]:
-    """List connected game clients via GS get_clients command."""
-    if not admin_client.connected:
-        return {"clients": [], "connected": False}
-
-    result = await admin_client.send_gamescript("get_clients")
+@router.get("/sessions/{session_id}/clients")
+async def get_clients(session_id: str) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
+    result = await runtime.admin_client.send_gamescript("get_clients")
     if result.get("success"):
         return {"clients": result.get("result", []), "connected": True}
     return {"clients": [], "connected": True, "error": result.get("error")}
 
 
-@router.post("/clients/{client_id}/move")
-async def move_client(client_id: int, company_id: int) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    response = await admin_client.send_rcon(f"move {client_id} {company_id}")
+@router.post("/sessions/{session_id}/clients/{client_id}/move")
+async def move_client(session_id: str, client_id: int, company_id: int) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
+    response = await runtime.admin_client.send_rcon(f"move {client_id} {company_id}")
     return {"client_id": client_id, "company_id": company_id, "response": response}
 
 
-@router.post("/clients/{client_id}/kick")
-async def kick_client(client_id: int, reason: str = "") -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
+@router.post("/sessions/{session_id}/clients/{client_id}/kick")
+async def kick_client(session_id: str, client_id: int, reason: str = "") -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
     cmd = f"kick {client_id}" + (f" {reason}" if reason else "")
-    response = await admin_client.send_rcon(cmd)
+    response = await runtime.admin_client.send_rcon(cmd)
     return {"client_id": client_id, "response": response}
 
 
-@router.get("/spectators")
-async def get_spectators() -> dict[str, Any]:
-    """List spectators (clients with company_id=255)."""
-    if not admin_client.connected:
-        return {"spectators": []}
-
-    result = await admin_client.send_gamescript("get_clients")
+@router.get("/sessions/{session_id}/spectators")
+async def get_spectators(session_id: str) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
+    result = await runtime.admin_client.send_gamescript("get_clients")
     if result.get("success"):
         spectators = [c for c in result.get("result", []) if c.get("company_id") == 255]
         return {"spectators": spectators}
@@ -242,30 +268,25 @@ async def get_spectators() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 2.3.14-2.3.21: Deity operations
+# Session-scoped: Deity operations
 # ---------------------------------------------------------------------------
 
-@router.post("/deity/change_balance")
-async def deity_change_balance(request: DeityBalanceRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
+@router.post("/sessions/{session_id}/deity/change_balance")
+async def deity_change_balance(session_id: str, request: DeityBalanceRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
     params: dict[str, Any] = {"company_id": request.company_id, "delta": request.delta}
     if request.expense_type is not None:
         params["expense_type"] = request.expense_type
-
-    result = await admin_client.send_gamescript("change_bank_balance", params)
+    result = await runtime.admin_client.send_gamescript("change_bank_balance", params)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
     return result.get("result", {})
 
 
-@router.post("/deity/set_max_loan")
-async def deity_set_max_loan(request: DeityMaxLoanRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
-    result = await admin_client.send_gamescript(
+@router.post("/sessions/{session_id}/deity/set_max_loan")
+async def deity_set_max_loan(session_id: str, request: DeityMaxLoanRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
+    result = await runtime.admin_client.send_gamescript(
         "set_max_loan", {"company_id": request.company_id, "amount": request.amount}
     )
     if not result.get("success"):
@@ -273,12 +294,10 @@ async def deity_set_max_loan(request: DeityMaxLoanRequest) -> dict[str, Any]:
     return result.get("result", {})
 
 
-@router.post("/deity/set_setting")
-async def deity_set_setting(request: DeitySettingRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
-    result = await admin_client.send_gamescript(
+@router.post("/sessions/{session_id}/deity/set_setting")
+async def deity_set_setting(session_id: str, request: DeitySettingRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
+    result = await runtime.admin_client.send_gamescript(
         "set_game_setting", {"key": request.key, "value": request.value}
     )
     if not result.get("success"):
@@ -286,11 +305,9 @@ async def deity_set_setting(request: DeitySettingRequest) -> dict[str, Any]:
     return result.get("result", {})
 
 
-@router.post("/deity/found_town")
-async def deity_found_town(request: DeityTownRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
+@router.post("/sessions/{session_id}/deity/found_town")
+async def deity_found_town(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
     params: dict[str, Any] = {}
     if request.x is not None and request.y is not None:
         params["x"] = request.x
@@ -300,40 +317,32 @@ async def deity_found_town(request: DeityTownRequest) -> dict[str, Any]:
     params["layout"] = request.layout
     if request.name:
         params["name"] = request.name
-
-    result = await admin_client.send_gamescript("found_town", params)
+    result = await runtime.admin_client.send_gamescript("found_town", params)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
     return result.get("result", {})
 
 
-@router.post("/deity/expand_town")
-async def deity_expand_town(request: DeityTownRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
+@router.post("/sessions/{session_id}/deity/expand_town")
+async def deity_expand_town(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
     if request.town_id is None:
         raise HTTPException(status_code=400, detail="town_id required")
-
     params: dict[str, Any] = {"town_id": request.town_id}
     if request.amount is not None:
         params["times"] = request.amount
-
-    result = await admin_client.send_gamescript("expand_town", params)
+    result = await runtime.admin_client.send_gamescript("expand_town", params)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Failed"))
     return result.get("result", {})
 
 
-@router.post("/deity/set_town_growth")
-async def deity_set_town_growth(request: DeityTownRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
+@router.post("/sessions/{session_id}/deity/set_town_growth")
+async def deity_set_town_growth(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
     if request.town_id is None or request.growth_rate is None:
         raise HTTPException(status_code=400, detail="town_id and growth_rate required")
-
-    result = await admin_client.send_gamescript(
+    result = await runtime.admin_client.send_gamescript(
         "set_town_growth", {"town_id": request.town_id, "days_between_growth": request.growth_rate}
     )
     if not result.get("success"):
@@ -341,12 +350,10 @@ async def deity_set_town_growth(request: DeityTownRequest) -> dict[str, Any]:
     return result.get("result", {})
 
 
-@router.post("/deity/create_subsidy")
-async def deity_create_subsidy(request: DeitySubsidyRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
-    result = await admin_client.send_gamescript("create_subsidy", {
+@router.post("/sessions/{session_id}/deity/create_subsidy")
+async def deity_create_subsidy(session_id: str, request: DeitySubsidyRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
+    result = await runtime.admin_client.send_gamescript("create_subsidy", {
         "cargo_id": request.cargo_id,
         "src_type": request.src_type,
         "src_id": request.src_id,
@@ -358,12 +365,10 @@ async def deity_create_subsidy(request: DeitySubsidyRequest) -> dict[str, Any]:
     return result.get("result", {})
 
 
-@router.post("/deity/change_town_rating")
-async def deity_change_town_rating(request: DeityTownRatingRequest) -> dict[str, Any]:
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-
-    result = await admin_client.send_gamescript("change_town_rating", {
+@router.post("/sessions/{session_id}/deity/change_town_rating")
+async def deity_change_town_rating(session_id: str, request: DeityTownRatingRequest) -> dict[str, Any]:
+    runtime = deps.get_runtime(session_id)
+    result = await runtime.admin_client.send_gamescript("change_town_rating", {
         "town_id": request.town_id,
         "company_id": request.company_id,
         "delta": request.delta,
@@ -374,7 +379,7 @@ async def deity_change_town_rating(request: DeityTownRatingRequest) -> dict[str,
 
 
 # ---------------------------------------------------------------------------
-# 2.4.7: Pathfinding
+# Session-scoped: Pathfinding
 # ---------------------------------------------------------------------------
 
 class PathfindRequest(BaseModel):
@@ -389,22 +394,17 @@ class PathfindRequest(BaseModel):
     corridor_margin: int = 10
 
 
-@router.post("/pathfind")
-async def run_pathfind(request: PathfindRequest) -> dict[str, Any]:
+@router.post("/sessions/{session_id}/pathfind")
+async def run_pathfind(session_id: str, request: PathfindRequest) -> dict[str, Any]:
     from nttd.pathfinding import service as pf_service  # noqa: PLC0415
 
-    if not admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
+    runtime = deps.get_runtime(session_id)
 
-    # Initialize cache if needed
     if pf_service.get_cache() is None:
-        if world.game.map_x > 0 and world.game.map_y > 0:
-            pf_service.init_cache(world.game.map_x, world.game.map_y)
+        if runtime.world.game.map_x > 0 and runtime.world.game.map_y > 0:
+            pf_service.init_cache(runtime.world.game.map_x, runtime.world.game.map_y)
         else:
-            raise HTTPException(
-                status_code=503,
-                detail="Map dimensions not available yet",
-            )
+            raise HTTPException(status_code=503, detail="Map dimensions not available yet")
 
     result = await pf_service.pathfind(
         from_x=request.from_x,
@@ -412,7 +412,7 @@ async def run_pathfind(request: PathfindRequest) -> dict[str, Any]:
         to_x=request.to_x,
         to_y=request.to_y,
         transport_type=request.transport_type,
-        gs_client=admin_client,
+        gs_client=runtime.admin_client,
         company_id=request.company_id,
         avoid_demolish=request.avoid_demolish,
         max_iterations=request.max_iterations,

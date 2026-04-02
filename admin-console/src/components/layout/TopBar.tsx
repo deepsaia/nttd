@@ -16,7 +16,7 @@ import { useThemeStore } from '../../store/themeStore';
 import * as api from '../../api/client';
 
 function gameDateToString(date: number): string {
-  if (!date || date <= 0) return '—';
+  if (!date || date <= 0) return '\u2014';
   const year = Math.floor(date / 365);
   const dayOfYear = date % 365;
   const month = Math.floor(dayOfYear / 30) + 1;
@@ -26,17 +26,19 @@ function gameDateToString(date: number): string {
 
 export default function TopBar() {
   const status = useGameStore((s) => s.status);
+  const connected = useGameStore((s) => s.connected);
+  const activeSessionId = useGameStore((s) => s.activeSessionId);
   const mode = useThemeStore((s) => s.mode);
   const toggle = useThemeStore((s) => s.toggle);
-  const connected = status?.connected ?? false;
   const paused = status?.paused ?? true;
 
   async function handlePauseToggle() {
+    if (!activeSessionId) return;
     try {
       if (paused) {
-        await api.unpauseGame();
+        await api.unpauseGame(activeSessionId);
       } else {
-        await api.pauseGame();
+        await api.pauseGame(activeSessionId);
       }
     } catch {
       // ignore
@@ -44,9 +46,10 @@ export default function TopBar() {
   }
 
   async function handleSpeedChange(_: unknown, value: number | number[]) {
+    if (!activeSessionId) return;
     const speed = Array.isArray(value) ? value[0] : value;
     try {
-      await api.setGameSpeed(speed);
+      await api.setGameSpeed(activeSessionId, speed);
     } catch {
       // ignore
     }
@@ -67,11 +70,11 @@ export default function TopBar() {
           variant="outlined"
         />
 
-        {status && (
+        {status && activeSessionId && (
           <>
             <Chip size="small" label={gameDateToString(status.game_date)} variant="outlined" />
             <Chip size="small" label={status.mode} variant="outlined" color="info" />
-            <Chip size="small" label={`${status.companies} companies`} variant="outlined" />
+            <Chip size="small" label={`${Object.keys(useGameStore.getState().companies).length} companies`} variant="outlined" />
 
             <Tooltip title={paused ? 'Unpause' : 'Pause'}>
               <IconButton size="small" onClick={handlePauseToggle} color={paused ? 'warning' : 'success'}>

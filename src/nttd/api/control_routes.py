@@ -1,3 +1,5 @@
+"""Session-scoped control routes: pause, speed, mode, rcon, save/load, assist."""
+
 import asyncio
 import logging
 from typing import Any
@@ -5,84 +7,94 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from nttd.api.dependencies import admin_client, agent_registry, orchestrator, world
+import nttd.api.dependencies as deps
 from nttd.schemas.game import GameState, RuntimeMode
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/session", tags=["control"])
+router = APIRouter(prefix="/sessions/{session_id}", tags=["control"])
 
-_orchestrator_task: asyncio.Task | None = None
+# Per-session orchestrator tasks, keyed by session_id
+_orchestrator_tasks: dict[str, asyncio.Task[None]] = {}
 
 
 @router.get("/status", response_model=GameState)
-def get_status() -> GameState:
-    return world.game
+def get_status(session_id: str) -> GameState:
+    runtime = deps.get_runtime(session_id)
+    return runtime.world.game
 
 
 @router.post("/pause")
-async def pause() -> dict[str, bool]:
-    if admin_client.connected:
-        await admin_client.send_rcon("pause")
-    world.set_paused(True)
+async def pause(session_id: str) -> dict[str, bool]:
+    runtime = deps.get_runtime(session_id)
+    if runtime.admin_client.connected:
+        await runtime.admin_client.send_rcon("pause")
+    runtime.world.set_paused(True)
     return {"paused": True}
 
 
 @router.post("/unpause")
-async def unpause() -> dict[str, bool]:
-    if admin_client.connected:
-        await admin_client.send_rcon("unpause")
-    world.set_paused(False)
+async def unpause(session_id: str) -> dict[str, bool]:
+    runtime = deps.get_runtime(session_id)
+    if runtime.admin_client.connected:
+        await runtime.admin_client.send_rcon("unpause")
+    runtime.world.set_paused(False)
     return {"paused": False}
 
 
 @router.post("/speed")
-async def set_speed(speed: int) -> dict[str, int]:
-    if admin_client.connected:
-        await admin_client.send_rcon(f"setting game_speed {speed}")
-    world.set_speed(speed)
+async def set_speed(session_id: str, speed: int) -> dict[str, int]:
+    runtime = deps.get_runtime(session_id)
+    if runtime.admin_client.connected:
+        await runtime.admin_client.send_rcon(f"setting game_speed {speed}")
+    runtime.world.set_speed(speed)
     return {"speed": speed}
 
 
 @router.post("/mode")
-async def set_mode(mode: RuntimeMode) -> dict[str, str]:
-    global _orchestrator_task
+async def set_mode(session_id: str, mode: RuntimeMode) -> dict[str, str]:
+    runtime = deps.get_runtime(session_id)
 
-    orchestrator.stop()
-    if _orchestrator_task is not None:
-        _orchestrator_task.cancel()
+    runtime.orchestrator.stop()
+    old_task = _orchestrator_tasks.pop(session_id, None)
+    if old_task is not None:
+        old_task.cancel()
         try:
-            await _orchestrator_task
+            await old_task
         except asyncio.CancelledError:
             pass
-        _orchestrator_task = None
 
-    world.set_mode(mode)
+    runtime.world.set_mode(mode)
 
     if mode == RuntimeMode.HEARTBEAT:
-        _orchestrator_task = asyncio.create_task(orchestrator.run_heartbeat())
+        _orchestrator_tasks[session_id] = asyncio.create_task(
+            runtime.orchestrator.run_heartbeat()
+        )
     elif mode == RuntimeMode.ASYNC_REALTIME:
-        _orchestrator_task = asyncio.create_task(orchestrator.run_async_realtime())
+        _orchestrator_tasks[session_id] = asyncio.create_task(
+            runtime.orchestrator.run_async_realtime()
+        )
 
     return {"mode": mode.value}
 
 
 @router.post("/stop")
-async def stop_orchestrator() -> dict[str, str]:
-    global _orchestrator_task
-    orchestrator.stop()
-    if _orchestrator_task is not None:
-        _orchestrator_task.cancel()
+async def stop_orchestrator(session_id: str) -> dict[str, str]:
+    runtime = deps.get_runtime(session_id)
+    runtime.orchestrator.stop()
+    old_task = _orchestrator_tasks.pop(session_id, None)
+    if old_task is not None:
+        old_task.cancel()
         try:
-            await _orchestrator_task
+            await old_task
         except asyncio.CancelledError:
             pass
-        _orchestrator_task = None
     return {"status": "stopped"}
 
 
 @router.post("/heartbeat/interval")
-def set_heartbeat_interval(days: int) -> dict[str, int]:
-    orchestrator.set_heartbeat_interval(days)
+def set_heartbeat_interval(session_id: str, days: int) -> dict[str, int]:
+    runtime = deps.get_runtime(session_id)
+    runtime.orchestrator.set_heartbeat_interval(days)
     return {"heartbeat_interval_days": days}
 
 
@@ -93,14 +105,13 @@ class HeartbeatActionRequest(BaseModel):
 
 
 @router.post("/heartbeat/action")
-async def submit_heartbeat_action(request: HeartbeatActionRequest) -> dict[str, bool]:
-    """Submit an action to be executed in the current heartbeat window.
-
-    Agents call this during the action window between snapshot delivery and unpause.
-    If agent_id is provided, company_id in params is checked against the agent's scope.
-    """
+async def submit_heartbeat_action(
+    session_id: str, request: HeartbeatActionRequest,
+) -> dict[str, bool]:
+    """Submit an action to be executed in the current heartbeat window."""
+    runtime = deps.get_runtime(session_id)
     if request.agent_id is not None:
-        status = agent_registry.get(request.agent_id)
+        status = runtime.agent_registry.get(request.agent_id)
         if status is None:
             raise HTTPException(status_code=404, detail=f"Agent {request.agent_id} not found")
         if status.company_scope:
@@ -110,84 +121,80 @@ async def submit_heartbeat_action(request: HeartbeatActionRequest) -> dict[str, 
                     status_code=403,
                     detail=f"Agent {request.agent_id} not authorized for company {company_id}",
                 )
-    orchestrator.submit_heartbeat_action({"action": request.action, "params": request.params})
+    runtime.orchestrator.submit_heartbeat_action({"action": request.action, "params": request.params})
     return {"queued": True}
 
 
 @router.post("/heartbeat/action_window")
-def set_action_window(seconds: float) -> dict[str, float]:
-    orchestrator.set_action_window(seconds)
+def set_action_window(session_id: str, seconds: float) -> dict[str, float]:
+    runtime = deps.get_runtime(session_id)
+    runtime.orchestrator.set_action_window(seconds)
     return {"action_window_seconds": seconds}
 
 
 @router.post("/rcon")
-async def send_rcon(command: str) -> dict[str, list[str]]:
-    if not admin_client.connected:
+async def send_rcon(session_id: str, command: str) -> dict[str, list[str]]:
+    runtime = deps.get_runtime(session_id)
+    if not runtime.admin_client.connected:
         return {"response": ["Not connected to OpenTTD"]}
-    response = await admin_client.send_rcon(command)
+    response = await runtime.admin_client.send_rcon(command)
     return {"response": response}
 
 
 @router.post("/save")
-async def save_game(filename: str = "nttd_save") -> dict[str, Any]:
-    """Save the current game to a file. Saved into the OpenTTD save directory."""
-    if not admin_client.connected:
+async def save_game(session_id: str, filename: str = "nttd_save") -> dict[str, Any]:
+    """Save the current game to a file."""
+    runtime = deps.get_runtime(session_id)
+    if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    response = await admin_client.send_rcon(f"save {filename}")
+    response = await runtime.admin_client.send_rcon(f"save {filename}")
     return {"filename": filename, "response": response}
 
 
 @router.post("/load")
-async def load_game(filename: str) -> dict[str, Any]:
+async def load_game(session_id: str, filename: str) -> dict[str, Any]:
     """Load a saved game by filename. This will reset the world state."""
-    if not admin_client.connected:
+    runtime = deps.get_runtime(session_id)
+    if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    response = await admin_client.send_rcon(f"load {filename}")
+    response = await runtime.admin_client.send_rcon(f"load {filename}")
     return {"filename": filename, "response": response}
 
 
 @router.post("/assist")
-async def trigger_assist() -> dict[str, Any]:
-    """Pause the game and capture a fresh snapshot for human/agent review.
-
-    Returns the current game snapshot. The game stays paused until
-    POST /session/assist/approve or /session/assist/cancel is called.
-    """
-    if not admin_client.connected:
+async def trigger_assist(session_id: str) -> dict[str, Any]:
+    """Pause the game and capture a fresh snapshot for human/agent review."""
+    runtime = deps.get_runtime(session_id)
+    if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    snapshot = await orchestrator.trigger_assist()
+    snapshot = await runtime.orchestrator.trigger_assist()
     return snapshot.model_dump()
 
 
 @router.post("/assist/approve")
-async def approve_assist(actions: list[dict[str, Any]]) -> dict[str, Any]:
-    """Execute the approved action list and unpause the game.
-
-    Body: list of { "action": "...", "params": { ... } } GS commands.
-    Returns the result of each executed action.
-    """
-    results = await orchestrator.approve_assist(actions)
+async def approve_assist(session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
+    """Execute the approved action list and unpause the game."""
+    runtime = deps.get_runtime(session_id)
+    results = await runtime.orchestrator.approve_assist(actions)
     return {"executed": len(results), "results": results}
 
 
 @router.post("/assist/cancel")
-async def cancel_assist() -> dict[str, str]:
+async def cancel_assist(session_id: str) -> dict[str, str]:
     """Cancel the assist session and unpause without executing anything."""
-    await orchestrator.cancel_assist()
+    runtime = deps.get_runtime(session_id)
+    await runtime.orchestrator.cancel_assist()
     return {"status": "cancelled"}
 
 
 @router.post("/scenario")
-async def load_scenario(config_path: str | None = None) -> dict[str, Any]:
-    """Load scenario from a HOCON config file and apply settings to the orchestrator.
-
-    config_path: path to a .conf file (default: config/scenario.conf in project root).
-    Returns the loaded scenario name and active end conditions.
-    """
+async def load_scenario(session_id: str, config_path: str | None = None) -> dict[str, Any]:
+    """Load scenario from a HOCON config file and apply settings to the orchestrator."""
     from nttd.config import scenario_config  # noqa: PLC0415
 
+    runtime = deps.get_runtime(session_id)
     config = scenario_config.load(config_path)
-    orchestrator.load_scenario(config)
+    runtime.orchestrator.load_scenario(config)
 
     ec = config.end_conditions
     return {

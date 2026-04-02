@@ -71,7 +71,7 @@ export default function PlayersPage() {
                         title="Move to company"
                         onClick={() => {
                           const target = prompt('Move to company ID:');
-                          if (target) api.moveClient(c.client_id, Number(target));
+                          if (target && activeSessionId) api.moveClient(activeSessionId, c.client_id, Number(target));
                         }}
                       >
                         <SwapHorizIcon fontSize="small" />
@@ -80,7 +80,7 @@ export default function PlayersPage() {
                         size="small"
                         title="Kick"
                         color="error"
-                        onClick={() => api.kickClient(c.client_id)}
+                        onClick={() => activeSessionId && api.kickClient(activeSessionId, c.client_id)}
                       >
                         <PersonOffIcon fontSize="small" />
                       </IconButton>

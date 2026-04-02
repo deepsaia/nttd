@@ -1,8 +1,10 @@
+"""Session-scoped observation routes: state queries, compact snapshots, GS queries."""
+
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from nttd.api.dependencies import action_tracker, admin_client, snapshot_broker_registry, world
+import nttd.api.dependencies as deps
 from nttd.dashboard.metrics import MetricsWriter
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
@@ -23,51 +25,59 @@ from nttd.schemas.vehicle import Vehicle
 
 _metrics = MetricsWriter()
 
-router = APIRouter(prefix="/state", tags=["observation"])
+router = APIRouter(prefix="/sessions/{session_id}/state", tags=["observation"])
 
 
 @router.get("/full", response_model=StateSnapshot)
-async def get_full_state() -> StateSnapshot:
-    return world.snapshot()
+async def get_full_state(session_id: str) -> StateSnapshot:
+    runtime = deps.get_runtime(session_id)
+    return runtime.world.snapshot()
 
 
 @router.get("/company/{company_id}", response_model=Company)
-async def get_company(company_id: int) -> Company:
-    company = world.companies.get(company_id)
+async def get_company(session_id: str, company_id: int) -> Company:
+    runtime = deps.get_runtime(session_id)
+    company = runtime.world.companies.get(company_id)
     if company is None:
         raise HTTPException(status_code=404, detail=f"Company {company_id} not found")
     return company
 
 
 @router.get("/towns", response_model=list[Town])
-async def get_towns() -> list[Town]:
-    return list(world.towns.values())
+async def get_towns(session_id: str) -> list[Town]:
+    runtime = deps.get_runtime(session_id)
+    return list(runtime.world.towns.values())
 
 
 @router.get("/industries", response_model=list[Industry])
-async def get_industries() -> list[Industry]:
-    return list(world.industries.values())
+async def get_industries(session_id: str) -> list[Industry]:
+    runtime = deps.get_runtime(session_id)
+    return list(runtime.world.industries.values())
 
 
 @router.get("/stations", response_model=list[Station])
-async def get_stations() -> list[Station]:
-    return list(world.stations.values())
+async def get_stations(session_id: str) -> list[Station]:
+    runtime = deps.get_runtime(session_id)
+    return list(runtime.world.stations.values())
 
 
 @router.get("/vehicles", response_model=list[Vehicle])
-async def get_vehicles() -> list[Vehicle]:
-    return list(world.vehicles.values())
+async def get_vehicles(session_id: str) -> list[Vehicle]:
+    runtime = deps.get_runtime(session_id)
+    return list(runtime.world.vehicles.values())
 
 
 @router.get("/metrics")
-async def get_metrics() -> dict[str, Any]:
-    """Latest per-company game metrics snapshot. Suitable for dashboards and monitoring."""
+async def get_metrics(session_id: str) -> dict[str, Any]:
+    """Latest per-company game metrics snapshot."""
     return _metrics.get_latest()
 
 
 @router.get("/compact", response_model=CompactSnapshot)
-async def get_compact_state(company_id: int = -1) -> CompactSnapshot:
+async def get_compact_state(session_id: str, company_id: int = -1) -> CompactSnapshot:
     """LLM-friendly summary of the current game state (~1-3 KB)."""
+    runtime = deps.get_runtime(session_id)
+    world = runtime.world
     game = world.game
     stations = list(world.stations.values())
     towns = list(world.towns.values())
@@ -76,9 +86,8 @@ async def get_compact_state(company_id: int = -1) -> CompactSnapshot:
     compact_company: CompactCompany | None = None
     if company_id >= 0 and company_id in world.companies:
         c = world.companies[company_id]
-        # Build profit trend from broker history if an agent is scoped to this company
         profit_trend: list[int] = [c.income]
-        for broker in snapshot_broker_registry.values():
+        for broker in runtime.snapshot_broker_registry.values():
             history = broker.get_history(3)
             if history:
                 trend = []
@@ -141,7 +150,7 @@ async def get_compact_state(company_id: int = -1) -> CompactSnapshot:
         for t in sorted_towns[:3]
     ]
 
-    # Routes for this company — sorted by profit descending
+    # Routes for this company
     all_routes = world._derive_routes()
     company_routes = [r for r in all_routes if company_id < 0 or r.company_id == company_id]
     compact_routes = [
@@ -155,7 +164,7 @@ async def get_compact_state(company_id: int = -1) -> CompactSnapshot:
         for r in sorted(company_routes, key=lambda r: r.total_profit_this_year, reverse=True)
     ]
 
-    # Subsidies (all, not filtered by company — they are opportunities for any company)
+    # Subsidies
     compact_subsidies = [
         CompactSubsidy(
             id=s.id,
@@ -169,10 +178,10 @@ async def get_compact_state(company_id: int = -1) -> CompactSnapshot:
     ]
 
     # Recent actions
-    recent_results = action_tracker.get_recent(5)
+    recent_results = runtime.action_tracker.get_recent(5)
     recent_actions = []
     for result in reversed(recent_results):
-        envelope = action_tracker.get_envelope(result.action_id)
+        envelope = runtime.action_tracker.get_envelope(result.action_id)
         recent_actions.append(CompactRecentAction(
             action_id=result.action_id,
             action_type=envelope.action_type if envelope else "",
@@ -200,8 +209,9 @@ async def get_compact_state(company_id: int = -1) -> CompactSnapshot:
 
 
 @router.post("/gs/query")
-async def gs_query(action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Query game state via GameScript. Requires OpenTTD connection and nttd-gs loaded."""
-    if not admin_client.connected:
+async def gs_query(session_id: str, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Query game state via GameScript."""
+    runtime = deps.get_runtime(session_id)
+    if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    return await admin_client.send_gamescript(action, params)
+    return await runtime.admin_client.send_gamescript(action, params)

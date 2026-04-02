@@ -37,6 +37,9 @@ sessions = Table(
     Column("game_start_date", Integer, nullable=True),
     Column("game_end_date", Integer, nullable=True),
     Column("end_reason", String(128), nullable=True),
+    Column("game_port", Integer, nullable=True),
+    Column("admin_port", Integer, nullable=True),
+    Column("pid", Integer, nullable=True),
 )
 
 session_settings = Table(

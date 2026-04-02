@@ -1,20 +1,31 @@
 import { useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/admin`;
+function buildWsUrl(sessionId: string): string {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}/ws/${sessionId}/admin`;
+}
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const pushEvent = useGameStore((s) => s.pushEvent);
   const setConnected = useGameStore((s) => s.setConnected);
+  const activeSessionId = useGameStore((s) => s.activeSessionId);
 
   useEffect(() => {
+    if (!activeSessionId) {
+      // No active session — close any existing connection
+      wsRef.current?.close();
+      wsRef.current = null;
+      return;
+    }
+
     let reconnectTimer: ReturnType<typeof setTimeout>;
     let alive = true;
 
     function connect() {
-      if (!alive) return;
-      const ws = new WebSocket(WS_URL);
+      if (!alive || !activeSessionId) return;
+      const ws = new WebSocket(buildWsUrl(activeSessionId));
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -23,7 +34,7 @@ export function useWebSocket() {
           id: 0,
           time: new Date().toLocaleTimeString(),
           type: 'system',
-          message: 'WebSocket connected',
+          message: `WebSocket connected to session ${activeSessionId}`,
         });
       };
 
@@ -45,7 +56,6 @@ export function useWebSocket() {
       };
 
       ws.onclose = () => {
-        setConnected(false);
         if (alive) {
           reconnectTimer = setTimeout(connect, 3000);
         }
@@ -62,6 +72,7 @@ export function useWebSocket() {
       alive = false;
       clearTimeout(reconnectTimer);
       wsRef.current?.close();
+      wsRef.current = null;
     };
-  }, [pushEvent, setConnected]);
+  }, [activeSessionId, pushEvent, setConnected]);
 }
