@@ -10,7 +10,7 @@ class CompactVehicleCounts(BaseModel):
 
 class CompactCompany(BaseModel):
     id: int
-    name: str = ""
+    name: str | None = ""
     balance: int = 0
     loan: int = 0
     income: int = 0

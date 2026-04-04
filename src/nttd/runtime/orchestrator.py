@@ -317,8 +317,17 @@ class Orchestrator:
     # Async real-time mode — human co-play
     # -------------------------------------------------------------------------
 
+    def configure_end_conditions(self, config: EndConditionsConfig) -> None:
+        """Set end conditions programmatically (without a full ScenarioConfig)."""
+        self._end_checker = EndConditionChecker(config)
+        logger.info("End conditions configured: logic=%s", config.logic)
+
     async def run_async_realtime(self) -> None:
-        """Game runs continuously, GS refresh every 10s, snapshots pushed every 2s."""
+        """Game runs continuously, GS refresh every 10s, snapshots pushed every 2s.
+
+        End conditions are checked on each snapshot cycle. When triggered,
+        the ``on_end`` callbacks fire and the loop exits.
+        """
         self._running = True
         logger.info("Async real-time mode started")
         last_gs_refresh = 0.0
@@ -336,6 +345,20 @@ class Orchestrator:
                 self.event_logger.log_observation(snapshot)
             await self._notify_observers(snapshot)
 
+            # Check end conditions (wall-clock, game date, revenue, cargo)
+            end_result = self._end_checker.check(snapshot)
+            if end_result.triggered:
+                logger.info("Async real-time simulation ended: %s", end_result.reason)
+                for cb in self.on_end:
+                    try:
+                        result = cb(end_result.reason)
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception:
+                        logger.exception("on_end callback error")
+                break
+
+        self._running = False
         logger.info("Async real-time mode stopped")
 
     # -------------------------------------------------------------------------

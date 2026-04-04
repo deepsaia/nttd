@@ -6,14 +6,13 @@ Runs a simple rule-based strategy using NttdTools:
   Step 2:   Buy a bus, set orders (town A → town B → repeat), start it.
   Step 3+:  Monitor profit; if any vehicle is idle in depot, send it out.
 
-This agent demonstrates the tool-based querying pattern:
-  - nttd delivers a compact snapshot on each heartbeat beat (the trigger)
-  - The agent calls typed tools to fetch the specific state it needs
-  - The agent returns a list of GameAction dicts for execution
+Supports two modes:
+  - realtime (default): continuous observe→decide→act loop
+  - heartbeat: wait for server trigger, then observe→decide→act
 
 Usage:
-  uv run python agents/scripted_agent.py --company-id 0
-  uv run python agents/scripted_agent.py --company-id 0 --agent-id scripted_0
+  uv run python agents/scripted_agent.py --session-id ses_abc123 --company-id 0
+  uv run python agents/scripted_agent.py --session-id ses_abc123 --mode heartbeat
 """
 from __future__ import annotations
 
@@ -37,11 +36,11 @@ class ScriptedAgent(AgentBase):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._tools: NttdTools | None = None   # created lazily after client connects
+        self._tools: NttdTools | None = None
         self._phase = "scout"
-        self._town_a: dict | None = None
-        self._town_b: dict | None = None
-        self._stop_a: int | None = None        # station tile
+        self._town_a: dict[str, Any] | None = None
+        self._town_b: dict[str, Any] | None = None
+        self._stop_a: int | None = None
         self._stop_b: int | None = None
         self._depot_tile: int | None = None
         self._vehicle_id: int | None = None
@@ -53,8 +52,6 @@ class ScriptedAgent(AgentBase):
         return self._tools
 
     async def decide(self, context: AgentContext) -> list[GameAction]:
-        # Tools are agent-side — each framework creates and uses them differently.
-        # Here we simply call them as plain Python methods.
         tools = self._get_tools()
 
         if self._phase == "scout":
@@ -63,7 +60,6 @@ class ScriptedAgent(AgentBase):
             return await self._phase_build_stops(tools)
         if self._phase == "buy_vehicle":
             return await self._phase_buy_vehicle(tools)
-        # phase == "running"
         return self._phase_running(context)
 
     # ------------------------------------------------------------------
@@ -143,7 +139,7 @@ class ScriptedAgent(AgentBase):
 
         if self._stop_a is not None and self._stop_b is not None and self._depot_tile is not None:
             self._agent_logger.info(
-                "Stops built: A=%d  B=%d  depot=%d → advancing to buy_vehicle",
+                "Stops built: A=%d  B=%d  depot=%d -> advancing to buy_vehicle",
                 self._stop_a, self._stop_b, self._depot_tile,
             )
             self._phase = "buy_vehicle"
@@ -174,7 +170,6 @@ class ScriptedAgent(AgentBase):
             "engine_id": engine_id,
         })]
 
-        # Query existing vehicles to find the one just created (newest = last)
         vlist = tools.get_vehicles()
         if vlist:
             self._vehicle_id = vlist[-1]["id"]
@@ -199,14 +194,14 @@ class ScriptedAgent(AgentBase):
                 }))
                 self._phase = "running"
                 self._agent_logger.info(
-                    "Route set: vehicle %d  %d ↔ %d  → phase=running",
+                    "Route set: vehicle %d  %d <-> %d  -> phase=running",
                     self._vehicle_id, self._stop_a, self._stop_b,
                 )
 
         return actions
 
     # ------------------------------------------------------------------
-    # Phase: running — log stats each heartbeat, rescue stuck vehicles
+    # Phase: running — log stats each cycle, rescue stuck vehicles
     # ------------------------------------------------------------------
 
     def _phase_running(self, context: AgentContext) -> list[GameAction]:
@@ -238,16 +233,26 @@ def main() -> None:
     )
     parser = argparse.ArgumentParser(description="Scripted demo agent for nttd")
     parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--session-id", required=True, help="nttd session ID (e.g. ses_abc123)")
     parser.add_argument("--company-id", type=int, default=0)
     parser.add_argument("--agent-id", default=None)
+    parser.add_argument("--mode", choices=["realtime", "heartbeat"], default="realtime",
+                        help="Runtime mode (default: realtime)")
+    parser.add_argument("--poll-interval", type=float, default=2.0,
+                        help="Seconds between observe cycles in realtime mode (default: 2.0)")
     args = parser.parse_args()
 
     agent = ScriptedAgent(
         base_url=args.base_url,
+        session_id=args.session_id,
         company_id=args.company_id,
         agent_id=args.agent_id,
     )
-    asyncio.run(agent.run())
+
+    if args.mode == "realtime":
+        asyncio.run(agent.run_realtime(poll_interval=args.poll_interval))
+    else:
+        asyncio.run(agent.run())
 
 
 if __name__ == "__main__":

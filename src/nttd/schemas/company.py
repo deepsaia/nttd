@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class Company(BaseModel):
     id: int
-    name: str = ""
+    name: str | None = ""
     manager: str = ""
     color: int = 0
     money: int = 0

@@ -56,103 +56,93 @@ class NttdGS extends GSController {
   function _ForwardGameEvent(event, et) {
     local payload = { _event = true, event_type = et };
 
-    switch (et) {
-      case GSEvent.ET_VEHICLE_CRASHED: {
-        local e = GSEventVehicleCrash.Convert(event);
-        payload.rawset("vehicle_id", e.GetVehicleID());
-        payload.rawset("crash_site", e.GetCrashSite());
-        break;
+    try {
+      switch (et) {
+        case GSEvent.ET_VEHICLE_CRASHED: {
+          local e = GSEventVehicleCrash.Convert(event);
+          payload.rawset("vehicle_id", e.GetVehicleID());
+          payload.rawset("crash_site", e.GetCrashSite());
+          break;
+        }
+        case GSEvent.ET_VEHICLE_LOST: {
+          local e = GSEventVehicleLost.Convert(event);
+          payload.rawset("vehicle_id", e.GetVehicleID());
+          break;
+        }
+        case GSEvent.ET_VEHICLE_UNPROFITABLE: {
+          local e = GSEventVehicleUnprofitable.Convert(event);
+          payload.rawset("vehicle_id", e.GetVehicleID());
+          break;
+        }
+        case GSEvent.ET_SUBSIDY_OFFERED: {
+          local e = GSEventSubsidyOffer.Convert(event);
+          payload.rawset("subsidy_id", e.GetSubsidyID());
+          break;
+        }
+        case GSEvent.ET_SUBSIDY_OFFER_EXPIRED: {
+          local e = GSEventSubsidyOfferExpired.Convert(event);
+          payload.rawset("subsidy_id", e.GetSubsidyID());
+          break;
+        }
+        case GSEvent.ET_SUBSIDY_AWARDED: {
+          local e = GSEventSubsidyAwarded.Convert(event);
+          payload.rawset("subsidy_id", e.GetSubsidyID());
+          break;
+        }
+        case GSEvent.ET_SUBSIDY_EXPIRED: {
+          local e = GSEventSubsidyExpired.Convert(event);
+          payload.rawset("subsidy_id", e.GetSubsidyID());
+          break;
+        }
+        case GSEvent.ET_INDUSTRY_OPEN: {
+          local e = GSEventIndustryOpen.Convert(event);
+          payload.rawset("industry_id", e.GetIndustryID());
+          break;
+        }
+        case GSEvent.ET_INDUSTRY_CLOSE: {
+          local e = GSEventIndustryClose.Convert(event);
+          payload.rawset("industry_id", e.GetIndustryID());
+          break;
+        }
+        case GSEvent.ET_TOWN_FOUNDED: {
+          local e = GSEventTownFounded.Convert(event);
+          payload.rawset("town_id", e.GetTownID());
+          break;
+        }
+        case GSEvent.ET_COMPANY_NEW: {
+          local e = GSEventCompanyNew.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
+          break;
+        }
+        case GSEvent.ET_COMPANY_IN_TROUBLE: {
+          local e = GSEventCompanyInTrouble.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
+          break;
+        }
+        case GSEvent.ET_COMPANY_BANKRUPT: {
+          local e = GSEventCompanyBankrupt.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
+          break;
+        }
+        case GSEvent.ET_COMPANY_MERGER: {
+          local e = GSEventCompanyMerger.Convert(event);
+          payload.rawset("old_company_id", e.GetOldCompanyID());
+          payload.rawset("new_company_id", e.GetNewCompanyID());
+          break;
+        }
+        case GSEvent.ET_STATION_FIRST_VEHICLE: {
+          local e = GSEventStationFirstVehicle.Convert(event);
+          payload.rawset("station_id", e.GetStationID());
+          payload.rawset("vehicle_id", e.GetVehicleID());
+          break;
+        }
+        default:
+          // For unhandled event types, just send the type number
+          break;
       }
-      case GSEvent.ET_VEHICLE_LOST: {
-        local e = GSEventVehicleLost.Convert(event);
-        payload.rawset("vehicle_id", e.GetVehicleID());
-        break;
-      }
-      case GSEvent.ET_VEHICLE_UNPROFITABLE: {
-        local e = GSEventVehicleUnprofitable.Convert(event);
-        payload.rawset("vehicle_id", e.GetVehicleID());
-        break;
-      }
-      case GSEvent.ET_VEHICLE_WAITING_IN_DEPOT: {
-        local e = GSEventVehicleWaitingInDepot.Convert(event);
-        payload.rawset("vehicle_id", e.GetVehicleID());
-        break;
-      }
-      case GSEvent.ET_VEHICLE_AUTORENEWED: {
-        local e = GSEventVehicleAutoRenewed.Convert(event);
-        payload.rawset("vehicle_id", e.GetVehicleID());
-        break;
-      }
-      case GSEvent.ET_SUBSIDY_OFFERED: {
-        local e = GSEventSubsidyOffer.Convert(event);
-        payload.rawset("subsidy_id", e.GetSubsidyID());
-        break;
-      }
-      case GSEvent.ET_SUBSIDY_OFFER_EXPIRED: {
-        local e = GSEventSubsidyOfferExpired.Convert(event);
-        payload.rawset("subsidy_id", e.GetSubsidyID());
-        break;
-      }
-      case GSEvent.ET_SUBSIDY_AWARDED: {
-        local e = GSEventSubsidyAwarded.Convert(event);
-        payload.rawset("subsidy_id", e.GetSubsidyID());
-        break;
-      }
-      case GSEvent.ET_SUBSIDY_EXPIRED: {
-        local e = GSEventSubsidyExpired.Convert(event);
-        payload.rawset("subsidy_id", e.GetSubsidyID());
-        break;
-      }
-      case GSEvent.ET_INDUSTRY_OPEN: {
-        local e = GSEventIndustryOpen.Convert(event);
-        payload.rawset("industry_id", e.GetIndustryID());
-        break;
-      }
-      case GSEvent.ET_INDUSTRY_CLOSE: {
-        local e = GSEventIndustryClose.Convert(event);
-        payload.rawset("industry_id", e.GetIndustryID());
-        break;
-      }
-      case GSEvent.ET_TOWN_FOUNDED: {
-        local e = GSEventTownFounded.Convert(event);
-        payload.rawset("town_id", e.GetTownID());
-        break;
-      }
-      case GSEvent.ET_COMPANY_NEW: {
-        local e = GSEventCompanyNew.Convert(event);
-        payload.rawset("company_id", e.GetCompanyID());
-        break;
-      }
-      case GSEvent.ET_COMPANY_IN_TROUBLE: {
-        local e = GSEventCompanyInTrouble.Convert(event);
-        payload.rawset("company_id", e.GetCompanyID());
-        break;
-      }
-      case GSEvent.ET_COMPANY_BANKRUPT: {
-        local e = GSEventCompanyBankrupt.Convert(event);
-        payload.rawset("company_id", e.GetCompanyID());
-        break;
-      }
-      case GSEvent.ET_COMPANY_MERGER: {
-        local e = GSEventCompanyMerger.Convert(event);
-        payload.rawset("old_company_id", e.GetOldCompanyID());
-        payload.rawset("new_company_id", e.GetNewCompanyID());
-        break;
-      }
-      case GSEvent.ET_STATION_FIRST_VEHICLE: {
-        local e = GSEventStationFirstVehicle.Convert(event);
-        payload.rawset("station_id", e.GetStationID());
-        payload.rawset("vehicle_id", e.GetVehicleID());
-        break;
-      }
-      case GSEvent.ET_DISASTER_ZEPPELINER_CRASHED: {
-        local e = GSEventDisasterZeppelinerCrashed.Convert(event);
-        payload.rawset("station_id", e.GetStationID());
-        break;
-      }
-      default:
-        // For unhandled event types, just send the type number
-        break;
+    } catch (e) {
+      // Some event types may not be available in the GS API
+      GSLog.Warning("nttd: could not process event type " + et + ": " + e);
     }
 
     GSAdmin.Send(payload);
@@ -518,7 +508,7 @@ class NttdGS extends GSController {
   function CmdGetCompanies() {
     local companies = [];
     for (local cid = GSCompany.COMPANY_FIRST; cid <= GSCompany.COMPANY_LAST; cid++) {
-      if (!GSCompany.ResolveCompanyID(cid)) continue;
+      if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID) continue;
       local cm = GSCompanyMode(cid);
       local hq = GSCompany.GetCompanyHQ(cid);
       companies.append({
@@ -540,7 +530,7 @@ class NttdGS extends GSController {
 
   function CmdGetCompanyFinance(p) {
     local cid = p.company_id;
-    if (!GSCompany.ResolveCompanyID(cid)) return { success = false, error = "Invalid company ID" };
+    if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID) return { success = false, error = "Invalid company ID" };
     return { success = true, result = {
       company_id = cid,
       balance = GSCompany.GetBankBalance(cid),
@@ -1675,7 +1665,7 @@ class NttdGS extends GSController {
 
   function CmdGetExpenseBreakdown(p) {
     if (!("company_id" in p)) return { success = false, error = "params.company_id required" };
-    if (!GSCompany.ResolveCompanyID(p.company_id))
+    if (GSCompany.ResolveCompanyID(p.company_id) == GSCompany.COMPANY_INVALID)
       return { success = false, error = "Invalid company ID" };
 
     local cid = p.company_id;
@@ -1729,7 +1719,7 @@ class NttdGS extends GSController {
 
   function CmdGetInfrastructureCosts(p) {
     if (!("company_id" in p)) return { success = false, error = "params.company_id required" };
-    if (!GSCompany.ResolveCompanyID(p.company_id))
+    if (GSCompany.ResolveCompanyID(p.company_id) == GSCompany.COMPANY_INVALID)
       return { success = false, error = "Invalid company ID" };
 
     local cid = p.company_id;
@@ -1808,7 +1798,7 @@ class NttdGS extends GSController {
 
     if ("company_id" in p.params) {
       local cid = p.params.company_id;
-      if (!GSCompany.ResolveCompanyID(cid))
+      if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID)
         return { success = false, error = "Invalid company ID" };
 
       local cost = 0;
@@ -1853,7 +1843,7 @@ class NttdGS extends GSController {
   function CmdChangeBankBalance(p) {
     if (!("company_id" in p) || !("delta" in p))
       return { success = false, error = "params.company_id and params.delta required" };
-    if (!GSCompany.ResolveCompanyID(p.company_id))
+    if (GSCompany.ResolveCompanyID(p.company_id) == GSCompany.COMPANY_INVALID)
       return { success = false, error = "Invalid company ID" };
 
     local expense_type = ("expense_type" in p) ? p.expense_type : GSCompany.EXPENSES_OTHER;
@@ -1868,7 +1858,7 @@ class NttdGS extends GSController {
   function CmdSetMaxLoan(p) {
     if (!("company_id" in p) || !("amount" in p))
       return { success = false, error = "params.company_id and params.amount required" };
-    if (!GSCompany.ResolveCompanyID(p.company_id))
+    if (GSCompany.ResolveCompanyID(p.company_id) == GSCompany.COMPANY_INVALID)
       return { success = false, error = "Invalid company ID" };
 
     local ok = GSCompany.SetMaxLoanAmountForCompany(p.company_id, p.amount);

@@ -11,6 +11,7 @@ from pathlib import Path
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.bridge import Bridge
+from nttd.gameloop.manager import GameloopManager
 from nttd.logging.event_logger import EventLogger
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.state.agent_registry import AgentRegistry
@@ -47,6 +48,10 @@ class SessionRuntime:
         self.agent_registry = AgentRegistry()
         self.event_logger = EventLogger()
         self.snapshot_broker_registry: dict[str, AgentSnapshotBroker] = {}
+        self.gameloop_manager = GameloopManager(self)
+
+        # Stop all gameloop agents when the session ends
+        self.orchestrator.on_end.append(lambda _reason: self.gameloop_manager.stop_all())
 
         self.process: asyncio.subprocess.Process | None = None
         self.poll_task: asyncio.Task[None] | None = None
@@ -73,8 +78,8 @@ class SessionRuntime:
 
         self.process = await asyncio.create_subprocess_exec(
             openttd_binary, "-D", "-c", cfg_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
 
         # Poll until admin port is connectable
@@ -103,21 +108,55 @@ class SessionRuntime:
             )
         return ok
 
-    async def apply_settings_and_start(self, settings: dict[str, str], ai_count: int = 0) -> list[str]:
-        """Apply game settings via rcon and start a new game."""
-        for key, value in settings.items():
-            await self.admin_client.send_rcon(f"setting {key} {value}")
+    async def start_companies(
+        self,
+        ai_count: int = 0,
+        agent_companies: int = 0,
+    ) -> None:
+        """Verify AI companies and GS after initial game starts.
 
-        if ai_count > 0:
-            await self.admin_client.send_rcon("setting ai_in_multiplayer true")
-            await self.admin_client.send_rcon(f"setting difficulty.max_no_competitors {ai_count}")
+        AI companies are configured in openttd.cfg (max_no_competitors,
+        competitors_interval=0) so they auto-start during map generation.
+        This method verifies the GS is responding and logs company status.
+        """
+        total = ai_count + agent_companies
 
-        response = await self.admin_client.send_rcon("newgame")
-        return response
+        # Verify GS is responding
+        ping_result = await self.admin_client.send_gamescript("ping")
+        if ping_result.get("success"):
+            logger.info("GameScript responding for session %s", self.session_id)
+        else:
+            logger.warning("GameScript not responding for session %s: %s", self.session_id, ping_result)
+
+        # Initial world state refresh — populate towns, industries, companies
+        # so gameloop agents and state endpoints have data immediately.
+        await self.orchestrator._refresh_world_from_gs()
+        logger.info(
+            "Initial world refresh for session %s: %d towns, %d companies",
+            self.session_id, len(self.world.towns), len(self.world.companies),
+        )
+
+        # Verify companies were auto-created
+        if total > 0:
+            rcon = await self.admin_client.send_rcon("companies")
+            company_count = len([line for line in rcon if line.strip()])
+            if company_count >= total:
+                logger.info(
+                    "Verified %d company(ies) for session %s (%d agent slots, %d AI)",
+                    company_count, self.session_id, agent_companies, ai_count,
+                )
+            else:
+                logger.warning(
+                    "Expected %d companies but found %d for session %s",
+                    total, company_count, self.session_id,
+                )
 
     async def shutdown(self) -> None:
         """Stop the server process and clean up."""
         logger.info("Shutting down session %s", self.session_id)
+
+        # Stop all gameloop agents first
+        await self.gameloop_manager.stop_all()
 
         # Cancel poll loop
         if self.poll_task and not self.poll_task.done():
@@ -155,10 +194,9 @@ class SessionRuntime:
         while elapsed < _CONNECT_MAX_WAIT:
             # Check if process died
             if self.process and self.process.returncode is not None:
-                stderr = await self.process.stderr.read() if self.process.stderr else b""
                 logger.error(
-                    "OpenTTD process exited with code %d: %s",
-                    self.process.returncode, stderr.decode(errors="replace")[:500],
+                    "OpenTTD process exited with code %d",
+                    self.process.returncode,
                 )
                 return False
 

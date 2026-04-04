@@ -105,7 +105,7 @@ class AdminClient:
         try:
             self._reader, self._writer = await asyncio.open_connection(self.host, self.port)
         except OSError as e:
-            logger.error("Failed to connect to %s:%d: %s", self.host, self.port, e)
+            logger.debug("Failed to connect to %s:%d: %s", self.host, self.port, e)
             return False
 
         join_packet = AdminJoinPacket(self._password, self._name, "1")
@@ -127,6 +127,7 @@ class AdminClient:
         )
         self.welcome = welcome
         self._connected = True
+        await self.subscribe_defaults()
         return True
 
     async def _reconnect_loop(self) -> None:
@@ -197,6 +198,7 @@ class AdminClient:
         self._gs_totals[correlation_id] = 1
 
         json_str = json.dumps(msg)
+        logger.debug("GS send: %s", json_str)
         packet = AdminGameScriptPacket(json_str)
         await self._send(packet)
 
@@ -298,7 +300,7 @@ class AdminClient:
                 try:
                     raw = packet.json.rstrip("\x00")
                     data = json.loads(raw)
-                    logger.debug("GS response: %s", data)
+                    logger.debug("GS recv: %s", data)
                     self._handle_gs_response(data)
                 except (json.JSONDecodeError, AttributeError) as e:
                     logger.warning("Failed to parse GS packet: %s (raw=%r)", e, packet.json)

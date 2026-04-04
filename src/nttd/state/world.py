@@ -223,6 +223,9 @@ class WorldState:
             cid = r.get("id")
             if cid is None:
                 continue
+            # Skip empty company slots (GS returns all 16 with money=-1 for unused)
+            if r.get("money", -1) == -1 and r.get("name") is None:
+                continue
             seen.add(cid)
             company = self.companies.get(cid)
             if company is None:

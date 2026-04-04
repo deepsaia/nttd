@@ -28,8 +28,14 @@ def build_session_config(
     game_port: int,
     admin_port: int,
     admin_password: str,
+    settings: dict[str, str] | None = None,
+    ai_opponents: int = 0,
+    agent_companies: int = 0,
 ) -> Path:
     """Create a per-session OpenTTD config directory.
+
+    Game settings are baked into openttd.cfg so the initial map generation
+    uses them — no ``newgame`` RCON needed (which would break the GameScript).
 
     Args:
         base_config_dir: Template config directory (e.g. ottd_config/).
@@ -37,18 +43,32 @@ def build_session_config(
         game_port: Game port for player connections.
         admin_port: Admin port for nttd control.
         admin_password: Password for admin port authentication.
+        settings: Game settings to bake into the config (key=value pairs).
+        ai_opponents: Number of AI opponent companies to configure.
+        agent_companies: Number of idle company slots for nttd agents.
 
     Returns:
         Path to the session config directory.
     """
     session_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- openttd.cfg: copy and patch ports ---
+    # --- openttd.cfg: copy and patch ports + game settings ---
     src_cfg = base_config_dir / "openttd.cfg"
     dst_cfg = session_dir / "openttd.cfg"
     cfg_content = src_cfg.read_text()
     cfg_content = _patch_ini_value(cfg_content, "server_port", str(game_port))
     cfg_content = _patch_ini_value(cfg_content, "server_admin_port", str(admin_port))
+
+    # Bake game settings into the config
+    total_companies = ai_opponents + agent_companies
+    if total_companies > 0:
+        cfg_content = _patch_ini_value(cfg_content, "ai_in_multiplayer", "true")
+        cfg_content = _patch_ini_value(cfg_content, "max_no_competitors", str(total_companies))
+        cfg_content = _patch_ini_value(cfg_content, "competitors_interval", "0")
+
+    for key, value in (settings or {}).items():
+        cfg_content = _patch_ini_value(cfg_content, key, value)
+
     dst_cfg.write_text(cfg_content)
 
     # --- secrets.cfg: copy and patch admin password ---

@@ -78,6 +78,27 @@ class EndConditionsConfig:
 
 
 @dataclass
+class RuntimeConfig:
+    mode: str = "async_realtime"
+    game_speed: int = 1
+
+
+@dataclass
+class AgentConfigEntry:
+    agent_id: str = ""
+    company_id: int = 0
+    framework: str = "openai"
+    model: str = "gpt-4o"
+    instructions: str = ""
+    instructions_file: str = ""
+    observation_mode: str = "compact"
+    poll_interval: float = 5.0
+    observation_tools: bool = True
+    max_actions_per_cycle: int = 10
+    api_key_env: str = "OPENAI_API_KEY"
+
+
+@dataclass
 class ScenarioConfig:
     name: str = "default"
     description: str = ""
@@ -85,6 +106,46 @@ class ScenarioConfig:
     companies: CompaniesConfig = field(default_factory=CompaniesConfig)
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     end_conditions: EndConditionsConfig = field(default_factory=EndConditionsConfig)
+    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    agents: list[AgentConfigEntry] = field(default_factory=list)
+
+
+_LANDSCAPE_MAP = {"temperate": "0", "arctic": "1", "tropic": "2", "toyland": "3"}
+
+
+def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
+    """Convert a ScenarioConfig to OpenTTD RCON settings dict.
+
+    Returns key-value pairs suitable for ``setting {key} {value}`` RCON commands.
+    Only includes settings that differ from OpenTTD defaults or are explicitly set.
+    """
+    settings: dict[str, str] = {}
+
+    # Map settings
+    m = cfg.map
+    settings["game_creation.map_x"] = str(_log2(m.size_x))
+    settings["game_creation.map_y"] = str(_log2(m.size_y))
+    settings["game_creation.landscape"] = _LANDSCAPE_MAP.get(m.landscape, "0")
+    settings["difficulty.terrain_type"] = str(m.terrain_type)
+    settings["game_creation.starting_year"] = str(m.starting_year)
+    settings["difficulty.number_towns"] = str(m.number_towns)
+    settings["difficulty.industry_density"] = str(m.industry_density)
+
+    # Company settings
+    settings["difficulty.max_no_competitors"] = str(cfg.companies.num_ai_companies)
+    if cfg.companies.max_loan != 300000:
+        settings["difficulty.max_loan"] = str(cfg.companies.max_loan)
+
+    return settings
+
+
+def _log2(n: int) -> int:
+    """Return log2 of n (OpenTTD uses log2 for map dimensions)."""
+    result = 0
+    while n > 1:
+        n >>= 1
+        result += 1
+    return result
 
 
 def _get(cfg: Any, path: str, default: Any = None) -> Any:
@@ -147,6 +208,30 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
     map_raw = _get(s, "map", {})
     co_raw = _get(s, "companies", {})
 
+    rt_raw = _get(s, "runtime", {})
+    runtime = RuntimeConfig(
+        mode=_get(rt_raw, "mode", "async_realtime"),
+        game_speed=int(_get(rt_raw, "game_speed", _get(hb_raw, "game_speed", 1))),
+    )
+
+    agents_raw = _get(s, "agents", [])
+    agents: list[AgentConfigEntry] = []
+    if isinstance(agents_raw, list):
+        for a in agents_raw:
+            agents.append(AgentConfigEntry(
+                agent_id=_get(a, "agent_id", ""),
+                company_id=int(_get(a, "company_id", 0)),
+                framework=_get(a, "framework", "openai"),
+                model=_get(a, "model", "gpt-4o"),
+                instructions=_get(a, "instructions", ""),
+                instructions_file=_get(a, "instructions_file", ""),
+                observation_mode=_get(a, "observation_mode", "compact"),
+                poll_interval=float(_get(a, "poll_interval", 5.0)),
+                observation_tools=bool(_get(a, "observation_tools", True)),
+                max_actions_per_cycle=int(_get(a, "max_actions_per_cycle", 10)),
+                api_key_env=_get(a, "api_key_env", "OPENAI_API_KEY"),
+            ))
+
     return ScenarioConfig(
         name=_get(s, "name", "default"),
         description=_get(s, "description", ""),
@@ -169,4 +254,6 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
             game_speed=int(_get(hb_raw, "game_speed", 1)),
         ),
         end_conditions=end_conditions,
+        runtime=runtime,
+        agents=agents,
     )

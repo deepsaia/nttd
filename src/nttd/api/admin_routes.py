@@ -6,7 +6,7 @@ stopping it kills the process. All operations target a specific session's runtim
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -36,6 +36,15 @@ class StartSessionRequest(BaseModel):
     mode: str = "newgame"
     savefile: str | None = None
     ai_opponents: int = 0
+    agent_companies: int = 0
+
+
+class EndConditionsRequest(BaseModel):
+    logic: str = "any"
+    wall_minutes: float | None = None
+    end_year: int | None = None
+    revenue_threshold: int | None = None
+    cargo_threshold: int | None = None
 
 
 class DeityBalanceRequest(BaseModel):
@@ -101,8 +110,8 @@ async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
 
 
 @router.get("/sessions")
-async def list_sessions(status: str | None = None, limit: int = 50) -> dict[str, Any]:
-    sessions = await session_repo.list_sessions(status=status, limit=limit)
+async def list_sessions(status: str | None = None, include_archived: bool = True, limit: int = 50) -> dict[str, Any]:
+    sessions = await session_repo.list_sessions(status=status, include_archived=include_archived, limit=limit)
 
     # Enrich with running state from session manager
     mgr = deps.session_manager
@@ -184,7 +193,11 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
 
     # Start the OpenTTD server (spawns process, connects admin client)
     try:
-        runtime = await mgr.start_session(session_id, settings)
+        runtime = await mgr.start_session(
+            session_id, settings,
+            ai_opponents=request.ai_opponents,
+            agent_companies=request.agent_companies,
+        )
     except Exception as e:
         logger.exception("Failed to start session %s", session_id)
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -419,3 +432,48 @@ async def run_pathfind(session_id: str, request: PathfindRequest) -> dict[str, A
         corridor_margin=request.corridor_margin,
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped: End conditions
+# ---------------------------------------------------------------------------
+
+@router.post("/sessions/{session_id}/end-conditions")
+async def set_end_conditions(session_id: str, request: EndConditionsRequest) -> dict[str, Any]:
+    """Configure end conditions on a running session's orchestrator."""
+    from nttd.config.scenario_config import (  # noqa: PLC0415
+        CargoThresholdConfig,
+        EndConditionsConfig,
+        GameDateLimitConfig,
+        RevenueThresholdConfig,
+        TimeLimitConfig,
+    )
+
+    runtime = deps.get_runtime(session_id)
+
+    config = EndConditionsConfig(logic=request.logic)
+    if request.wall_minutes is not None:
+        config.time_limit = TimeLimitConfig(enabled=True, wall_minutes=request.wall_minutes)
+    if request.end_year is not None:
+        config.game_date_limit = GameDateLimitConfig(enabled=True, end_year=request.end_year)
+    if request.revenue_threshold is not None:
+        config.revenue_threshold = RevenueThresholdConfig(enabled=True, total_revenue=request.revenue_threshold)
+    if request.cargo_threshold is not None:
+        config.cargo_threshold = CargoThresholdConfig(enabled=True, total_cargo_delivered=request.cargo_threshold)
+
+    runtime.orchestrator.configure_end_conditions(config)
+
+    tl = config.time_limit
+    gd = config.game_date_limit
+    rv = config.revenue_threshold
+    ct = config.cargo_threshold
+    return {
+        "session_id": session_id,
+        "end_conditions": {
+            "logic": config.logic,
+            "time_limit": {"enabled": tl.enabled, "wall_minutes": tl.wall_minutes},
+            "game_date_limit": {"enabled": gd.enabled, "end_year": gd.end_year},
+            "revenue_threshold": {"enabled": rv.enabled, "total_revenue": rv.total_revenue},
+            "cargo_threshold": {"enabled": ct.enabled, "total_cargo_delivered": ct.total_cargo_delivered},
+        },
+    }

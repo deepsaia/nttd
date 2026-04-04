@@ -6,47 +6,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
+from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS
+from nttd.interpreter.parser import parse_action_list
+from nttd.interpreter.validator import validate_actions as validate_agent_actions
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sessions/{session_id}/actions", tags=["actions"])
-
-# Maps action_type → GS action name.
-_KNOWN_ACTIONS: set[str] = {
-    # Building — road
-    "build_road", "build_road_line", "build_road_depot", "build_road_stop",
-    "remove_road", "remove_road_depot", "remove_road_stop",
-    # Building — rail
-    "build_rail", "build_rail_track", "build_rail_station", "build_rail_depot",
-    "build_rail_signal", "build_rail_waypoint",
-    "remove_rail", "remove_rail_track", "remove_signal", "remove_rail_station",
-    "convert_rail",
-    # Building — marine
-    "build_canal", "build_lock", "build_buoy", "build_water_depot",
-    "remove_canal", "remove_lock", "remove_buoy", "remove_water_depot",
-    # Building — other
-    "build_airport", "remove_airport", "open_close_airport",
-    "build_dock", "build_bridge", "build_tunnel", "demolish_tile",
-    # Company
-    "build_company_hq", "set_loan", "rename_company",
-    # Town (GS-exclusive)
-    "found_town", "expand_town", "set_town_growth", "perform_town_action",
-    "change_town_rating", "set_cargo_goal",
-    # Signs
-    "build_sign", "remove_sign",
-    # Groups
-    "create_group", "delete_group", "move_to_group", "set_auto_replace",
-    # Vehicles
-    "buy_vehicle", "sell_vehicle", "sell_wagon", "move_wagon",
-    "start_vehicle", "stop_vehicle", "send_to_depot", "send_to_depot_service",
-    "clone_vehicle", "refit_vehicle", "reverse_vehicle", "rename_vehicle",
-    # Orders
-    "add_order", "insert_order", "remove_order", "skip_to_order",
-    "move_order", "set_order_flags", "share_orders", "copy_orders",
-    # Subsidies
-    "create_subsidy",
-}
 
 
 @router.post("/submit", response_model=ActionResult)
@@ -56,7 +23,7 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
     runtime.action_tracker.submit(envelope)
     runtime.event_logger.log_action_submitted(envelope)
 
-    if envelope.action_type not in _KNOWN_ACTIONS:
+    if envelope.action_type not in KNOWN_ACTIONS:
         return ActionResult(
             action_id=envelope.action_id,
             status=ActionStatus.REJECTED,
@@ -108,11 +75,24 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
         )
 
 
+@router.post("/submit-batch")
+async def submit_action_batch(session_id: str, envelopes: list[ActionEnvelope]) -> list[ActionResult]:
+    """Submit a batch of actions. All are executed sequentially under the company lock.
+
+    Returns a result for each envelope in the same order.
+    """
+    results: list[ActionResult] = []
+    for envelope in envelopes:
+        result = await submit_action(session_id, envelope)
+        results.append(result)
+    return results
+
+
 @router.post("/validate", response_model=ActionResult)
 async def validate_action(session_id: str, envelope: ActionEnvelope) -> ActionResult:
     """Validate an action without executing it."""
     deps.get_runtime(session_id)  # verify session is running
-    if envelope.action_type not in _KNOWN_ACTIONS:
+    if envelope.action_type not in KNOWN_ACTIONS:
         return ActionResult(
             action_id=envelope.action_id,
             status=ActionStatus.REJECTED,
@@ -143,3 +123,77 @@ async def gs_execute(session_id: str, action: str, params: dict[str, Any] | None
     if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
     return await runtime.admin_client.send_gamescript(action, params)
+
+
+# ── Interpreter endpoints ──────────────────────────────────────────────
+# These mirror the MCP validation/listing tools as REST endpoints,
+# plus an interpret endpoint that parses + validates + executes.
+
+
+@router.get("/available")
+def list_available_actions_endpoint() -> dict[str, list[str]]:
+    """List all available action types grouped by category."""
+    return ACTION_CATEGORIES
+
+
+@router.post("/interpret/validate")
+async def validate_agent_action_list(
+    session_id: str, actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Validate a list of agent-produced actions without executing.
+
+    Accepts the same format agents output:
+    [{"action_type": "build_road_stop", "parameters": {"tile": 123}}, ...]
+    """
+    deps.get_runtime(session_id)  # verify session exists
+    parsed = parse_action_list(actions)
+    errors = validate_agent_actions(parsed)
+    results: list[dict[str, Any]] = []
+    for i, action in enumerate(parsed):
+        if i in errors:
+            results.append({"index": i, "status": "invalid", "action_type": action.action_type, "error": errors[i]})
+        else:
+            results.append({"index": i, "status": "valid", "action_type": action.action_type})
+    return {
+        "total": len(parsed),
+        "valid": len(parsed) - len(errors),
+        "invalid": len(errors),
+        "results": results,
+    }
+
+
+@router.post("/interpret")
+async def interpret_agent_actions(
+    session_id: str, actions: list[dict[str, Any]], company_id: int = 0,
+) -> list[ActionResult]:
+    """Parse, validate, and execute a list of agent-produced actions.
+
+    Accepts the same format agents output:
+    [{"action_type": "build_road_stop", "parameters": {"tile": 123}}, ...]
+
+    Each valid action is wrapped in an ActionEnvelope and executed.
+    Invalid actions are returned with REJECTED status.
+    """
+    parsed = parse_action_list(actions)
+    errors = validate_agent_actions(parsed)
+
+    results: list[ActionResult] = []
+    for i, agent_action in enumerate(parsed):
+        if i in errors:
+            results.append(ActionResult(
+                action_id=f"interp_{i}",
+                status=ActionStatus.REJECTED,
+                error=errors[i],
+            ))
+            continue
+
+        envelope = ActionEnvelope(
+            action_id=f"interp_{i}",
+            company_id=company_id,
+            action_type=agent_action.action_type,
+            parameters=agent_action.parameters,
+        )
+        result = await submit_action(session_id, envelope)
+        results.append(result)
+
+    return results

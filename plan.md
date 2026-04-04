@@ -278,23 +278,223 @@ Metrics/messages/leaderboard/replay (session_id as query/path param — DB-backe
 
 ## Phase 4 — Agent Integration
 
-> After admin console works with human + AI games, integrate LLM agents.
+> Enable LLM agents to play OpenTTD in async real-time multiplayer mode.
+> Game runs continuously — agents observe, decide, act in a loop. No heartbeat/pause-play.
+> MCP = observation + validation only (thin layer). Execution via interpreter.
+> Gameloop service manages agent connections and drives the cycle.
 
-### 4.1 Agent Framework Updates
-- [ ] **4.1.1** Update agent base class for async real-time mode
-- [ ] **4.1.2** Agent authentication (API keys)
-- [ ] **4.1.3** Agent self-registration flow (connects to specific session)
-- [ ] **4.1.4** Per-company action serialization with same-company multi-agent support
-- [ ] **4.1.5** Agent-to-agent messaging integration
+### 4.1 Fix: AI Opponent Spawning ✅
+- [x] **4.1.1** `session_runtime.py`: After `newgame`, wait ~3s, send `start_ai` N times
+- [x] **4.1.2** `admin_routes.py`: Wire `StartSessionRequest.ai_opponents` through
+- [x] **4.1.3** `session_manager.py`: Add `ai_opponents` param
 
-### 4.2 Pathfinding Integration
-- [ ] **4.2.1** Agent tools for pathfinding (`POST /sessions/{id}/pathfind`)
-- [ ] **4.2.2** Compound action builder: plan route → pathfind → build → deploy vehicles
+### 4.2 End Conditions in Async Real-Time Mode ✅
+- [x] **4.2.1** `orchestrator.py`: End condition check in `run_async_realtime()` loop
+- [x] **4.2.2** `orchestrator.py`: `configure_end_conditions(config)` method
+- [x] **4.2.3** `admin_routes.py`: `POST /admin/sessions/{id}/end-conditions` endpoint
 
-### 4.3 Stress Testing
-- [ ] **4.3.1** Load test: 15 companies × 10 agents = 150 connections
-- [ ] **4.3.2** Action throughput: measure commands/second under load
-- [ ] **4.3.3** DB write performance: verify batch inserts keep up at high game speed
+### 4.3 Agent Client & Loop ✅
+- [x] **4.3.1-7** Session-scoped client, `run_realtime()`, `submit-batch` endpoint, scripted agent updated
+
+### 4.4 MCP Server Layer (Observation + Validation Only) ✅
+**Design change**: MCP tools are for observation and validation only — no action execution via MCP. Agents output structured action lists; the interpreter handles execution.
+
+```
+src/nttd/mcp/
+├── __init__.py, __main__.py
+├── server.py           # FastMCP server — registers observation + validation tools
+├── client.py           # Async HTTP client wrapping nttd REST API
+└── tools/
+    ├── __init__.py
+    ├── observation.py   # ~28 tools: get_state_compact, get_towns, get_engines, etc.
+    ├── pathfinding.py   # 1 tool: pathfind
+    └── validation.py    # 2 tools: validate_actions, list_available_actions
+```
+
+- [x] **4.4.1** MCP client + server + observation tools + pathfinding tool
+- [x] **4.4.2** `pyproject.toml`: `mcp = ["mcp[cli]>=1.9", "httpx>=0.28.0"]`
+
+### 4.5 Action Interpreter ✅
+**New component**: Parses agent output (structured action list) → validates against KNOWN_ACTIONS → executes via GS.
+
+- [x] **4.5.1** `src/nttd/constants.py`: Single source of truth for `KNOWN_ACTIONS` + `ACTION_CATEGORIES`
+- [x] **4.5.2** `src/nttd/interpreter/`: parser.py, validator.py, executor.py, interpreter.py, action_schema.py
+- [x] **4.5.3** REST endpoints: `POST /actions/interpret`, `POST /actions/interpret/validate`, `GET /actions/available`
+- [x] **4.5.4** MCP validation tools: `validate_actions`, `list_available_actions`
+
+### 4.6 Example Agents ✅
+**Real framework examples** with detailed agent instructions, tool bindings, and the full observe→decide→interpret→execute loop.
+
+- [x] **4.6.1** `examples/agent_instructions.py`: Shared system prompts + action format spec
+- [x] **4.6.2** `examples/langchain_nttd_agent.py`: LangChain with tool-calling or single-shot
+- [x] **4.6.3** `examples/openai_nttd_agent.py`: OpenAI SDK with native function calling
+- [x] **4.6.4** `examples/langgraph_nttd_agent.py`: Planner + executor graph
+- [x] **4.6.5** `examples/simple_bus_agent.py`: Scripted no-LLM baseline
+- [x] **4.6.6** `examples/agent_client.py`: REST API lifecycle demo (session-scoped)
+- [x] **4.6.7** `examples/README.md`: "How to Build Your Agent" guide
+
+### 4.7 CLI-First Architecture (Current)
+**Everything runs from the command line.** The admin console UI is developed later — all session management, agent registration, end conditions, and benchmarking must work via CLI + HOCON config. The REST API backs the CLI (and later the UI).
+
+#### CLI Commands (typer subcommands)
+
+```bash
+# Server
+nttd server [--host --port --reload]              # Start FastAPI (already exists)
+
+# Session lifecycle
+nttd session create [--config scenario.conf]       # Create session from HOCON → returns session_id
+nttd session start <session_id> [--ai-opponents N] # Spawn OpenTTD process
+nttd session stop <session_id>                     # Stop OpenTTD + archive
+nttd session list                                  # List all sessions + status
+nttd session status <session_id>                   # Detailed status (game date, agents, etc.)
+
+# Agent management (via gameloop)
+nttd agent register --session <id> --agent-id <aid> --company-id N \
+    --framework openai --model gpt-4o [--instructions-file prompt.txt] \
+    [--poll-interval 5] [--observation-mode compact]
+nttd agent start --session <id> --agent-id <aid>   # Start the cycle loop
+nttd agent stop --session <id> --agent-id <aid>    # Stop the cycle loop
+nttd agent list --session <id>                     # List agents + metrics
+
+# Benchmark (all-in-one)
+nttd benchmark --config scenario.conf [--agents agents.json] \
+    [--speed 3] [--output results/]
+```
+
+#### Extended HOCON Config
+
+`scenario.conf` becomes the single config file for everything — map, companies, runtime, end conditions, AND agents:
+
+```hocon
+scenario {
+  name = "bus_benchmark"
+  map { size_x = 256, size_y = 256, landscape = "temperate" }
+  companies { num_ai_companies = 0, max_loan = 300000 }
+
+  runtime {
+    mode = "async_realtime"       # async_realtime | heartbeat
+    game_speed = 3                # OpenTTD speed multiplier
+  }
+
+  end_conditions {
+    logic = "any"
+    time_limit { enabled = true, wall_minutes = 10 }
+    game_date_limit { enabled = true, end_year = 2000 }
+  }
+
+  agents = [
+    {
+      agent_id = "bus_builder"
+      company_id = 0
+      framework = "openai"        # openai | langchain | passthrough
+      model = "gpt-4o"
+      instructions_file = "examples/agent_instructions.py:get_bus_agent_prompt"
+      observation_mode = "compact" # compact | full
+      poll_interval = 5.0
+      observation_tools = true
+    }
+    {
+      agent_id = "rail_planner"
+      company_id = 1
+      framework = "langchain"
+      model = "gpt-4o-mini"
+      instructions = "You are a rail transport specialist..."
+      poll_interval = 8.0
+    }
+  ]
+}
+```
+
+#### Files to modify/create
+
+- [ ] **4.7.1** `src/nttd/config/scenario_config.py`: Add `RuntimeConfig`, `AgentConfigEntry` dataclasses, parse `runtime` + `agents` blocks
+- [ ] **4.7.2** `src/nttd/cli.py`: Replace old single-session commands. Add `session` subgroup (create, start, stop, list, status), `agent` subgroup (register, start, stop, list), `end-conditions` command, `benchmark` command
+
+### 4.8 Gameloop Service
+**The core new system**: Centralized loop inside nttd that manages agent connections, drives the observe→decide→interpret→execute cycle, and tracks everything per `connection_id`.
+
+> **Key principle**: Agents = humans from the game's perspective. The gameloop calls the LLM on behalf of agents using pluggable framework adapters.
+
+> **connection_id** = `"{session_id}:{company_id}:{agent_id}"` — unique tracking key.
+
+> **OpenTTD limits**: 15 companies max, 255 clients max, spectator = company_id 255.
+
+```
+src/nttd/gameloop/
+├── __init__.py
+├── manager.py              # GameloopManager — one per session, manages connections
+├── connection.py           # AgentConnection — single agent's cycle loop + tracking
+├── adapters/
+│   ├── __init__.py
+│   ├── base.py             # BaseAdapter — framework interface
+│   ├── openai_adapter.py   # OpenAI SDK adapter
+│   ├── langchain_adapter.py # LangChain adapter
+│   └── passthrough_adapter.py # No LLM — for scripted/rule-based agents
+├── schemas.py              # AgentConfig, ConnectionStatus, CycleRecord
+└── tracker.py              # ConnectionTracker — per-connection telemetry
+```
+
+REST endpoints (back the CLI + future admin UI):
+```
+POST   /sessions/{sid}/gameloop/agents/register     → register agent, return connection_id
+POST   /sessions/{sid}/gameloop/agents/{aid}/start   → start cycle loop
+POST   /sessions/{sid}/gameloop/agents/{aid}/stop    → stop cycle loop
+GET    /sessions/{sid}/gameloop/agents               → list all connections + status
+GET    /sessions/{sid}/gameloop/agents/{aid}/status   → connection detail + metrics
+GET    /sessions/{sid}/gameloop/agents/{aid}/cycles   → recent cycle records
+GET    /sessions/{sid}/gameloop/status                → overall gameloop status
+```
+
+- [ ] **4.8.1** `gameloop/schemas.py`: AgentConfig, ConnectionStatus, CycleRecord models
+- [ ] **4.8.2** `gameloop/adapters/base.py`: BaseAdapter abstract class
+- [ ] **4.8.3** `gameloop/adapters/openai_adapter.py`: OpenAI SDK adapter with tool calling
+- [ ] **4.8.4** `gameloop/adapters/langchain_adapter.py`: LangChain adapter
+- [ ] **4.8.5** `gameloop/adapters/passthrough_adapter.py`: Scripted agent adapter
+- [ ] **4.8.6** `gameloop/tracker.py`: ConnectionTracker (per-cycle telemetry, aggregate metrics)
+- [ ] **4.8.7** `gameloop/connection.py`: AgentConnection (cycle loop: observe → decide → interpret → execute)
+- [ ] **4.8.8** `gameloop/manager.py`: GameloopManager (register, start, stop, stop_all)
+- [ ] **4.8.9** `src/nttd/api/gameloop_routes.py`: REST API for gameloop management
+- [ ] **4.8.10** `session_runtime.py`: Attach `GameloopManager` to runtime bundle
+- [ ] **4.8.11** `orchestrator.py`: Wire `on_end` → `gameloop_manager.stop_all()`
+
+### 4.9 DB Schema for Gameloop Tracking
+- [ ] **4.9.1** `db/tables.py`: Add `agent_connections` table (connection lifecycle + aggregate metrics)
+- [ ] **4.9.2** `db/tables.py`: Add `agent_cycles` table (per-cycle timing, action counts)
+- [ ] **4.9.3** `db/migrations.py`: Auto-create new tables
+- [ ] **4.9.4** `gameloop/tracker.py`: Flush cycle records to DB via existing recorder pattern
+
+### 4.10 End Conditions Wiring (part of session config)
+End conditions are part of the HOCON scenario config — they're stored with the session and applied on session start, alongside map settings, companies, and runtime mode. No separate CLI command needed.
+
+- [ ] **4.10.1** `session_manager.py`: Apply end conditions from HOCON on `session start`
+- [ ] **4.10.2** `orchestrator.py`: `on_end` triggers `stop_all()` + leaderboard computation + session archive
+
+### 4.11 Benchmark Runner (CLI)
+**All-in-one command**: Create session, apply config, start OpenTTD, register + start agents, wait for end condition, export results.
+
+```bash
+nttd benchmark --config config/scenario.conf --speed 3 --output results/
+```
+
+- [ ] **4.11.1** `cli.py`: `benchmark` command — full orchestration from HOCON
+- [ ] **4.11.2** Results export: JSON/CSV with per-agent and per-company metrics
+- [ ] **4.11.3** `agents.json` format as alternative to agents-in-HOCON (for multi-config reuse)
+
+### 4.12 Serialization & Parallelization (Already Handled)
+- Per-company `asyncio.Lock` in `company_lock.py`
+- 1 agent per company for now → no contention
+- Cross-company actions run in parallel
+- GS is single-threaded but microseconds per command
+
+### 4.13 Deferred
+- [ ] Multi-agent per company (coordination, role assignment)
+- [ ] Agent authentication (API keys)
+- [ ] Agent-to-agent messaging
+- [ ] Compound action builder
+- [ ] LLM chat message tracking (defer to Langsmith/Langfuse)
+- [ ] Admin console UI for session management, end conditions, agent registration
+- [ ] Stress testing (150 connections)
 
 ---
 
@@ -320,6 +520,10 @@ Metrics/messages/leaderboard/replay (session_id as query/path param — DB-backe
 | `NTTD_SESSIONS_DIR` | `runs` | Where per-session config dirs are created |
 | `NTTD_PORT_RANGE_START` | `4000` | Starting port for allocation (even=game, odd=admin) |
 | `NTTD_ADMIN_PASSWORD` | `nttd` | Admin password for all sessions |
+| `NTTD_URL` | `http://localhost:8000` | MCP server: nttd API base URL |
+| `NTTD_SESSION_ID` | — | MCP server: target session ID |
+| `NTTD_AGENT_ID` | — | MCP server: agent identifier |
+| `NTTD_COMPANY_ID` | `0` | MCP server: company to control |
 
 ---
 
@@ -334,5 +538,6 @@ Metrics/messages/leaderboard/replay (session_id as query/path param — DB-backe
 | **M5: Multi-Server** | Each session = own OpenTTD server, port isolation, orphan recovery | Done |
 | **M6: Console MVP** | Create session → start game → join from OpenTTD client → spectate/play | Done |
 | **M7: Game Loop** | Settings stored, defaults correct, archive on stop, full detail view | Done |
-| **M8: Agents** | LLM agents playing via console, multi-agent same company | Phase 4 |
-| **M9: Scale** | 150 connections, PostgreSQL, Docker | Phase 5 |
+| **M8: Agent Loop** | Async RT agent loop, session-scoped client, scripted agent works | Phase 4 |
+| **M9: MCP Layer** | All 93+ GS commands as MCP tools, example agents, benchmark runner | Phase 4 |
+| **M10: Scale** | 150 connections, PostgreSQL, Docker | Phase 5 |

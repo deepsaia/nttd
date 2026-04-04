@@ -3,17 +3,7 @@
 These tools are NOT part of nttd.  They live in agent code and make HTTP/GS
 calls to the running nttd server to fetch specific slices of game state.
 
-nttd's only responsibility is:
-  - Push compact snapshot on every heartbeat beat (the "trigger")
-  - Accept and execute action dicts submitted during the action window
-  - Expose REST endpoints any agent can call for richer state
-
-This module shows one way to structure those calls.  Each agent framework
-wraps them differently:
-  - Scripted agents: call methods directly
-  - LangChain agents: wrap with @tool  (see langchain_agent.py)
-  - LangGraph agents: pass as node tools (see langgraph_agent.py)
-  - Raw LLM loops: build function-call schemas from the docstrings
+All URLs are session-scoped: ``/sessions/{session_id}/...``.
 
 Usage:
     from agents.tools import make_tools
@@ -45,6 +35,7 @@ class NttdTools:
     def __init__(self, client: NttdClient, company_id: int) -> None:
         self._client = client
         self._company_id = company_id
+        self._session_url = f"{client.base_url}/sessions/{client.session_id}"
 
     # ------------------------------------------------------------------
     # Snapshot tools  (reads nttd's cached WorldState via HTTP)
@@ -53,21 +44,21 @@ class NttdTools:
     def get_towns(self) -> list[dict[str, Any]]:
         """All towns on the map. [{id, name, population, x, y, is_city}]"""
         import requests
-        resp = requests.get(f"{self._client.base_url}/state/towns", timeout=10)
+        resp = requests.get(f"{self._session_url}/state/towns", timeout=10)
         resp.raise_for_status()
         return resp.json()
 
     def get_industries(self) -> list[dict[str, Any]]:
         """All industries. [{id, name, type_name, x, y, is_raw, production}]"""
         import requests
-        resp = requests.get(f"{self._client.base_url}/state/industries", timeout=10)
+        resp = requests.get(f"{self._session_url}/state/industries", timeout=10)
         resp.raise_for_status()
         return resp.json()
 
     def get_vehicles(self, company_id: int | None = None) -> list[dict[str, Any]]:
         """Vehicles owned by this company. [{id, type, name, profit_this_year, in_depot, orders}]"""
         import requests
-        resp = requests.get(f"{self._client.base_url}/state/vehicles", timeout=10)
+        resp = requests.get(f"{self._session_url}/state/vehicles", timeout=10)
         resp.raise_for_status()
         cid = company_id if company_id is not None else self._company_id
         return [v for v in resp.json() if v.get("company_id") == cid]
@@ -75,7 +66,7 @@ class NttdTools:
     def get_stations(self, company_id: int | None = None) -> list[dict[str, Any]]:
         """Stations owned by this company. [{id, name, x, y, has_bus, cargo_waiting}]"""
         import requests
-        resp = requests.get(f"{self._client.base_url}/state/stations", timeout=10)
+        resp = requests.get(f"{self._session_url}/state/stations", timeout=10)
         resp.raise_for_status()
         cid = company_id if company_id is not None else self._company_id
         return [s for s in resp.json() if s.get("company_id") == cid]
@@ -133,11 +124,7 @@ class NttdTools:
     # ------------------------------------------------------------------
 
     def as_langchain_tools(self) -> list[Any]:
-        """Return LangChain BaseTool instances wrapping each method.
-
-        Each agent is free to define its own tools differently; this is one
-        convenient way to expose the full toolkit to a ReAct executor.
-        """
+        """Return LangChain BaseTool instances wrapping each method."""
         from langchain_core.tools import tool  # type: ignore[import-untyped]
 
         _t = self

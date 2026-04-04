@@ -12,6 +12,7 @@ from nttd.api.admin_routes import router as admin_router
 from nttd.api.agent_routes import router as agent_router
 from nttd.api.benchmark_routes import router as benchmark_router
 from nttd.api.control_routes import router as control_router
+from nttd.api.gameloop_routes import router as gameloop_router
 from nttd.api.metrics_routes import router as metrics_router
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.ws_routes import router as ws_router
@@ -84,6 +85,7 @@ app.include_router(action_router)
 app.include_router(metrics_router)
 app.include_router(ws_router)
 app.include_router(benchmark_router)
+app.include_router(gameloop_router)
 
 
 @app.get("/health")

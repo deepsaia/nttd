@@ -1,47 +1,54 @@
 const ADJECTIVES = [
-  'amber', 'azure', 'bold', 'brave', 'bright', 'calm', 'clever', 'cosmic',
-  'crimson', 'crystal', 'daring', 'deft', 'eager', 'emerald', 'fabled',
-  'fierce', 'fleet', 'gallant', 'gentle', 'gilded', 'golden', 'grand',
-  'hardy', 'hollow', 'humble', 'ivory', 'jade', 'keen', 'lively', 'lucky',
-  'lunar', 'marble', 'mighty', 'misty', 'noble', 'onyx', 'opal', 'pale',
-  'prime', 'proud', 'quiet', 'rapid', 'regal', 'risen', 'rosy', 'royal',
-  'rustic', 'sage', 'scarlet', 'serene', 'sharp', 'silver', 'sleek',
-  'solar', 'solid', 'stark', 'steady', 'steel', 'stern', 'stout', 'sturdy',
-  'subtle', 'sunny', 'swift', 'tawny', 'tidal', 'vast', 'vivid', 'warm',
-  'wild', 'wily', 'wise', 'witty', 'zealous',
+  'amber', 'arc', 'ash', 'azure', 'beefy', 'blithe', 'bold', 'bonny', 'brave', 'bright', 'brisk',
+  'bubbly', 'calm', 'cheery', 'chief', 'chirpy', 'civic', 'clever', 'cloudy', 'comic', 'cosmic',
+  'cozy', 'crimson', 'crisp', 'crystal', 'dandy', 'daring', 'deft', 'dicey', 'eager', 'elfin',
+  'ember', 'emerald', 'fabled', 'fancy', 'fierce', 'fleet', 'foxy', 'fresh', 'fuzzy', 'gallant',
+  'gentle', 'giddy', 'gilded', 'golden', 'grand', 'happy', 'hardy', 'hasty', 'hollow', 'humble',
+  'hyper', 'ivory', 'jade', 'jaunty', 'jazzy', 'jolly', 'keen', 'kind', 'lively', 'lucky', 'lunar',
+  'magic', 'marble', 'mellow', 'merry', 'mighty', 'misty', 'nifty', 'nimble', 'noble', 'opal',
+  'peppy', 'perky', 'plucky', 'poppy', 'prime', 'proud', 'puffy', 'quick', 'quiet', 'rapid',
+  'regal', 'risen', 'rosy', 'royal', 'rustic', 'sage', 'scarlet', 'serene', 'sharp', 'shiny',
+  'silky', 'silver', 'sleek', 'sly', 'snappy', 'solar', 'solid', 'sparky', 'spry', 'stark',
+  'steady', 'steel', 'stout', 'sturdy', 'subtle', 'sunny', 'swift', 'tidy', 'tidal', 'toasty',
+  'tricky', 'vast', 'velvet', 'vivid', 'warm', 'wild', 'wily', 'wise', 'witty', 'zappy', 'zesty',
+  'zippy',
 ];
 
 const NOUNS = [
-  'anchor', 'arrow', 'badger', 'beacon', 'bridge', 'canyon', 'cedar',
-  'cinder', 'cliff', 'comet', 'condor', 'coral', 'crane', 'creek',
-  'dagger', 'depot', 'drake', 'eagle', 'ember', 'falcon', 'ferry',
-  'flint', 'forge', 'frost', 'gale', 'grove', 'harbor', 'heron',
-  'hunter', 'iris', 'jasper', 'kestrel', 'lance', 'lark', 'ledger',
-  'maple', 'marsh', 'meadow', 'mesa', 'meteor', 'minnow', 'moose',
-  'orchid', 'osprey', 'otter', 'panther', 'pebble', 'pine', 'plover',
-  'quarry', 'quartz', 'raven', 'reef', 'ridge', 'river', 'robin',
-  'rocket', 'sage', 'sentry', 'sierra', 'signal', 'slate', 'sparrow',
-  'spruce', 'summit', 'thistle', 'timber', 'trail', 'trout', 'tundra',
-  'valley', 'viper', 'walrus', 'warden', 'willow', 'wolf', 'wren',
+  'acorn', 'alpaca', 'anchor', 'anvil', 'arrow', 'badger', 'bagel', 'basil', 'beacon', 'beetle',
+  'berry', 'biscuit', 'blimp', 'boulder', 'bridge', 'brook', 'buffin', 'cactus', 'canyon', 'cedar',
+  'cinder', 'cliff', 'cloud', 'comet', 'condor', 'coral', 'crane', 'creek', 'cricket', 'crouton',
+  'dagger', 'dingo', 'drake', 'drift', 'eagle', 'ember', 'falcon', 'ferry', 'finch', 'flint',
+  'forge', 'frost', 'gale', 'gecko', 'glider', 'gnome', 'grove', 'harbor', 'heron', 'hopper',
+  'hunter', 'iris', 'islet', 'jasper', 'jelly', 'junco', 'kestrel', 'kitten', 'lance', 'lark',
+  'ledger', 'lemur', 'lotus', 'maple', 'marsh', 'meadow', 'mesa', 'meteor', 'minnow', 'moose',
+  'morsel', 'muffin', 'nectar', 'noodle', 'nova', 'nylon', 'orbit', 'orchid', 'osprey', 'otter',
+  'panda', 'panther', 'pebble', 'pepper', 'pickle', 'pine', 'pixel', 'plover', 'pocket', 'puffin',
+  'quarry', 'quartz', 'quokka', 'rabbit', 'raven', 'reef', 'ridge', 'river', 'robin', 'rocket',
+  'sage', 'scooter', 'sentry', 'shadow', 'signal', 'skipper', 'slate', 'snail', 'sparrow', 'spruce',
+  'sprite', 'sprout', 'summit', 'taco', 'thistle', 'timber', 'toffee', 'trail', 'trout', 'tundra',
+  'turbo', 'valley', 'velvet', 'viper', 'walrus', 'warden', 'weasel', 'willow', 'wolf', 'wombat',
+  'wren', 'yeti', 'zephyr',
 ];
 
 const VERBS = [
-  'blazing', 'brewing', 'charging', 'climbing', 'coasting', 'crossing',
-  'cruising', 'dashing', 'drifting', 'driving', 'flowing', 'flying',
-  'forging', 'gliding', 'hauling', 'hosting', 'hunting', 'joining',
-  'jumping', 'landing', 'leading', 'leaping', 'loading', 'mapping',
-  'marching', 'mining', 'moving', 'paving', 'racing', 'rallying',
-  'ranging', 'rising', 'rolling', 'roaming', 'routing', 'running',
-  'rushing', 'sailing', 'scaling', 'seeking', 'shaping', 'shipping',
-  'soaring', 'spanning', 'speeding', 'steaming', 'steering', 'surging',
-  'trading', 'trailing', 'turning', 'vaulting', 'winding',
+  'amble', 'beam', 'blaze', 'blink', 'boing', 'bolt', 'bounce', 'brew', 'charge', 'chase', 'cheer',
+  'climb', 'coast', 'cruise', 'dash', 'dart', 'dive', 'dodge', 'drift', 'drive', 'float', 'flow',
+  'fly', 'forge', 'frolic', 'glide', 'groove', 'hop', 'hover', 'hustle', 'jive', 'join', 'jolt',
+  'jump', 'kick', 'land', 'lead', 'leap', 'lift', 'loop', 'march', 'mingle', 'mix', 'move', 'nudge',
+  'paddle', 'pave', 'pivot', 'pounce', 'prance', 'puff', 'pull', 'purr', 'race', 'rally', 'range',
+  'rip', 'rise', 'roam', 'roll', 'rush', 'sail', 'scale', 'scoot', 'scout', 'seek', 'shake', 'shape',
+  'ship', 'skip', 'slide', 'soar', 'spark', 'spin', 'splash', 'spring', 'sprint', 'stash', 'steer',
+  'stomp', 'stride', 'surge', 'swoop', 'swing', 'tackle', 'trade', 'trail', 'trek', 'trot', 'vault',
+  'veer', 'vibe', 'wade', 'waltz', 'weave', 'whirl', 'whisk', 'whiz', 'wiggle', 'wind', 'wink',
+  'wobble', 'zoom', 'zip', 'zap', 'zig', 'zoom',
 ];
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/** Generate a random human-readable session name like "crimson-falcon-blazing". */
+/** Generate a random human-readable session name like "crimson-falcon-blaze". */
 export function generateSessionName(): string {
   return `${pick(ADJECTIVES)}-${pick(NOUNS)}-${pick(VERBS)}`;
 }

@@ -80,6 +80,8 @@ class SessionManager:
         self,
         session_id: str,
         settings: dict[str, str] | None = None,
+        ai_opponents: int = 0,
+        agent_companies: int = 0,
     ) -> SessionRuntime:
         """Start an OpenTTD server for a session.
 
@@ -95,7 +97,13 @@ class SessionManager:
         # Store ports in DB
         await session_repo.update_session_ports(session_id, game_port, admin_port)
 
-        # Build per-session config directory
+        # Resolve AI counts
+        effective_settings = settings or {}
+        ai_count_from_settings = int(effective_settings.get("difficulty.max_no_competitors", "0"))
+        ai_count = max(ai_opponents, ai_count_from_settings)
+
+        # Build per-session config directory — settings baked into openttd.cfg
+        # so the initial map generation uses them (no newgame RCON needed).
         session_dir = self.sessions_dir / session_id
         build_session_config(
             base_config_dir=self.base_config_dir,
@@ -103,6 +111,9 @@ class SessionManager:
             game_port=game_port,
             admin_port=admin_port,
             admin_password=self.admin_password,
+            settings=effective_settings,
+            ai_opponents=ai_count,
+            agent_companies=agent_companies,
         )
 
         # Create runtime and start server
@@ -121,10 +132,8 @@ class SessionManager:
         pid = runtime.process.pid if runtime.process else 0
         await session_repo.mark_session_active(session_id, pid)
 
-        # Apply settings and start new game
-        if settings:
-            ai_count = int(settings.get("difficulty.max_no_competitors", "0"))
-            await runtime.apply_settings_and_start(settings, ai_count)
+        # Start AI companies (no newgame needed — settings already in config)
+        await runtime.start_companies(ai_count, agent_companies)
 
         self.runtimes[session_id] = runtime
         logger.info(

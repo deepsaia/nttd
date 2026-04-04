@@ -463,6 +463,59 @@ metrics = Table(
 )
 
 # ---------------------------------------------------------------------------
+# Agent Connections (gameloop connection lifecycle)
+# ---------------------------------------------------------------------------
+
+agent_connections = Table(
+    "agent_connections",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("connection_id", Text, nullable=False),
+    Column("session_id", String(64), ForeignKey("sessions.id"), nullable=False),
+    Column("agent_id", String(128), nullable=False),
+    Column("company_id", Integer, nullable=False),
+    Column("framework", String(32), nullable=False),
+    Column("model", String(128), nullable=True),
+    Column("observation_mode", String(32), default="compact"),
+    Column("poll_interval", Float, default=5.0),
+    Column("started_at", DateTime, nullable=True),
+    Column("stopped_at", DateTime, nullable=True),
+    Column("total_cycles", Integer, default=0),
+    Column("total_actions", Integer, default=0),
+    Column("successful_actions", Integer, default=0),
+    Column("failed_actions", Integer, default=0),
+    Column("avg_cycle_ms", Float, default=0),
+    Column("avg_decide_ms", Float, default=0),
+    Index("idx_agent_connections_session", "session_id", "agent_id", unique=True),
+)
+
+# ---------------------------------------------------------------------------
+# Agent Cycles (per-cycle detail for debugging and analysis)
+# ---------------------------------------------------------------------------
+
+agent_cycles = Table(
+    "agent_cycles",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("connection_id", Text, nullable=False),
+    Column("session_id", String(64), ForeignKey("sessions.id"), nullable=False),
+    Column("cycle_number", Integer, nullable=False),
+    Column("game_date", Integer, nullable=True),
+    Column("observe_ms", Float, nullable=True),
+    Column("decide_ms", Float, nullable=True),
+    Column("execute_ms", Float, nullable=True),
+    Column("total_ms", Float, nullable=True),
+    Column("actions_proposed", Integer, default=0),
+    Column("actions_executed", Integer, default=0),
+    Column("actions_succeeded", Integer, default=0),
+    Column("actions_failed", Integer, default=0),
+    Column("observation_size_bytes", Integer, nullable=True),
+    Column("created_at", DateTime, server_default=func.now()),
+    Index("idx_agent_cycles_conn", "connection_id", "cycle_number"),
+    Index("idx_agent_cycles_session", "session_id", "game_date"),
+)
+
+# ---------------------------------------------------------------------------
 # Leaderboard (computed per-session rankings)
 # ---------------------------------------------------------------------------
 
