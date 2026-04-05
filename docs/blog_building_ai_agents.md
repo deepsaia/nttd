@@ -56,7 +56,7 @@ Run agents alongside human players in the same game. Agents handle specific tran
 
 ```
 +-----------------------------------------------------+
-|                    Agent (any framework)             |
+|                    Agent (any framework)            |
 |         OpenAI / LangChain / Custom / RL            |
 +--------------------+--------------------------------+
                      | HTTP/JSON
@@ -71,7 +71,7 @@ Run agents alongside human players in the same game. Agents handle specific tran
 |  +----v-------------v-----------------v----------+  |
 |  |           AdminClient (async TCP)             |  |
 |  |        correlation IDs + chunked messages     |  |
-|  +--------------------+-------------------------+   |
+|  +--------------------+--------------------------+  |
 +-----------------------|-----------------------------+
                         | Admin Port (TCP)
 +-----------------------v-----------------------------+
