@@ -171,6 +171,72 @@ _TOOL_DEFS: list[dict[str, Any]] = [
         "gs_action": "scan_town_area",
     },
     {
+        "name": "find_airport_spots",
+        "description": "Find tiles near a town where an airport can actually be built (dry-run validated). Returns guaranteed-buildable tiles.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "town_id": {"type": "integer", "description": "Town to search near."},
+                "airport_type": {"type": "integer", "description": "Airport type (0=small, 1=city, 2=metropolitan, etc.). Default 0.", "default": 0},
+                "max_results": {"type": "integer", "description": "Max spots to return.", "default": 5},
+            },
+            "required": ["town_id"],
+        },
+        "gs_action": "find_airport_spots",
+        "inject_company_id": True,
+    },
+    {
+        "name": "find_dock_spots",
+        "description": "Find coast tiles near a town where a dock can actually be built (dry-run validated). Returns guaranteed-buildable tiles.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "town_id": {"type": "integer", "description": "Town to search near."},
+                "max_results": {"type": "integer", "description": "Max spots to return.", "default": 5},
+            },
+            "required": ["town_id"],
+        },
+        "gs_action": "find_dock_spots",
+        "inject_company_id": True,
+    },
+    {
+        "name": "find_flat_spots",
+        "description": "Find flat buildable tiles near a given tile. Useful for rail depots/stations near industries. Optional min_size checks a square area.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tile": {"type": "integer", "description": "Center tile ID (y * map_width + x)."},
+                "radius": {"type": "integer", "description": "Search radius. Default 10.", "default": 10},
+                "min_size": {"type": "integer", "description": "Minimum flat square size (e.g. 2 for 2x2). Default 1.", "default": 1},
+                "max_results": {"type": "integer", "description": "Max spots to return.", "default": 10},
+            },
+            "required": ["tile"],
+        },
+        "gs_action": "find_flat_spots",
+    },
+    {
+        "name": "find_water_depot_spots",
+        "description": "Find water tiles where a ship depot can actually be built (dry-run validated). Returns guaranteed-buildable tiles.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "town_id": {"type": "integer", "description": "Town to search near."},
+                "tile": {"type": "integer", "description": "Center tile to search near (alternative to town_id)."},
+                "max_results": {"type": "integer", "description": "Max spots to return.", "default": 5},
+            },
+            "required": [],
+        },
+        "gs_action": "find_water_depot_spots",
+        "inject_company_id": True,
+    },
+    {
+        "name": "get_hangars",
+        "description": "List airport hangars (depot tiles) for your company. Returns hangar_tile for use as depot_tile in buy_vehicle for aircraft.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "gs_action": "get_hangars",
+        "inject_company_id": True,
+    },
+    {
         "name": "get_tile_info",
         "description": "Get terrain and infrastructure details for a map tile. Tile ID = y * map_width + x.",
         "parameters": {

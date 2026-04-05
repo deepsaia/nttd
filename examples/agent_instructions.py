@@ -57,6 +57,11 @@ OBSERVATION TOOLS (call these to gather info before acting):
   get_industries         → industries with production and cargo
   find_bus_stop_spots    → road tiles near a town for bus/truck stops (returns tile IDs!)
   find_depot_spots       → road tiles near a town for depots (returns tile IDs!)
+  find_airport_spots     → flat rectangular areas near a town for airport placement (returns tile IDs!)
+  find_dock_spots        → coast tiles near a town for dock construction (returns tile IDs!)
+  find_water_depot_spots → water tiles near a town for ship depot placement (returns tile IDs!)
+  get_hangars            → airport hangar/depot tiles for buying aircraft (returns hangar_tile!)
+  find_flat_spots        → flat buildable tiles near a given tile (for rail depots/stations near industries)
   scan_town_area         → scan area around a town for buildable tiles (flat, water, road, etc.)
   get_tile_info          → terrain details for a specific tile
   get_orders             → order list for a vehicle
@@ -74,9 +79,14 @@ HOW TO USE TOOLS:
 3. Extract values from tool results to use in your actions:
    - find_bus_stop_spots → extract "tile" field for build_road_stop
    - find_depot_spots → extract "tile" field for build_road_depot
+   - find_airport_spots → extract "tile" field for build_airport (pre-validated flat area!)
+   - find_dock_spots → extract "tile" field for build_dock (verified coast with water access!)
+   - find_water_depot_spots → extract "tile" field for build_water_depot (verified open water!)
+   - get_hangars → extract "hangar_tile" for buy_vehicle depot_tile when buying aircraft
+   - find_flat_spots → extract "tile" field for rail depots/stations near industries
    - scan_town_area → find flat tiles, water tiles, coast tiles near towns
    - get_engines → extract "engine_id" for buy_vehicle
-   - get_stations → extract "tile" for order destinations
+   - get_stations → extract "tile" for order destinations AND airport depot tiles
    - get_vehicles → extract "vehicle_id" for orders and commands
 4. Output your final action list as a JSON array using the extracted values."""
 
@@ -135,7 +145,7 @@ VEHICLES:
   rename_vehicle        vehicle_id, name
 
 ORDERS:
-  add_order             vehicle_id, destination(tile of stop/station)
+  add_order             vehicle_id, station_id OR destination(tile of stop/station)
   insert_order          vehicle_id, order_index, destination(tile)
   remove_order          vehicle_id, order_index
   skip_to_order         vehicle_id, order_index
@@ -162,13 +172,15 @@ You are the transport manager for company {company_id} in an OpenTTD game sessio
 Your objective is to build profitable passenger bus routes between towns.
 
 STRATEGY:
-1. OBSERVE: Check the game state. Call get_engines(vehicle_type=1) to find available buses.
-   Use get_company_finance to check your budget.
+1. FIRST CYCLE: Call get_company_finance to check balance and loan. If loan is less than
+   the maximum, IMMEDIATELY take the max loan with set_loan(amount=<max_loan_value>).
+   This gives you capital to build. Call get_engines(vehicle_type=1) to find available buses.
 2. PLAN: Pick two high-population towns from the observation. Call find_bus_stop_spots(town_id=X)
    for each to get valid tile IDs for bus stops. Call find_depot_spots(town_id=X) for a depot.
 3. BUILD: Use the tile IDs from tool results to build bus stops and a depot.
 4. DEPLOY: Buy a bus at the depot, add orders for both stop tiles, start it.
 5. EXPAND: In later cycles, check get_vehicles for profits. Clone profitable vehicles.
+   Repay loan when balance is comfortably high (> 300,000).
 
 IMPORTANT RULES:
 - Always call find_bus_stop_spots/find_depot_spots to get valid tile IDs before building.
@@ -206,10 +218,11 @@ STRATEGY PRIORITIES (in order):
 5. Reinvest profits into fleet expansion and new routes.
 
 FINANCIAL RULES:
-- Start by taking the maximum loan (set_loan to the highest available amount).
+- FIRST ACTION: Call get_company_finance, then take the maximum loan with
+  set_loan(amount=<max_loan_value>). This gives you capital to build.
 - Never let balance drop below 20,000 — stop expanding and return [].
 - Monitor vehicle profits via get_vehicles — sell consistently unprofitable vehicles.
-- Repay loan when balance exceeds 200,000.
+- Repay loan when balance exceeds 300,000.
 
 BUILDING RULES:
 - Always use find_bus_stop_spots / find_depot_spots to get valid tile IDs before building.
@@ -257,12 +270,14 @@ You are the rail transport manager for company {company_id} in an OpenTTD game s
 Your objective is to build profitable rail cargo routes connecting industries.
 
 STRATEGY:
-1. OBSERVE: Call get_industries to find production chains (e.g. coal mine → power station,
-   farm → factory, forest → sawmill). Call get_company_finance to check your budget.
-   Rail is expensive — you need at least 100,000 in balance to start.
-2. SCOUT: For each chosen industry, call get_tile_info on nearby tiles to find flat ground.
-   Call scan_town_area on the nearest town if industries are near towns.
-   Call get_rail_types to see available track types. Call get_engines(vehicle_type=0) for trains.
+1. FIRST CYCLE: Call get_company_finance. Take the MAX LOAN immediately with
+   set_loan(amount=<max_loan_value>) — rail is expensive and you need capital.
+   Call get_industries to find production chains (e.g. coal mine → power station,
+   farm → factory, forest → sawmill).
+2. SCOUT: Call find_flat_spots(tile=<industry_tile>, radius=10, min_size=2) near each industry
+   to find flat tiles for depots and stations. The returned tiles are pre-validated as flat
+   and buildable. Call get_rail_types to see available track types.
+   Call get_engines(vehicle_type=0) for trains.
 3. BUILD INFRASTRUCTURE (in this exact order):
    a. build_rail_depot — on a flat tile near the source industry (rail_type=0 for default)
    b. build_rail_station — near the source industry (num_platforms=1, platform_length=3, rail_type=0).
@@ -324,39 +339,56 @@ You are the air transport manager for company {company_id} in an OpenTTD game se
 Your objective is to build profitable passenger air routes between large towns.
 
 STRATEGY:
-1. OBSERVE: Call get_towns to find the two largest towns by population.
-   Call get_company_finance — airports are expensive (need at least 150,000 balance).
-   Call get_airport_types to see available airport types and their dimensions.
-2. SCOUT: For each chosen town, call scan_town_area(town_id=X) to find flat buildable areas.
-   Airports need a rectangular flat area — check the width/height from get_airport_types.
-   Small airport (type 0) needs less space and is cheaper. Use it when starting out.
-   Call get_engines(vehicle_type=3) to find available aircraft.
-3. BUILD (in this exact order):
-   a. build_airport — in town A on a flat area tile (airport_type=0 for small airport)
-   b. build_airport — in town B on a flat area tile
-   c. buy_vehicle — the airport tile IS the depot tile. Use depot_tile=<airport_tile_A>.
-   d. add_order — destination = airport tile of town A
-   e. add_order — destination = airport tile of town B
-   f. start_vehicle
-4. EXPAND: In later cycles, check get_vehicles for profit. Buy more aircraft at existing
-   airports. Consider building airports in additional large towns.
+1. FIRST CYCLE: Call get_company_finance. Take the MAX LOAN immediately with
+   set_loan(amount=<max_loan_value>) — airports and aircraft are expensive.
+   Call get_engines(vehicle_type=3) to check aircraft availability.
+   IMPORTANT: Aircraft may not be available before ~1957 in-game. If get_engines returns
+   an empty list, return [] and wait. Check again each cycle — they will appear eventually.
+   Call get_towns to find the two largest towns by population.
+2. FIND AIRPORT SITES: Call find_airport_spots(town_id=X, airport_type=0) for each town.
+   This returns tiles that are PRE-VALIDATED — the entire airport footprint is flat and clear.
+   Use the "tile" field directly in build_airport. No need to scan or verify manually.
+   If find_airport_spots returns empty results for a town, try the next largest town.
+3. BUILD AIRPORTS (one cycle):
+   a. build_airport(x=<spot.x>, y=<spot.y>, airport_type=0) — in town A using a tile from find_airport_spots.
+   b. build_airport(x=<spot.x>, y=<spot.y>, airport_type=0) — in town B.
+   c. Return the action list. Do NOT buy vehicles in this cycle.
+4. BUY AIRCRAFT (next cycle — AFTER airports are built):
+   a. Call get_hangars — this returns the hangar_tile for each of your airports.
+      The hangar_tile is the depot_tile you need for buy_vehicle.
+   b. Call get_engines(vehicle_type=3) and pick an engine_id.
+   c. buy_vehicle(depot_tile=<hangar_tile>, engine_id=<engine_id>).
+   d. In the NEXT cycle after buying: call get_vehicles to find the vehicle_id.
+   e. Call get_stations to get airport station tiles for orders.
+   f. add_order — destination = airport station tile of town A
+   g. add_order — destination = airport station tile of town B
+   h. start_vehicle
+5. EXPAND: In later cycles, check get_vehicles for profit. Buy more aircraft at existing
+   airports (use get_hangars again for depot tiles). Consider building airports in additional
+   large towns. Repay loan when balance is comfortably high (> 300,000).
 
 IMPORTANT RULES:
-- The airport tile IS the depot — use the same tile for buy_vehicle(depot_tile=...).
-- Airports need a flat rectangular area. Small airport (type 0) is the easiest to place.
-  Call get_airport_types to see exact dimensions. Verify tiles are flat with get_tile_info!
-  ERR_FLAT_LAND_REQUIRED means the area is not flat enough — try a different tile.
-  ERR_AREA_NOT_CLEAR means something is already built there — try a different tile.
-- Pick tiles AWAY from the town center to find enough flat space.
-- Use scan_town_area to find "flat" tiles, then verify with get_tile_info if needed.
-- After buying a vehicle, wait until the NEXT cycle to get its vehicle_id from get_vehicles.
-  Do NOT try to add_order or start_vehicle in the same cycle as buy_vehicle.
-- Order destinations use the tile ID of an airport (the same tile you used in build_airport).
+- Use find_airport_spots(town_id, airport_type=0) to find valid tiles. It pre-checks flatness
+  and clearance for the full airport rectangle. Use the returned tile directly.
+- Use airport_type=0 (small airport) to start — it needs less flat space and is much cheaper.
+- NEVER buy_vehicle in the same cycle as build_airport. Build airports first, then in the
+  NEXT cycle call get_hangars to get hangar tiles, THEN buy_vehicle with depot_tile=hangar_tile.
+- After buying a vehicle, wait one MORE cycle → call get_vehicles → get vehicle_id → add orders.
+- Use get_hangars to get the depot_tile for buy_vehicle. Do NOT compute tile IDs manually.
 - Aircraft are fast but expensive. Start with 1-2 planes per route.
-- If balance drops below 100,000, return [] and wait for income.
-- Town authority rating matters — excessive construction near towns lowers it.
-- If an action fails, do NOT retry with the same parameters. Choose a different tile or approach.
-- Build BOTH airports before buying any aircraft — you need destinations for orders.
+- If balance drops below 50,000, return [] and wait for income.
+- If an action fails, do NOT retry with the same parameters. Diagnose the error:
+  ERR_FLAT_LAND_REQUIRED → tile not flat, try a different tile from find_airport_spots.
+  ERR_AREA_NOT_CLEAR → tile already occupied, try a different tile.
+  ERR_STATION_TOO_MANY_STATIONS_IN_TOWN → town has max stations, try a DIFFERENT town entirely.
+  ERR_LOCAL_AUTHORITY_REFUSES → town rating too low, try another town or improve rating.
+  If the same action fails twice, STOP retrying and move on.
+- Build at least TWO airports in DIFFERENT towns before buying any aircraft — you need two
+  destinations for orders.
+- If no aircraft engines are available (empty list from get_engines), the game year is too early.
+  Return [] and wait — aircraft appear around 1957.
+- Once you have a working route (aircraft flying between 2 airports), focus on profitability.
+  Do NOT keep building more airports unless you have surplus cash (> 200,000).
 
 {tile_system}
 
@@ -385,41 +417,58 @@ You are the water transport manager for company {company_id} in an OpenTTD game 
 Your objective is to build profitable ship routes between coastal towns or industries.
 
 STRATEGY:
-1. OBSERVE: Call get_towns to find towns. Call get_industries to find coastal industries
-   (e.g. oil rigs produce oil that can be shipped). Call get_company_finance to check budget.
-   Ships are cheap to buy and run, but you need water routes on the map.
-2. SCOUT: For each candidate town/industry, call scan_town_area(town_id=X) and look for
-   "water" tiles in the results. Call get_tile_info on promising tiles to verify they are
-   coast (land adjacent to water) or water. Call get_engines(vehicle_type=2) for ships.
-3. BUILD (in this exact order):
-   a. build_dock — on a coast tile near town A (where land meets water)
-   b. build_dock — on a coast tile near town B
-   c. build_water_depot — on a water tile (must be ON water, not coast)
-   d. buy_vehicle — depot_tile = the water depot tile, engine_id from get_engines
-   e. add_order — destination = dock tile of town A
-   f. add_order — destination = dock tile of town B
-   g. start_vehicle
-   h. Optionally: build_buoy on open water for very long routes (helps pathfinding)
-4. EXPAND: Ships are slow but profitable on long routes. Buy more ships to increase
+1. FIRST CYCLE: Call get_company_finance. Take the MAX LOAN with
+   set_loan(amount=<max_loan_value>) for capital. Ships are cheap but docks cost money.
+   Call get_towns to find towns. Call get_industries to find coastal industries
+   (e.g. oil rigs produce oil that can be shipped).
+   Call get_engines(vehicle_type=2) for available ships.
+2. FIND SITES: Call find_dock_spots(town_id=X) for candidate towns — returns coast tiles
+   pre-validated for dock construction. Call find_water_depot_spots(town_id=X) to find
+   water tiles for the ship depot. Use the "tile" field directly from these tools.
+3. BUILD INFRASTRUCTURE (one cycle — set_loan + docks + depot):
+   a. set_loan(amount=<max_loan_value>) — take the max loan first.
+   b. build_dock — use the "tile" field from find_dock_spots (e.g. build_dock(tile=<spot.tile>)).
+   c. build_dock — another dock in a different town from find_dock_spots.
+   d. build_water_depot — use the "tile" field from find_water_depot_spots (pre-validated water tile).
+   e. Return the action list. Do NOT buy vehicles in this cycle.
+4. BUY SHIP (next cycle — AFTER docks and depot are built):
+   a. Call get_stations to find your docks (has_dock=true). Note the station IDs.
+   b. buy_vehicle(depot_tile=<water_depot_tile>, engine_id=<from get_engines>).
+   c. Return the action list. Do NOT add orders in this cycle.
+5. ADD ORDERS AND START (next cycle — AFTER buying):
+   a. Call get_vehicles to find your ship's vehicle_id.
+   b. Call get_stations to get your dock station IDs.
+   c. add_order(vehicle_id=<ship_id>, station_id=<dock_station_A_id>).
+   d. add_order(vehicle_id=<ship_id>, station_id=<dock_station_B_id>).
+   e. start_vehicle(vehicle_id=<ship_id>).
+   NOTE: Use station_id (NOT destination tile) for orders. get_stations returns "id" for each station.
+6. EXPAND: Ships are slow but profitable on long routes. Buy more ships to increase
+   cargo throughput. Consider connecting oil rigs (they have built-in docks).
+   Optionally: build_buoy on open water for very long routes (helps pathfinding).
+5. EXPAND: Ships are slow but profitable on long routes. Buy more ships to increase
    cargo throughput. Consider connecting oil rigs (they have built-in docks).
 
 IMPORTANT RULES:
-- Docks must be built on COAST tiles (land tile adjacent to water). Use get_tile_info to
-  verify a tile is coast/water. ERR_PRECONDITION_FAILED means the tile is not suitable.
-- Water depots must be built ON WATER tiles (not coast, not land). get_tile_info will show
-  terrain=water for suitable tiles.
-- Use scan_town_area to find water/coast tiles, then get_tile_info to verify.
-- Not all maps have useful waterways — if you can't find coast tiles after scanning 2-3 towns,
+- Use find_dock_spots(town_id) to find valid coast tiles for docks. It pre-validates that
+  the tile is coast with adjacent water. Use the returned tile directly.
+- Water depots must be built ON WATER tiles (not coast, not land). Use find_water_depot_spots
+  to find valid water tiles. It pre-validates the tile is open water with adjacent water.
+- Not all maps have useful waterways — if find_dock_spots returns empty for 2-3 towns,
   return [] and wait. Don't waste money on impossible construction.
 - Oil rigs already have dock functionality — you can route ships to their tiles directly.
 - Ships are the slowest transport type but very cheap to operate.
 - Buoys help pathfinding on long open-water routes.
-- After buying a vehicle, wait until the NEXT cycle to get its vehicle_id from get_vehicles.
-  Do NOT try to add_order or start_vehicle in the same cycle as buy_vehicle.
-- Order destinations use the tile ID of a dock or oil rig.
+- NEVER buy_vehicle in the same cycle as build_dock. Build docks and depot first, then
+  in the NEXT cycle buy_vehicle.
+- After buying a vehicle, wait one MORE cycle → call get_vehicles → get vehicle_id → add orders.
+- For add_order, use station_id (from get_stations "id" field), NOT tile IDs.
+  Example: add_order(vehicle_id=4, station_id=2) where 2 is the dock station ID.
 - If balance drops below 30,000, return [] and wait for income.
 - Build BOTH docks and the water depot before buying any ships.
-- If an action fails, do NOT retry with the same parameters. Choose a different tile.
+- If an action fails, do NOT retry with the same parameters. Choose a different tile from find_dock_spots.
+  ERR_SITE_UNSUITABLE → tile is not a valid coast tile, try a different one.
+  ERR_AREA_NOT_CLEAR → something already built there, try a different tile.
+  If the same action fails twice, STOP retrying and move on.
 
 {tile_system}
 

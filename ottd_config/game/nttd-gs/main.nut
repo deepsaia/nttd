@@ -265,6 +265,11 @@ class NttdGS extends GSController {
         case "scan_town_area":      return this.CmdScanTownArea(p);
         case "find_bus_stop_spots": return this.CmdFindBusStopSpots(p);
         case "find_depot_spots":    return this.CmdFindDepotSpots(p);
+        case "find_airport_spots":  return this.CmdFindAirportSpots(p);
+        case "find_dock_spots":     return this.CmdFindDockSpots(p);
+        case "find_flat_spots":     return this.CmdFindFlatSpots(p);
+        case "get_hangars":         return this.CmdGetHangars(p);
+        case "find_water_depot_spots": return this.CmdFindWaterDepotSpots(p);
 
         // ---- BUILDING: ROAD ------------------------------------------------
         case "build_road":        return this.CmdBuildRoad(p);
@@ -936,6 +941,169 @@ class NttdGS extends GSController {
     return { success = true, result = spots };
   }
 
+  function CmdFindAirportSpots(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    local company_id = ("company_id" in p) ? p.company_id : 0;
+    local airport_type = ("airport_type" in p) ? p.airport_type : 0;
+    if (!GSAirport.IsValidAirportType(airport_type)) return { success = false, error = "Invalid airport type" };
+    local radius = ("radius" in p) ? p.radius : 20;
+    local max_results = ("max_results" in p) ? p.max_results : 5;
+    local aw = GSAirport.GetAirportWidth(airport_type);
+    local ah = GSAirport.GetAirportHeight(airport_type);
+    local loc = GSTown.GetLocation(p.town_id);
+    local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
+    local spots = [];
+    for (local dy = -radius; dy <= radius; dy++) {
+      for (local dx = -radius; dx <= radius; dx++) {
+        local x = cx + dx, y = cy + dy;
+        local tile = GSMap.GetTileIndex(x, y);
+        if (!GSMap.IsValidTile(tile)) continue;
+        // Dry-run: test if BuildAirport would actually succeed here
+        {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          if (!GSAirport.BuildAirport(tile, airport_type, GSStation.STATION_NEW)) continue;
+        }
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+          width = aw, height = ah });
+      }
+    }
+    this._SortByDistance(spots);
+    if (spots.len() > max_results) spots = spots.slice(0, max_results);
+    return { success = true, result = spots,
+      airport_type = airport_type, airport_width = aw, airport_height = ah };
+  }
+
+  function CmdFindDockSpots(p) {
+    if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    local company_id = ("company_id" in p) ? p.company_id : 0;
+    local radius = ("radius" in p) ? p.radius : 20;
+    local max_results = ("max_results" in p) ? p.max_results : 5;
+    local loc = GSTown.GetLocation(p.town_id);
+    local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
+    local spots = [];
+    for (local dy = -radius; dy <= radius; dy++) {
+      for (local dx = -radius; dx <= radius; dx++) {
+        local x = cx + dx, y = cy + dy;
+        local tile = GSMap.GetTileIndex(x, y);
+        if (!GSMap.IsValidTile(tile)) continue;
+        if (!GSTile.IsCoastTile(tile)) continue;
+        // Dry-run: test if BuildDock would actually succeed here
+        {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          if (!GSMarine.BuildDock(tile, GSStation.STATION_NEW)) continue;
+        }
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+          slope = GSTile.GetSlope(tile) });
+      }
+    }
+    this._SortByDistance(spots);
+    if (spots.len() > max_results) spots = spots.slice(0, max_results);
+    return { success = true, result = spots };
+  }
+
+  function CmdFindFlatSpots(p) {
+    local resolved = this._ResolveTile(p);
+    if (resolved == null) return { success = false, error = "Need tile or x,y params" };
+    local radius = ("radius" in p) ? p.radius : 10;
+    local max_results = ("max_results" in p) ? p.max_results : 10;
+    local min_size = ("min_size" in p) ? p.min_size : 1;
+    local cx = resolved.x, cy = resolved.y;
+    local spots = [];
+    for (local dy = -radius; dy <= radius; dy++) {
+      for (local dx = -radius; dx <= radius; dx++) {
+        local x = cx + dx, y = cy + dy;
+        local tile = GSMap.GetTileIndex(x, y);
+        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+        if (GSTile.GetSlope(tile) != 0) continue;
+        // If min_size > 1, check a square of that size
+        if (min_size > 1) {
+          local base_h = GSTile.GetMaxHeight(tile);
+          local ok = true;
+          for (local ry = 0; ry < min_size && ok; ry++) {
+            for (local rx = 0; rx < min_size && ok; rx++) {
+              if (rx == 0 && ry == 0) continue;
+              local ct = GSMap.GetTileIndex(x + rx, y + ry);
+              if (!GSMap.IsValidTile(ct) || !GSTile.IsBuildable(ct)) { ok = false; break; }
+              if (GSTile.GetMaxHeight(ct) != base_h || GSTile.GetSlope(ct) != 0) { ok = false; break; }
+            }
+          }
+          if (!ok) continue;
+        }
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+          max_height = GSTile.GetMaxHeight(tile) });
+      }
+    }
+    this._SortByDistance(spots);
+    if (spots.len() > max_results) spots = spots.slice(0, max_results);
+    return { success = true, result = spots };
+  }
+
+  function CmdFindWaterDepotSpots(p) {
+    // Find water tiles suitable for building a ship depot near a given tile or town.
+    local cx, cy;
+    if ("town_id" in p) {
+      if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+      local loc = GSTown.GetLocation(p.town_id);
+      cx = GSMap.GetTileX(loc); cy = GSMap.GetTileY(loc);
+    } else if ("x" in p && "y" in p) {
+      cx = p.x; cy = p.y;
+    } else if ("tile" in p) {
+      local t = p.tile.tointeger();
+      cx = GSMap.GetTileX(t); cy = GSMap.GetTileY(t);
+    } else {
+      return { success = false, error = "Need town_id, tile, or x,y params" };
+    }
+    local company_id = ("company_id" in p) ? p.company_id : 0;
+    local radius = ("radius" in p) ? p.radius : 20;
+    local max_results = ("max_results" in p) ? p.max_results : 5;
+    local spots = [];
+    for (local dy = -radius; dy <= radius; dy++) {
+      for (local dx = -radius; dx <= radius; dx++) {
+        local x = cx + dx, y = cy + dy;
+        local tile = GSMap.GetTileIndex(x, y);
+        if (!GSMap.IsValidTile(tile)) continue;
+        if (!GSTile.IsWaterTile(tile)) continue;
+        // Dry-run: test if BuildWaterDepot would actually succeed here
+        {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          if (!GSMarine.BuildWaterDepot(tile, tile + 1)) continue;
+        }
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy) });
+      }
+    }
+    this._SortByDistance(spots);
+    if (spots.len() > max_results) spots = spots.slice(0, max_results);
+    return { success = true, result = spots };
+  }
+
+  function CmdGetHangars(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local hangars = [];
+    foreach (sid, _ in GSStationList(GSStation.STATION_AIRPORT)) {
+      local loc = GSBaseStation.GetLocation(sid);
+      local airport_tile = loc;
+      local airport_type = GSAirport.GetAirportType(airport_tile);
+      local num_hangars = GSAirport.GetNumHangars(airport_tile);
+      for (local i = 0; i < num_hangars; i++) {
+        local hangar_tile = GSAirport.GetHangarOfAirport(airport_tile);
+        hangars.append({
+          station_id = sid,
+          station_name = GSBaseStation.GetName(sid),
+          airport_x = GSMap.GetTileX(loc),
+          airport_y = GSMap.GetTileY(loc),
+          hangar_tile = hangar_tile,
+          hangar_x = GSMap.GetTileX(hangar_tile),
+          hangar_y = GSMap.GetTileY(hangar_tile),
+          airport_type = airport_type
+        });
+      }
+    }
+    return { success = true, result = hangars };
+  }
+
   // ===========================================================================
   // BUILDING — ROAD
   // ===========================================================================
@@ -1571,11 +1739,19 @@ class NttdGS extends GSController {
     // Accept station_id OR destination (tile ID of the station)
     local dest = null;
     if ("station_id" in p) {
-      dest = GSStation.GetLocation(p.station_id);
+      if (GSStation.IsValidStation(p.station_id)) {
+        dest = GSStation.GetLocation(p.station_id);
+      }
     } else if ("dest_tile" in p) {
       dest = p.dest_tile;
     } else if ("destination" in p) {
-      dest = p.destination.tointeger();
+      local d = p.destination.tointeger();
+      if (GSMap.IsValidTile(d)) {
+        dest = d;
+      } else if (GSStation.IsValidStation(d)) {
+        // Fallback: treat small numbers as station IDs
+        dest = GSStation.GetLocation(d);
+      }
     }
     if (dest == null || !GSMap.IsValidTile(dest)) return { success = false, error = "Need station_id or destination (tile)" };
     if (GSOrder.AppendOrder(p.vehicle_id, dest, flags)) {
