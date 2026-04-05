@@ -15,6 +15,15 @@ from nttd.state.world import WorldState
 
 logger = logging.getLogger(__name__)
 
+_INT64_MAX = (1 << 63) - 1
+
+
+def _signed64(value: int) -> int:
+    """Convert uint64 from admin port protocol to signed int64."""
+    if value > _INT64_MAX:
+        return value - (1 << 64)
+    return value
+
 
 class Bridge:
     """Connects AdminClient events to WorldState updates."""
@@ -50,13 +59,13 @@ class Bridge:
         company = self.world.companies.get(packet.id)
         if company is None:
             company = Company(id=packet.id)
-        company.money = packet.money
-        company.loan = packet.current_loan
-        company.income = packet.income
+        company.money = _signed64(packet.money)
+        company.loan = _signed64(packet.current_loan)
+        company.income = _signed64(packet.income)
         if packet.quarterly_info and len(packet.quarterly_info) > 0:
-            company.value = packet.quarterly_info[0].get("company_value", 0)
+            company.value = _signed64(packet.quarterly_info[0].get("company_value", 0))
         if packet.quarterly_info and len(packet.quarterly_info) > 1:
-            company.profit_last_year = packet.quarterly_info[1].get("income", 0)
+            company.profit_last_year = _signed64(packet.quarterly_info[1].get("income", 0))
         self.world.update_company(company)
 
     def _on_company_remove(self, packet: CompanyRemovePacket) -> None:
