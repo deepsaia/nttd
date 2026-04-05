@@ -1,6 +1,6 @@
 # Building AI Agents That Play Transport Tycoon
 
-*What happens when you give GPT-5.2 the keys to a transport empire?*
+*What happens when you give a team of Agents the keys to a transport empire?*
 
 ---
 
