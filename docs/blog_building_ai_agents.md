@@ -1,6 +1,6 @@
 # Building AI Agents That Play Transport Tycoon
 
-*An open benchmarking platform for multi-agent LLM evaluation in complex real-time environments*
+*An open benchmarking platform for multi-agent system evaluation in complex real-time environments*
 
 ---
 
@@ -101,7 +101,7 @@ Each agent runs an autonomous cycle loop with four phases:
 ```
 +----------+     +----------+     +----------+     +----------+
 | OBSERVE  |---->|  DECIDE  |---->|   ACT    |---->|  TRACK   |
-|          |     |          |     |          |     |          |
+|          |     | Agent:   |     |          |     |          |
 | Compact  |     | LLM call |     | Validate |     | Record   |
 | game     |     | with 31  |     | + execute|     | cycle    |
 | state    |     | tools    |     | via GS   |     | metrics  |
@@ -123,7 +123,7 @@ The agent receives a compact JSON snapshot of the game state scoped to its compa
 
 ### 4.2 Decide (Multi-Turn Tool Calling)
 
-The LLM receives the observation plus its full conversation history. It can call any of 31 observation tools to gather more information before committing to actions. This multi-turn loop continues until the LLM responds with a final JSON action list instead of more tool calls.
+The Agent receives the observation plus its full conversation history. It can call any of 31 observation tools to gather more information before committing to actions. This multi-turn loop continues until the Agent responds with a final JSON action list instead of more tool calls.
 
 Example tool-calling sequences observed during testing:
 
@@ -143,7 +143,7 @@ Every cycle records structured metrics: timing breakdown (observe_ms, decide_ms,
 
 ## 5. Transport Specialist Agents
 
-We designed four transport-type-specific agent prompts, each encoding domain expertise about its transport mode. The system prompt serves as a strategy guide: it tells the LLM which tools to use, what action sequences to follow, and what pitfalls to avoid.
+We designed four transport-type-specific agent prompts, each encoding domain expertise about its transport mode. The system prompt serves as a strategy guide: it tells the Agent which tools to use, what action sequences to follow, and what pitfalls to avoid.
 
 ### 5.1 Bus Agent
 
@@ -159,7 +159,7 @@ We designed four transport-type-specific agent prompts, each encoding domain exp
 
 **Typical action sequence**: Find industry pairs -> scout flat land near industries (`find_flat_spots`) -> build rail depot -> build source station -> lay track segments -> build destination station -> place signals at intervals -> buy train with appropriate wagons -> set orders -> start.
 
-**Characteristics**: Most complex build sequence of all transport types. Rail requires contiguous track on compatible terrain. Signals are required for bidirectional traffic. The LLM must manage a 10+ action sequence where each step depends on the previous one. Highest revenue potential per vehicle.
+**Characteristics**: Most complex build sequence of all transport types. Rail requires contiguous track on compatible terrain. Signals are required for bidirectional traffic. The Agent must manage a 10+ action sequence where each step depends on the previous one. Highest revenue potential per vehicle.
 
 ### 5.3 Air Agent
 
@@ -235,7 +235,7 @@ Each single-agent session ran one transport-type agent in isolation, giving it e
 
 ### 7.3 Multi-Agent Session
 
-The multi-agent session registered all three agents (rail, air, water) to company 0 and started them within 1 second of each other. Each agent maintained its own conversation history, cycle state, and LLM session. Actions were serialized through the GameScript bridge using correlation IDs, preventing race conditions.
+The multi-agent session registered all three agents (rail, air, water) to company 0 and started them within 1 second of each other. Each agent maintained its own conversation history, cycle state, and Agent session. Actions were serialized through the GameScript bridge using correlation IDs, preventing race conditions.
 
 ---
 
@@ -341,7 +341,7 @@ The air agent produced the highest-action cycles (up to 10 actions), typically w
 
 ### 9.5 Timing Analysis
 
-Decide time (the LLM reasoning phase, including multi-turn tool calling) dominates cycle time at approximately 98-99% of total duration. Execution (the GS round-trip for action commands) is negligible.
+Decide time (the Agent reasoning phase, including multi-turn tool calling) dominates cycle time at approximately 98-99% of total duration. Execution (the GS round-trip for action commands) is negligible.
 
 | Component | Rail | Air | Water |
 |-----------|------|-----|-------|
@@ -402,7 +402,7 @@ All 114 cycles across all three agents completed without errors.
 
 **Water agent maintained stable performance.** Success rate held at 77-80% across both conditions while scaling from 10 to 70 total actions. The water agent appears to be the most robust to the multi-agent environment, maintaining accuracy while significantly increasing throughput.
 
-**Decide time increased for rail and water in multi-agent mode.** Rail increased from 5.1s to 7.8s (+53%), and water from 3.4s to 4.7s (+37%). The observation now includes infrastructure built by other agents, which adds context that the LLM must process. Air decreased slightly from 4.9s to 4.4s, possibly due to the adapter switch.
+**Decide time increased for rail and water in multi-agent mode.** Rail increased from 5.1s to 7.8s (+53%), and water from 3.4s to 4.7s (+37%). The observation now includes infrastructure built by other agents, which adds context that the Agent must process. Air decreased slightly from 4.9s to 4.4s, possibly due to the adapter switch.
 
 ---
 
@@ -422,11 +422,11 @@ All 114 cycles across all three agents completed without errors.
 
 ### 11.2 Known Limitations and Open Issues
 
-**Rail agent complexity (GitHub issue #1).** Rail builds have the longest action sequences (depot, station, track segments, signals, station, vehicle, orders, start). The LLM sometimes loses track of its position in the sequence, and the 65.2% late-phase success rate in the multi-agent session suggests degradation as build complexity increases.
+**Rail agent complexity (GitHub issue #1).** Rail builds have the longest action sequences (depot, station, track segments, signals, station, vehicle, orders, start). The Agent sometimes loses track of its position in the sequence, and the 65.2% late-phase success rate in the multi-agent session suggests degradation as build complexity increases.
 
 **Air agent tile override behavior (GitHub issue related).** In the single-agent session, the air agent ignored validated `find_airport_spots` coordinates in favor of self-selected tiles, resulting in a 34.4% success rate. This "overriding the tool" behavior improved in the multi-agent session (70.7%) after prompt refinements, but remains a risk.
 
-**Water agent tile confusion (GitHub issue #2).** Even with smart finders returning validated tiles, the LLM occasionally uses tiles from the wrong tool result (e.g., dock coordinates when water depot coordinates were needed). This is a context management issue in the LLM.
+**Water agent tile confusion (GitHub issue #2).** Even with smart finders returning validated tiles, the Agent occasionally uses tiles from the wrong tool result (e.g., dock coordinates when water depot coordinates were needed). This is a context management issue in the Agent.
 
 **No inter-agent coordination (GitHub issue #4).** The three agents do not know about each other. They can build redundant infrastructure or compete for the same loan capacity. A shared message bus would enable explicit cooperation.
 
@@ -442,7 +442,7 @@ All 114 cycles across all three agents completed without errors.
 
 ### 12.1 Inter-Agent Communication
 
-Implement a shared message bus so agents can coordinate explicitly ("I am building the airport in town A; you handle the dock in the coastal town to the south"). This would enable research into the value of explicit vs. implicit coordination in multi-agent LLM systems.
+Implement a shared message bus so agents can coordinate explicitly ("I am building the airport in town A; you handle the dock in the coastal town to the south"). This would enable research into the value of explicit vs. implicit coordination in multi-agent systems.
 
 ### 12.2 Profitability-Driven Cycles
 
@@ -450,7 +450,7 @@ Inject revenue and profit-per-route data into the compact observation so agents 
 
 ### 12.3 Reinforcement Learning Integration
 
-Use the cycle records and action outcomes as training data for RL policies that complement LLM reasoning. A hybrid approach could use RL for low-level pathfinding and tile selection while the LLM handles high-level strategy.
+Use the cycle records and action outcomes as training data for RL policies that complement Agent reasoning. A hybrid approach could use RL for low-level pathfinding and tile selection while the Agent handles high-level strategy.
 
 ### 12.4 Competitive Multi-Company Evaluation
 
@@ -526,11 +526,11 @@ ORDER BY cycle_number;
 
 ## 14. Conclusion
 
-nttd demonstrates that OpenTTD can serve as a rich, multi-dimensional evaluation environment for LLM-powered agents. The observe-decide-act gameloop with multi-turn tool calling enables agents to reason about complex spatial and economic state before committing to actions. Transport-specific prompts encode domain expertise that guides LLM reasoning toward viable strategies. GSTestMode dry-run validation eliminates an entire class of spatial reasoning errors.
+nttd demonstrates that OpenTTD can serve as a rich, multi-dimensional evaluation environment for LLM-powered agents. The observe-decide-act gameloop with multi-turn tool calling enables agents to reason about complex spatial and economic state before committing to actions. Transport-specific prompts encode domain expertise that guides Agent reasoning toward viable strategies. GSTestMode dry-run validation eliminates an entire class of spatial reasoning errors.
 
 The single-agent sessions established baselines: rail achieved 85.7% success through cautious, observation-heavy behavior; water achieved 80.0% with a similar conservative approach; air achieved 34.4% due to a tendency to override validated tool results. The multi-agent cooperative session showed that all three agents can operate simultaneously on a shared company without crashes, conflicts, or coordination failures. The 73% overall action success rate, with the air agent improving to 70.7% and all agents becoming significantly more active (2-3x more actions per cycle), suggests that shared-state environments may positively influence agent productivity.
 
-The platform's agent-agnostic design, structured metrics recording, and session isolation make it suitable for reproducible cross-model benchmarking. As LLM capabilities evolve, nttd provides a consistent, challenging environment where improvements in reasoning, planning, and spatial understanding translate directly into measurable performance gains.
+The platform's agent-agnostic design, structured metrics recording, and session isolation make it suitable for reproducible cross-model benchmarking. As Agent capabilities evolve, nttd provides a consistent, challenging environment where improvements in reasoning, planning, and spatial understanding translate directly into measurable performance gains.
 
 ---
 
