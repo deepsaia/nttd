@@ -41,8 +41,9 @@ class GameloopManager:
 
         Validates:
           - company_id is in range [0, 14]
-          - No other agent already controls this company
           - agent_id is unique within this session
+
+        Multiple agents can share the same company_id.
         """
         if config.company_id < 0 or config.company_id >= _MAX_COMPANIES:
             raise ValueError(
@@ -52,13 +53,6 @@ class GameloopManager:
         connection_id = self._make_connection_id(config)
         if connection_id in self.connections:
             raise ValueError(f"Agent {config.agent_id} already registered for company {config.company_id}")
-
-        # Check no other agent on same company
-        for conn in self.connections.values():
-            if conn.config.company_id == config.company_id:
-                raise ValueError(
-                    f"Company {config.company_id} already has agent {conn.config.agent_id}"
-                )
 
         # Create adapter
         adapter = self._create_adapter(config)

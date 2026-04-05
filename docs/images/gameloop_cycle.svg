@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" font-family="system-ui, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="10" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <rect width="600" height="400" rx="8" fill="#f8f9fa"/>
+  <text x="300" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a1a2e">Observe-Decide-Act Cycle</text>
+
+  <!-- OBSERVE -->
+  <rect x="40" y="60" width="140" height="80" rx="12" fill="#e3f2fd" stroke="#1976D2" stroke-width="2"/>
+  <text x="110" y="95" text-anchor="middle" font-size="13" font-weight="bold" fill="#1565C0">OBSERVE</text>
+  <text x="110" y="115" text-anchor="middle" font-size="10" fill="#555">Compact state</text>
+  <text x="110" y="130" text-anchor="middle" font-size="10" fill="#555">snapshot (JSON)</text>
+
+  <!-- DECIDE -->
+  <rect x="230" y="60" width="140" height="80" rx="12" fill="#fff3e0" stroke="#F57C00" stroke-width="2"/>
+  <text x="300" y="95" text-anchor="middle" font-size="13" font-weight="bold" fill="#E65100">DECIDE</text>
+  <text x="300" y="115" text-anchor="middle" font-size="10" fill="#555">LLM + 31 tools</text>
+  <text x="300" y="130" text-anchor="middle" font-size="10" fill="#555">(multi-turn)</text>
+
+  <!-- ACT -->
+  <rect x="420" y="60" width="140" height="80" rx="12" fill="#e8f5e9" stroke="#388E3C" stroke-width="2"/>
+  <text x="490" y="95" text-anchor="middle" font-size="13" font-weight="bold" fill="#2E7D32">ACT</text>
+  <text x="490" y="115" text-anchor="middle" font-size="10" fill="#555">Validate + execute</text>
+  <text x="490" y="130" text-anchor="middle" font-size="10" fill="#555">via GameScript</text>
+
+  <!-- Arrows between phases -->
+  <line x1="180" y1="100" x2="228" y2="100" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="370" y1="100" x2="418" y2="100" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- TRACK box below -->
+  <rect x="230" y="180" width="140" height="60" rx="12" fill="#f3e5f5" stroke="#7B1FA2" stroke-width="2"/>
+  <text x="300" y="210" text-anchor="middle" font-size="13" font-weight="bold" fill="#6A1B9A">TRACK</text>
+  <text x="300" y="228" text-anchor="middle" font-size="10" fill="#555">Metrics + DB</text>
+
+  <!-- Arrow from ACT to TRACK -->
+  <path d="M 490 140 Q 490 210 372 210" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Arrow from TRACK back to OBSERVE -->
+  <path d="M 230 210 Q 110 210 110 142" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="150" y="200" font-size="10" fill="#888">next cycle</text>
+
+  <!-- Multi-turn tool loop -->
+  <rect x="200" y="270" width="200" height="110" rx="8" fill="#fffde7" stroke="#F9A825" stroke-width="1" stroke-dasharray="4"/>
+  <text x="300" y="295" text-anchor="middle" font-size="11" font-weight="bold" fill="#F57F17">Multi-Turn Tool Loop</text>
+  <text x="300" y="315" text-anchor="middle" font-size="10" fill="#555">LLM calls observation tools</text>
+  <text x="300" y="332" text-anchor="middle" font-size="10" fill="#555">get_towns, find_airport_spots,</text>
+  <text x="300" y="349" text-anchor="middle" font-size="10" fill="#555">get_engines, get_tile_info...</text>
+  <text x="300" y="368" text-anchor="middle" font-size="10" fill="#888">until LLM outputs action JSON</text>
+
+  <!-- Dashed line from DECIDE to tool loop -->
+  <line x1="300" y1="140" x2="300" y2="268" stroke="#F9A825" stroke-width="1" stroke-dasharray="4"/>
+</svg>

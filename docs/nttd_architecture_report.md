@@ -1627,6 +1627,111 @@ That is the architecture most likely to work well in practice.
 
 ---
 
+## Gameloop Manager Architecture
+
+The gameloop subsystem manages agent connections for each session. It follows a manager-connection-adapter pattern:
+
+```
+GameloopManager (1 per session)
+├── AgentConnection "rail-agent"
+│   ├── config (AgentConfig: company_id, framework, model, agent_type)
+│   ├── adapter (OpenAIAdapter / LangChainAdapter / PassthroughAdapter)
+│   ├── tracker (CycleTracker: cycle counts, timing, success/fail)
+│   └── conversation (message history for multi-turn reasoning)
+├── AgentConnection "air-agent"
+│   └── ...
+└── AgentConnection "water-agent"
+    └── ...
+```
+
+**Key files:**
+- `src/nttd/gameloop/manager.py`: GameloopManager class, agent registration, lifecycle
+- `src/nttd/gameloop/connection.py`: AgentConnection class, the observe-decide-act cycle loop
+- `src/nttd/gameloop/adapters/`: Framework adapters (OpenAI, LangChain, Passthrough)
+- `src/nttd/gameloop/schemas.py`: AgentConfig, ConnectionStatus, CycleRecord
+- `src/nttd/gameloop/observation_tools.py`: 31 observation tools in OpenAI function-calling format
+
+**Connection lifecycle:**
+1. `register_agent(config)`: validates company_id, creates adapter, creates connection, registers in agent_registry
+2. `start_agent(agent_id)`: starts the async cycle loop
+3. Cycle loop: observe > decide (LLM call with tools) > parse actions > validate > execute > track
+4. `stop_agent(agent_id)`: cancels the cycle task
+5. `unregister_agent(agent_id)`: stops and removes the connection
+
+**Multi-agent support:** Multiple agents can operate on the same company. Each agent has its own cycle loop, conversation history, and adapter instance. Actions are serialized through `send_gamescript()` with correlation IDs, so concurrent execution is safe at the GS level.
+
+---
+
+## Observation Toolkit
+
+The `ObservationToolkit` (in `observation_tools.py`) provides 31 read-only GS query tools that agents can call during the decide phase. Tools are defined in OpenAI function-calling format and converted to native format by each adapter.
+
+**Tool categories:**
+- **Map**: `get_towns`, `get_town_info`, `get_industries`, `get_industry_info`, `get_map_size`, `get_tile_info`, `get_cargo_types`, `get_date`
+- **Company**: `get_companies`, `get_company_finance`, `get_vehicles`, `get_vehicle_info`, `get_stations`, `get_station_info`, `get_orders`, `get_groups`, `get_town_rating`
+- **Infrastructure types**: `get_engines`, `get_rail_types`, `get_road_types`, `get_bridge_types`, `get_airport_types`, `get_subsidies`
+- **Smart finders** (dry-run validated via GSTestMode):
+  - `find_bus_stop_spots`: road tiles near a town for bus/truck stops
+  - `find_depot_spots`: road tiles near a town for road depots
+  - `find_airport_spots`: flat rectangular areas for airport placement
+  - `find_dock_spots`: coast tiles for dock construction
+  - `find_water_depot_spots`: water tiles for ship depot placement
+  - `find_flat_spots`: flat buildable tiles near a given tile (for rail)
+- **Hangar helpers**: `get_hangars`, airport hangar tiles for buying aircraft
+- **Area scanning**: `scan_town_area`, buildable tiles around a town
+
+**inject_company_id pattern:** Tools marked with `inject_company_id: True` automatically inject the agent's company_id into the GS request parameters. This prevents agents from accidentally querying other companies' data.
+
+**GSTestMode dry-run validation:** The smart finder tools (find_airport_spots, find_dock_spots, find_water_depot_spots) use OpenTTD's `GSTestMode()` to execute build commands in test mode. This checks all preconditions (flat land, ownership, proximity) without actually building anything. Only tiles that pass the dry-run are returned to the agent, guaranteeing that the returned coordinates will succeed when the agent builds there.
+
+---
+
+## Agent Prompt System
+
+Agent behavior is driven by transport-type-specific system prompts defined in `examples/agent_instructions.py`. Each prompt uses format strings that inject shared components:
+
+- `{tile_system}`: Explanation of OpenTTD's tile coordinate system (tile_id = y * map_width + x)
+- `{multi_turn_guide}`: Multi-turn tool calling guide with available tools and strategy
+- `{action_format}`: JSON format for action output
+- `{action_reference}`: Complete reference of all executable actions
+
+**Transport-type prompts:**
+
+| Agent Type | Strategy | Key Tools | Key Actions |
+|------------|----------|-----------|-------------|
+| Bus | Connect towns via road vehicles | `get_towns`, `find_bus_stop_spots`, `find_depot_spots` | `build_road_stop`, `build_road_depot`, `road_line` |
+| Rail | Connect industries via trains | `get_industries`, `find_flat_spots`, `get_rail_types`, `get_engines(vtype=0)` | `build_rail_station`, `build_rail_depot`, `build_rail`, `build_rail_signal` |
+| Air | Build airports in largest towns | `get_towns`, `find_airport_spots`, `get_hangars`, `get_engines(vtype=3)` | `build_airport`, `buy_vehicle`, `add_order` |
+| Water | Connect coastal towns via ships | `get_towns`, `find_dock_spots`, `find_water_depot_spots`, `get_engines(vtype=2)` | `build_dock`, `build_water_depot`, `buy_vehicle` |
+
+**Prompt selection** is driven by the `agent_type` field in `AgentConfig`. The connection looks up the appropriate prompt getter function from a `_PROMPT_MAP` dictionary. If `config.instructions` is provided, it takes precedence.
+
+---
+
+## DB Tracking: Agent Cycles and Connections
+
+The database schema includes two tables for tracking agent lifecycle:
+
+**`agent_connections`** (one row per agent registration):
+- `session_id`, `connection_id`, `agent_id`, `company_id`
+- `framework`, `model`, `agent_type`
+- `started_at`, `stopped_at`
+- `total_cycles`, `total_actions`, `successful_actions`, `failed_actions`
+- `avg_cycle_ms`, `avg_decide_ms`
+
+**`agent_cycles`** (one row per cycle):
+- `session_id`, `agent_id`, `cycle_number`
+- `actions_attempted`, `actions_succeeded`, `actions_failed`
+- `decide_ms`, `cycle_ms`
+- `tool_calls` (JSON: tool names called during decide phase)
+- `actions` (JSON: actions attempted during execute phase)
+
+**Recording pipeline:** `AgentConnection` > `CycleTracker` > `SessionRecorder` > SQLite (batch flush). The `SessionRecorder` buffers rows and flushes periodically, keeping the hot path (cycle execution) non-blocking.
+
+All rows are keyed by `session_id`, enabling cross-session and cross-agent analysis with simple SQL joins. The leaderboard computation (`/leaderboard/compute/{session_id}`) enriches company rankings with agent metrics from these tables.
+
+---
+
 ## Source-backed notes used in this report
 
 - The OpenTTD admin network is a dedicated protocol for external apps, supports remote console commands, exposes client/company information, and keeps admin applications connected across new games and save/load events: <https://github.com/OpenTTD/OpenTTD/blob/master/docs/admin_network.md>
