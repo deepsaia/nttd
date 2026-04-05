@@ -1,4 +1,4 @@
-# Building AI Agents That Play Transport Tycoon
+# Building and Benchmarking AI Agents That can Manage Large and Complex Business Empires
 
 *An open benchmarking platform for multi-agent system evaluation in complex real-time environments*
 
