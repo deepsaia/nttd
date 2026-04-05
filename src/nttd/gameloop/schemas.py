@@ -11,10 +11,12 @@ class AgentConfig(BaseModel):
     agent_id: str
     company_id: int = Field(ge=0, le=14)
     name: str = ""
+    agent_type: str = "bus"
     framework: str = "openai"
     model: str = "gpt-4o"
     instructions: str = ""
     observation_mode: str = "compact"
+    include_finance: bool = False
     poll_interval: float = Field(default=5.0, ge=0.5)
     observation_tools: bool = True
     max_actions_per_cycle: int = Field(default=10, ge=1)

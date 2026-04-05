@@ -5,9 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from examples.agent_instructions import get_bus_agent_prompt
+from examples.agent_instructions import (
+    get_air_agent_prompt,
+    get_bus_agent_prompt,
+    get_general_agent_prompt,
+    get_rail_agent_prompt,
+    get_water_agent_prompt,
+)
 from nttd.gameloop.adapters.base import BaseAdapter
 from nttd.gameloop.observation_tools import ObservationToolkit
 from nttd.gameloop.schemas import AgentConfig, ConnectionStatus
@@ -21,6 +28,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _LLM_TIMEOUT_SECONDS = 120.0  # Multi-turn tool calling can take several rounds
+
+_PROMPT_MAP: dict[str, Any] = {
+    "bus": get_bus_agent_prompt,
+    "rail": get_rail_agent_prompt,
+    "air": get_air_agent_prompt,
+    "water": get_water_agent_prompt,
+    "general": get_general_agent_prompt,
+}
 
 
 class AgentConnection:
@@ -46,10 +61,13 @@ class AgentConnection:
         self._task: asyncio.Task[None] | None = None
         self._running: bool = False
 
-        # Default instructions when none provided
+        # Default instructions when none provided — select by agent_type
         if not config.instructions:
-            config.instructions = get_bus_agent_prompt(config.company_id)
-            logger.info("Agent %s using default bus agent prompt", config.agent_id)
+            prompt_fn = _PROMPT_MAP.get(config.agent_type, get_bus_agent_prompt)
+            config.instructions = prompt_fn(config.company_id)
+            logger.info(
+                "Agent %s using default %s prompt", config.agent_id, config.agent_type,
+            )
 
         # Build observation toolkit if tools are enabled
         self._toolkit: ObservationToolkit | None = None
@@ -91,6 +109,18 @@ class AgentConnection:
         self._task = asyncio.create_task(self._run(), name=f"agent:{self.config.agent_id}")
         logger.info("Agent %s started (connection %s)", self.config.agent_id, self.connection_id)
 
+        # Record connection start to DB
+        self.runtime.recorder.record_agent_connection(
+            connection_id=self.connection_id,
+            agent_id=self.config.agent_id,
+            company_id=self.config.company_id,
+            framework=self.config.framework,
+            model=self.config.model,
+            observation_mode=self.config.observation_mode,
+            poll_interval=self.config.poll_interval,
+            started_at=datetime.now(timezone.utc),
+        )
+
     async def stop(self) -> None:
         """Stop the cycle loop gracefully."""
         self._running = False
@@ -102,6 +132,24 @@ class AgentConnection:
                 pass
         await self.adapter.close()
         logger.info("Agent %s stopped (connection %s)", self.config.agent_id, self.connection_id)
+
+        # Record connection stop with final aggregate stats to DB
+        self.runtime.recorder.record_agent_connection(
+            connection_id=self.connection_id,
+            agent_id=self.config.agent_id,
+            company_id=self.config.company_id,
+            framework=self.config.framework,
+            model=self.config.model,
+            observation_mode=self.config.observation_mode,
+            poll_interval=self.config.poll_interval,
+            stopped_at=datetime.now(timezone.utc),
+            total_cycles=self.tracker.cycle_count,
+            total_actions=self.tracker.total_actions,
+            successful_actions=self.tracker.successful_actions,
+            failed_actions=self.tracker.failed_actions,
+            avg_cycle_ms=round(self.tracker.avg_cycle_ms, 1),
+            avg_decide_ms=round(self.tracker.avg_decide_ms, 1),
+        )
 
     async def _run(self) -> None:
         """Main cycle loop: observe → decide → interpret → execute → sleep."""
@@ -207,6 +255,9 @@ class AgentConnection:
             actions_failed=failed,
         )
 
+        # Persist cycle record to DB
+        self.runtime.recorder.record_agent_cycle(record)
+
         logger.info(
             "Agent %s cycle %d: %d proposed, %d executed (%d ok, %d fail) in %.0fms",
             self.config.agent_id, record.cycle_number,
@@ -236,7 +287,21 @@ class AgentConnection:
                 "loan": company.loan,
                 "income": company.income,
                 "company_value": company.value,
+                "profit_last_year": company.profit_last_year,
             }
+            # Optional detailed finance via GS query
+            if self.config.include_finance:
+                try:
+                    fin = await self.runtime.admin_client.send_gamescript(
+                        "get_company_finance", {"company_id": company_id}, timeout=10.0,
+                    )
+                    if fin.get("success"):
+                        fin_data = fin.get("result", {})
+                        company_dict["max_loan"] = fin_data.get("max_loan")
+                        company_dict["q1_income"] = fin_data.get("q1_income")
+                        company_dict["q1_expenses"] = fin_data.get("q1_expenses")
+                except Exception:
+                    logger.debug("Agent %s finance fetch failed", self.config.agent_id)
 
         company_vehicles = [
             v for v in world.vehicles.values()

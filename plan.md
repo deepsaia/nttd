@@ -333,85 +333,13 @@ src/nttd/mcp/
 - [x] **4.6.6** `examples/agent_client.py`: REST API lifecycle demo (session-scoped)
 - [x] **4.6.7** `examples/README.md`: "How to Build Your Agent" guide
 
-### 4.7 CLI-First Architecture (Current)
-**Everything runs from the command line.** The admin console UI is developed later — all session management, agent registration, end conditions, and benchmarking must work via CLI + HOCON config. The REST API backs the CLI (and later the UI).
+### 4.7 CLI-First Architecture ✅
+- [x] **4.7.1** CLI docs: `docs/cli_guide.md` — complete guide with REST API workflow, testing section, model support table
+- [x] **4.7.2** REST API workflow documented with curl examples for full session + agent lifecycle
+- [ ] **4.7.3** `src/nttd/cli.py`: CLI subcommands wrapping REST API [deferred — REST API is primary interface]
+- [ ] **4.7.4** HOCON config parser [deferred — manual REST calls work]
 
-#### CLI Commands (typer subcommands)
-
-```bash
-# Server
-nttd server [--host --port --reload]              # Start FastAPI (already exists)
-
-# Session lifecycle
-nttd session create [--config scenario.conf]       # Create session from HOCON → returns session_id
-nttd session start <session_id> [--ai-opponents N] # Spawn OpenTTD process
-nttd session stop <session_id>                     # Stop OpenTTD + archive
-nttd session list                                  # List all sessions + status
-nttd session status <session_id>                   # Detailed status (game date, agents, etc.)
-
-# Agent management (via gameloop)
-nttd agent register --session <id> --agent-id <aid> --company-id N \
-    --framework openai --model gpt-4o [--instructions-file prompt.txt] \
-    [--poll-interval 5] [--observation-mode compact]
-nttd agent start --session <id> --agent-id <aid>   # Start the cycle loop
-nttd agent stop --session <id> --agent-id <aid>    # Stop the cycle loop
-nttd agent list --session <id>                     # List agents + metrics
-
-# Benchmark (all-in-one)
-nttd benchmark --config scenario.conf [--agents agents.json] \
-    [--speed 3] [--output results/]
-```
-
-#### Extended HOCON Config
-
-`scenario.conf` becomes the single config file for everything — map, companies, runtime, end conditions, AND agents:
-
-```hocon
-scenario {
-  name = "bus_benchmark"
-  map { size_x = 256, size_y = 256, landscape = "temperate" }
-  companies { num_ai_companies = 0, max_loan = 300000 }
-
-  runtime {
-    mode = "async_realtime"       # async_realtime | heartbeat
-    game_speed = 3                # OpenTTD speed multiplier
-  }
-
-  end_conditions {
-    logic = "any"
-    time_limit { enabled = true, wall_minutes = 10 }
-    game_date_limit { enabled = true, end_year = 2000 }
-  }
-
-  agents = [
-    {
-      agent_id = "bus_builder"
-      company_id = 0
-      framework = "openai"        # openai | langchain | passthrough
-      model = "gpt-4o"
-      instructions_file = "examples/agent_instructions.py:get_bus_agent_prompt"
-      observation_mode = "compact" # compact | full
-      poll_interval = 5.0
-      observation_tools = true
-    }
-    {
-      agent_id = "rail_planner"
-      company_id = 1
-      framework = "langchain"
-      model = "gpt-4o-mini"
-      instructions = "You are a rail transport specialist..."
-      poll_interval = 8.0
-    }
-  ]
-}
-```
-
-#### Files to modify/create
-
-- [ ] **4.7.1** `src/nttd/config/scenario_config.py`: Add `RuntimeConfig`, `AgentConfigEntry` dataclasses, parse `runtime` + `agents` blocks
-- [ ] **4.7.2** `src/nttd/cli.py`: Replace old single-session commands. Add `session` subgroup (create, start, stop, list, status), `agent` subgroup (register, start, stop, list), `end-conditions` command, `benchmark` command
-
-### 4.8 Gameloop Service
+### 4.8 Gameloop Service ✅
 **The core new system**: Centralized loop inside nttd that manages agent connections, drives the observe→decide→interpret→execute cycle, and tracks everything per `connection_id`.
 
 > **Key principle**: Agents = humans from the game's perspective. The gameloop calls the LLM on behalf of agents using pluggable framework adapters.
@@ -446,23 +374,28 @@ GET    /sessions/{sid}/gameloop/agents/{aid}/cycles   → recent cycle records
 GET    /sessions/{sid}/gameloop/status                → overall gameloop status
 ```
 
-- [ ] **4.8.1** `gameloop/schemas.py`: AgentConfig, ConnectionStatus, CycleRecord models
-- [ ] **4.8.2** `gameloop/adapters/base.py`: BaseAdapter abstract class
-- [ ] **4.8.3** `gameloop/adapters/openai_adapter.py`: OpenAI SDK adapter with tool calling
-- [ ] **4.8.4** `gameloop/adapters/langchain_adapter.py`: LangChain adapter
-- [ ] **4.8.5** `gameloop/adapters/passthrough_adapter.py`: Scripted agent adapter
-- [ ] **4.8.6** `gameloop/tracker.py`: ConnectionTracker (per-cycle telemetry, aggregate metrics)
-- [ ] **4.8.7** `gameloop/connection.py`: AgentConnection (cycle loop: observe → decide → interpret → execute)
-- [ ] **4.8.8** `gameloop/manager.py`: GameloopManager (register, start, stop, stop_all)
-- [ ] **4.8.9** `src/nttd/api/gameloop_routes.py`: REST API for gameloop management
-- [ ] **4.8.10** `session_runtime.py`: Attach `GameloopManager` to runtime bundle
-- [ ] **4.8.11** `orchestrator.py`: Wire `on_end` → `gameloop_manager.stop_all()`
+- [x] **4.8.1** `gameloop/schemas.py`: AgentConfig, ConnectionStatus, CycleRecord models
+- [x] **4.8.2** `gameloop/adapters/base.py`: BaseAdapter abstract class
+- [x] **4.8.3** `gameloop/adapters/openai_adapter.py`: OpenAI SDK adapter with tool calling
+- [x] **4.8.4** `gameloop/adapters/langchain_adapter.py`: LangChain adapter (multi-provider: gpt, claude)
+- [x] **4.8.5** `gameloop/adapters/passthrough_adapter.py`: Scripted agent adapter
+- [x] **4.8.6** `gameloop/tracker.py`: ConnectionTracker (per-cycle telemetry, aggregate metrics)
+- [x] **4.8.7** `gameloop/connection.py`: AgentConnection (cycle loop: observe → decide → interpret → execute)
+- [x] **4.8.8** `gameloop/manager.py`: GameloopManager (register, start, stop, stop_all)
+- [x] **4.8.9** `src/nttd/api/gameloop_routes.py`: REST API for gameloop management
+- [x] **4.8.10** `session_runtime.py`: Attach `GameloopManager` to runtime bundle
+- [x] **4.8.11** `orchestrator.py`: Wire `on_end` → `gameloop_manager.stop_all()`
+- [x] **4.8.12** Multi-turn tool calling: ObservationToolkit (26 GS query tools as OpenAI-format schemas)
+- [x] **4.8.13** Conversation memory: deque of last N cycle exchanges for agent learning
+- [x] **4.8.14** Default bus agent prompt fallback when instructions empty
+- [x] **4.8.15** Field normalization in parser (action→action_type, params→parameters, type→action_type)
+- [x] **4.8.16** GS _VehicleTypeEnum accepts both strings and integers
 
 ### 4.9 DB Schema for Gameloop Tracking
-- [ ] **4.9.1** `db/tables.py`: Add `agent_connections` table (connection lifecycle + aggregate metrics)
-- [ ] **4.9.2** `db/tables.py`: Add `agent_cycles` table (per-cycle timing, action counts)
-- [ ] **4.9.3** `db/migrations.py`: Auto-create new tables
-- [ ] **4.9.4** `gameloop/tracker.py`: Flush cycle records to DB via existing recorder pattern
+- [x] **4.9.1** `db/tables.py`: Add `agent_connections` table (connection lifecycle + aggregate metrics)
+- [x] **4.9.2** `db/tables.py`: Add `agent_cycles` table (per-cycle timing, action counts)
+- [x] **4.9.3** `db/migrations.py`: Auto-create new tables
+- [ ] **4.9.4** `db/recorder.py` + `gameloop/connection.py`: Wire SessionRecorder to flush cycle records to DB (tables exist but never written to)
 
 ### 4.10 End Conditions Wiring (part of session config)
 End conditions are part of the HOCON scenario config — they're stored with the session and applied on session start, alongside map settings, companies, and runtime mode. No separate CLI command needed.
@@ -498,7 +431,49 @@ nttd benchmark --config config/scenario.conf --speed 3 --output results/
 
 ---
 
-## Phase 5 — Production & Scale
+## Phase 5 — Multi-Transport Agents, DB Wiring & Documentation
+
+> Expand from bus-only to all 4 transport types, wire the DB recording layer, and produce documentation.
+> **Verified working**: Bus agent end-to-end with gpt-5.2 (LangChain adapter, multi-turn tool calling, 13 cycles, 9 successful actions).
+
+### 5.1 Agent Prompts (Rail, Air, Water)
+
+- [ ] **5.1.1** `examples/agent_instructions.py`: Add `SYSTEM_PROMPT_RAIL_AGENT` + `get_rail_agent_prompt(company_id)` — rail strategy (industries via rail, signals, track building)
+- [ ] **5.1.2** `examples/agent_instructions.py`: Add `SYSTEM_PROMPT_AIR_AGENT` + `get_air_agent_prompt(company_id)` — airport strategy (largest towns, passenger aircraft)
+- [ ] **5.1.3** `examples/agent_instructions.py`: Add `SYSTEM_PROMPT_WATER_AGENT` + `get_water_agent_prompt(company_id)` — dock/ship strategy (coastal towns, water depots)
+- [ ] **5.1.4** `examples/agent_instructions.py`: Update `MULTI_TURN_GUIDE` with `get_rail_types`, `get_airport_types`, `get_bridge_types`, `scan_town_area`
+- [ ] **5.1.5** `src/nttd/gameloop/schemas.py`: Add `agent_type: str = "bus"` field to AgentConfig
+- [ ] **5.1.6** `src/nttd/gameloop/connection.py`: Prompt lookup map (`_PROMPT_MAP`) instead of hardcoded `get_bus_agent_prompt`
+- [ ] **5.1.7** Test: Run rail agent session with gpt-5.2, fix GS bugs found
+- [ ] **5.1.8** Test: Run air agent session, fix GS bugs found
+- [ ] **5.1.9** Test: Run water agent session, fix GS bugs found
+
+### 5.2 Finance in Compact Observation
+
+- [ ] **5.2.1** `src/nttd/gameloop/connection.py`: Add `profit_last_year` to compact `company_dict`
+- [ ] **5.2.2** `src/nttd/gameloop/schemas.py`: Add `include_finance: bool = False` to AgentConfig
+- [ ] **5.2.3** `src/nttd/gameloop/connection.py`: When `include_finance=True`, fetch `get_company_finance` during observe and merge into company_dict
+
+### 5.3 DB Layer — Wire Agent Tracking
+
+> `agent_connections` and `agent_cycles` tables exist but are never written to. SessionRecorder exists but is never instantiated.
+
+- [ ] **5.3.1** `src/nttd/runtime/session_runtime.py`: Instantiate `SessionRecorder` in `start_server()`, stop in `shutdown()`
+- [ ] **5.3.2** `src/nttd/db/recorder.py`: Add `record_agent_cycle(record)` and `record_agent_connection(...)` methods + table map entries
+- [ ] **5.3.3** `src/nttd/gameloop/connection.py`: After `tracker.end_cycle()` → call `runtime.recorder.record_agent_cycle(record)`; on start/stop → call `record_agent_connection`
+- [ ] **5.3.4** `src/nttd/db/repositories/agent_repo.py` (new): `get_agent_connections(session_id)`, `get_agent_cycles(session_id, agent_id)`, `get_agent_summary(session_id)`
+- [ ] **5.3.5** `src/nttd/api/metrics_routes.py`: Extend leaderboard with agent metrics (framework, model, total_cycles, avg_cycle_ms, avg_decide_ms) joined via `(session_id, company_id)`
+
+### 5.4 Documentation
+
+- [ ] **5.4.1** `docs/nttd_architecture_report.md`: Add sections on Gameloop Manager, Observation Toolkit, Agent Prompt System, DB Tracking
+- [ ] **5.4.2** `docs/blog_building_ai_agents.md` (new): Blog article with Mermaid diagrams, code snippets, metric tables, screenshot placeholders
+- [ ] **5.4.3** `scripts/generate_diagrams.py` (new): SVG diagram generator (architecture overview, gameloop cycle, transport modes)
+- [ ] **5.4.4** Update `README.md` with links to blog + updated architecture report
+
+---
+
+## Phase 6 — Production & Scale
 
 - [ ] PostgreSQL migration (swap SQLite connection string)
 - [ ] TimescaleDB for time-series optimization
@@ -538,6 +513,7 @@ nttd benchmark --config config/scenario.conf --speed 3 --output results/
 | **M5: Multi-Server** | Each session = own OpenTTD server, port isolation, orphan recovery | Done |
 | **M6: Console MVP** | Create session → start game → join from OpenTTD client → spectate/play | Done |
 | **M7: Game Loop** | Settings stored, defaults correct, archive on stop, full detail view | Done |
-| **M8: Agent Loop** | Async RT agent loop, session-scoped client, scripted agent works | Phase 4 |
-| **M9: MCP Layer** | All 93+ GS commands as MCP tools, example agents, benchmark runner | Phase 4 |
-| **M10: Scale** | 150 connections, PostgreSQL, Docker | Phase 5 |
+| **M8: Agent Loop** | Gameloop service, LangChain/OpenAI adapters, multi-turn tool calling, bus agent verified | Done |
+| **M9: MCP Layer** | All 93+ GS commands as MCP tools, example agents, CLI guide | Done |
+| **M10: Multi-Transport** | Rail/air/water agents, DB wiring, documentation | Phase 5 |
+| **M11: Scale** | 150 connections, PostgreSQL, Docker | Phase 6 |

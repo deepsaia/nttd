@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from nttd.db.repositories import action_repo, entity_repo, event_repo, metrics_repo
+from nttd.db.repositories import action_repo, agent_repo, entity_repo, event_repo, metrics_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["metrics"])
@@ -259,17 +259,26 @@ async def compute_leaderboard(session_id: str) -> dict[str, Any]:
 
     ranked = sorted(companies, key=lambda c: fin_data.get(c["company_id"], {}).get("company_value", 0), reverse=True)
 
+    # Fetch agent connection data keyed by company_id
+    agent_summary = await agent_repo.get_agent_summary(session_id)
+    agent_by_company: dict[int, dict[str, Any]] = {}
+    for a in agent_summary:
+        agent_by_company[a["company_id"]] = a
+
     async with get_db_session() as db:
         await db.execute(delete(leaderboard).where(leaderboard.c.session_id == session_id))
         for rank, company in enumerate(ranked, 1):
             cid = company["company_id"]
             fin = fin_data.get(cid, {})
             per_company_stats = await action_repo.get_action_stats(session_id, company_id=cid)
+            agent_info = agent_by_company.get(cid, {})
             await db.execute(
                 insert(leaderboard).values(
                     session_id=session_id,
                     company_id=cid,
                     rank=rank,
+                    participant_id=agent_info.get("agent_id"),
+                    participant_type=agent_info.get("framework"),
                     final_balance=fin.get("balance", 0),
                     final_value=fin.get("company_value", 0),
                     final_rating=fin.get("performance_rating", 0),
@@ -357,3 +366,35 @@ async def get_vehicles(session_id: str, company_id: int | None = None) -> dict[s
 async def get_subsidies(session_id: str) -> dict[str, Any]:
     data = await entity_repo.get_subsidies_latest(session_id)
     return {"subsidies": data, "count": len(data)}
+
+
+# ---------------------------------------------------------------------------
+# Agent data (DB-backed, session-scoped)
+# ---------------------------------------------------------------------------
+
+@router.get("/data/agents")
+async def get_agents(session_id: str) -> dict[str, Any]:
+    """List agent connections for a session with aggregate stats."""
+    data = await agent_repo.get_agent_connections(session_id)
+    return {"agents": data, "count": len(data)}
+
+
+@router.get("/data/agents/summary")
+async def get_agents_summary(session_id: str) -> dict[str, Any]:
+    """Per-agent aggregate stats for a session."""
+    data = await agent_repo.get_agent_summary(session_id)
+    return {"agents": data, "count": len(data)}
+
+
+@router.get("/data/agents/cycles")
+async def get_agent_cycles(
+    session_id: str,
+    connection_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Query agent cycle records for a session."""
+    data = await agent_repo.get_agent_cycles(
+        session_id, connection_id=connection_id, limit=limit, offset=offset,
+    )
+    return {"cycles": data, "count": len(data)}

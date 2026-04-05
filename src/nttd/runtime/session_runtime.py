@@ -11,6 +11,7 @@ from pathlib import Path
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.bridge import Bridge
+from nttd.db.recorder import SessionRecorder
 from nttd.gameloop.manager import GameloopManager
 from nttd.logging.event_logger import EventLogger
 from nttd.runtime.orchestrator import Orchestrator
@@ -48,6 +49,7 @@ class SessionRuntime:
         self.agent_registry = AgentRegistry()
         self.event_logger = EventLogger()
         self.snapshot_broker_registry: dict[str, AgentSnapshotBroker] = {}
+        self.recorder = SessionRecorder(session_id)
         self.gameloop_manager = GameloopManager(self)
 
         # Stop all gameloop agents when the session ends
@@ -95,6 +97,9 @@ class SessionRuntime:
             name=f"poll_{self.session_id}",
         )
 
+        # Start the DB recorder
+        await self.recorder.start()
+
         logger.info("Session %s server started (PID %s)", self.session_id, self.process.pid)
         return True
 
@@ -106,6 +111,7 @@ class SessionRuntime:
                 self.admin_client.poll_loop(),
                 name=f"poll_{self.session_id}",
             )
+            await self.recorder.start()
         return ok
 
     async def start_companies(
@@ -157,6 +163,9 @@ class SessionRuntime:
 
         # Stop all gameloop agents first
         await self.gameloop_manager.stop_all()
+
+        # Stop the DB recorder (flushes remaining buffers)
+        await self.recorder.stop()
 
         # Cancel poll loop
         if self.poll_task and not self.poll_task.done():

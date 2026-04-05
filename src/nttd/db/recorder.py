@@ -13,10 +13,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from nttd.db import tables
 from nttd.db.engine import get_session
 from nttd.db.parquet_writer import ParquetWriter
+from nttd.gameloop.schemas import CycleRecord
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult
 from nttd.schemas.snapshot import StateSnapshot
@@ -113,7 +115,12 @@ class SessionRecorder:
             "events": tables.events,
             "messages": tables.messages,
             "metrics": tables.metrics,
+            "agent_connections": tables.agent_connections,
+            "agent_cycles": tables.agent_cycles,
         }
+
+        # Tables that need upsert (unique constraints on non-PK columns)
+        _UPSERT_TABLES = {"agent_connections"}
 
         async with get_session() as db:
             async with db.begin():
@@ -122,9 +129,20 @@ class SessionRecorder:
                     if table is None:
                         logger.warning("Unknown table in buffer: %s", table_name)
                         continue
-                    if rows:
+                    if not rows:
+                        continue
+                    if table_name in _UPSERT_TABLES:
+                        for row in rows:
+                            stmt = sqlite_insert(table).values(row)
+                            stmt = stmt.on_conflict_do_update(
+                                index_elements=["session_id", "agent_id"],
+                                set_={k: v for k, v in row.items()
+                                       if k not in ("session_id", "agent_id", "id") and v is not None},
+                            )
+                            await db.execute(stmt)
+                    else:
                         await db.execute(insert(table), rows)
-                        total_rows += len(rows)
+                    total_rows += len(rows)
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._total_rows_flushed += total_rows
@@ -457,5 +475,69 @@ class SessionRecorder:
                 "to_id": to_id,
                 "company_id": company_id,
                 "body": body,
+            }
+        ])
+
+    # ------------------------------------------------------------------
+    # Agent tracking (non-blocking)
+    # ------------------------------------------------------------------
+
+    def record_agent_cycle(self, record: CycleRecord) -> None:
+        """Record a single agent cycle to the agent_cycles table."""
+        self._append("agent_cycles", [
+            {
+                "connection_id": record.connection_id,
+                "session_id": record.session_id,
+                "cycle_number": record.cycle_number,
+                "game_date": record.game_date,
+                "observe_ms": record.observe_ms,
+                "decide_ms": record.decide_ms,
+                "execute_ms": record.execute_ms,
+                "total_ms": record.total_ms,
+                "actions_proposed": record.actions_proposed,
+                "actions_executed": record.actions_executed,
+                "actions_succeeded": record.actions_succeeded,
+                "actions_failed": record.actions_failed,
+                "observation_size_bytes": record.observation_size_bytes,
+            }
+        ])
+
+    def record_agent_connection(
+        self,
+        connection_id: str,
+        agent_id: str,
+        company_id: int,
+        framework: str,
+        model: str,
+        observation_mode: str = "compact",
+        poll_interval: float = 5.0,
+        started_at: datetime | None = None,
+        stopped_at: datetime | None = None,
+        total_cycles: int = 0,
+        total_actions: int = 0,
+        successful_actions: int = 0,
+        failed_actions: int = 0,
+        avg_cycle_ms: float = 0.0,
+        avg_decide_ms: float = 0.0,
+    ) -> None:
+        """Record or update an agent connection in the agent_connections table."""
+        self._append("agent_connections", [
+            {
+                "connection_id": connection_id,
+                "session_id": self.session_id,
+                "agent_id": agent_id,
+                "company_id": company_id,
+                "framework": framework,
+                "model": model,
+                "observation_mode": observation_mode,
+                "poll_interval": poll_interval,
+                "started_at": started_at,
+                "stopped_at": stopped_at,
+                "total_cycles": total_cycles,
+                "total_actions": total_actions,
+                "successful_actions": successful_actions,
+                "failed_actions": failed_actions,
+                "avg_cycle_ms": avg_cycle_ms,
+                "avg_decide_ms": avg_decide_ms,
             }
         ])
