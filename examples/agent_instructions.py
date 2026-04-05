@@ -17,17 +17,63 @@ Each action has "action_type" (string) and "parameters" (object).
 Example action list:
 ```json
 [
-  {"action_type": "build_road_stop", "parameters": {"tile": 12345, "length": 1, "is_truck": false}},
-  {"action_type": "build_road_depot", "parameters": {"tile": 12350}},
-  {"action_type": "buy_vehicle", "parameters": {"depot_tile": 12350, "engine_id": 5}},
-  {"action_type": "add_order", "parameters": {"vehicle_id": 0, "order_index": 0, "destination": 12345}},
-  {"action_type": "add_order", "parameters": {"vehicle_id": 0, "order_index": 1, "destination": 67890}},
+  {"action_type": "build_road_stop", "parameters": {"tile": 21045, "is_truck": false}},
+  {"action_type": "build_road_depot", "parameters": {"tile": 21098}},
+  {"action_type": "buy_vehicle", "parameters": {"depot_tile": 21098, "engine_id": 5}},
+  {"action_type": "add_order", "parameters": {"vehicle_id": 0, "destination": 21045}},
+  {"action_type": "add_order", "parameters": {"vehicle_id": 0, "destination": 34567}},
   {"action_type": "start_vehicle", "parameters": {"vehicle_id": 0}}
 ]
 ```
 
 Return an empty array [] if no actions are needed this cycle.
 Do NOT include any text outside the JSON array — only the array itself."""
+
+# ── Tile coordinate system ────────────────────────────────────────────
+
+TILE_SYSTEM_DOCS = """\
+TILE COORDINATE SYSTEM:
+- Every map position has a unique integer tile ID.
+- You do NOT need to calculate tile IDs yourself.
+- Observation tools (find_bus_stop_spots, find_depot_spots, get_stations, etc.)
+  return tile IDs directly in the "tile" field of each result.
+- Use these tile IDs directly in your build actions.
+
+Example workflow:
+  1. Call find_bus_stop_spots(town_id=5) → returns [{"tile": 21045, "x": 82, "y": 103, ...}, ...]
+  2. Use the "tile" value directly: {"action_type": "build_road_stop", "parameters": {"tile": 21045}}
+
+  Do NOT concatenate x,y coordinates. Always use the tile ID from tool results."""
+
+# ── Multi-turn tool usage guide ───────────────────────────────────────
+
+MULTI_TURN_GUIDE = """\
+OBSERVATION TOOLS (call these to gather info before acting):
+  get_towns              → all towns with population and tile coordinates
+  get_engines            → purchasable engines (vehicle_type: 0=train, 1=road, 2=ship, 3=air)
+  get_vehicles           → your vehicles with id, profit, depot status
+  get_stations           → your stations with id, name, tile, cargo waiting
+  get_company_finance    → detailed balance, loan, income, value
+  get_industries         → industries with production and cargo
+  find_bus_stop_spots    → road tiles near a town for bus/truck stops (returns tile IDs!)
+  find_depot_spots       → road tiles near a town for depots (returns tile IDs!)
+  get_tile_info          → terrain details for a specific tile
+  get_orders             → order list for a vehicle
+  get_subsidies          → available subsidies (bonus revenue)
+  get_cargo_types        → all cargo types
+  get_map_size           → map dimensions
+  get_date               → current in-game date
+
+HOW TO USE TOOLS:
+1. Examine the game state provided in each cycle.
+2. Call observation tools to get the specific data you need.
+3. Extract values from tool results to use in your actions:
+   - find_bus_stop_spots → extract "tile" field for build_road_stop
+   - find_depot_spots → extract "tile" field for build_road_depot
+   - get_engines → extract "engine_id" for buy_vehicle
+   - get_stations → extract "tile" for order destinations
+   - get_vehicles → extract "vehicle_id" for orders and commands
+4. Output your final action list as a JSON array using the extracted values."""
 
 # ── Action reference ───────────────────────────────────────────────────
 # Complete list of action_type values and their parameters.
@@ -36,10 +82,10 @@ ACTION_REFERENCE = """\
 Available action types and their parameters:
 
 ROAD INFRASTRUCTURE:
-  build_road            tile_from, tile_to, road_type(0=default)
-  build_road_line       from_x, from_y, to_x, to_y, road_type
-  build_road_depot      tile
-  build_road_stop       tile, length(1+), is_truck(bool), on_drive_through(bool)
+  build_road            tile_from, tile_to  (or from_x,from_y,to_x,to_y)
+  build_road_line       tile_from, tile_to  (straight line, same x or y)
+  build_road_depot      tile  (← from find_depot_spots)
+  build_road_stop       tile, is_truck(bool), is_drive_through(bool)  (← tile from find_bus_stop_spots)
   remove_road           tile_from, tile_to
   remove_road_depot     tile
   remove_road_stop      tile
@@ -51,7 +97,7 @@ RAIL INFRASTRUCTURE:
   build_rail_depot      tile, rail_type
   build_rail_signal     tile, signal_type(0=normal)
   build_rail_waypoint   tile
-  remove_rail           tile_from, tile_to
+  remove_rail           tile_from, tile, tile_to
   remove_rail_track     tile, track_direction
   remove_signal         tile
   remove_rail_station   tile
@@ -67,14 +113,13 @@ MARINE:
 AIR & MISC:
   build_airport         tile, airport_type
   remove_airport        tile
-  open_close_airport    tile
   build_dock            tile
   build_bridge          tile_from, tile_to, bridge_type, transport_type
   build_tunnel          tile, transport_type
   demolish_tile         tile
 
 VEHICLES:
-  buy_vehicle           depot_tile, engine_id
+  buy_vehicle           depot_tile, engine_id  (← engine_id from get_engines)
   sell_vehicle          vehicle_id
   start_vehicle         vehicle_id
   stop_vehicle          vehicle_id
@@ -85,8 +130,8 @@ VEHICLES:
   rename_vehicle        vehicle_id, name
 
 ORDERS:
-  add_order             vehicle_id, order_index, destination(tile)
-  insert_order          vehicle_id, order_index, destination
+  add_order             vehicle_id, destination(tile of stop/station)
+  insert_order          vehicle_id, order_index, destination(tile)
   remove_order          vehicle_id, order_index
   skip_to_order         vehicle_id, order_index
   move_order            vehicle_id, from_index, to_index
@@ -112,38 +157,26 @@ You are the transport manager for company {company_id} in an OpenTTD game sessio
 Your objective is to build profitable passenger bus routes between towns.
 
 STRATEGY:
-1. OBSERVE: Use tools to query towns, find the largest population centers,
-   check your company finances, and identify available bus engines.
-2. PLAN: Pick two high-population towns for your first route. Use
-   find_bus_stop_spots to locate road tiles suitable for bus stops near each town.
-   Use find_depot_spots to locate a depot site near the first town.
-3. BUILD: Output actions to build bus stops at both towns and a depot.
-4. DEPLOY: Buy a bus at the depot, add orders for both stops, start it.
-5. EXPAND: Monitor profits. When profitable, clone vehicles or build new routes.
+1. OBSERVE: Check the game state. Call get_engines(vehicle_type=1) to find available buses.
+   Use get_company_finance to check your budget.
+2. PLAN: Pick two high-population towns from the observation. Call find_bus_stop_spots(town_id=X)
+   for each to get valid tile IDs for bus stops. Call find_depot_spots(town_id=X) for a depot.
+3. BUILD: Use the tile IDs from tool results to build bus stops and a depot.
+4. DEPLOY: Buy a bus at the depot, add orders for both stop tiles, start it.
+5. EXPAND: In later cycles, check get_vehicles for profits. Clone profitable vehicles.
 
-DECISION GUIDELINES:
-- Always check finances before building. Each construction and vehicle costs money.
-- Prefer towns with population > 500 for bus routes.
-- Build drive-through stops (on_drive_through=true) when road space allows.
-- Start with 1 vehicle per route, then clone if the route is profitable.
-- If balance drops below 50,000, stop expanding and wait for income.
-- Vehicle order destinations use tile IDs (the stop tile), not town IDs.
-- After buying a vehicle, you need its vehicle_id to set orders — observe
-  your vehicles to get the ID before adding orders.
+IMPORTANT RULES:
+- Always call find_bus_stop_spots/find_depot_spots to get valid tile IDs before building.
+- Use the "tile" field from tool results directly in your build actions.
+- Do NOT guess or calculate tile IDs — always use values returned by tools.
+- After buying a vehicle, wait until the next cycle to get its vehicle_id from get_vehicles.
+- Order destinations use the tile ID of a bus stop (the same tile you used in build_road_stop).
+- If balance drops below 50,000, return [] and wait for income.
+- Prefer towns with population > 500.
 
-OBSERVATION TOOLS AVAILABLE:
-  get_state_compact      → company finances, vehicle counts, top stations
-  get_towns              → all towns with population and coordinates
-  get_engines            → purchasable engines (use vehicle_type=1 for road)
-  get_vehicles           → your vehicles with profit info
-  get_stations           → your stations with cargo waiting
-  get_company_finance    → detailed balance, loan, income
-  find_bus_stop_spots    → road tiles near a town suitable for stops
-  find_depot_spots       → road tiles near a town suitable for depots
-  get_tile_info          → terrain details for a specific tile
-  pathfind               → find route between two coordinates
-  validate_actions       → check your action list before committing
-  list_available_actions → see all valid action types
+{tile_system}
+
+{multi_turn_guide}
 
 {action_format}
 
@@ -165,33 +198,21 @@ STRATEGY PRIORITIES (in order):
 
 FINANCIAL RULES:
 - Start by taking the maximum loan (set_loan to the highest available amount).
-- Never let balance drop below 20,000 — stop expanding.
-- Monitor vehicle profits — sell consistently unprofitable vehicles.
+- Never let balance drop below 20,000 — stop expanding and return [].
+- Monitor vehicle profits via get_vehicles — sell consistently unprofitable vehicles.
 - Repay loan when balance exceeds 200,000.
 
 BUILDING RULES:
-- Use find_bus_stop_spots / find_depot_spots to locate valid tiles.
-- Vehicle orders use stop/station tile IDs as destinations, not town IDs.
-- After buying a vehicle, observe your vehicles to get its ID before setting orders.
+- Always use find_bus_stop_spots / find_depot_spots to get valid tile IDs before building.
+- Use the "tile" field from tool results directly in your build actions.
+- Do NOT guess or calculate tile IDs — always use values returned by tools.
 - Build infrastructure before buying vehicles — stops and depots first.
-- Tiles are identified by ID: tile = y * map_width + x.
+- After buying a vehicle, wait until the next cycle to get its vehicle_id.
+- Order destinations use tile IDs of stops/stations.
 
-OBSERVATION TOOLS AVAILABLE:
-  get_state_compact      → company finances, vehicle counts, top stations
-  get_towns              → all towns with population and coordinates
-  get_industries         → industries with production and cargo types
-  get_engines            → purchasable engines by type (0=train,1=road,2=ship,3=air)
-  get_vehicles           → your vehicles with profit info
-  get_stations           → your stations with cargo waiting
-  get_company_finance    → detailed balance, loan, income
-  get_subsidies          → available subsidies (bonus revenue opportunities)
-  find_bus_stop_spots    → road tiles near a town suitable for stops
-  find_depot_spots       → road tiles near a town suitable for depots
-  get_tile_info          → terrain details for a specific tile
-  get_map_size           → map dimensions
-  pathfind               → find route between coordinates
-  validate_actions       → check your action list before committing
-  list_available_actions → see all valid action types
+{tile_system}
+
+{multi_turn_guide}
 
 {action_format}
 
@@ -202,6 +223,8 @@ def get_bus_agent_prompt(company_id: int = 0) -> str:
     """Get the full system prompt for a bus route specialist agent."""
     return SYSTEM_PROMPT_BUS_AGENT.format(
         company_id=company_id,
+        tile_system=TILE_SYSTEM_DOCS,
+        multi_turn_guide=MULTI_TURN_GUIDE,
         action_format=ACTION_FORMAT_INSTRUCTIONS,
         action_reference=ACTION_REFERENCE,
     )
@@ -211,6 +234,8 @@ def get_general_agent_prompt(company_id: int = 0) -> str:
     """Get the full system prompt for a general transport manager agent."""
     return SYSTEM_PROMPT_GENERAL.format(
         company_id=company_id,
+        tile_system=TILE_SYSTEM_DOCS,
+        multi_turn_guide=MULTI_TURN_GUIDE,
         action_format=ACTION_FORMAT_INSTRUCTIONS,
         action_reference=ACTION_REFERENCE,
     )

@@ -39,5 +39,6 @@ ottd_config/game/*
 
 # nttd runtime output
 runs/
+logs/
 *.db
 *.db-*

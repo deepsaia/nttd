@@ -188,6 +188,50 @@ class NttdGS extends GSController {
     local action = cmd.action;
     local p = ("params" in cmd) ? cmd.params : {};
 
+    // Auto-resolve tile → x,y for all commands.
+    // If "tile" is provided but x,y are not, derive them.
+    if ("tile" in p && !("x" in p)) {
+      local t = p.tile.tointeger();
+      if (GSMap.IsValidTile(t)) {
+        p.rawset("x", GSMap.GetTileX(t));
+        p.rawset("y", GSMap.GetTileY(t));
+      }
+    }
+    // Same for tile_from → from_x, from_y
+    if ("tile_from" in p && !("from_x" in p)) {
+      local t = p.tile_from.tointeger();
+      if (GSMap.IsValidTile(t)) {
+        p.rawset("from_x", GSMap.GetTileX(t));
+        p.rawset("from_y", GSMap.GetTileY(t));
+      }
+    }
+    // Same for tile_to → to_x, to_y
+    if ("tile_to" in p && !("to_x" in p)) {
+      local t = p.tile_to.tointeger();
+      if (GSMap.IsValidTile(t)) {
+        p.rawset("to_x", GSMap.GetTileX(t));
+        p.rawset("to_y", GSMap.GetTileY(t));
+      }
+    }
+    // depot_tile → depot_x, depot_y (for buy_vehicle, clone_vehicle)
+    if ("depot_tile" in p && !("depot_x" in p)) {
+      local t = p.depot_tile.tointeger();
+      if (GSMap.IsValidTile(t)) {
+        p.rawset("depot_x", GSMap.GetTileX(t));
+        p.rawset("depot_y", GSMap.GetTileY(t));
+      }
+    }
+    // destination (for orders) — resolve to tile
+    if ("destination" in p) {
+      local d = p.destination;
+      if (typeof d == "integer" || typeof d == "float") {
+        local t = d.tointeger();
+        if (GSMap.IsValidTile(t)) {
+          p.rawset("dest_tile", t);
+        }
+      }
+    }
+
     try {
       switch (action) {
 
@@ -858,7 +902,7 @@ class NttdGS extends GSController {
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
-        spots.append({ x = x, y = y, distance = abs(dx) + abs(dy),
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
           adjacent_road_count = adj.len() });
       }
@@ -882,7 +926,7 @@ class NttdGS extends GSController {
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
-        spots.append({ x = x, y = y, distance = abs(dx) + abs(dy),
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
           depot_direction = adj[0].dir });
       }
@@ -900,10 +944,10 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     GSRoad.SetCurrentRoadType(road_type);
-    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
-    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
-    if (GSRoad.BuildRoad(from_tile, to_tile)) {
-      return { success = true, result = { from = [p.from_x, p.from_y], to = [p.to_x, p.to_y] } };
+    local pair = this._ResolveTilePair(p);
+    if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
+    if (GSRoad.BuildRoad(pair.from.tile, pair.to.tile)) {
+      return { success = true, result = { from_tile = pair.from.tile, to_tile = pair.to.tile } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -912,7 +956,9 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     GSRoad.SetCurrentRoadType(road_type);
-    local x1 = p.from_x, y1 = p.from_y, x2 = p.to_x, y2 = p.to_y;
+    local pair = this._ResolveTilePair(p);
+    if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
+    local x1 = pair.from.x, y1 = pair.from.y, x2 = pair.to.x, y2 = pair.to.y;
     if (x1 != x2 && y1 != y2) return { success = false, error = "Only straight lines (same x or same y)" };
     if (x1 == x2 && y1 == y2) return { success = false, error = "Start and end are the same tile" };
     local built = 0, failed = [];
@@ -941,9 +987,10 @@ class NttdGS extends GSController {
     local road_type = ("road_type" in p) ? p.road_type : 0;
     local dir = ("direction" in p) ? p.direction : 0;
     GSRoad.SetCurrentRoadType(road_type);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
-    if (GSRoad.BuildRoadDepot(tile, this._GetAdjacentTile(tile, dir))) {
-      return { success = true, result = { tile = [p.x, p.y] } };
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    if (GSRoad.BuildRoadDepot(r.tile, this._GetAdjacentTile(r.tile, dir))) {
+      return { success = true, result = { tile = r.tile, x = r.x, y = r.y } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -955,13 +1002,14 @@ class NttdGS extends GSController {
     local is_dt = ("is_drive_through" in p) ? p.is_drive_through : false;
     local dir = ("direction" in p) ? p.direction : 0;
     GSRoad.SetCurrentRoadType(road_type);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
-    local front = this._GetAdjacentTile(tile, dir);
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    local front = this._GetAdjacentTile(r.tile, dir);
     local stop_type = is_truck ? GSRoad.ROADVEHTYPE_TRUCK : GSRoad.ROADVEHTYPE_BUS;
     local ok = is_dt
-      ? GSRoad.BuildDriveThroughRoadStation(tile, front, stop_type, GSStation.STATION_NEW)
-      : GSRoad.BuildRoadStation(tile, front, stop_type, GSStation.STATION_NEW);
-    if (ok) return { success = true, result = { tile = [p.x, p.y], type = is_truck ? "truck" : "bus" } };
+      ? GSRoad.BuildDriveThroughRoadStation(r.tile, front, stop_type, GSStation.STATION_NEW)
+      : GSRoad.BuildRoadStation(r.tile, front, stop_type, GSStation.STATION_NEW);
+    if (ok) return { success = true, result = { tile = r.tile, x = r.x, y = r.y, type = is_truck ? "truck" : "bus" } };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -969,25 +1017,27 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     GSRoad.SetCurrentRoadType(road_type);
-    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
-    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
-    if (GSRoad.RemoveRoad(from_tile, to_tile)) {
-      return { success = true, result = { from = [p.from_x, p.from_y], to = [p.to_x, p.to_y] } };
+    local pair = this._ResolveTilePair(p);
+    if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
+    if (GSRoad.RemoveRoad(pair.from.tile, pair.to.tile)) {
+      return { success = true, result = { from_tile = pair.from.tile, to_tile = pair.to.tile } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdRemoveRoadDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
-    if (GSRoad.RemoveRoadDepot(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    if (GSRoad.RemoveRoadDepot(r.tile)) return { success = true, result = { tile = r.tile } };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdRemoveRoadStop(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
-    if (GSRoad.RemoveRoadStation(tile)) return { success = true, result = { tile = [p.x, p.y] } };
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    if (GSRoad.RemoveRoadStation(r.tile)) return { success = true, result = { tile = r.tile } };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -1518,8 +1568,16 @@ class NttdGS extends GSController {
   function CmdAddOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local flags = ("order_flags" in p) ? p.order_flags : 0;
-    local dest = GSStation.GetLocation(p.station_id);
-    if (!GSMap.IsValidTile(dest)) return { success = false, error = "Invalid station_id" };
+    // Accept station_id OR destination (tile ID of the station)
+    local dest = null;
+    if ("station_id" in p) {
+      dest = GSStation.GetLocation(p.station_id);
+    } else if ("dest_tile" in p) {
+      dest = p.dest_tile;
+    } else if ("destination" in p) {
+      dest = p.destination.tointeger();
+    }
+    if (dest == null || !GSMap.IsValidTile(dest)) return { success = false, error = "Need station_id or destination (tile)" };
     if (GSOrder.AppendOrder(p.vehicle_id, dest, flags)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
@@ -1529,8 +1587,15 @@ class NttdGS extends GSController {
   function CmdInsertOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local flags = ("order_flags" in p) ? p.order_flags : 0;
-    local dest = GSStation.GetLocation(p.station_id);
-    if (!GSMap.IsValidTile(dest)) return { success = false, error = "Invalid station_id" };
+    local dest = null;
+    if ("station_id" in p) {
+      dest = GSStation.GetLocation(p.station_id);
+    } else if ("dest_tile" in p) {
+      dest = p.dest_tile;
+    } else if ("destination" in p) {
+      dest = p.destination.tointeger();
+    }
+    if (dest == null || !GSMap.IsValidTile(dest)) return { success = false, error = "Need station_id or destination (tile)" };
     if (GSOrder.InsertOrder(p.vehicle_id, p.order_position, dest, flags)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
@@ -1599,6 +1664,48 @@ class NttdGS extends GSController {
   // ===========================================================================
   // UTILITY FUNCTIONS
   // ===========================================================================
+
+  // Resolve tile from params: accepts {tile: int} OR {x: int, y: int}.
+  // If "tile" is provided, derives x/y. If x/y provided, derives tile.
+  // Returns {tile, x, y} or null if invalid.
+  function _ResolveTile(p, prefix = "") {
+    local tk = prefix + "tile";
+    local xk = prefix + "x";
+    local yk = prefix + "y";
+    if (tk in p && p[tk] != null) {
+      local t = p[tk].tointeger();
+      if (!GSMap.IsValidTile(t)) return null;
+      return { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
+    }
+    if ((xk in p) && (yk in p)) {
+      local t = GSMap.GetTileIndex(p[xk].tointeger(), p[yk].tointeger());
+      if (!GSMap.IsValidTile(t)) return null;
+      return { tile = t, x = p[xk].tointeger(), y = p[yk].tointeger() };
+    }
+    return null;
+  }
+
+  // Resolve a pair of tiles for from/to style commands.
+  // Accepts {tile_from, tile_to} OR {from_x, from_y, to_x, to_y}.
+  function _ResolveTilePair(p) {
+    local from_r = this._ResolveTile(p, "from_");
+    if (from_r == null) {
+      // Try tile_from / tile_to format
+      if ("tile_from" in p) {
+        local t = p.tile_from.tointeger();
+        if (GSMap.IsValidTile(t)) from_r = { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
+      }
+    }
+    local to_r = this._ResolveTile(p, "to_");
+    if (to_r == null) {
+      if ("tile_to" in p) {
+        local t = p.tile_to.tointeger();
+        if (GSMap.IsValidTile(t)) to_r = { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
+      }
+    }
+    if (from_r == null || to_r == null) return null;
+    return { from = from_r, to = to_r };
+  }
 
   function _GetAdjacentTile(tile, direction) {
     switch (direction) {
@@ -2165,11 +2272,12 @@ class NttdGS extends GSController {
   }
 
   function _VehicleTypeEnum(type_str) {
+    // Accept both string names and integer IDs
     switch (type_str) {
-      case "train":    return GSVehicle.VT_RAIL;
-      case "road":     return GSVehicle.VT_ROAD;
-      case "ship":     return GSVehicle.VT_WATER;
-      case "aircraft": return GSVehicle.VT_AIR;
+      case "train":    case 0: return GSVehicle.VT_RAIL;
+      case "road":     case 1: return GSVehicle.VT_ROAD;
+      case "ship":     case 2: return GSVehicle.VT_WATER;
+      case "aircraft": case 3: return GSVehicle.VT_AIR;
     }
     return GSVehicle.VT_RAIL;
   }

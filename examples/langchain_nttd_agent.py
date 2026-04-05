@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """LangChain agent for nttd — observes game state, decides actions, executes via interpreter.
 
-The agent uses MCP observation tools to understand the game world and outputs
+The agent uses observation tools to query the game world and outputs
 a structured action list. The interpreter endpoint handles execution.
 
+Supports multiple LLM providers via LangChain:
+- OpenAI: gpt-4o, gpt-5.2, gpt-5.4
+- Anthropic: claude-sonnet-4-6, claude-haiku-4-5
+
 Usage:
+    # OpenAI (default)
     OPENAI_API_KEY=sk-... uv run python examples/langchain_nttd_agent.py \
-        --session-id ses_abc123 --company-id 0 --model gpt-4o
+        --session-id ses_abc123 --company-id 0 --model gpt-5.2 --tools
+
+    # Anthropic Claude
+    ANTHROPIC_API_KEY=sk-... uv run python examples/langchain_nttd_agent.py \
+        --session-id ses_abc123 --company-id 0 --model claude-sonnet-4-6-20250514 --tools
 
 Requirements:
     uv sync --extra agents
@@ -16,16 +25,39 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 
 import httpx
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 
 from examples.agent_instructions import get_bus_agent_prompt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("langchain_nttd")
+
+
+# ── LLM provider resolution ─────────────────────────────────────────
+
+def create_llm(model: str, temperature: float = 0.2):
+    """Create a LangChain chat model for the given model name.
+
+    Auto-detects the provider from the model name prefix:
+    - claude* → ChatAnthropic (ANTHROPIC_API_KEY)
+    - gpt* → ChatOpenAI (OPENAI_API_KEY)
+    """
+    if model.startswith("claude"):
+        from langchain_anthropic import ChatAnthropic
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY not set")
+        return ChatAnthropic(model=model, api_key=api_key, temperature=temperature)
+
+    from langchain_openai import ChatOpenAI
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY not set")
+    return ChatOpenAI(model=model, api_key=api_key, temperature=temperature)
 
 
 # ── Observation tools (LangChain @tool wrappers over nttd REST) ────────
@@ -66,6 +98,16 @@ def create_observation_tools(http: httpx.AsyncClient, session_url: str, company_
         return json.dumps(resp.json().get("result", []))
 
     @tool
+    async def get_stations() -> str:
+        """List your stations with id, name, tile, and cargo waiting."""
+        resp = await http.post(
+            f"{session_url}/state/gs/query",
+            params={"action": "get_stations"},
+            json={"company_id": company_id},
+        )
+        return json.dumps(resp.json().get("result", []))
+
+    @tool
     async def get_company_finance() -> str:
         """Get detailed financials: balance, loan, income, expenses."""
         resp = await http.post(
@@ -77,7 +119,7 @@ def create_observation_tools(http: httpx.AsyncClient, session_url: str, company_
 
     @tool
     async def find_bus_stop_spots(town_id: int, max_results: int = 5) -> str:
-        """Find road tiles near a town suitable for building bus stops."""
+        """Find road tiles near a town suitable for building bus stops. Returns tile IDs."""
         resp = await http.post(
             f"{session_url}/state/gs/query",
             params={"action": "find_bus_stop_spots"},
@@ -87,7 +129,7 @@ def create_observation_tools(http: httpx.AsyncClient, session_url: str, company_
 
     @tool
     async def find_depot_spots(town_id: int, max_results: int = 5) -> str:
-        """Find road tiles near a town suitable for building a road depot."""
+        """Find road tiles near a town suitable for building a road depot. Returns tile IDs."""
         resp = await http.post(
             f"{session_url}/state/gs/query",
             params={"action": "find_depot_spots"},
@@ -96,18 +138,19 @@ def create_observation_tools(http: httpx.AsyncClient, session_url: str, company_
         return json.dumps(resp.json().get("result", []))
 
     @tool
-    async def validate_actions(actions: list[dict]) -> str:
-        """Validate a proposed action list without executing. Returns valid/invalid per action."""
+    async def get_orders(vehicle_id: int) -> str:
+        """Get the order list for a vehicle."""
         resp = await http.post(
-            f"{session_url}/actions/interpret/validate",
-            json=actions,
+            f"{session_url}/state/gs/query",
+            params={"action": "get_orders"},
+            json={"vehicle_id": vehicle_id},
         )
-        return resp.text
+        return json.dumps(resp.json().get("result", []))
 
     return [
         get_state_compact, get_towns, get_engines, get_vehicles,
-        get_company_finance, find_bus_stop_spots, find_depot_spots,
-        validate_actions,
+        get_stations, get_company_finance, find_bus_stop_spots,
+        find_depot_spots, get_orders,
     ]
 
 
@@ -139,52 +182,47 @@ async def run_agent(
     session_url = f"{base_url}/sessions/{session_id}"
     system_prompt = get_bus_agent_prompt(company_id)
 
-    llm = ChatOpenAI(model=model, temperature=0.2)
+    llm = create_llm(model)
 
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
         # Register as agent
         await http.post(f"{session_url}/agents/connect", json={
             "agent_id": f"langchain_{model}", "name": f"LangChain {model}", "company_scope": [company_id],
         })
-        logger.info("Connected to session %s as company %d", session_id, company_id)
+        logger.info("Connected to session %s as company %d (model=%s)", session_id, company_id, model)
 
         observation_tools = create_observation_tools(http, session_url, company_id)
 
         if use_tools:
-            # Tool-calling mode: LLM can call observation tools, then output actions
             llm_with_tools = llm.bind_tools(observation_tools)
 
         cycle = 0
-        history: list[str] = []
 
         while True:
             # ── Observe ──
             resp = await http.get(f"{session_url}/state/compact", params={"company_id": company_id})
             compact = resp.json()
             compact_str = json.dumps(compact, indent=2)
-            history.append(compact_str)
-            if len(history) > 5:
-                history.pop(0)
 
-            logger.info("Cycle %d | date=%s | vehicles=%s",
+            logger.info("Cycle %d | date=%s | vehicles=%s | balance=%s",
                         cycle, compact.get("game_date", "?"),
-                        compact.get("vehicles", {}).get("total", 0))
+                        compact.get("vehicles", {}).get("total", 0),
+                        (compact.get("company") or {}).get("balance", "?"))
 
             # ── Decide (LLM call) ──
             user_message = (
                 f"Current game state:\n{compact_str}\n\n"
-                f"Cycle: {cycle}\n"
-                f"Recent income trend: {[(json.loads(h).get('company') or {}).get('income', 0) for h in history]}\n\n"
+                f"Cycle: {cycle}\n\n"
                 "Analyze the game state and decide what actions to take. "
                 "Use observation tools if you need more detail about specific towns, "
-                "engines, or tile locations. Then output your action list."
+                "engines, or tile locations. Then output your action list as a JSON array."
             )
 
             messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
 
             if use_tools:
-                # Multi-turn tool calling — LLM can query observations, then produce actions
-                for _ in range(5):  # max tool-calling rounds
+                # Multi-turn tool calling
+                for round_num in range(8):
                     response = await llm_with_tools.ainvoke(messages)
                     messages.append(response)
 
@@ -194,13 +232,12 @@ async def run_agent(
                     for tc in response.tool_calls:
                         tool_fn = next((t for t in observation_tools if t.name == tc["name"]), None)
                         if tool_fn:
+                            logger.info("  Tool call [round %d]: %s(%s)", round_num + 1, tc["name"], tc["args"])
                             result = await tool_fn.ainvoke(tc["args"])
-                            from langchain_core.messages import ToolMessage
                             messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
                 raw_output = response.content
             else:
-                # Simple mode — one LLM call with compact state
                 response = await llm.ainvoke(messages)
                 raw_output = response.content
 
@@ -224,7 +261,6 @@ def _parse_actions(raw: str) -> list[dict]:
     import re
     raw = raw.strip()
 
-    # Try direct parse
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, list):
@@ -232,7 +268,6 @@ def _parse_actions(raw: str) -> list[dict]:
     except json.JSONDecodeError:
         pass
 
-    # Try extracting from code block
     match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", raw)
     if match:
         try:
@@ -240,7 +275,6 @@ def _parse_actions(raw: str) -> list[dict]:
         except json.JSONDecodeError:
             pass
 
-    # Try finding any JSON array
     match = re.search(r"\[[\s\S]*\]", raw)
     if match:
         try:
@@ -257,9 +291,13 @@ if __name__ == "__main__":
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--company-id", type=int, default=0)
-    parser.add_argument("--model", default="gpt-4o")
-    parser.add_argument("--poll-interval", type=float, default=5.0)
-    parser.add_argument("--tools", action="store_true", help="Enable tool-calling mode (multi-turn)")
+    parser.add_argument("--model", default="gpt-4o",
+                        help="Model name (gpt-4o, gpt-5.2, gpt-5.4, claude-sonnet-4-6-20250514, etc.)")
+    parser.add_argument("--poll-interval", type=float, default=10.0)
+    parser.add_argument("--tools", action="store_true", default=True,
+                        help="Enable tool-calling mode (default: on)")
+    parser.add_argument("--no-tools", dest="tools", action="store_false",
+                        help="Disable tool-calling mode")
     args = parser.parse_args()
 
     asyncio.run(run_agent(

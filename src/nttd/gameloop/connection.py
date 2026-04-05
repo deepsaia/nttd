@@ -7,6 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from examples.agent_instructions import get_bus_agent_prompt
 from nttd.gameloop.adapters.base import BaseAdapter
 from nttd.gameloop.observation_tools import ObservationToolkit
 from nttd.gameloop.schemas import AgentConfig, ConnectionStatus
@@ -44,6 +45,11 @@ class AgentConnection:
         self.tracker = ConnectionTracker(connection_id, runtime.session_id)
         self._task: asyncio.Task[None] | None = None
         self._running: bool = False
+
+        # Default instructions when none provided
+        if not config.instructions:
+            config.instructions = get_bus_agent_prompt(config.company_id)
+            logger.info("Agent %s using default bus agent prompt", config.agent_id)
 
         # Build observation toolkit if tools are enabled
         self._toolkit: ObservationToolkit | None = None
@@ -234,7 +240,7 @@ class AgentConnection:
 
         company_vehicles = [
             v for v in world.vehicles.values()
-            if v.owner == company_id
+            if v.company_id == company_id
         ]
         vehicles_dict = {
             "total": len(company_vehicles),
@@ -243,7 +249,7 @@ class AgentConnection:
 
         company_stations = [
             s for s in world.stations.values()
-            if s.owner == company_id
+            if s.company_id == company_id
         ]
 
         top_towns = sorted(
@@ -275,9 +281,17 @@ class AgentConnection:
                     action.action_type, params,
                 )
                 if gs_result.get("success"):
+                    logger.info(
+                        "Agent %s action %s OK: %s",
+                        self.config.agent_id, action.action_type, gs_result.get("result", {}),
+                    )
                     results.append({"status": "success", "result": gs_result.get("result", {})})
                 else:
                     error = gs_result.get("error", "GS returned failure")
+                    logger.info(
+                        "Agent %s action %s FAILED: %s (params=%s)",
+                        self.config.agent_id, action.action_type, error, params,
+                    )
                     results.append({"status": "failed", "error": error})
             except Exception as exc:
                 logger.warning(

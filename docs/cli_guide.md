@@ -361,6 +361,137 @@ scenario {
 
 ---
 
+## Running with the REST API (current workflow)
+
+The CLI subcommands above wrap the nttd REST API. You can also drive the system entirely with `curl` or any HTTP client. This is the most direct way to operate nttd today.
+
+### Prerequisites
+
+```bash
+# Install dependencies
+uv sync --extra agents    # LangChain + OpenAI adapters
+
+# Set your LLM API key
+export OPENAI_API_KEY=sk-...
+# or for Anthropic models:
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Step-by-step: Run an AI agent on CLI
+
+```bash
+# 1. Start the nttd server (logs to logs/server.log)
+uv run uvicorn nttd.api.app:app --host 0.0.0.0 --port 8000 > logs/server.log 2>&1 &
+
+# 2. Verify it's running
+curl -s http://localhost:8000/health
+
+# 3. Create a session
+SESSION=$(curl -s -X POST http://localhost:8000/admin/sessions/new \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-run"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
+echo "Session: $SESSION"
+
+# 4. Start the session (spawns OpenTTD)
+#    agent_companies=1 creates company 0 for the agent to control
+curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/start" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_companies": 1}'
+
+# 5. Wait for OpenTTD to initialize (~5 seconds)
+sleep 5
+
+# 6. Set runtime mode and unpause
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/mode?mode=async_realtime"
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/unpause"
+
+# 7. Wait for world state to populate (~5 seconds)
+sleep 5
+
+# 8. Verify the world is populated
+curl -s "http://localhost:8000/sessions/$SESSION/state/compact?company_id=0" | python3 -m json.tool
+
+# 9. Register an AI agent with the gameloop
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "bus_builder",
+    "company_id": 0,
+    "framework": "langchain",
+    "model": "gpt-5.2",
+    "poll_interval": 15.0,
+    "observation_tools": true
+  }'
+
+# 10. Start the agent cycle loop
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/start"
+```
+
+### Monitoring the agent
+
+```bash
+# Agent status (cycle count, actions, timing)
+curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/status" | python3 -m json.tool
+
+# Recent cycle details
+curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/cycles" | python3 -m json.tool
+
+# All agents in the session
+curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents" | python3 -m json.tool
+
+# Live game state (company balance, vehicles, stations)
+curl -s "http://localhost:8000/sessions/$SESSION/state/compact?company_id=0" | python3 -m json.tool
+
+# Server logs (tool calls, action results, errors)
+tail -f logs/server.log
+```
+
+### Stopping
+
+```bash
+# Stop the agent
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/stop"
+
+# Stop the session (kills OpenTTD)
+curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/stop"
+
+# Stop the server
+kill $(lsof -ti :8000)
+```
+
+### Supported models
+
+The LangChain adapter auto-detects the provider from the model name:
+
+| Model prefix | Provider | Env var | Examples |
+|---|---|---|---|
+| `gpt` | OpenAI | `OPENAI_API_KEY` | `gpt-4o`, `gpt-5.2`, `gpt-5.4` |
+| `claude` | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6-20250514`, `claude-haiku-4-5-20251001` |
+
+### Example: standalone agent (no gameloop)
+
+You can also run agents as standalone scripts that call the nttd REST API directly:
+
+```bash
+# OpenAI model
+OPENAI_API_KEY=sk-... uv run python examples/langchain_nttd_agent.py \
+  --session-id $SESSION --company-id 0 --model gpt-5.2 --tools
+
+# Anthropic model
+ANTHROPIC_API_KEY=sk-ant-... uv run python examples/langchain_nttd_agent.py \
+  --session-id $SESSION --company-id 0 --model claude-sonnet-4-6-20250514 --tools
+```
+
+### Spectating
+
+While agents run, connect to the game in OpenTTD:
+1. Open OpenTTD
+2. Multiplayer → Add server → `127.0.0.1:4000`
+3. Join as spectator (company 255)
+4. Watch AI companies build infrastructure in real time
+
+---
+
 ## Typical Workflows
 
 ### Manual step-by-step (development / debugging)
@@ -405,6 +536,94 @@ Find the game port with:
 ```bash
 nttd session status <session_id>
 ```
+
+---
+
+## Running Tests
+
+### Unit tests
+
+```bash
+uv run pytest                   # Run all tests
+uv run pytest tests/ -v         # Verbose output
+uv run pytest tests/test_foo.py # Single file
+```
+
+### Linting
+
+```bash
+uv run ruff check src/ tests/   # Check for issues
+uv run ruff check --fix src/    # Auto-fix
+```
+
+### Integration test: full gameloop with an AI agent
+
+This test verifies the complete flow: session creation, world population, agent registration, LLM calling, tool execution, action parsing, and GS command execution.
+
+```bash
+# 1. Start the server
+uv run uvicorn nttd.api.app:app --host 0.0.0.0 --port 8000 > logs/server.log 2>&1 &
+sleep 3
+
+# 2. Create and start a session with one agent company
+SESSION=$(curl -s -X POST http://localhost:8000/admin/sessions/new \
+  -H "Content-Type: application/json" \
+  -d '{"name": "integration-test"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
+
+curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/start" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_companies": 1}'
+
+sleep 5
+
+# 3. Set mode and unpause
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/mode?mode=async_realtime"
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/unpause"
+sleep 5
+
+# 4. Verify world state (should show towns > 0, company with balance)
+curl -s "http://localhost:8000/sessions/$SESSION/state/compact?company_id=0" | python3 -c "
+import sys, json; d = json.load(sys.stdin)
+assert d['total_towns'] > 0, 'No towns!'
+assert d['company'] is not None, 'No company!'
+print(f'OK: {d[\"total_towns\"]} towns, balance={d[\"company\"][\"balance\"]}')
+"
+
+# 5. Register and start an agent
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/register" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"test","company_id":0,"framework":"langchain","model":"gpt-5.2","poll_interval":15}'
+
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/test/start"
+
+# 6. Wait for 2 cycles (~45 seconds with multi-turn tool calling)
+sleep 45
+
+# 7. Check results
+STATUS=$(curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents/test/status")
+echo "$STATUS" | python3 -c "
+import sys, json; d = json.load(sys.stdin)
+assert d['cycle_count'] >= 1, f'Expected >=1 cycles, got {d[\"cycle_count\"]}'
+assert d['status'] == 'running', f'Agent not running: {d[\"status\"]}'
+print(f'OK: {d[\"cycle_count\"]} cycles, {d[\"total_actions\"]} actions ({d[\"successful_actions\"]} ok, {d[\"failed_actions\"]} fail)')
+"
+
+# 8. Check server logs for tool calls and action execution
+grep -a 'tool call\|action.*OK\|action.*FAIL' logs/server.log | tail -10
+
+# 9. Cleanup
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/test/stop"
+curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/stop"
+kill $(lsof -ti :8000)
+echo "Test complete."
+```
+
+**What to verify:**
+- World state has towns and a company with balance
+- Agent cycles complete without `cycle_exception` errors
+- Tool calls appear in logs (find_bus_stop_spots, get_engines, etc.)
+- Some actions succeed (build_road_stop OK, build_road_depot OK)
+- Agent status shows `running` with cycle_count > 0
 
 ---
 

@@ -29,10 +29,34 @@ def parse_action_list(agent_output: str | list[dict[str, Any]]) -> list[AgentAct
     actions: list[AgentAction] = []
     for i, item in enumerate(raw_list):
         try:
-            actions.append(AgentAction.model_validate(item))
+            normalized = _normalize_action_fields(item)
+            actions.append(AgentAction.model_validate(normalized))
         except Exception as e:
             logger.warning("Skipping invalid action at index %d: %s — %s", i, item, e)
     return actions
+
+
+def _normalize_action_fields(item: dict[str, Any]) -> dict[str, Any]:
+    """Normalize common LLM field name variations to the canonical schema.
+
+    Handles aliases like 'action' → 'action_type' and 'params' → 'parameters'
+    so the parser is tolerant of minor format deviations across models.
+    """
+    normalized = dict(item)
+
+    # action → action_type
+    if "action_type" not in normalized and "action" in normalized:
+        normalized["action_type"] = normalized.pop("action")
+
+    # params → parameters
+    if "parameters" not in normalized and "params" in normalized:
+        normalized["parameters"] = normalized.pop("params")
+
+    # type → action_type (another common variation)
+    if "action_type" not in normalized and "type" in normalized:
+        normalized["action_type"] = normalized.pop("type")
+
+    return normalized
 
 
 def _extract_raw_list(agent_output: str | list[dict[str, Any]]) -> list[dict[str, Any]]:
