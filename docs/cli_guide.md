@@ -1,6 +1,6 @@
 # nttd CLI Guide
 
-The `nttd` CLI is the primary interface for running OpenTTD AI simulations. Everything — server management, session lifecycle, agent registration, and benchmarks — is driven from the command line using HOCON configuration files.
+The `nttd` CLI is the primary interface for running OpenTTD AI simulations. Everything (server management, session lifecycle, agent registration, and benchmarks) is driven from the command line using HOCON configuration files.
 
 ## Prerequisites
 
@@ -140,7 +140,7 @@ nttd session status <session_id>
 
 ### `nttd agent`
 
-Register and control AI agents within a running session. Each agent occupies one company (0-14) and runs an autonomous observe-decide-act cycle loop.
+Register and control AI agents within a running session. Each agent targets a company (0-14) and runs an autonomous observe-decide-act cycle loop. Multiple agents can share the same company.
 
 #### `nttd agent register`
 
@@ -166,16 +166,16 @@ nttd agent register \
 | `--company-id`, `-c`  | (required)    | OpenTTD company slot (0-14)                   |
 | `--framework`, `-f`   | `openai`      | LLM framework adapter                        |
 | `--model`, `-m`       | `gpt-4o`      | Model name passed to the adapter              |
-| `--instructions-file` | —             | Path to instructions (text or `file.py:func`) |
-| `--instructions`      | —             | Inline system prompt                          |
+| `--instructions-file` | (none)        | Path to instructions (text or `file.py:func`) |
+| `--instructions`      | (none)        | Inline system prompt                          |
 | `--poll-interval`     | `5.0`         | Seconds between cycles                        |
 | `--observation-mode`  | `compact`     | `compact` (own company) or `full` (everything)|
 
 **Frameworks:**
 
-- **`openai`** — Calls the OpenAI API via the `openai` Python SDK. Requires `OPENAI_API_KEY` env var.
-- **`langchain`** — Calls an LLM via LangChain's `ChatOpenAI`. Requires `langchain-openai` installed and `OPENAI_API_KEY`.
-- **`passthrough`** — No LLM. Returns empty actions each cycle. Useful for testing the gameloop without API costs.
+- **`openai`**: Calls the OpenAI API via the `openai` Python SDK. Requires `OPENAI_API_KEY` env var.
+- **`langchain`**: Calls an LLM via LangChain's `ChatOpenAI`. Requires `langchain-openai` installed and `OPENAI_API_KEY`.
+- **`passthrough`**: No LLM. Returns empty actions each cycle. Useful for testing the gameloop without API costs.
 
 **Instructions file formats:**
 
@@ -230,7 +230,7 @@ nttd benchmark \
 | `--config`, `-c`  | (required) | HOCON scenario config with agents     |
 | `--speed`         | from config| Override game speed multiplier         |
 | `--ai-opponents`  | from config| Override AI opponent count             |
-| `--output`, `-o`  | —          | Directory for JSON results export      |
+| `--output`, `-o`  | (none)     | Directory for JSON results export      |
 | `--url`           | auto       | nttd server URL                        |
 
 The benchmark command requires agents to be defined in the HOCON config (see below). Press `Ctrl+C` to stop early.
@@ -358,6 +358,7 @@ scenario {
 | `observation_tools`    | `true`         | Enable observation tool-calling          |
 | `max_actions_per_cycle`| `10`           | Safety limit on actions per cycle        |
 | `api_key_env`          | `"OPENAI_API_KEY"` | Environment variable for LLM API key |
+| `agent_type`           | `"bus"`            | Transport type: `bus`, `rail`, `air`, `water` |
 
 ---
 
@@ -419,6 +420,7 @@ curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/registe
     "company_id": 0,
     "framework": "langchain",
     "model": "gpt-5.2",
+    "agent_type": "bus",
     "poll_interval": 15.0,
     "observation_tools": true
   }'
@@ -649,9 +651,9 @@ The CLI commands are thin wrappers around the nttd REST API. You can also call t
 | POST   | `/sessions/{id}/gameloop/agents/{agent_id}/start`           | `nttd agent start`      |
 | POST   | `/sessions/{id}/gameloop/agents/{agent_id}/stop`            | `nttd agent stop`       |
 | GET    | `/sessions/{id}/gameloop/agents`                            | `nttd agent list`       |
-| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/status`          | —                       |
-| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/cycles?limit=50` | —                       |
-| GET    | `/sessions/{id}/gameloop/status`                            | —                       |
+| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/status`          | (none)                  |
+| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/cycles?limit=50` | (none)                  |
+| GET    | `/sessions/{id}/gameloop/status`                            | (none)                  |
 
 ### Observation & Control (for external agents)
 
@@ -676,8 +678,8 @@ Check `nttd session list`. The session must be in `active` status for agent oper
 **`Gameloop not initialized for this session`**
 The session needs to be started (`nttd session start`) before registering agents.
 
-**`Company N already has agent X`**
-Each company can have only one agent. Use a different `--company-id`.
+**`Agent X already registered for company N`**
+This agent_id is already registered on this company. Use a different `--agent-id`.
 
 **`Environment variable OPENAI_API_KEY not set`**
 Set your API key: `export OPENAI_API_KEY=sk-...` (required for `openai` and `langchain` frameworks, not for `passthrough`).
