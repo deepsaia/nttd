@@ -18,31 +18,31 @@ This article describes how we built the gameloop (the observe-decide-act cycle t
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Agent (any framework)             │
+│                    Agent (any framework)            │
 │         OpenAI / LangChain / Custom / RL            │
 └────────────────────┬────────────────────────────────┘
                      │ HTTP/JSON
 ┌────────────────────▼────────────────────────────────┐
-│                  nttd API Server                     │
+│                  nttd API Server                    │
 │  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
 │  │ Gameloop │  │ Observ-  │  │ Action Validator  │  │
 │  │ Manager  │  │ ation    │  │ + Executor        │  │
 │  │          │  │ Toolkit  │  │                   │  │
 │  └────┬─────┘  └────┬─────┘  └────────┬──────────┘  │
-│       │              │                 │             │
-│  ┌────▼──────────────▼─────────────────▼──────────┐  │
-│  │           AdminClient (async TCP)              │  │
-│  │        correlation IDs + chunked messages      │  │
-│  └────────────────────┬───────────────────────────┘  │
+│       │             │                 │             │
+│  ┌────▼─────────────▼─────────────────▼──────────┐  │
+│  │           AdminClient (async TCP)             │  │
+│  │        correlation IDs + chunked messages     │  │
+│  └────────────────────┬──────────────────────────┘  │
 └───────────────────────┼─────────────────────────────┘
                         │ Admin Port (TCP)
 ┌───────────────────────▼─────────────────────────────┐
-│              OpenTTD Dedicated Server                 │
-│  ┌─────────────────────────────────────────────────┐ │
-│  │          nttd GameScript (Squirrel)             │ │
-│  │   90+ commands: queries, builds, vehicles,      │ │
-│  │   orders, pathfinding, smart finders            │ │
-│  └─────────────────────────────────────────────────┘ │
+│              OpenTTD Dedicated Server               │
+│  ┌────────────────────────────────────────────────┐ │
+│  │          nttd GameScript (Squirrel)            │ │
+│  │   90+ commands: queries, builds, vehicles,     │ │
+│  │   orders, pathfinding, smart finders           │ │
+│  └────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────┘
 ```
 
