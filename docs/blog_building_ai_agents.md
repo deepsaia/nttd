@@ -8,7 +8,7 @@
 
 OpenTTD, the open-source reimplementation of Transport Tycoon Deluxe, is a real-time strategy game where players build transport networks connecting towns and industries. It requires long-horizon planning, resource management, spatial reasoning, and adaptation to a dynamic economy. These are exactly the capabilities we want to test in LLM-powered agents.
 
-**nttd** (Neural Transport Tycoon Driver) is an agent-agnostic API server that wraps OpenTTD as an AI simulation environment. Agents connect via HTTP, observe game state through structured JSON, and submit actions, all without touching OpenTTD internals. Any system that speaks JSON over HTTP can be an agent: LangChain, OpenAI function calling, AutoGen, a plain Python script, or an RL policy.
+**nttd** is an agent-agnostic API server that wraps OpenTTD as an AI simulation environment. Agents connect via HTTP, observe game state through structured JSON, and submit actions, all without touching OpenTTD internals. Any system that speaks JSON over HTTP can be an agent: LangChain, OpenAI function calling, AutoGen, a plain Python script, or an RL policy.
 
 This article describes how we built the gameloop (the observe-decide-act cycle that lets LLM agents play OpenTTD autonomously) and what happened when we ran three specialized transport agents (rail, air, water) simultaneously on the same company.
 
