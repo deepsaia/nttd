@@ -9,7 +9,7 @@
 **OpenTTD** (open-source Transport Tycoon Deluxe) is a real-time strategy game requiring long-horizon planning, resource management, spatial reasoning, and economic adaptation. **nttd** wraps OpenTTD as an AI simulation environment: agents connect via HTTP/JSON, observe game state, and submit actions without touching OpenTTD internals.
 
 <p align="center">
-  <img src="images/game_snapshot_medium.png" alt="OpenTTD game world: towns, industries, and terrain that agents must reason about" width="640">
+  <img src="images/game_snapshot_medium.png" alt="OpenTTD game world: towns, industries, and terrain that agents must reason about" width="800">
 </p>
 
 This report covers the architecture, the observe-decide-act gameloop, transport-specific agent design, and results from four test sessions: three single-agent baselines and one multi-agent cooperative session.
