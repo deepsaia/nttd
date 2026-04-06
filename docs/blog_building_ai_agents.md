@@ -101,7 +101,38 @@ Four transport-type-specific prompts encode domain expertise as strategy guides.
 
 ---
 
-## 6. Smart Finder Tools: GSTestMode Dry-Run Validation
+## 6. Decision Complexity Spectrum
+
+During a full gameplay session, agents face decisions ranging from simple single-command queries to multi-step strategic reasoning that spans dozens of actions and requires adapting to evolving game state. The table below illustrates this spectrum with representative examples across gameplay phases.
+
+| Complexity | Category | Example Decision | What Makes It Hard |
+|:----------:|----------|------------------|--------------------|
+| 5 | Observation | Check company balance, loan amount | Single query, no side effects |
+| 10 | Observation | List all towns sorted by population | Single query, interpret structured result |
+| 15 | Observation | Scout tile terrain around a target industry | Multiple `get_tile_info` calls, spatial reasoning |
+| 20 | Finance | Take out a loan / repay loan | One action, but must reason about cash flow timing |
+| 25 | Build (road) | Place a bus stop in a town | Use `find_bus_stop_spots`, pick from results, one build action |
+| 30 | Build (water) | Build a dock at a coastal town | Must understand coast tile orientation, use smart finder |
+| 35 | Build (air) | Build an airport near a large town | Requires flat rectangular area of correct size for airport type, town authority approval |
+| 40 | Route (road) | Connect two towns with a bus route | Build 2 stops + depot + road + buy vehicle + set 2 orders + start (~7 actions) |
+| 45 | Fleet | Buy a vehicle, assign orders, start it | Choose correct engine for cargo type, set order sequence correctly |
+| 50 | Route (water) | Connect two coastal towns with a ship route | Build 2 docks + water depot + buy ship + orders; depot must be on water tile (not coast), may need buoys for long distances |
+| 55 | Route (air) | Establish an air passenger service | Build 2 airports (flat land + town approval) + buy aircraft + orders; highest single-infrastructure cost |
+| 60 | Finance | Manage cash flow across concurrent builds | Multiple agents spending from shared balance; decide whether to take loan, delay a build, or scale back |
+| 65 | Build (rail) | Lay track between two points | Multiple `build_rail` segments on compatible terrain, handle elevation changes, bridge over obstacles |
+| 70 | Route (rail) | Full rail freight route: coal mine to power station | Depot + station + track segments + signals + station + buy train + attach wagons + orders + start (10-15 actions, sequentially dependent) |
+| 75 | Optimization | Refit vehicles for different cargo, adjust orders | Requires understanding current cargo flows, profitability per route, available cargo types at connected industries |
+| 80 | Network | Expand a rail network with junctions and shared track | Signal placement for safe multi-train operation, avoid deadlocks, plan junction geometry |
+| 85 | Strategy | Decide which new route to build next | Weigh industry output vs. distance vs. terrain difficulty vs. available capital vs. competition from other agents |
+| 90 | Maintenance | Diagnose and fix an unprofitable route | Identify why revenue is low (wrong cargo? too few vehicles? slow route?), decide whether to optimize, expand, or abandon |
+| 95 | Multi-agent | Coordinate infrastructure across transport modes | Rail agent builds station near port so water agent's cargo transfers; requires understanding of the other agent's network and cargo flows |
+| 100 | Long-horizon | Plan a 30-minute company growth strategy | Balance short-term revenue (buses) vs. long-term investment (rail network), manage loan lifecycle, respond to new industries appearing, adapt to town growth |
+
+**Reading the table**: Lower scores are decisions an agent can make reliably today. Mid-range scores (40-70) are where current agents operate, with success rates of 70-85%. Higher scores (75+) represent decisions that require capabilities beyond what the current 5-minute test sessions exercise: multi-turn financial reasoning, network-level spatial planning, and cross-agent strategic coordination.
+
+---
+
+## 7. Smart Finder Tools: GSTestMode Dry-Run Validation
 
 Early agent runs had high failure rates from selecting tiles that looked valid but failed OpenTTD's strict placement requirements. The solution: `GSTestMode()` dry-run validation.
 
@@ -120,7 +151,7 @@ After introducing smart finders, failure modes shifted from "invalid tile" error
 
 ---
 
-## 7. Experimental Setup
+## 8. Experimental Setup
 
 Four test sessions, all using GPT-5.2 on a 256x256 map with compact observation mode and ~100,000 starting capital.
 
@@ -135,9 +166,9 @@ Single-agent sessions establish per-transport baselines. The multi-agent session
 
 ---
 
-## 8. Results
+## 9. Results
 
-### 8.1 Performance Summary
+### 9.1 Performance Summary
 
 | Metric | Rail (solo) | Air (solo) | Water (solo) | Multi-Agent (Rail+Air+Water) |
 |--------|-------------|------------|--------------|------------------------------|
@@ -151,7 +182,7 @@ Single-agent sessions establish per-transport baselines. The multi-agent session
 
 *Multi-agent avg decide time weighted across rail (7,828ms), air (4,430ms), water (4,694ms).
 
-### 8.2 Key Findings
+### 9.2 Key Findings
 
 **Conservative agents performed better solo.** Rail (85.7%) and water (80.0%) both used observation-heavy strategies with 53-71% zero-action cycles. When they did act, accuracy was high. The air agent attempted the most actions per cycle (1.1) but achieved only 34.4%, primarily from ignoring validated `find_airport_spots` results in favor of self-selected tiles.
 
@@ -159,7 +190,7 @@ Single-agent sessions establish per-transport baselines. The multi-agent session
 
 **Decide time dominates (97-99% of cycle time).** GS execution is negligible (~100ms). Rail reasoning is slowest (7.8s multi-agent) due to complex multi-step planning. All agents showed occasional 20-24s spikes during extended tool-calling sequences.
 
-### 8.3 Success Rate Over Time
+### 9.3 Success Rate Over Time
 
 **Single-Agent:**
 
@@ -179,15 +210,15 @@ Single-agent sessions establish per-transport baselines. The multi-agent session
 
 Rail and water improved to 100% in late solo phases, suggesting learning from conversation history. Air degraded (33% to 22%), failing to adapt. In multi-agent mode, rail declined as it attempted increasingly complex operations; air started perfect then dropped; water peaked mid-session after early exploration.
 
-### 8.4 Multi-Agent Economics
+### 9.4 Multi-Agent Economics
 
 Starting balance ~100,000; end balance 47,383; company value ~55-67K. Agents invested heavily in infrastructure but had not reached profitability within 5 minutes (expected, as routes need time to generate revenue). Zero crashes or exceptions across all 114 cycles.
 
 ---
 
-## 9. Discussion
+## 10. Discussion
 
-### 9.1 What Worked Well
+### 10.1 What Worked Well
 
 - **Agent-agnostic design**: Swapping adapters (OpenAI, LangChain) required zero gameloop changes.
 - **Multi-turn tool calling**: 2-3 tool calls before acting improved success rates vs. single-shot prompting.
@@ -195,7 +226,7 @@ Starting balance ~100,000; end balance 47,383; company value ~55-67K. Agents inv
 - **Transport-specific prompts**: Domain expertise prevented agents from wasting cycles on impossible builds.
 - **Shared company operation**: Three agents, no explicit coordination, no conflicts. GS serialization handled concurrency.
 
-### 9.2 Known Limitations
+### 10.2 Known Limitations
 
 - **Rail complexity** (#1): 10+ action sequences cause the Agent to lose track mid-build.
 - **Tile confusion** (#2): Agent occasionally uses coordinates from the wrong tool result.
@@ -205,7 +236,7 @@ Starting balance ~100,000; end balance 47,383; company value ~55-67K. Agents inv
 
 ---
 
-## 10. Future Directions
+## 11. Future Directions
 
 - **Inter-agent communication**: Shared message bus for explicit coordination.
 - **Profitability-driven cycles**: Revenue/profit data in observations to shift from "build" to "optimize."
@@ -216,7 +247,7 @@ Starting balance ~100,000; end balance 47,383; company value ~55-67K. Agents inv
 
 ---
 
-## 11. Reproducibility
+## 12. Reproducibility
 
 ```bash
 # Start nttd API server
@@ -252,7 +283,7 @@ FROM agent_connections WHERE session_id = 'SESSION_ID';
 
 ---
 
-## 12. Conclusion
+## 13. Conclusion
 
 nttd demonstrates that OpenTTD serves as a rich evaluation environment for LLM-powered agents. The most notable finding: agents became 2-3x more active in multi-agent mode, with "analysis paralysis" cycles dropping from 43-71% to 22%. Whether this stems from implicit competitive pressure or from adapter/prompt improvements between sessions is a question for controlled follow-up experiments.
 
