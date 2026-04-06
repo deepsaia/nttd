@@ -8,6 +8,10 @@
 
 **OpenTTD** (open-source Transport Tycoon Deluxe) is a real-time strategy game requiring long-horizon planning, resource management, spatial reasoning, and economic adaptation. **nttd** wraps OpenTTD as an AI simulation environment: agents connect via HTTP/JSON, observe game state, and submit actions without touching OpenTTD internals.
 
+<p align="center">
+  <img src="images/game_snapshot_medium.png" alt="OpenTTD game world: towns, industries, and terrain that agents must reason about" width="640">
+</p>
+
 This report covers the architecture, the observe-decide-act gameloop, transport-specific agent design, and results from four test sessions: three single-agent baselines and one multi-agent cooperative session.
 
 ---
@@ -26,35 +30,9 @@ This report covers the architecture, the observe-decide-act gameloop, transport-
 
 ## 3. Architecture
 
-```
-+-----------------------------------------------------+
-|               Agent (any framework)                 |
-|         OpenAI / LangChain / Custom                 |
-+--------------------+--------------------------------+
-                     | HTTP/JSON
-+--------------------v--------------------------------+
-|                  nttd API Server                    |
-|  +----------+  +----------+  +-------------------+  |
-|  | Gameloop |  | Observ-  |  | Action Validator  |  |
-|  | Manager  |  | ation    |  | + Executor        |  |
-|  |          |  | Toolkit  |  |                   |  |
-|  +----+-----+  +----+-----+  +--------+----------+  |
-|       |             |                 |             |
-|  +----v-------------v-----------------v----------+  |
-|  |           AdminClient (async TCP)             |  |
-|  |        correlation IDs + chunked messages     |  |
-|  +--------------------+--------------------------+  |
-+-----------------------|-----------------------------+
-                        | Admin Port (TCP)
-+-----------------------v-----------------------------+
-|              OpenTTD Dedicated Server               |
-|  +------------------------------------------------+ |
-|  |          nttd GameScript (Squirrel)            | |
-|  |   90+ commands: queries, builds, vehicles,     | |
-|  |   orders, pathfinding, smart finders           | |
-|  +------------------------------------------------+ |
-+-----------------------------------------------------+
-```
+<p align="center">
+  <img src="images/architecture_overview.svg" alt="nttd architecture: Agent layer, API server, AdminClient, OpenTTD GameScript" width="700">
+</p>
 
 **Key decisions**: OpenTTD is the source of truth (no cached state). Agents are external clients conforming to published JSON schemas. GameScript handles 90+ commands including GSTestMode dry-run validation. One admin connection per session, multiplexed via correlation IDs. Each session spawns its own OpenTTD server process.
 
@@ -62,24 +40,9 @@ This report covers the architecture, the observe-decide-act gameloop, transport-
 
 ## 4. The Observe-Decide-Act Cycle
 
-```
-+----------+     +----------+     +----------+     +----------+
-| OBSERVE  |---->|  DECIDE  |---->|   ACT    |---->|  TRACK   |
-|          |     | Agent:   |     |          |     |          |
-| Compact  |     | LLM call |     | Validate |     | Record   |
-| game     |     | with     |     | + execute|     | cycle    |
-| state    |     | tools    |     | via GS   |     | metrics  |
-+----------+     +----------+     +----------+     +----------+
-                      | ^
-                      | |  Multi-turn tool calling
-                      v |  (observe tools during decide)
-                 +----------+
-                 |  TOOLS   |
-                 | get_towns|
-                 | find_*   |
-                 | get_*    |
-                 +----------+
-```
+<p align="center">
+  <img src="images/gameloop_cycle.svg" alt="Observe-Decide-Act cycle with multi-turn tool calling loop" width="600">
+</p>
 
 1. **Observe**: Compact JSON snapshot scoped to the agent's company (~1ms GS round-trip).
 2. **Decide**: Multi-turn tool calling. The Agent queries 31 observation tools until it commits to a final action list. Example: `get_industries` -> `find_flat_spots` -> `get_engines` -> submit build actions.
@@ -98,6 +61,10 @@ Four transport-type-specific prompts encode domain expertise as strategy guides.
 | **Rail** | Connect industries via trains (coal to power, farm to factory) | Most complex: 10+ action sequence, contiguous track, signals required |
 | **Air** | Build airports in largest towns, run aircraft | Simplest build (2 airports + 1 vehicle), highest capital cost |
 | **Water** | Connect coastal towns via ships | Moderate complexity, dock needs specific coast orientation, ships are slow |
+
+<p align="center">
+  <img src="images/transport_modes.svg" alt="Transport specialist agents: Bus, Rail, Air, Water with action sequences and characteristics" width="700">
+</p>
 
 ---
 
