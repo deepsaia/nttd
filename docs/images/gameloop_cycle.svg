@@ -35,7 +35,7 @@
   <!-- TRACK box below -->
   <rect x="230" y="180" width="140" height="60" rx="12" fill="#f3e5f5" stroke="#7B1FA2" stroke-width="2"/>
   <text x="300" y="210" text-anchor="middle" font-size="13" font-weight="bold" fill="#6A1B9A">TRACK</text>
-  <text x="300" y="228" text-anchor="middle" font-size="10" fill="#555">Metrics + DB</text>
+  <text x="300" y="228" text-anchor="middle" font-size="10" fill="#555">Metrics + Parquet</text>
 
   <!-- Arrow from ACT to TRACK -->
   <path d="M 490 140 Q 490 210 372 210" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>

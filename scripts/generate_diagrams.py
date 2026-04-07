@@ -125,7 +125,7 @@ def generate_gameloop_cycle() -> None:
   <!-- TRACK box below -->
   <rect x="230" y="180" width="140" height="60" rx="12" fill="#f3e5f5" stroke="#7B1FA2" stroke-width="2"/>
   <text x="300" y="210" text-anchor="middle" font-size="13" font-weight="bold" fill="#6A1B9A">TRACK</text>
-  <text x="300" y="228" text-anchor="middle" font-size="10" fill="#555">Metrics + DB</text>
+  <text x="300" y="228" text-anchor="middle" font-size="10" fill="#555">Metrics + Parquet</text>
 
   <!-- Arrow from ACT to TRACK -->
   <path d="M 490 140 Q 490 210 372 210" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
@@ -154,9 +154,9 @@ def generate_transport_modes() -> None:
   <rect width="700" height="380" rx="8" fill="#f8f9fa"/>
   <text x="350" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a1a2e">Transport Specialist Agents</text>
 
-  <!-- Bus -->
+  <!-- Road -->
   <rect x="20" y="50" width="155" height="310" rx="8" fill="#e3f2fd" stroke="#1976D2" stroke-width="1.5"/>
-  <text x="97" y="78" text-anchor="middle" font-size="14" font-weight="bold" fill="#1565C0">Bus</text>
+  <text x="97" y="78" text-anchor="middle" font-size="14" font-weight="bold" fill="#1565C0">Road</text>
   <text x="97" y="100" text-anchor="middle" font-size="10" fill="#555">Connect towns</text>
   <text x="97" y="115" text-anchor="middle" font-size="10" fill="#555">via road vehicles</text>
   <line x1="35" y1="125" x2="160" y2="125" stroke="#90CAF9"/>
@@ -171,7 +171,7 @@ def generate_transport_modes() -> None:
   <line x1="35" y1="265" x2="160" y2="265" stroke="#90CAF9"/>
   <text x="97" y="285" text-anchor="middle" font-size="10" fill="#1976D2">Low capital</text>
   <text x="97" y="300" text-anchor="middle" font-size="10" fill="#1976D2">Forgiving terrain</text>
-  <text x="97" y="315" text-anchor="middle" font-size="10" fill="#1976D2">~4s cycle time</text>
+  <text x="97" y="315" text-anchor="middle" font-size="10" fill="#1976D2">~4-6s cycle time</text>
 
   <!-- Rail -->
   <rect x="190" y="50" width="155" height="310" rx="8" fill="#fff3e0" stroke="#F57C00" stroke-width="1.5"/>
@@ -190,7 +190,7 @@ def generate_transport_modes() -> None:
   <line x1="205" y1="265" x2="330" y2="265" stroke="#FFCC80"/>
   <text x="267" y="285" text-anchor="middle" font-size="10" fill="#E65100">Complex build</text>
   <text x="267" y="300" text-anchor="middle" font-size="10" fill="#E65100">Needs flat land</text>
-  <text x="267" y="315" text-anchor="middle" font-size="10" fill="#E65100">~8s cycle time</text>
+  <text x="267" y="315" text-anchor="middle" font-size="10" fill="#E65100">~6-11s cycle time</text>
 
   <!-- Air -->
   <rect x="360" y="50" width="155" height="310" rx="8" fill="#e8f5e9" stroke="#388E3C" stroke-width="1.5"/>
@@ -209,7 +209,7 @@ def generate_transport_modes() -> None:
   <line x1="375" y1="265" x2="500" y2="265" stroke="#A5D6A7"/>
   <text x="437" y="285" text-anchor="middle" font-size="10" fill="#2E7D32">High capital</text>
   <text x="437" y="300" text-anchor="middle" font-size="10" fill="#2E7D32">Fast setup</text>
-  <text x="437" y="315" text-anchor="middle" font-size="10" fill="#2E7D32">~4.5s cycle time</text>
+  <text x="437" y="315" text-anchor="middle" font-size="10" fill="#2E7D32">~4-6s cycle time</text>
 
   <!-- Water -->
   <rect x="530" y="50" width="155" height="310" rx="8" fill="#e0f7fa" stroke="#00838F" stroke-width="1.5"/>
@@ -228,7 +228,7 @@ def generate_transport_modes() -> None:
   <line x1="545" y1="265" x2="670" y2="265" stroke="#80DEEA"/>
   <text x="607" y="285" text-anchor="middle" font-size="10" fill="#006064">Map dependent</text>
   <text x="607" y="300" text-anchor="middle" font-size="10" fill="#006064">Highest success%</text>
-  <text x="607" y="315" text-anchor="middle" font-size="10" fill="#006064">~4.8s cycle time</text>
+  <text x="607" y="315" text-anchor="middle" font-size="10" fill="#006064">~3-4s cycle time</text>
 </svg>"""
     _write_svg("transport_modes.svg", svg)
 
