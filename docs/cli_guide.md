@@ -1,12 +1,69 @@
 # nttd CLI Guide
 
-The `nttd` CLI is the primary interface for running OpenTTD AI simulations. Everything (server management, session lifecycle, agent registration, and benchmarks) is driven from the command line using HOCON configuration files.
+The `nttd` CLI is the primary interface for running OpenTTD AI simulations. Everything -- server management, session lifecycle, agent registration, and benchmarks -- is driven from the command line using HOCON configuration files.
+
+---
+
+## Installing OpenTTD
+
+nttd requires OpenTTD 14.x or 15.x installed on your system.
+
+### macOS
+
+```bash
+# Homebrew
+brew install openttd
+
+# Or download the .dmg from https://www.openttd.org/downloads/openttd-releases/latest
+# After installing, the binary is at:
+#   /Applications/OpenTTD.app/Contents/MacOS/openttd
+```
+
+### Linux
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install openttd
+
+# Fedora
+sudo dnf install openttd
+
+# Arch
+sudo pacman -S openttd
+
+# Or download from https://www.openttd.org/downloads/openttd-releases/latest
+```
+
+### Windows
+
+1. Download the installer from https://www.openttd.org/downloads/openttd-releases/latest
+2. Run the installer and note the install path (default: `C:\Program Files\OpenTTD`)
+3. Set the environment variable:
+   ```powershell
+   $env:NTTD_OPENTTD_BINARY = "C:\Program Files\OpenTTD\openttd.exe"
+   ```
+
+OpenTTD downloads base graphics (OpenGFX) automatically on first launch. If running headless on a server, launch OpenTTD once manually to trigger this download.
+
+---
 
 ## Prerequisites
 
-- OpenTTD installed (macOS: `/Applications/OpenTTD.app`, or set `NTTD_OPENTTD_BINARY`)
-- Python 3.11+ with nttd installed (`uv sync`)
-- The `ottd_config/` base configuration directory (ships with nttd)
+- OpenTTD installed (see above)
+- Python 3.11+ with nttd installed:
+  ```bash
+  uv sync              # core dependencies
+  uv sync --extra agents  # adds LangChain + OpenAI adapters for AI agents
+  ```
+- The `ottd_config/` base configuration directory (ships with this repo)
+- An LLM API key if running AI agents:
+  ```bash
+  export OPENAI_API_KEY=sk-...
+  # or for Anthropic models:
+  export ANTHROPIC_API_KEY=sk-ant-...
+  ```
+
+---
 
 ## Quick Start
 
@@ -16,26 +73,26 @@ nttd server
 
 # 2. Create a session from config
 nttd session create --config config/scenario.conf
+# Returns: ses_abc123def456
 
-# 3. Start the session (spawns OpenTTD)
-nttd session start ses_abc123
+# 3. Start the session (spawns OpenTTD, auto-starts orchestrator)
+nttd session start ses_abc123def456 --agent-companies 1
 
 # 4. Register an agent
 nttd agent register \
-  --session ses_abc123 \
-  --agent-id my_agent \
+  --session ses_abc123def456 \
+  --agent-id road_builder \
   --company-id 0 \
-  --framework openai \
+  --framework langchain \
   --model gpt-4o \
-  --instructions-file prompts/bus.txt
+  --instructions-file examples/agent_instructions.py:get_road_agent_prompt
 
 # 5. Start the agent's cycle loop
-nttd agent start --session ses_abc123 --agent-id my_agent
+nttd agent start --session ses_abc123def456 --agent-id road_builder
 
 # 6. Watch it run, then stop when done
-nttd agent list --session ses_abc123
-nttd session status ses_abc123
-nttd session stop ses_abc123
+nttd session status ses_abc123def456
+nttd session stop ses_abc123def456
 ```
 
 Or run everything at once with `nttd benchmark`:
@@ -67,14 +124,13 @@ The server must be running before using any `session`, `agent`, or `benchmark` c
 
 **Environment variables:**
 
-| Variable              | Default                                          | Description                |
-|-----------------------|--------------------------------------------------|----------------------------|
-| `NTTD_DB_PATH`        | `nttd.db`                                        | SQLite database path       |
-| `NTTD_ADMIN_PASSWORD` | `nttd`                                           | OpenTTD admin port password|
-| `NTTD_OPENTTD_BINARY` | `/Applications/OpenTTD.app/Contents/MacOS/openttd` | Path to OpenTTD binary   |
-| `NTTD_BASE_CONFIG`    | `ottd_config`                                    | Base config directory      |
-| `NTTD_SESSIONS_DIR`   | `runs`                                           | Session data directory     |
-| `NTTD_PORT_RANGE_START` | `4000`                                         | First port for sessions    |
+| Variable                 | Default                                            | Description                 |
+|--------------------------|----------------------------------------------------|-----------------------------|
+| `NTTD_ADMIN_PASSWORD`    | `nttd`                                             | OpenTTD admin port password |
+| `NTTD_OPENTTD_BINARY`    | `/Applications/OpenTTD.app/Contents/MacOS/openttd` | Path to OpenTTD binary      |
+| `NTTD_BASE_CONFIG`       | `ottd_config`                                      | Base config directory       |
+| `NTTD_SESSIONS_DIR`      | `logs/sessions`                                    | Session data directory      |
+| `NTTD_PORT_RANGE_START`  | `4000`                                             | First port for sessions     |
 
 ---
 
@@ -84,37 +140,32 @@ Manage session lifecycle. Each session owns one OpenTTD server process.
 
 #### `nttd session create`
 
-Create a new session from a HOCON config file. This stores settings and end conditions in the database but does not start OpenTTD yet.
+Create a new session from a HOCON config file. Stores settings but does not start OpenTTD yet.
 
 ```bash
 nttd session create --config config/scenario.conf [--name "my_run"]
 ```
 
-| Option     | Description                           |
-|------------|---------------------------------------|
-| `--config` | Path to HOCON scenario config file    |
-| `--name`   | Optional session name (default: from config) |
-| `--url`    | Override nttd server URL              |
-
 Returns a session ID like `ses_abc123def456` used in all subsequent commands.
 
 #### `nttd session start`
 
-Spawn an OpenTTD server for the session, apply map/company settings, and start the game.
+Spawn an OpenTTD server for the session. Allocates ports, applies map/company settings, starts the game, and auto-starts the orchestrator (snapshot capture, screenshots, saves, end condition monitoring).
 
 ```bash
-nttd session start <session_id> [--ai-opponents N]
+nttd session start <session_id> [--agent-companies N] [--ai-opponents N]
 ```
 
-| Option            | Description                                |
-|-------------------|--------------------------------------------|
-| `--ai-opponents`  | Override number of built-in AI opponents    |
+| Option              | Description                                          |
+|---------------------|------------------------------------------------------|
+| `--agent-companies` | Number of idle company slots for nttd agents (0-14)  |
+| `--ai-opponents`    | Number of built-in OpenTTD AI opponents              |
 
-After starting, you can connect to the game as a spectator at `127.0.0.1:<game_port>`.
+Use `--agent-companies` to pre-create company slots that your agents will control. After starting, you can connect to the game as a spectator at `127.0.0.1:<game_port>`.
 
 #### `nttd session stop`
 
-Stop the OpenTTD server and archive the session.
+Stop the OpenTTD server and finalize session data (merges Parquet fragments, updates session.conf).
 
 ```bash
 nttd session stop <session_id>
@@ -130,7 +181,7 @@ nttd session list
 
 #### `nttd session status`
 
-Show detailed information about a session, including live game state if running.
+Show detailed information about a session, including game port and live state if running.
 
 ```bash
 nttd session status <session_id>
@@ -140,7 +191,7 @@ nttd session status <session_id>
 
 ### `nttd agent`
 
-Register and control AI agents within a running session. Each agent targets a company (0-14) and runs an autonomous observe-decide-act cycle loop. Multiple agents can share the same company.
+Register and control AI agents within a running session. Each agent targets a company (0-14) and runs an autonomous observe-decide-act cycle loop.
 
 #### `nttd agent register`
 
@@ -153,8 +204,8 @@ nttd agent register \
   --company-id <0-14> \
   [--framework openai|langchain|passthrough] \
   [--model gpt-4o] \
-  [--instructions-file prompts/my_agent.txt] \
-  [--instructions "You are a bus transport specialist..."] \
+  [--instructions-file prompts/road.txt] \
+  [--instructions "You are a road transport specialist..."] \
   [--poll-interval 5.0] \
   [--observation-mode compact|full]
 ```
@@ -164,32 +215,32 @@ nttd agent register \
 | `--session`, `-s`     | (required)    | Session ID                                    |
 | `--agent-id`, `-a`    | (required)    | Unique identifier for this agent              |
 | `--company-id`, `-c`  | (required)    | OpenTTD company slot (0-14)                   |
-| `--framework`, `-f`   | `openai`      | LLM framework adapter                        |
+| `--framework`, `-f`   | `openai`      | LLM framework adapter                         |
 | `--model`, `-m`       | `gpt-4o`      | Model name passed to the adapter              |
 | `--instructions-file` | (none)        | Path to instructions (text or `file.py:func`) |
-| `--instructions`      | (none)        | Inline system prompt                          |
-| `--poll-interval`     | `5.0`         | Seconds between cycles                        |
-| `--observation-mode`  | `compact`     | `compact` (own company) or `full` (everything)|
+| `--instructions`      | (none)        | Inline system prompt                           |
+| `--poll-interval`     | `5.0`         | Seconds between cycles                         |
+| `--observation-mode`  | `compact`     | `compact` (own company) or `full` (everything) |
 
 **Frameworks:**
 
-- **`openai`**: Calls the OpenAI API via the `openai` Python SDK. Requires `OPENAI_API_KEY` env var.
-- **`langchain`**: Calls an LLM via LangChain's `ChatOpenAI`. Requires `langchain-openai` installed and `OPENAI_API_KEY`.
-- **`passthrough`**: No LLM. Returns empty actions each cycle. Useful for testing the gameloop without API costs.
+- **`openai`**: Calls the OpenAI API via the `openai` Python SDK. Requires `OPENAI_API_KEY`.
+- **`langchain`**: Calls an LLM via LangChain. Auto-detects provider from model name. Requires `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
+- **`passthrough`**: No LLM. Returns empty actions each cycle. Useful for testing without API costs.
 
 **Instructions file formats:**
 
 ```bash
 # Plain text file
---instructions-file prompts/bus_builder.txt
+--instructions-file prompts/road_builder.txt
 
 # Python function that returns the prompt string
---instructions-file examples/agent_instructions.py:get_bus_agent_prompt
+--instructions-file examples/agent_instructions.py:get_road_agent_prompt
 ```
 
 #### `nttd agent start`
 
-Start the agent's cycle loop. The gameloop will begin calling the LLM and executing actions.
+Start the agent's cycle loop.
 
 ```bash
 nttd agent start --session <session_id> --agent-id <name>
@@ -231,75 +282,65 @@ nttd benchmark \
 | `--speed`         | from config| Override game speed multiplier         |
 | `--ai-opponents`  | from config| Override AI opponent count             |
 | `--output`, `-o`  | (none)     | Directory for JSON results export      |
-| `--url`           | auto       | nttd server URL                        |
 
 The benchmark command requires agents to be defined in the HOCON config (see below). Press `Ctrl+C` to stop early.
 
 ---
 
-### `nttd logs`
-
-Read or tail JSONL event logs from the `runs/` directory.
-
-```bash
-nttd logs [--run <path>] [--follow] [--last 40] [--log-dir runs]
-```
-
-| Option      | Default | Description                          |
-|-------------|---------|--------------------------------------|
-| `--run`     | latest  | Path to a specific JSONL log file    |
-| `--follow`  | off     | Tail mode (like `tail -f`)           |
-| `--last`    | `40`    | Number of recent lines to show       |
-| `--log-dir` | `runs`  | Directory containing log files       |
-
-### `nttd tensorboard`
-
-Launch TensorBoard pointing at the runs directory.
-
-```bash
-nttd tensorboard [--log-dir runs] [--port 6006]
-```
-
----
-
 ## HOCON Configuration
 
-All session configuration lives in a single HOCON file (typically `config/scenario.conf`). The file controls map generation, company setup, end conditions, runtime settings, and agent definitions.
+All session configuration lives in a single HOCON file (typically `config/scenario.conf`). The file controls map generation, company setup, runtime settings, end conditions, and agent definitions.
 
-### Full Example
+### Example
 
 ```hocon
 scenario {
-
-  name        = "bus_benchmark"
-  description = "Two AI agents competing on bus routes"
+  name        = "road_benchmark"
+  description = "Two AI agents competing on transport routes"
 
   map {
     size_x         = 256
     size_y         = 256
-    landscape      = "temperate"   # temperate | arctic | tropic | toyland
-    terrain_type   = 1             # 0=flat, 1=hilly, 2=mountainous
+    landscape      = "temperate"    # temperate | sub-arctic | sub-tropical | toyland
+    terrain_type   = "hilly"        # flat | hilly | mountainous | alpinist | custom
+    variety        = "none"         # none | very_low | low | medium | high | very_high
+    smoothness     = "smooth"       # very_smooth | smooth | rough | very_rough
+    rivers         = "medium"       # none | few | medium | many
+    sea_level      = "medium"       # very_low | low | medium | high | custom
+    map_edges      = "random"       # random | manual | all_water
     starting_year  = 1950
-    number_towns   = 2             # 0=very_low .. 4=very_high
-    industry_density = 4           # 0=none .. 5=very_high
+    town_names     = "english"
+    number_towns   = "normal"       # very_low | low | normal | high | custom
+    industry_density = "normal"     # funding_only | minimal | very_low | low | normal | high | custom
   }
 
   companies {
-    num_ai_companies = 0           # built-in OpenTTD AIs (not nttd agents)
-    max_loan         = 300000
+    num_ai_companies = 0            # built-in OpenTTD AIs (not nttd agents)
+    competitors_interval = 0        # minutes between AI starts (0 = immediate)
+    max_loan = 300000
   }
 
   runtime {
-    mode       = "async_realtime"  # async_realtime | heartbeat
-    game_speed = 3                 # 1=normal, 3=fast, 128=turbo
+    mode       = "async_realtime"   # async_realtime | heartbeat
+    game_speed = 3                  # 1=normal, 3=fast, 128=turbo
+
+    # Game-days between Parquet snapshot captures (1 = every in-game day)
+    snapshot_interval_days = 1
+
+    # Periodic minimap screenshot capture (works in headless mode)
+    screenshot_interval_seconds = 60   # 0 = disabled
+    screenshot_type = "minimap"        # normal | giant | minimap
+
+    # Periodic .sav game save
+    save_interval_seconds = 300        # 0 = disabled
   }
 
   end_conditions {
-    logic = "any"                  # any | all
+    logic = "any"                   # any | all
 
     time_limit {
       enabled      = true
-      wall_minutes = 30            # real-world minutes
+      wall_minutes = 30             # real-world minutes
     }
     game_date_limit {
       enabled  = false
@@ -322,22 +363,24 @@ scenario {
   # Agents are registered and started automatically by `nttd benchmark`
   agents = [
     {
-      agent_id          = "bus_builder"
+      agent_id          = "road_builder"
       company_id        = 0
-      framework         = "openai"
+      framework         = "langchain"
       model             = "gpt-4o"
-      instructions_file = "examples/agent_instructions.py:get_bus_agent_prompt"
+      agent_type        = "road"
+      instructions_file = "examples/agent_instructions.py:get_road_agent_prompt"
       observation_mode  = "compact"
-      poll_interval     = 5.0
+      poll_interval     = 10.0
     },
     {
       agent_id          = "rail_planner"
       company_id        = 1
       framework         = "langchain"
       model             = "gpt-4o-mini"
+      agent_type        = "rail"
       instructions      = "You are a rail transport specialist..."
       observation_mode  = "compact"
-      poll_interval     = 8.0
+      poll_interval     = 15.0
     }
   ]
 }
@@ -345,325 +388,168 @@ scenario {
 
 ### Agent Config Fields
 
-| Field                  | Default        | Description                              |
-|------------------------|----------------|------------------------------------------|
-| `agent_id`             | (required)     | Unique identifier within the session     |
-| `company_id`           | (required)     | OpenTTD company slot (0-14)              |
-| `framework`            | `"openai"`     | `openai`, `langchain`, or `passthrough`  |
-| `model`                | `"gpt-4o"`     | Model name for the LLM adapter           |
-| `instructions`         | `""`           | Inline system prompt                     |
-| `instructions_file`    | `""`           | Path to prompt file or `file.py:func`    |
-| `observation_mode`     | `"compact"`    | `compact` (own company) or `full`        |
-| `poll_interval`        | `5.0`          | Seconds between agent cycles             |
-| `observation_tools`    | `true`         | Enable observation tool-calling          |
-| `max_actions_per_cycle`| `10`           | Safety limit on actions per cycle        |
-| `api_key_env`          | `"OPENAI_API_KEY"` | Environment variable for LLM API key |
-| `agent_type`           | `"bus"`            | Transport type: `bus`, `rail`, `air`, `water` |
+| Field                   | Default            | Description                              |
+|-------------------------|--------------------|------------------------------------------|
+| `agent_id`              | (required)         | Unique identifier within the session     |
+| `company_id`            | (required)         | OpenTTD company slot (0-14)              |
+| `framework`             | `"openai"`         | `openai`, `langchain`, or `passthrough`  |
+| `model`                 | `"gpt-4o"`         | Model name for the LLM adapter           |
+| `instructions`          | `""`               | Inline system prompt                     |
+| `instructions_file`     | `""`               | Path to prompt file or `file.py:func`    |
+| `observation_mode`      | `"compact"`        | `compact` (own company) or `full`        |
+| `poll_interval`         | `5.0`              | Seconds between agent cycles             |
+| `observation_tools`     | `true`             | Enable observation tool-calling          |
+| `max_actions_per_cycle` | `10`               | Safety limit on actions per cycle        |
+| `api_key_env`           | `"OPENAI_API_KEY"` | Environment variable for LLM API key     |
+| `agent_type`            | `"road"`           | Transport type: `road`, `rail`, `air`, `water` |
+
+### Supported Models
+
+The LangChain adapter auto-detects the provider from the model name:
+
+| Model prefix | Provider  | Env var              | Examples                              |
+|-------------|-----------|----------------------|---------------------------------------|
+| `gpt`       | OpenAI    | `OPENAI_API_KEY`     | `gpt-4o`, `gpt-4o-mini`              |
+| `claude`    | Anthropic | `ANTHROPIC_API_KEY`  | `claude-sonnet-4-6-20250514`, `claude-haiku-4-5-20251001` |
 
 ---
 
-## Running with the REST API (current workflow)
+## Session Data Output
 
-The CLI subcommands above wrap the nttd REST API. You can also drive the system entirely with `curl` or any HTTP client. This is the most direct way to operate nttd today.
+Each session stores all data under `logs/sessions/<session_id>/`:
 
-### Prerequisites
-
-```bash
-# Install dependencies
-uv sync --extra agents    # LangChain + OpenAI adapters
-
-# Set your LLM API key
-export OPENAI_API_KEY=sk-...
-# or for Anthropic models:
-export ANTHROPIC_API_KEY=sk-ant-...
+```
+logs/sessions/<session_id>/
+  session.conf            # Session metadata and settings (HOCON)
+  agents.conf             # Agent configs and final stats (HOCON)
+  snapshots.parquet       # Game state time-series (companies, towns, vehicles)
+  tiles.parquet           # Terrain data
+  actions.parquet         # All agent actions with parameters
+  agent_cycles.parquet    # Per-cycle telemetry (timing, action counts)
+  events.parquet          # Lifecycle and game events
+  screenshot/             # Periodic minimap screenshots (.png)
+  save/                   # Periodic game saves (.sav)
 ```
 
-### Step-by-step: Run an AI agent on CLI
+Screenshots and saves use timestamped filenames like `d712283-06apr2026-182323pdt.png` where `d712283` is the in-game date. The final save gets a `_final` suffix.
+
+---
+
+## REST API (Direct Usage)
+
+The CLI commands wrap the nttd REST API. You can also drive the system with `curl` or any HTTP client.
+
+### Session Management
+
+| Method | Endpoint                       | CLI Equivalent        |
+|--------|--------------------------------|-----------------------|
+| POST   | `/admin/sessions/new`          | `nttd session create` |
+| POST   | `/admin/sessions/{id}/start`   | `nttd session start`  |
+| POST   | `/admin/sessions/{id}/stop`    | `nttd session stop`   |
+| GET    | `/admin/sessions`              | `nttd session list`   |
+| GET    | `/admin/sessions/{id}`         | `nttd session status` |
+
+### Agent Management
+
+| Method | Endpoint                                                    | CLI Equivalent        |
+|--------|-------------------------------------------------------------|-----------------------|
+| POST   | `/sessions/{id}/gameloop/agents/register`                   | `nttd agent register` |
+| POST   | `/sessions/{id}/gameloop/agents/{agent_id}/start`           | `nttd agent start`    |
+| POST   | `/sessions/{id}/gameloop/agents/{agent_id}/stop`            | `nttd agent stop`     |
+| GET    | `/sessions/{id}/gameloop/agents`                            | `nttd agent list`     |
+| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/status`          | (none)                |
+| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/cycles?limit=50` | (none)                |
+
+### Observation and Control (for external agents)
+
+| Method | Endpoint                                  | Description                      |
+|--------|-------------------------------------------|----------------------------------|
+| GET    | `/sessions/{id}/status`                   | Game state (date, speed, paused) |
+| GET    | `/sessions/{id}/snapshot`                 | Full world state snapshot        |
+| POST   | `/sessions/{id}/speed?speed=N`            | Set game speed                   |
+| POST   | `/sessions/{id}/actions/interpret`        | Submit actions for execution     |
+
+### Example: REST-only Workflow
 
 ```bash
-# 1. Start the nttd server (logs to logs/server.log)
-uv run uvicorn nttd.api.app:app --host 0.0.0.0 --port 8000 > logs/server.log 2>&1 &
+# 1. Start the nttd server
+uv run uvicorn nttd.api.app:app --host 0.0.0.0 --port 8000 &
+sleep 3
 
-# 2. Verify it's running
-curl -s http://localhost:8000/health
-
-# 3. Create a session
+# 2. Create a session
 SESSION=$(curl -s -X POST http://localhost:8000/admin/sessions/new \
   -H "Content-Type: application/json" \
   -d '{"name": "my-run"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
 echo "Session: $SESSION"
 
-# 4. Start the session (spawns OpenTTD)
-#    agent_companies=1 creates company 0 for the agent to control
+# 3. Start the session (spawns OpenTTD, auto-starts orchestrator)
 curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/start" \
   -H "Content-Type: application/json" \
   -d '{"agent_companies": 1}'
-
-# 5. Wait for OpenTTD to initialize (~5 seconds)
 sleep 5
 
-# 6. Set runtime mode and unpause
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/mode?mode=async_realtime"
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/unpause"
-
-# 7. Wait for world state to populate (~5 seconds)
-sleep 5
-
-# 8. Verify the world is populated
+# 4. Verify the world is populated
 curl -s "http://localhost:8000/sessions/$SESSION/state/compact?company_id=0" | python3 -m json.tool
 
-# 9. Register an AI agent with the gameloop
+# 5. Register and start an agent
 curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/register" \
   -H "Content-Type: application/json" \
   -d '{
-    "agent_id": "bus_builder",
+    "agent_id": "road_builder",
     "company_id": 0,
     "framework": "langchain",
-    "model": "gpt-5.2",
-    "agent_type": "bus",
-    "poll_interval": 15.0,
-    "observation_tools": true
+    "model": "gpt-4o",
+    "agent_type": "road",
+    "poll_interval": 10.0
   }'
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/road_builder/start"
 
-# 10. Start the agent cycle loop
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/start"
-```
+# 6. Monitor
+curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents/road_builder/status" | python3 -m json.tool
 
-### Monitoring the agent
-
-```bash
-# Agent status (cycle count, actions, timing)
-curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/status" | python3 -m json.tool
-
-# Recent cycle details
-curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/cycles" | python3 -m json.tool
-
-# All agents in the session
-curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents" | python3 -m json.tool
-
-# Live game state (company balance, vehicles, stations)
-curl -s "http://localhost:8000/sessions/$SESSION/state/compact?company_id=0" | python3 -m json.tool
-
-# Server logs (tool calls, action results, errors)
-tail -f logs/server.log
-```
-
-### Stopping
-
-```bash
-# Stop the agent
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/bus_builder/stop"
-
-# Stop the session (kills OpenTTD)
+# 7. Stop
+curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/road_builder/stop"
 curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/stop"
-
-# Stop the server
-kill $(lsof -ti :8000)
 ```
 
-### Supported models
+### Standalone Agent Script
 
-The LangChain adapter auto-detects the provider from the model name:
-
-| Model prefix | Provider | Env var | Examples |
-|---|---|---|---|
-| `gpt` | OpenAI | `OPENAI_API_KEY` | `gpt-4o`, `gpt-5.2`, `gpt-5.4` |
-| `claude` | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6-20250514`, `claude-haiku-4-5-20251001` |
-
-### Example: standalone agent (no gameloop)
-
-You can also run agents as standalone scripts that call the nttd REST API directly:
+You can also run agents as standalone scripts that call the REST API directly:
 
 ```bash
 # OpenAI model
 OPENAI_API_KEY=sk-... uv run python examples/langchain_nttd_agent.py \
-  --session-id $SESSION --company-id 0 --model gpt-5.2 --tools
+  --session-id $SESSION --company-id 0 --model gpt-4o --tools
 
 # Anthropic model
 ANTHROPIC_API_KEY=sk-ant-... uv run python examples/langchain_nttd_agent.py \
   --session-id $SESSION --company-id 0 --model claude-sonnet-4-6-20250514 --tools
 ```
 
-### Spectating
+---
+
+## Spectating
 
 While agents run, connect to the game in OpenTTD:
+
 1. Open OpenTTD
-2. Multiplayer → Add server → `127.0.0.1:4000`
+2. Multiplayer -> Add server -> `127.0.0.1:<game_port>`
 3. Join as spectator (company 255)
 4. Watch AI companies build infrastructure in real time
 
----
-
-## Typical Workflows
-
-### Manual step-by-step (development / debugging)
-
-```bash
-# Terminal 1: start server
-nttd server --reload
-
-# Terminal 2: create and run
-nttd session create --config config/scenario.conf
-nttd session start ses_abc123
-nttd agent register -s ses_abc123 -a bus -c 0 -f passthrough
-nttd agent start -s ses_abc123 -a bus
-nttd agent list -s ses_abc123
-
-# Join as spectator in OpenTTD → 127.0.0.1:4000
-
-# When done:
-nttd agent stop -s ses_abc123 -a bus
-nttd session stop ses_abc123
-```
-
-### Automated benchmark
-
-```bash
-# Terminal 1: start server
-nttd server
-
-# Terminal 2: run benchmark (blocks until end condition)
-OPENAI_API_KEY=sk-... nttd benchmark \
-  --config config/scenario.conf \
-  --speed 3 \
-  --output results/
-```
-
-### Spectating a benchmark
-
-While a session is running, open OpenTTD and connect to `127.0.0.1:<game_port>` as a spectator (company 255). You'll see agent companies building infrastructure, buying vehicles, and setting up routes in real time.
-
-Find the game port with:
-
-```bash
-nttd session status <session_id>
-```
+Find the game port with `nttd session status <session_id>`.
 
 ---
 
 ## Running Tests
 
-### Unit tests
-
 ```bash
-uv run pytest                   # Run all tests
-uv run pytest tests/ -v         # Verbose output
-uv run pytest tests/test_foo.py # Single file
+uv run pytest                     # Run all tests
+uv run pytest tests/ -v           # Verbose output
+uv run pytest tests/test_foo.py   # Single file
+uv run ruff check src/ tests/     # Lint
+uv run ruff check --fix src/      # Auto-fix lint issues
 ```
-
-### Linting
-
-```bash
-uv run ruff check src/ tests/   # Check for issues
-uv run ruff check --fix src/    # Auto-fix
-```
-
-### Integration test: full gameloop with an AI agent
-
-This test verifies the complete flow: session creation, world population, agent registration, LLM calling, tool execution, action parsing, and GS command execution.
-
-```bash
-# 1. Start the server
-uv run uvicorn nttd.api.app:app --host 0.0.0.0 --port 8000 > logs/server.log 2>&1 &
-sleep 3
-
-# 2. Create and start a session with one agent company
-SESSION=$(curl -s -X POST http://localhost:8000/admin/sessions/new \
-  -H "Content-Type: application/json" \
-  -d '{"name": "integration-test"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
-
-curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/start" \
-  -H "Content-Type: application/json" \
-  -d '{"agent_companies": 1}'
-
-sleep 5
-
-# 3. Set mode and unpause
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/mode?mode=async_realtime"
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/unpause"
-sleep 5
-
-# 4. Verify world state (should show towns > 0, company with balance)
-curl -s "http://localhost:8000/sessions/$SESSION/state/compact?company_id=0" | python3 -c "
-import sys, json; d = json.load(sys.stdin)
-assert d['total_towns'] > 0, 'No towns!'
-assert d['company'] is not None, 'No company!'
-print(f'OK: {d[\"total_towns\"]} towns, balance={d[\"company\"][\"balance\"]}')
-"
-
-# 5. Register and start an agent
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/register" \
-  -H "Content-Type: application/json" \
-  -d '{"agent_id":"test","company_id":0,"framework":"langchain","model":"gpt-5.2","poll_interval":15}'
-
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/test/start"
-
-# 6. Wait for 2 cycles (~45 seconds with multi-turn tool calling)
-sleep 45
-
-# 7. Check results
-STATUS=$(curl -s "http://localhost:8000/sessions/$SESSION/gameloop/agents/test/status")
-echo "$STATUS" | python3 -c "
-import sys, json; d = json.load(sys.stdin)
-assert d['cycle_count'] >= 1, f'Expected >=1 cycles, got {d[\"cycle_count\"]}'
-assert d['status'] == 'running', f'Agent not running: {d[\"status\"]}'
-print(f'OK: {d[\"cycle_count\"]} cycles, {d[\"total_actions\"]} actions ({d[\"successful_actions\"]} ok, {d[\"failed_actions\"]} fail)')
-"
-
-# 8. Check server logs for tool calls and action execution
-grep -a 'tool call\|action.*OK\|action.*FAIL' logs/server.log | tail -10
-
-# 9. Cleanup
-curl -s -X POST "http://localhost:8000/sessions/$SESSION/gameloop/agents/test/stop"
-curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/stop"
-kill $(lsof -ti :8000)
-echo "Test complete."
-```
-
-**What to verify:**
-- World state has towns and a company with balance
-- Agent cycles complete without `cycle_exception` errors
-- Tool calls appear in logs (find_bus_stop_spots, get_engines, etc.)
-- Some actions succeed (build_road_stop OK, build_road_depot OK)
-- Agent status shows `running` with cycle_count > 0
-
----
-
-## REST API Reference
-
-The CLI commands are thin wrappers around the nttd REST API. You can also call the API directly.
-
-### Session Management
-
-| Method | Endpoint                                   | CLI Equivalent          |
-|--------|--------------------------------------------|-------------------------|
-| POST   | `/admin/sessions/new`                      | `nttd session create`   |
-| POST   | `/admin/sessions/{id}/start`               | `nttd session start`    |
-| POST   | `/admin/sessions/{id}/stop`                | `nttd session stop`     |
-| GET    | `/admin/sessions`                          | `nttd session list`     |
-| GET    | `/admin/sessions/{id}`                     | `nttd session status`   |
-
-### Gameloop / Agent Management
-
-| Method | Endpoint                                                    | CLI Equivalent          |
-|--------|-------------------------------------------------------------|-------------------------|
-| POST   | `/sessions/{id}/gameloop/agents/register`                   | `nttd agent register`   |
-| POST   | `/sessions/{id}/gameloop/agents/{agent_id}/start`           | `nttd agent start`      |
-| POST   | `/sessions/{id}/gameloop/agents/{agent_id}/stop`            | `nttd agent stop`       |
-| GET    | `/sessions/{id}/gameloop/agents`                            | `nttd agent list`       |
-| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/status`          | (none)                  |
-| GET    | `/sessions/{id}/gameloop/agents/{agent_id}/cycles?limit=50` | (none)                  |
-| GET    | `/sessions/{id}/gameloop/status`                            | (none)                  |
-
-### Observation & Control (for external agents)
-
-| Method | Endpoint                                    | Description                      |
-|--------|---------------------------------------------|----------------------------------|
-| GET    | `/sessions/{id}/status`                     | Game state (date, speed, paused) |
-| GET    | `/sessions/{id}/snapshot`                   | Full world state snapshot        |
-| POST   | `/sessions/{id}/speed?speed=N`              | Set game speed                   |
-| POST   | `/sessions/{id}/mode?mode=async_realtime`   | Set runtime mode                 |
-| POST   | `/sessions/{id}/actions/interpret`          | Submit actions for execution     |
 
 ---
 
@@ -678,11 +564,14 @@ Check `nttd session list`. The session must be in `active` status for agent oper
 **`Gameloop not initialized for this session`**
 The session needs to be started (`nttd session start`) before registering agents.
 
-**`Agent X already registered for company N`**
-This agent_id is already registered on this company. Use a different `--agent-id`.
-
 **`Environment variable OPENAI_API_KEY not set`**
 Set your API key: `export OPENAI_API_KEY=sk-...` (required for `openai` and `langchain` frameworks, not for `passthrough`).
 
 **OpenTTD process exits immediately**
-Check that `NTTD_OPENTTD_BINARY` points to a valid OpenTTD binary and that `ottd_config/` exists with a valid configuration.
+Check that `NTTD_OPENTTD_BINARY` points to a valid OpenTTD binary and that `ottd_config/` exists with a valid configuration. Run OpenTTD manually once to download base graphics.
+
+**No screenshots or saves appearing**
+Screenshots and saves require the orchestrator to be running (auto-started with `session start`). Check that `screenshot_interval_seconds` and `save_interval_seconds` are non-zero in your scenario config.
+
+**Session data missing after stop**
+Session data (Parquet files, screenshots, saves, conf files) is preserved in `logs/sessions/<session_id>/`. Only OpenTTD config artifacts are cleaned up on stop.
