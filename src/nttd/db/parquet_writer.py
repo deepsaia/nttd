@@ -38,6 +38,12 @@ _SCHEMA = pa.schema([
     ("c0_loan", pa.int64()),
     ("c0_income", pa.int64()),
     ("c0_value", pa.int64()),
+    # Company 0 infrastructure monthly maintenance costs
+    ("c0_rail_cost", pa.int64()),
+    ("c0_road_cost", pa.int64()),
+    ("c0_water_cost", pa.int64()),
+    ("c0_station_cost", pa.int64()),
+    ("c0_airport_cost", pa.int64()),
 ])
 
 
@@ -56,6 +62,7 @@ class ParquetWriter:
 
     def append(self, snapshot: StateSnapshot) -> None:
         c0 = next((c for c in snapshot.companies if c.id == 0), None)
+        infra = next((i for i in snapshot.infrastructure if i.company_id == 0), None)
         self._buffer.append({
             "session_id": self.session_id,
             "snapshot_id": snapshot.game.snapshot_id,
@@ -71,6 +78,11 @@ class ParquetWriter:
             "c0_loan": c0.loan if c0 else 0,
             "c0_income": c0.income if c0 else 0,
             "c0_value": c0.value if c0 else 0,
+            "c0_rail_cost": infra.rail_cost if infra else 0,
+            "c0_road_cost": infra.road_cost if infra else 0,
+            "c0_water_cost": infra.water_cost if infra else 0,
+            "c0_station_cost": infra.station_cost if infra else 0,
+            "c0_airport_cost": infra.airport_cost if infra else 0,
         })
         if len(self._buffer) >= _FLUSH_THRESHOLD:
             self.flush()

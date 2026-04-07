@@ -1,8 +1,10 @@
 from pydantic import BaseModel
 
+from nttd.schemas.cargo_flow import CargoFlow
 from nttd.schemas.company import Company
 from nttd.schemas.game import GameState
 from nttd.schemas.industry import Industry
+from nttd.schemas.infrastructure import InfrastructureCosts
 from nttd.schemas.route import Route
 from nttd.schemas.station import Station
 from nttd.schemas.subsidy import Subsidy
@@ -19,3 +21,5 @@ class StateSnapshot(BaseModel):
     vehicles: list[Vehicle] = []
     routes: list[Route] = []
     subsidies: list[Subsidy] = []
+    infrastructure: list[InfrastructureCosts] = []
+    cargo_flows: list[CargoFlow] = []

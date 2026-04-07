@@ -43,7 +43,13 @@ class NttdGS extends GSController {
           continue;
         }
 
-        local result = this._Dispatch(data);
+        local result = null;
+        try {
+          result = this._Dispatch(data);
+        } catch (e) {
+          GSLog.Error("nttd: command " + data.action + " threw: " + e);
+          result = { success = false, error = "internal error: " + e };
+        }
         this._SendResponse(data.id, result);
         continue;
       }
@@ -611,6 +617,7 @@ class NttdGS extends GSController {
   function CmdGetCompanyFinance(p) {
     local cid = p.company_id;
     if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID) return { success = false, error = "Invalid company ID" };
+    local cm = GSCompanyMode(cid);
     return { success = true, result = {
       company_id = cid,
       balance = GSCompany.GetBankBalance(cid),
@@ -698,7 +705,7 @@ class NttdGS extends GSController {
       local eid = GSVehicle.GetEngineType(id);
       vehicles.append({
         id = id, name = GSVehicle.GetName(id),
-        type = GSVehicle.GetVehicleType(id),
+        type = this._VehicleTypeName(GSVehicle.GetVehicleType(id)),
         x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
         engine_id = eid,
         running_cost = GSEngine.IsValidEngine(eid) ? GSEngine.GetRunningCost(eid) : 0,
@@ -743,7 +750,7 @@ class NttdGS extends GSController {
     }
     return { success = true, result = {
       id = vid, name = GSVehicle.GetName(vid),
-      type = GSVehicle.GetVehicleType(vid),
+      type = this._VehicleTypeName(GSVehicle.GetVehicleType(vid)),
       engine_id = GSVehicle.GetEngineType(vid),
       x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
       age = GSVehicle.GetAge(vid),
@@ -1983,35 +1990,10 @@ class NttdGS extends GSController {
       return { success = false, error = "Invalid company ID" };
 
     local cid = p.company_id;
-    local expense_types = [
-      ["construction",      GSCompany.EXPENSES_CONSTRUCTION],
-      ["new_vehicles",      GSCompany.EXPENSES_NEW_VEHICLES],
-      ["train_run",         GSCompany.EXPENSES_TRAIN_RUN],
-      ["roadveh_run",       GSCompany.EXPENSES_ROADVEH_RUN],
-      ["aircraft_run",      GSCompany.EXPENSES_AIRCRAFT_RUN],
-      ["ship_run",          GSCompany.EXPENSES_SHIP_RUN],
-      ["property",          GSCompany.EXPENSES_PROPERTY],
-      ["train_revenue",     GSCompany.EXPENSES_TRAIN_REVENUE],
-      ["roadveh_revenue",   GSCompany.EXPENSES_ROADVEH_REVENUE],
-      ["aircraft_revenue",  GSCompany.EXPENSES_AIRCRAFT_REVENUE],
-      ["ship_revenue",      GSCompany.EXPENSES_SHIP_REVENUE],
-      ["loan_interest",     GSCompany.EXPENSES_LOAN_INTEREST],
-      ["other",             GSCompany.EXPENSES_OTHER],
-    ];
 
-    local expenses = {};
-    local quarter = ("quarter" in p) ? p.quarter : 0;
-    {
-      local mode = GSCompanyMode(cid);
-      foreach (et in expense_types) {
-        expenses.rawset(et[0], GSCompany.GetQuarterlyExpenses(cid, quarter));
-      }
-    }
-
-    // Note: GS API doesn't expose per-category expense amounts directly.
-    // GetQuarterlyExpenses returns total expenses. For per-category, we return
-    // the expense type definitions so the caller knows what categories exist.
-    // Full per-category tracking requires cargo monitor + infrastructure costs.
+    // GS API only exposes aggregate quarterly totals, not per-category breakdowns.
+    // Per-transport finances can be derived from vehicle profits (get_vehicles)
+    // and infrastructure maintenance costs (get_infrastructure_costs).
     local quarterly = [];
     for (local q = 0; q < 4; q++) {
       quarterly.append({
@@ -2037,24 +2019,21 @@ class NttdGS extends GSController {
       return { success = false, error = "Invalid company ID" };
 
     local cid = p.company_id;
-    local result = {};
-    {
-      local mode = GSCompanyMode(cid);
-      result = {
-        company_id = cid,
-        rail_pieces   = GSInfrastructure.GetRailPieceCount(cid),
-        road_pieces   = GSInfrastructure.GetRoadPieceCount(cid),
-        water_pieces  = GSInfrastructure.GetWaterPieceCount(cid),
-        station_pieces = GSInfrastructure.GetStationPieceCount(cid),
-        airport_pieces = GSInfrastructure.GetAirportPieceCount(cid),
-        rail_cost   = GSInfrastructure.GetMonthlyRailCosts(cid),
-        road_cost   = GSInfrastructure.GetMonthlyRoadCosts(cid),
-        water_cost  = GSInfrastructure.GetMonthlyWaterCosts(cid),
-        station_cost = GSInfrastructure.GetMonthlyStationCosts(cid),
-        airport_cost = GSInfrastructure.GetMonthlyAirportCosts(cid),
-      };
-    }
-    return { success = true, result = result };
+    // Use generic GetInfrastructurePieceCount / GetMonthlyInfrastructureCosts
+    // with enum constants. These return totals across all rail/road subtypes.
+    return { success = true, result = {
+      company_id     = cid,
+      rail_pieces    = GSInfrastructure.GetInfrastructurePieceCount(cid, GSInfrastructure.INFRASTRUCTURE_RAIL),
+      road_pieces    = GSInfrastructure.GetInfrastructurePieceCount(cid, GSInfrastructure.INFRASTRUCTURE_ROAD),
+      water_pieces   = GSInfrastructure.GetInfrastructurePieceCount(cid, GSInfrastructure.INFRASTRUCTURE_CANAL),
+      station_pieces = GSInfrastructure.GetInfrastructurePieceCount(cid, GSInfrastructure.INFRASTRUCTURE_STATION),
+      airport_pieces = GSInfrastructure.GetInfrastructurePieceCount(cid, GSInfrastructure.INFRASTRUCTURE_AIRPORT),
+      rail_cost      = GSInfrastructure.GetMonthlyInfrastructureCosts(cid, GSInfrastructure.INFRASTRUCTURE_RAIL),
+      road_cost      = GSInfrastructure.GetMonthlyInfrastructureCosts(cid, GSInfrastructure.INFRASTRUCTURE_ROAD),
+      water_cost     = GSInfrastructure.GetMonthlyInfrastructureCosts(cid, GSInfrastructure.INFRASTRUCTURE_CANAL),
+      station_cost   = GSInfrastructure.GetMonthlyInfrastructureCosts(cid, GSInfrastructure.INFRASTRUCTURE_STATION),
+      airport_cost   = GSInfrastructure.GetMonthlyInfrastructureCosts(cid, GSInfrastructure.INFRASTRUCTURE_AIRPORT),
+    }};
   }
 
   function CmdGetCargoFlows(p) {

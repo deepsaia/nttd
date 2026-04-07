@@ -507,6 +507,194 @@ def events_timeline(sessions: list[SessionData]) -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
+# Per-transport finances
+# ---------------------------------------------------------------------------
+
+# Action types that cost money (infrastructure builds, vehicle purchases)
+_COSTLY_ACTIONS = {
+    "build_road", "build_road_line", "build_road_depot", "build_road_stop",
+    "build_rail", "build_rail_track", "build_rail_station", "build_rail_depot",
+    "build_rail_signal", "build_rail_waypoint",
+    "build_canal", "build_lock", "build_buoy", "build_water_depot",
+    "build_airport", "build_dock", "build_bridge", "build_tunnel",
+    "buy_vehicle",
+}
+
+
+def agent_spending_proxy(sessions: list[SessionData]) -> go.Figure:
+    """Per-agent cumulative costly actions over time, overlaid with company balance.
+
+    For existing sessions that lack per-transport finance data, this shows
+    which agent's build activity correlates with balance changes.
+    """
+    fig = make_subplots(
+        rows=1, cols=len(sessions),
+        subplot_titles=[_short_label(s) for s in sessions],
+        specs=[[{"secondary_y": True}] * len(sessions)],
+        horizontal_spacing=0.12,
+    )
+
+    all_dates = _all_game_dates(sessions)
+    for i, s in enumerate(sessions):
+        if s.actions.empty:
+            continue
+        col = i + 1
+        costly = s.actions[
+            (s.actions["status"] == "success") & (s.actions["action_type"].isin(_COSTLY_ACTIONS))
+        ].copy()
+
+        for agent_id in sorted(costly["agent_id"].unique()):
+            adf = costly[costly["agent_id"] == agent_id].sort_values("game_date")
+            adf = adf.copy()
+            adf["cumulative"] = range(1, len(adf) + 1)
+            color = AGENT_COLORS.get(agent_id, "#999")
+            fig.add_trace(go.Scatter(
+                x=adf["game_date"], y=adf["cumulative"],
+                name=agent_id if i == 0 else None,
+                mode="lines", line=dict(color=color, width=2),
+                showlegend=(i == 0),
+                hovertemplate="%{customdata}: %{y} builds<extra>" + agent_id + "</extra>",
+                customdata=adf["game_date"].apply(game_date_to_str),
+            ), row=1, col=col, secondary_y=False)
+
+        if not s.snapshots.empty:
+            df = s.snapshots.sort_values("game_date")
+            fig.add_trace(go.Scatter(
+                x=df["game_date"], y=df["c0_balance"],
+                name="Balance" if i == 0 else None,
+                mode="lines", line=dict(color="#333", width=1, dash="dot"),
+                showlegend=(i == 0),
+                hovertemplate="%{customdata}: %{y:,.0f}<extra>balance</extra>",
+                customdata=df["game_date"].apply(game_date_to_str),
+            ), row=1, col=col, secondary_y=True)
+
+    if not all_dates.empty:
+        for i in range(len(sessions)):
+            _apply_date_xaxis(fig, all_dates, row=1, col=i + 1)
+    fig.update_yaxes(title_text="Cumulative Builds", secondary_y=False)
+    fig.update_yaxes(title_text="Balance", secondary_y=True)
+    fig.update_layout(
+        title="Agent Infrastructure Spending vs Company Balance",
+        template=_TEMPLATE, height=450,
+        legend=dict(orientation="h", y=1.1),
+    )
+    return fig
+
+
+def transport_mode_finances(sessions: list[SessionData]) -> go.Figure:
+    """Per-transport-mode revenue (vehicle profits) and infrastructure costs.
+
+    Extracts vehicle profits grouped by type (train/road/ship/aircraft) and
+    infrastructure maintenance costs from snapshot_json. Requires sessions
+    captured with vehicle tracking enabled (post-fix).
+    """
+    import json
+
+    fig = make_subplots(
+        rows=2, cols=len(sessions),
+        subplot_titles=[f"{_short_label(s)} - Revenue" for s in sessions]
+                       + [f"{_short_label(s)} - Infra Costs" for s in sessions],
+        shared_xaxes=True, vertical_spacing=0.15, horizontal_spacing=0.12,
+    )
+
+    type_colors = {
+        "train": "#F58518", "road": "#4C78A8",
+        "aircraft": "#E45756", "ship": "#72B7B2",
+    }
+
+    all_dates = _all_game_dates(sessions)
+    has_data = False
+
+    for i, s in enumerate(sessions):
+        if s.snapshots.empty:
+            continue
+        col = i + 1
+        df = s.snapshots.sort_values("game_date")
+
+        # Extract per-vehicle-type profit from snapshot_json
+        type_profits: dict[str, list[tuple[int, int]]] = {}
+        infra_series: dict[str, list[tuple[int, int]]] = {}
+
+        for _, row in df.iterrows():
+            gd = row["game_date"]
+            try:
+                data = json.loads(row["snapshot_json"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            # Vehicle profits by type
+            for v in data.get("vehicles", []):
+                vtype = v.get("type", "unknown")
+                if vtype not in type_profits:
+                    type_profits[vtype] = []
+                type_profits[vtype].append((gd, v.get("profit_this_year", 0)))
+
+            # Infrastructure costs
+            for inf in data.get("infrastructure", []):
+                if inf.get("company_id", -1) != 0:
+                    continue
+                for cost_key, label in [
+                    ("rail_cost", "rail"), ("road_cost", "road"),
+                    ("water_cost", "water"), ("airport_cost", "air"),
+                ]:
+                    val = inf.get(cost_key, 0)
+                    if val != 0:
+                        has_data = True
+                    if label not in infra_series:
+                        infra_series[label] = []
+                    infra_series[label].append((gd, val))
+
+        # Plot vehicle revenue by type
+        for vtype, points in sorted(type_profits.items()):
+            if not points:
+                continue
+            has_data = True
+            pdf = pd.DataFrame(points, columns=["game_date", "profit"])
+            agg = pdf.groupby("game_date")["profit"].sum().reset_index()
+            agg = agg.sort_values("game_date")
+            fig.add_trace(go.Scatter(
+                x=agg["game_date"], y=agg["profit"],
+                name=vtype if i == 0 else None,
+                mode="lines", line=dict(color=type_colors.get(vtype, "#999"), width=2),
+                showlegend=(i == 0),
+            ), row=1, col=col)
+
+        # Plot infrastructure costs by type
+        for label, points in sorted(infra_series.items()):
+            if not points:
+                continue
+            idf = pd.DataFrame(points, columns=["game_date", "cost"])
+            idf = idf.drop_duplicates("game_date").sort_values("game_date")
+            fig.add_trace(go.Scatter(
+                x=idf["game_date"], y=idf["cost"],
+                name=f"{label} maint." if i == 0 else None,
+                mode="lines", line=dict(color=type_colors.get(
+                    {"rail": "train", "road": "road", "air": "aircraft", "water": "ship"}.get(label, label),
+                    "#999",
+                ), width=2, dash="dash"),
+                showlegend=(i == 0),
+            ), row=2, col=col)
+
+    if not has_data:
+        fig = go.Figure()
+        fig.update_layout(
+            title="Transport Mode Finances (no vehicle/infrastructure data in these sessions)",
+            template=_TEMPLATE, height=200,
+        )
+        return fig
+
+    if not all_dates.empty:
+        for i in range(len(sessions)):
+            _apply_date_xaxis(fig, all_dates, row=2, col=i + 1)
+    fig.update_layout(
+        title="Per-Transport Mode: Vehicle Revenue and Infrastructure Costs",
+        template=_TEMPLATE, height=650,
+        legend=dict(orientation="h", y=1.06),
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Batch rendering
 # ---------------------------------------------------------------------------
 
@@ -531,6 +719,8 @@ def generate_all_plots(
         ("11_decide_latency", cycle_decide_over_time(sessions)),
         ("12_actions_scatter", actions_per_cycle_scatter(sessions)),
         ("13_events", events_timeline(sessions)),
+        ("14_agent_spending", agent_spending_proxy(sessions)),
+        ("15_transport_finances", transport_mode_finances(sessions)),
     ]
 
     if output_dir:

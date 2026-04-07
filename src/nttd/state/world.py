@@ -2,9 +2,11 @@ import logging
 import uuid
 from typing import Any
 
+from nttd.schemas.cargo_flow import CargoFlow
 from nttd.schemas.company import Company
 from nttd.schemas.game import GameState, RuntimeMode
 from nttd.schemas.industry import Industry, IndustryProduction
+from nttd.schemas.infrastructure import InfrastructureCosts
 from nttd.schemas.route import Route
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.station import CargoWaiting, Station
@@ -26,6 +28,8 @@ class WorldState:
         self.stations: dict[int, Station] = {}
         self.vehicles: dict[int, Vehicle] = {}
         self.subsidies: list[Subsidy] = []
+        self.infrastructure: dict[int, InfrastructureCosts] = {}
+        self.cargo_flows: list[CargoFlow] = []
 
     def snapshot(self) -> StateSnapshot:
         self.game.snapshot_id = uuid.uuid4().hex[:12]
@@ -38,6 +42,8 @@ class WorldState:
             vehicles=list(self.vehicles.values()),
             routes=self._derive_routes(),
             subsidies=list(self.subsidies),
+            infrastructure=list(self.infrastructure.values()),
+            cargo_flows=list(self.cargo_flows),
         )
 
     def set_mode(self, mode: RuntimeMode) -> None:
@@ -182,7 +188,13 @@ class WorldState:
                 order_count=r.get("order_count", 0),
                 orders=orders,
             )
-        logger.debug("WorldState: refreshed %d vehicles for company %d", len(seen), company_id)
+        # Remove stale vehicles no longer returned by GS for this company
+        stale = [vid for vid, v in self.vehicles.items()
+                 if v.company_id == company_id and vid not in seen]
+        for vid in stale:
+            del self.vehicles[vid]
+        logger.debug("WorldState: refreshed %d vehicles for company %d (removed %d stale)",
+                      len(seen), company_id, len(stale))
 
     def _derive_routes(self) -> list[Route]:
         """Group vehicles with identical ordered station sequences into Route objects.
@@ -292,3 +304,40 @@ class WorldState:
             for r in results
         ]
         logger.debug("WorldState: refreshed %d subsidies", len(self.subsidies))
+
+    def apply_gs_infrastructure(self, company_id: int, result: dict[str, Any]) -> None:
+        """Populate infrastructure costs from GS get_infrastructure_costs result."""
+        self.infrastructure[company_id] = InfrastructureCosts(
+            company_id=company_id,
+            rail_pieces=result.get("rail_pieces", 0),
+            road_pieces=result.get("road_pieces", 0),
+            water_pieces=result.get("water_pieces", 0),
+            station_pieces=result.get("station_pieces", 0),
+            airport_pieces=result.get("airport_pieces", 0),
+            rail_cost=result.get("rail_cost", 0),
+            road_cost=result.get("road_cost", 0),
+            water_cost=result.get("water_cost", 0),
+            station_cost=result.get("station_cost", 0),
+            airport_cost=result.get("airport_cost", 0),
+        )
+        logger.debug("WorldState: refreshed infrastructure for company %d", company_id)
+
+    def apply_gs_cargo_flows(self, company_id: int, results: list[dict[str, Any]]) -> None:
+        """Populate cargo flows from GS get_cargo_flows result.
+
+        Replaces all flows for the given company (each read resets GS counters).
+        """
+        self.cargo_flows = [
+            f for f in self.cargo_flows if f.company_id != company_id
+        ]
+        for r in results:
+            self.cargo_flows.append(CargoFlow(
+                company_id=company_id,
+                cargo_id=r.get("cargo_id", 0),
+                entity_type=r.get("entity_type", ""),
+                entity_id=r.get("entity_id", 0),
+                direction=r.get("direction", ""),
+                amount=r.get("amount", 0),
+            ))
+        logger.debug("WorldState: refreshed %d cargo flows for company %d",
+                      len(results), company_id)

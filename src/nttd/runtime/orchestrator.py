@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
-from nttd.utils.name_generator import generate_timestamp
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
 from nttd.runtime.company_lock import CompanyLockManager
 from nttd.runtime.end_conditions import EndConditionChecker
@@ -21,6 +20,7 @@ from nttd.schemas.action_result import ActionStatus
 from nttd.schemas.game import RuntimeMode
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.state.world import WorldState
+from nttd.utils.name_generator import generate_timestamp
 
 if TYPE_CHECKING:
     from nttd.db.recorder import SessionRecorder
@@ -206,6 +206,26 @@ class Orchestrator:
                 )
                 if r.get("success") and isinstance(r.get("result"), list):
                     self.world.apply_gs_vehicles(company.id, r["result"])
+
+                r = await self.client.send_gamescript(
+                    "get_infrastructure_costs", {"company_id": company.id}, timeout=10.0
+                )
+                if r.get("success") and isinstance(r.get("result"), dict):
+                    self.world.apply_gs_infrastructure(company.id, r["result"])
+
+            # Cargo flows use GSCargoMonitor counters that accumulate between reads.
+            # Refresh on staggered cycles (same cadence as towns/industries).
+            if self._refresh_cycle % _STAGGER_INTERVAL == 0:
+                for company in list(self.world.companies.values()):
+                    if not company.is_active:
+                        continue
+                    r = await self.client.send_gamescript(
+                        "get_cargo_flows",
+                        {"company_id": company.id, "keep_monitoring": False},
+                        timeout=15.0,
+                    )
+                    if r.get("success") and isinstance(r.get("result"), list):
+                        self.world.apply_gs_cargo_flows(company.id, r["result"])
 
             r = await self.client.send_gamescript("get_subsidies", timeout=10.0)
             if r.get("success") and isinstance(r.get("result"), list):

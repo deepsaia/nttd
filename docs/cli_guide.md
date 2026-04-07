@@ -414,6 +414,55 @@ The LangChain adapter auto-detects the provider from the model name:
 
 ---
 
+## Internal Settings Keys
+
+When creating a session via the REST API, you can pass a `settings` dict to override values. These keys use **flattened internal names** (prefixed with `_`), not the HOCON config paths.
+
+This is an important distinction: the HOCON config file uses hierarchical paths like `end_conditions.time_limit.wall_minutes = 30`, but the internal system flattens these to `_ec_wall_minutes`. When overriding via the API, always use the internal key.
+
+### Runtime Settings
+
+| Internal Key                    | HOCON Path                               | Type   | Default          | Description                       |
+|---------------------------------|------------------------------------------|--------|------------------|-----------------------------------|
+| `_runtime_mode`                 | `runtime.mode`                           | string | `async_realtime` | `async_realtime` or `heartbeat`   |
+| `_game_speed`                   | `runtime.game_speed`                     | int    | `1`              | Game speed multiplier             |
+| `_snapshot_interval_days`       | `runtime.snapshot_interval_days`         | int    | `1`              | Game-days between snapshots       |
+| `_screenshot_interval_seconds`  | `runtime.screenshot_interval_seconds`    | int    | `60`             | Seconds between screenshots (0=off) |
+| `_screenshot_type`              | `runtime.screenshot_type`                | string | `minimap`        | `normal`, `giant`, or `minimap`   |
+| `_save_interval_seconds`        | `runtime.save_interval_seconds`          | int    | `300`            | Seconds between saves (0=off)     |
+
+### End Condition Settings
+
+| Internal Key       | HOCON Path                                    | Type  | Description                         |
+|--------------------|-----------------------------------------------|-------|-------------------------------------|
+| `_ec_logic`        | `end_conditions.logic`                        | string| `any` or `all`                      |
+| `_ec_wall_minutes` | `end_conditions.time_limit.wall_minutes`      | float | Wall-clock minutes before auto-stop |
+| `_ec_end_year`     | `end_conditions.game_date_limit.end_year`     | int   | In-game year to stop at             |
+| `_ec_revenue`      | `end_conditions.revenue_threshold.total_revenue` | int | Revenue target to stop at           |
+| `_ec_cargo`        | `end_conditions.cargo_threshold.total_cargo_delivered` | int | Cargo delivered target to stop at |
+
+End condition keys are only written when the corresponding condition is `enabled = true` in the HOCON config. To enable an end condition via API override, just set the internal key (e.g., `_ec_wall_minutes = "15"`) -- its presence enables the condition.
+
+### Example: Override via REST API
+
+```bash
+# Create session with 5-minute wall-clock limit
+curl -s -X POST http://localhost:8000/admin/sessions/new \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "quick-test",
+    "config_path": "config/scenario.conf",
+    "settings": {
+      "_ec_logic": "any",
+      "_ec_wall_minutes": "5"
+    }
+  }'
+```
+
+Note: explicit `settings` values override config-derived values, so you can use a base config file and selectively change end conditions or runtime parameters.
+
+---
+
 ## Session Data Output
 
 Each session stores all data under `logs/sessions/<session_id>/`:
