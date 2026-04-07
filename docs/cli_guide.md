@@ -98,7 +98,7 @@ nttd session stop ses_abc123def456
 Or run everything at once with `nttd benchmark`:
 
 ```bash
-nttd benchmark --config config/scenario.conf --speed 3 --output results/
+nttd benchmark --config config/scenario.conf --speed 1 --output results/
 ```
 
 ---
