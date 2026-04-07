@@ -170,6 +170,13 @@ class SessionManager:
         # Configure end conditions from settings
         self._apply_end_conditions(orch, effective_settings)
 
+        # Register session-level on_end callback to fully stop the session
+        async def _on_session_end(reason: str) -> None:
+            logger.info("End condition triggered for %s: %s", session_id, reason)
+            await self.stop_session(session_id, end_reason=reason)
+
+        orch.on_end.append(_on_session_end)
+
         # Auto-start the orchestrator loop for snapshot capture
         runtime_mode = effective_settings.get("_runtime_mode", "async_realtime")
         runtime.start_orchestrator(mode=runtime_mode)
@@ -224,8 +231,10 @@ class SessionManager:
             if p.is_symlink():
                 p.unlink()
 
-        # Only remove truly transient OpenTTD dirs (not save/ or screenshot/)
-        transient_dirs = ["scenario"]
+        # Remove transient OpenTTD dirs (not save/ or screenshot/)
+        transient_dirs = [
+            "scenario", "baseset", "newgrf", "content_download", "social_integration",
+        ]
         for name in transient_dirs:
             p = session_dir / name
             if p.is_dir() and not p.is_symlink():

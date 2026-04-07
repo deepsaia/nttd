@@ -27,6 +27,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class CreateSessionRequest(BaseModel):
     name: str = ""
     settings: dict[str, str] = {}
+    config_path: str = ""
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -99,14 +100,26 @@ async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
     name = request.name or generate_session_name()
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
 
+    # If config_path provided, load and convert to settings
+    settings = dict(request.settings)
+    if request.config_path:
+        from nttd.config.scenario_config import load as load_scenario
+        from nttd.config.scenario_config import scenario_to_settings
+
+        cfg = load_scenario(request.config_path)
+        config_settings = scenario_to_settings(cfg)
+        # Explicit settings override config-derived ones
+        config_settings.update(settings)
+        settings = config_settings
+
     await session_repo.create_session(
         session_id=session_id,
         name=name,
         status="pending",
     )
 
-    if request.settings:
-        await session_repo.upsert_settings(session_id, request.settings)
+    if settings:
+        await session_repo.upsert_settings(session_id, settings)
 
     return {"session_id": session_id, "status": "pending"}
 

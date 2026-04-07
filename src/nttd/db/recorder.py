@@ -194,7 +194,7 @@ class SessionRecorder:
         for r in results:
             if isinstance(r, Exception):
                 logger.error("Parquet fragment write failed: %s", r)
-            else:
+            elif isinstance(r, int):
                 total_rows += r
 
         elapsed_ms = (time.monotonic() - t0) * 1000
