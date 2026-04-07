@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -98,35 +96,3 @@ def build_end_conditions_payload(ec: EndConditionsConfig) -> dict:
     return payload
 
 
-def find_log(run: str | None, log_dir: str) -> Path | None:
-    """Find the most recent JSONL log file."""
-    d = Path(log_dir)
-    if run:
-        p = Path(run)
-        return p if p.exists() else None
-    files = sorted(d.glob("nttd_*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return files[0] if files else None
-
-
-def print_log_lines(lines: list[str]) -> None:
-    """Pretty-print JSONL log lines."""
-    type_colors = {
-        "observation": "blue",
-        "action_submitted": "cyan",
-        "action_result": "green",
-        "gs_command": "magenta",
-        "error": "red",
-        "reconnect": "yellow",
-    }
-    for line in lines:
-        if not line:
-            continue
-        try:
-            r = json.loads(line)
-            event_type = r.get("type", "?")
-            color = type_colors.get(event_type, "white")
-            ts = time.strftime("%H:%M:%S", time.localtime(r.get("t", 0)))
-            detail = {k: v for k, v in r.items() if k not in ("t", "type")}
-            console.print(f"[dim]{ts}[/] [{color}]{event_type:<20}[/] {detail}")
-        except Exception:
-            console.print(line)

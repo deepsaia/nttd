@@ -241,8 +241,8 @@ BUILDING RULES:
 {action_reference}"""
 
 
-def get_bus_agent_prompt(company_id: int = 0) -> str:
-    """Get the full system prompt for a bus route specialist agent."""
+def get_road_agent_prompt(company_id: int = 0) -> str:
+    """Get the full system prompt for a road transport specialist agent."""
     return SYSTEM_PROMPT_BUS_AGENT.format(
         company_id=company_id,
         tile_system=TILE_SYSTEM_DOCS,
@@ -250,6 +250,10 @@ def get_bus_agent_prompt(company_id: int = 0) -> str:
         action_format=ACTION_FORMAT_INSTRUCTIONS,
         action_reference=ACTION_REFERENCE,
     )
+
+
+# Backward-compatible alias
+get_bus_agent_prompt = get_road_agent_prompt
 
 
 def get_general_agent_prompt(company_id: int = 0) -> str:

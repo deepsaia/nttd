@@ -162,7 +162,7 @@ class LangGraphNttdAgent(AgentBase):
     def decide(self, context: AgentContext) -> list[GameAction]:
         needs_plan = (
             not self._goals
-            or context.heartbeat_count % self.planner_interval == 0
+            or context.cycle_count % self.planner_interval == 0
         )
         if needs_plan:
             self._run_planner(context)

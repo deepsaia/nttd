@@ -261,6 +261,9 @@ class NttdGS extends GSController {
         case "get_airport_types": return this.CmdGetAirportTypes();
         case "get_bridge_types":  return this.CmdGetBridgeTypes();
 
+        // ---- BULK / MAP QUERIES --------------------------------------------
+        case "get_map_terrain":     return this.CmdGetMapTerrain(p);
+
         // ---- SMART QUERIES -------------------------------------------------
         case "scan_town_area":      return this.CmdScanTownArea(p);
         case "find_bus_stop_spots": return this.CmdFindBusStopSpots(p);
@@ -456,6 +459,34 @@ class NttdGS extends GSController {
       is_station = GSStation.GetStationID(tile) != GSStation.STATION_INVALID,
       owner = GSTile.GetOwner(tile)
     }};
+  }
+
+  function CmdGetMapTerrain(p) {
+    // Returns terrain data row-by-row for the entire map.
+    // Each result item: { y, tiles: [[height, slope, flags], ...] }
+    // flags bitmask: 1=water, 2=coast, 4=buildable
+    // Params: from_y (default 0), to_y (default max_y) for partial scans.
+    local max_x = GSMap.GetMapSizeX() - 2;
+    local max_y = GSMap.GetMapSizeY() - 2;
+    local from_y = ("from_y" in p) ? p.from_y : 1;
+    local to_y = ("to_y" in p) ? p.to_y : max_y;
+    if (from_y < 1) from_y = 1;
+    if (to_y > max_y) to_y = max_y;
+
+    local rows = [];
+    for (local y = from_y; y <= to_y; y++) {
+      local row_tiles = [];
+      for (local x = 1; x <= max_x; x++) {
+        local tile = GSMap.GetTileIndex(x, y);
+        local flags = 0;
+        if (GSTile.IsWaterTile(tile)) flags = flags | 1;
+        if (GSTile.IsCoastTile(tile)) flags = flags | 2;
+        if (GSTile.IsBuildable(tile))  flags = flags | 4;
+        row_tiles.append([GSTile.GetMaxHeight(tile), GSTile.GetSlope(tile), flags]);
+      }
+      rows.append({ y = y, tiles = row_tiles });
+    }
+    return { success = true, result = rows };
   }
 
   function CmdGetTowns() {

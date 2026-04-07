@@ -1,12 +1,25 @@
-"""Repository for session CRUD and queries."""
+"""Repository for session CRUD -- reads/writes HOCON .conf files.
 
+Session data is stored in logs/sessions/<session_id>/session.conf.
+Listing sessions scans the directory for all session.conf files.
+"""
+
+import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, insert, select, update
+from nttd.db.conf_writer import read_session_conf, update_session_conf, write_session_conf
 
-from nttd.db.engine import get_session
-from nttd.db.tables import participants, session_settings, sessions
+logger = logging.getLogger(__name__)
+
+_SESSIONS_DIR = Path("logs/sessions")
+
+
+def set_sessions_dir(path: Path) -> None:
+    """Configure the sessions directory (called at app startup)."""
+    global _SESSIONS_DIR
+    _SESSIONS_DIR = path
 
 
 async def create_session(
@@ -17,28 +30,21 @@ async def create_session(
     game_port: int | None = None,
     admin_port: int | None = None,
 ) -> None:
-    async with get_session() as db:
-        await db.execute(
-            insert(sessions).values(
-                id=session_id,
-                name=name,
-                status=status,
-                game_start_date=game_start_date,
-                game_port=game_port,
-                admin_port=admin_port,
-            )
-        )
-        await db.commit()
+    session_dir = _SESSIONS_DIR / session_id
+    write_session_conf(
+        session_dir=session_dir,
+        session_id=session_id,
+        name=name,
+        status=status,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        game_port=game_port,
+        admin_port=admin_port,
+    )
 
 
 async def update_session_name(session_id: str, name: str) -> None:
-    async with get_session() as db:
-        await db.execute(
-            update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(name=name)
-        )
-        await db.commit()
+    session_dir = _SESSIONS_DIR / session_id
+    update_session_conf(session_dir, {"session.name": name})
 
 
 async def update_session_ports(
@@ -46,51 +52,39 @@ async def update_session_ports(
     game_port: int,
     admin_port: int,
 ) -> None:
-    async with get_session() as db:
-        await db.execute(
-            update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(game_port=game_port, admin_port=admin_port)
-        )
-        await db.commit()
+    session_dir = _SESSIONS_DIR / session_id
+    update_session_conf(session_dir, {
+        "session.game_port": game_port,
+        "session.admin_port": admin_port,
+    })
 
 
 async def update_session_pid(session_id: str, pid: int | None) -> None:
-    async with get_session() as db:
-        await db.execute(
-            update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(pid=pid)
-        )
-        await db.commit()
+    session_dir = _SESSIONS_DIR / session_id
+    update_session_conf(session_dir, {"session.pid": pid or 0})
 
 
 async def mark_session_active(session_id: str, pid: int) -> None:
-    async with get_session() as db:
-        await db.execute(
-            update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(
-                status="active",
-                pid=pid,
-                started_at=datetime.now(timezone.utc),
-            )
-        )
-        await db.commit()
+    session_dir = _SESSIONS_DIR / session_id
+    update_session_conf(session_dir, {
+        "session.status": "active",
+        "session.pid": pid,
+        "session.started_at": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 async def get_active_sessions_with_ports() -> list[dict[str, Any]]:
     """Return all sessions with status 'active' that have ports and pid set."""
-    async with get_session() as db:
-        rows = (
-            await db.execute(
-                select(sessions).where(
-                    sessions.c.status == "active",
-                    sessions.c.pid.is_not(None),
-                )
-            )
-        ).fetchall()
-        return [_normalize_session(r._mapping) for r in rows]
+    results: list[dict[str, Any]] = []
+    if not _SESSIONS_DIR.exists():
+        return results
+    for session_dir in _SESSIONS_DIR.iterdir():
+        if not session_dir.is_dir():
+            continue
+        data = read_session_conf(session_dir)
+        if data and data.get("status") == "active" and data.get("pid"):
+            results.append(data)
+    return results
 
 
 async def end_session(
@@ -98,101 +92,114 @@ async def end_session(
     end_reason: str = "completed",
     game_end_date: int | None = None,
 ) -> None:
-    async with get_session() as db:
-        await db.execute(
-            update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(
-                status="ended",
-                ended_at=datetime.now(timezone.utc),
-                end_reason=end_reason,
-                game_end_date=game_end_date,
-            )
-        )
-        await db.commit()
-
-
-def _normalize_session(row_mapping: Any) -> dict[str, Any]:
-    """Rename DB 'id' to 'session_id' for API consistency."""
-    d = dict(row_mapping)
-    if "id" in d and "session_id" not in d:
-        d["session_id"] = d.pop("id")
-    return d
+    session_dir = _SESSIONS_DIR / session_id
+    updates: dict[str, Any] = {
+        "session.status": "ended",
+        "session.ended_at": datetime.now(timezone.utc).isoformat(),
+        "session.end_reason": end_reason,
+    }
+    if game_end_date is not None:
+        updates["session.game_end_date"] = game_end_date
+    update_session_conf(session_dir, updates)
 
 
 async def get_session_by_id(session_id: str) -> dict[str, Any] | None:
-    async with get_session() as db:
-        row = (await db.execute(select(sessions).where(sessions.c.id == session_id))).first()
-        if row is None:
-            return None
-        return _normalize_session(row._mapping)
+    session_dir = _SESSIONS_DIR / session_id
+    return read_session_conf(session_dir)
 
 
 async def archive_session(session_id: str) -> None:
-    async with get_session() as db:
-        await db.execute(
-            update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(status="archived", ended_at=datetime.now(timezone.utc))
-        )
-        await db.commit()
+    session_dir = _SESSIONS_DIR / session_id
+    update_session_conf(session_dir, {
+        "session.status": "archived",
+        "session.ended_at": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 async def delete_session(session_id: str) -> None:
-    async with get_session() as db:
-        await db.execute(delete(session_settings).where(session_settings.c.session_id == session_id))
-        await db.execute(delete(participants).where(participants.c.session_id == session_id))
-        await db.execute(delete(sessions).where(sessions.c.id == session_id))
-        await db.commit()
+    """Delete session directory entirely."""
+    import shutil
+    session_dir = _SESSIONS_DIR / session_id
+    if session_dir.exists():
+        shutil.rmtree(session_dir, ignore_errors=True)
 
 
 async def list_sessions(
     status: str | None = None, include_archived: bool = False, limit: int = 50,
 ) -> list[dict[str, Any]]:
-    async with get_session() as db:
-        q = select(sessions).order_by(sessions.c.created_at.desc()).limit(limit)
-        if status:
-            q = q.where(sessions.c.status == status)
-        elif not include_archived:
-            q = q.where(sessions.c.status != "archived")
-        rows = (await db.execute(q)).fetchall()
-        return [_normalize_session(r._mapping) for r in rows]
+    results: list[dict[str, Any]] = []
+    if not _SESSIONS_DIR.exists():
+        return results
+    for session_dir in sorted(_SESSIONS_DIR.iterdir(), reverse=True):
+        if not session_dir.is_dir():
+            continue
+        data = read_session_conf(session_dir)
+        if data is None:
+            continue
+        s = data.get("status", "")
+        if status and s != status:
+            continue
+        if not include_archived and s == "archived":
+            continue
+        results.append(data)
+        if len(results) >= limit:
+            break
+    return results
 
 
 async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
-    async with get_session() as db:
-        for key, value in settings.items():
-            existing = (
-                await db.execute(
-                    select(session_settings).where(
-                        session_settings.c.session_id == session_id,
-                        session_settings.c.key == key,
-                    )
-                )
-            ).first()
-            if existing:
-                await db.execute(
-                    update(session_settings)
-                    .where(session_settings.c.id == existing.id)
-                    .values(value=str(value))
-                )
-            else:
-                await db.execute(
-                    insert(session_settings).values(
-                        session_id=session_id, key=key, value=str(value)
-                    )
-                )
-        await db.commit()
+    """Store effective settings in session.conf under the settings block.
+
+    Reads the existing conf, merges settings, and rewrites the file.
+    Settings keys contain dots (e.g. "game_creation.map_x") which must be
+    quoted in HOCON to prevent pyhocon from treating them as nested paths.
+    We rebuild the settings block manually to preserve dotted keys as literals.
+    """
+    session_dir = _SESSIONS_DIR / session_id
+    conf_path = session_dir / "session.conf"
+    if not conf_path.exists():
+        write_session_conf(
+            session_dir=session_dir,
+            session_id=session_id,
+            settings=settings,
+        )
+        return
+
+    try:
+        data = read_session_conf(session_dir)
+        if data is None:
+            return
+
+        # Merge new settings into existing
+        existing_settings = data.get("settings", {})
+        existing_settings.update(settings)
+
+        # Rewrite session.conf with merged settings
+        write_session_conf(
+            session_dir=session_dir,
+            session_id=data.get("session_id", session_id),
+            name=data.get("name", ""),
+            status=data.get("status", "active"),
+            created_at=data.get("created_at"),
+            started_at=data.get("started_at"),
+            ended_at=data.get("ended_at"),
+            end_reason=data.get("end_reason"),
+            game_port=data.get("game_port"),
+            admin_port=data.get("admin_port"),
+            pid=data.get("pid"),
+            settings=existing_settings,
+            meta=data.get("meta"),
+        )
+    except Exception:
+        logger.exception("Failed to upsert settings for session %s", session_id)
 
 
 async def get_settings(session_id: str) -> dict[str, str]:
-    async with get_session() as db:
-        rows = (
-            await db.execute(
-                select(session_settings).where(session_settings.c.session_id == session_id)
-            )
-        ).fetchall()
-        return {r.key: r.value for r in rows}
+    session_dir = _SESSIONS_DIR / session_id
+    data = read_session_conf(session_dir)
+    if data is None:
+        return {}
+    return data.get("settings", {})
 
 
 async def add_participant(
@@ -203,25 +210,25 @@ async def add_participant(
     company_id: int | None = None,
     config: str | None = None,
 ) -> None:
-    async with get_session() as db:
-        await db.execute(
-            insert(participants).values(
-                session_id=session_id,
-                participant_id=participant_id,
-                participant_type=participant_type,
-                name=name,
-                company_id=company_id,
-                config=config,
-            )
-        )
-        await db.commit()
+    """Record a participant in agents.conf."""
+    from nttd.db.conf_writer import update_agent_in_conf
+    session_dir = _SESSIONS_DIR / session_id
+    agent_data: dict[str, Any] = {
+        "participant_type": participant_type,
+    }
+    if name:
+        agent_data["name"] = name
+    if company_id is not None:
+        agent_data["company_id"] = company_id
+    update_agent_in_conf(session_dir, participant_id, agent_data)
 
 
 async def list_participants(session_id: str) -> list[dict[str, Any]]:
-    async with get_session() as db:
-        rows = (
-            await db.execute(
-                select(participants).where(participants.c.session_id == session_id)
-            )
-        ).fetchall()
-        return [dict(r._mapping) for r in rows]
+    """Read participants from agents.conf."""
+    from nttd.db.conf_writer import read_agents_conf
+    session_dir = _SESSIONS_DIR / session_id
+    agents = read_agents_conf(session_dir)
+    results: list[dict[str, Any]] = []
+    for agent_id, data in agents.items():
+        results.append({"participant_id": agent_id, **data})
+    return results

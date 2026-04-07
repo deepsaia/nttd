@@ -11,16 +11,22 @@ class AgentConfig(BaseModel):
     agent_id: str
     company_id: int = Field(ge=0, le=14)
     name: str = ""
-    agent_type: str = "bus"
+    agent_type: str = "road"
     framework: str = "openai"
     model: str = "gpt-4o"
     instructions: str = ""
     observation_mode: str = "compact"
+    snapshot_class: str = ""
     include_finance: bool = False
     poll_interval: float = Field(default=5.0, ge=0.5)
     observation_tools: bool = True
     max_actions_per_cycle: int = Field(default=10, ge=1)
     api_key_env: str = "OPENAI_API_KEY"
+
+    @property
+    def effective_snapshot_class(self) -> str:
+        """Return snapshot_class if set, otherwise fall back to observation_mode."""
+        return self.snapshot_class or self.observation_mode
 
 
 class ConnectionStatus(BaseModel):

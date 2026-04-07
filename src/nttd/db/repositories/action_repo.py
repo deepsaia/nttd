@@ -1,11 +1,20 @@
-"""Repository for action history queries."""
+"""Repository for action history queries -- reads from Parquet."""
 
+import json
+import logging
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import and_, func, select
+import pyarrow.parquet as pq
 
-from nttd.db.engine import get_session
-from nttd.db.tables import action_parameters, actions
+logger = logging.getLogger(__name__)
+
+_SESSIONS_DIR = Path("logs/sessions")
+
+
+def set_sessions_dir(path: Path) -> None:
+    global _SESSIONS_DIR
+    _SESSIONS_DIR = path
 
 
 async def get_actions(
@@ -18,66 +27,66 @@ async def get_actions(
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Query action history with optional filters."""
-    async with get_session() as db:
-        conditions = [actions.c.session_id == session_id]
-        if company_id is not None:
-            conditions.append(actions.c.company_id == company_id)
-        if participant_id is not None:
-            conditions.append(actions.c.participant_id == participant_id)
-        if action_type is not None:
-            conditions.append(actions.c.action_type == action_type)
-        if status is not None:
-            conditions.append(actions.c.status == status)
+    parquet_path = _SESSIONS_DIR / session_id / "actions.parquet"
+    if not parquet_path.exists():
+        return []
 
-        rows = (
-            await db.execute(
-                select(actions)
-                .where(and_(*conditions))
-                .order_by(actions.c.id.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-        ).fetchall()
-        return [dict(r._mapping) for r in rows]
+    table = pq.read_table(parquet_path)
+    rows = table.to_pylist()
+
+    # Apply filters
+    if company_id is not None:
+        rows = [r for r in rows if r.get("company_id") == company_id]
+    if participant_id is not None:
+        rows = [r for r in rows if r.get("agent_id") == participant_id]
+    if action_type is not None:
+        rows = [r for r in rows if r.get("action_type") == action_type]
+    if status is not None:
+        rows = [r for r in rows if r.get("status") == status]
+
+    # Reverse (most recent first) and paginate
+    rows.reverse()
+    return rows[offset:offset + limit]
 
 
 async def get_action_params(action_id: str) -> dict[str, str]:
-    """Return parameters for a specific action."""
-    async with get_session() as db:
-        rows = (
-            await db.execute(
-                select(action_parameters).where(action_parameters.c.action_id == action_id)
-            )
-        ).fetchall()
-        return {r.param_key: r.param_value for r in rows}
+    """Return parameters for a specific action by parsing parameters_json."""
+    # Search across all sessions (action_id includes session info)
+    if not _SESSIONS_DIR.exists():
+        return {}
+    for session_dir in _SESSIONS_DIR.iterdir():
+        parquet_path = session_dir / "actions.parquet"
+        if not parquet_path.exists():
+            continue
+        table = pq.read_table(parquet_path, columns=["action_id", "parameters_json"])
+        for i in range(table.num_rows):
+            if table.column("action_id")[i].as_py() == action_id:
+                params_json = table.column("parameters_json")[i].as_py()
+                if params_json:
+                    return json.loads(params_json)
+                return {}
+    return {}
 
 
 async def get_action_stats(session_id: str, company_id: int | None = None) -> dict[str, Any]:
     """Return aggregate action statistics for a session."""
-    async with get_session() as db:
-        conditions = [actions.c.session_id == session_id]
-        if company_id is not None:
-            conditions.append(actions.c.company_id == company_id)
+    parquet_path = _SESSIONS_DIR / session_id / "actions.parquet"
+    if not parquet_path.exists():
+        return {"total": 0, "success": 0, "failed": 0, "success_rate": 0.0}
 
-        row = (
-            await db.execute(
-                select(
-                    func.count().label("total"),
-                    func.sum(func.iif(actions.c.status == "success", 1, 0)).label("success"),
-                    func.sum(func.iif(actions.c.status == "failed", 1, 0)).label("failed"),
-                ).where(and_(*conditions))
-            )
-        ).first()
+    table = pq.read_table(parquet_path, columns=["company_id", "status"])
+    rows = table.to_pylist()
 
-        if row is None:
-            return {"total": 0, "success": 0, "failed": 0, "success_rate": 0.0}
+    if company_id is not None:
+        rows = [r for r in rows if r.get("company_id") == company_id]
 
-        total = row.total or 0
-        success = row.success or 0
-        failed = row.failed or 0
-        return {
-            "total": total,
-            "success": success,
-            "failed": failed,
-            "success_rate": success / total if total > 0 else 0.0,
-        }
+    total = len(rows)
+    success = sum(1 for r in rows if r.get("status") == "success")
+    failed = sum(1 for r in rows if r.get("status") == "failed")
+
+    return {
+        "total": total,
+        "success": success,
+        "failed": failed,
+        "success_rate": success / total if total > 0 else 0.0,
+    }

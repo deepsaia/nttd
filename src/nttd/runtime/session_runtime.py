@@ -12,11 +12,12 @@ from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.bridge import Bridge
 from nttd.db.recorder import SessionRecorder
+from nttd.db.tile_writer import TileWriter
 from nttd.gameloop.manager import GameloopManager
-from nttd.logging.event_logger import EventLogger
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
+from nttd.state.snapshot_class import SnapshotClassRegistry
 from nttd.state.world import WorldState
 
 logger = logging.getLogger(__name__)
@@ -44,12 +45,13 @@ class SessionRuntime:
         self.world = WorldState()
         self.admin_client = AdminClient(host="127.0.0.1", port=admin_port)
         self.bridge = Bridge(self.world, self.admin_client)
-        self.orchestrator = Orchestrator(self.world, self.admin_client)
+        self.recorder = SessionRecorder(session_id, data_dir="logs/sessions")
+        self.orchestrator = Orchestrator(self.world, self.admin_client, recorder=self.recorder)
         self.action_tracker = ActionTracker()
         self.agent_registry = AgentRegistry()
-        self.event_logger = EventLogger()
         self.snapshot_broker_registry: dict[str, AgentSnapshotBroker] = {}
-        self.recorder = SessionRecorder(session_id)
+        self.snapshot_class_registry = SnapshotClassRegistry()
+        self.tile_writer = TileWriter(session_id, data_dir="logs/sessions")
         self.gameloop_manager = GameloopManager(self)
 
         # Stop all gameloop agents when the session ends
@@ -142,6 +144,9 @@ class SessionRuntime:
             self.session_id, len(self.world.towns), len(self.world.companies),
         )
 
+        # Capture tile terrain in the background (non-blocking)
+        asyncio.create_task(self._capture_tiles(), name=f"tiles_{self.session_id}")
+
         # Verify companies were auto-created
         if total > 0:
             rcon = await self.admin_client.send_rcon("companies")
@@ -156,6 +161,23 @@ class SessionRuntime:
                     "Expected %d companies but found %d for session %s",
                     total, company_count, self.session_id,
                 )
+
+    async def _capture_tiles(self) -> None:
+        """Capture full tile terrain data in the background."""
+        try:
+            result = await self.admin_client.send_gamescript(
+                "get_map_terrain", {}, timeout=60.0,
+            )
+            if result.get("success") and isinstance(result.get("result"), list):
+                count = self.tile_writer.write_full_scan(result["result"])
+                logger.info("Tile capture complete for session %s: %d tiles", self.session_id, count)
+            else:
+                logger.warning(
+                    "Tile capture failed for session %s: %s",
+                    self.session_id, result.get("error", "unknown"),
+                )
+        except Exception:
+            logger.exception("Tile capture error for session %s", self.session_id)
 
     async def shutdown(self) -> None:
         """Stop the server process and clean up."""

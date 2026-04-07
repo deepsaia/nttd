@@ -21,7 +21,6 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
     """Submit an action. If action_type maps to a GS command, execute it immediately."""
     runtime = deps.get_runtime(session_id)
     runtime.action_tracker.submit(envelope)
-    runtime.event_logger.log_action_submitted(envelope)
 
     if envelope.action_type not in KNOWN_ACTIONS:
         return ActionResult(
@@ -50,13 +49,11 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
                 envelope.action_id, ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result", {}),
             )
-            result = ActionResult(
+            return ActionResult(
                 action_id=envelope.action_id,
                 status=ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result") or {},
             )
-            runtime.event_logger.log_action_result(result)
-            return result
         else:
             error = gs_result.get("error", "GS returned failure")
             runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, error)

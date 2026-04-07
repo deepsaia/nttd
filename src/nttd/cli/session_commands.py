@@ -40,9 +40,11 @@ def session_create(
     url = base_url or get_base_url()
     check_server(url)
 
+    from nttd.utils.name_generator import generate_session_name
+
     cfg = load_scenario(config)
     settings = scenario_to_settings(cfg)
-    session_name = name or cfg.name
+    session_name = name or (cfg.name if cfg.name != "default" else generate_session_name())
 
     resp = requests.post(
         f"{url}/admin/sessions/new",

@@ -5,7 +5,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
-from nttd.dashboard.metrics import MetricsWriter
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
     CompactRecentAction,
@@ -22,8 +21,6 @@ from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.station import Station
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Vehicle
-
-_metrics = MetricsWriter()
 
 router = APIRouter(prefix="/sessions/{session_id}/state", tags=["observation"])
 
@@ -65,12 +62,6 @@ async def get_stations(session_id: str) -> list[Station]:
 async def get_vehicles(session_id: str) -> list[Vehicle]:
     runtime = deps.get_runtime(session_id)
     return list(runtime.world.vehicles.values())
-
-
-@router.get("/metrics")
-async def get_metrics(session_id: str) -> dict[str, Any]:
-    """Latest per-company game metrics snapshot."""
-    return _metrics.get_latest()
 
 
 @router.get("/compact", response_model=CompactSnapshot)

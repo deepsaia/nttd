@@ -1,22 +1,31 @@
-"""Session recorder: ingests game data and writes to DB via background flush.
+"""Session recorder: ingests game data and writes to Parquet via background flush.
 
 All record_* methods append to in-memory buffers (non-blocking).
-A background task flushes buffers to DB in batched transactions.
+A background task flushes buffers to per-type Parquet fragment files.
+On session stop, fragments are merged into final consolidated files.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §13, §17
+Storage layout per session (under logs/sessions/<session_id>/):
+  snapshots.parquet     -- full game state time-series (via ParquetWriter)
+  actions.parquet       -- all actions with embedded parameters as JSON
+  agent_cycles.parquet  -- per-cycle agent telemetry
+  events.parquet        -- lifecycle + game events
+
+During a session, fragments are written to _fragments/<type>_NNN.parquet
+to avoid re-reading the full file on every flush. On stop, all fragments
+are merged into the final file.
 """
 
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-from nttd.db import tables
-from nttd.db.engine import get_session
 from nttd.db.parquet_writer import ParquetWriter
 from nttd.gameloop.schemas import CycleRecord
 from nttd.schemas.action_envelope import ActionEnvelope
@@ -28,17 +37,75 @@ logger = logging.getLogger(__name__)
 _FLUSH_INTERVAL_SECONDS: float = 1.0
 _MAX_BUFFER_SIZE: int = 5000
 
+# -- Parquet schemas for each record type --
+
+_ACTIONS_SCHEMA = pa.schema([
+    ("action_id", pa.string()),
+    ("agent_id", pa.string()),
+    ("company_id", pa.int16()),
+    ("game_date", pa.int32()),
+    ("action_type", pa.string()),
+    ("status", pa.string()),
+    ("error", pa.string()),
+    ("parameters_json", pa.string()),
+    ("submitted_at", pa.timestamp("us")),
+])
+
+_AGENT_CYCLES_SCHEMA = pa.schema([
+    ("connection_id", pa.string()),
+    ("cycle_number", pa.int32()),
+    ("game_date", pa.int32()),
+    ("observe_ms", pa.float32()),
+    ("decide_ms", pa.float32()),
+    ("execute_ms", pa.float32()),
+    ("total_ms", pa.float32()),
+    ("actions_proposed", pa.int16()),
+    ("actions_executed", pa.int16()),
+    ("actions_succeeded", pa.int16()),
+    ("actions_failed", pa.int16()),
+    ("observation_size_bytes", pa.int32()),
+])
+
+_EVENTS_SCHEMA = pa.schema([
+    ("game_date", pa.int32()),
+    ("event_type", pa.string()),
+    ("company_id", pa.int16()),
+    ("detail", pa.string()),
+    ("timestamp", pa.timestamp("us")),
+])
+
+_SCHEMAS: dict[str, pa.Schema] = {
+    "actions": _ACTIONS_SCHEMA,
+    "agent_cycles": _AGENT_CYCLES_SCHEMA,
+    "events": _EVENTS_SCHEMA,
+}
+
 
 class SessionRecorder:
+    """Buffers game data and flushes to Parquet fragment files.
+
+    Each flush writes a small numbered fragment (O(new_rows) per flush).
+    On stop(), fragments are merged into consolidated .parquet files.
+    """
 
     def __init__(
         self, session_id: str, flush_interval: float = _FLUSH_INTERVAL_SECONDS,
-        data_dir: str = "data/sessions",
-    ):
+        data_dir: str = "logs/sessions",
+    ) -> None:
         self.session_id: str = session_id
         self._flush_interval: float = flush_interval
-        self._buffers: dict[str, list[dict[str, Any]]] = {}
-        self._lock: asyncio.Lock = asyncio.Lock()
+        self._session_dir: Path = Path(data_dir).resolve() / session_id
+        self._fragments_dir: Path = self._session_dir / "_fragments"
+
+        # Per-type buffers
+        self._action_buffer: list[dict[str, Any]] = []
+        self._cycle_buffer: list[dict[str, Any]] = []
+        self._event_buffer: list[dict[str, Any]] = []
+
+        self._buffer_lock: asyncio.Lock = asyncio.Lock()
+        # Per-type fragment counters (monotonic, used for unique filenames)
+        self._fragment_seq: dict[str, int] = {"actions": 0, "agent_cycles": 0, "events": 0}
+
         self._flush_task: asyncio.Task[None] | None = None
         self._running: bool = False
         self._snapshot_count: int = 0
@@ -46,10 +113,16 @@ class SessionRecorder:
         self._flush_count: int = 0
         self._parquet: ParquetWriter = ParquetWriter(session_id, data_dir)
 
+    @property
+    def session_dir(self) -> Path:
+        return self._session_dir
+
     async def start(self) -> None:
+        self._session_dir.mkdir(parents=True, exist_ok=True)
+        self._fragments_dir.mkdir(parents=True, exist_ok=True)
         self._running = True
         self._flush_task = asyncio.create_task(self._flush_loop())
-        logger.info("SessionRecorder started for session %s", self.session_id)
+        logger.info("SessionRecorder started for session %s (dir=%s)", self.session_id, self._session_dir)
 
     async def stop(self) -> None:
         self._running = False
@@ -59,8 +132,13 @@ class SessionRecorder:
                 await self._flush_task
             except asyncio.CancelledError:
                 pass
+        # Final flush of any remaining buffered data
         await self._flush_once()
-        self._parquet.flush()
+        self._parquet.finalize()
+
+        # Merge all fragments into consolidated files
+        await asyncio.to_thread(self._merge_all_fragments)
+
         logger.info(
             "SessionRecorder stopped: %d snapshots (%d parquet), %d rows flushed in %d batches",
             self._snapshot_count,
@@ -68,12 +146,6 @@ class SessionRecorder:
             self._total_rows_flushed,
             self._flush_count,
         )
-
-    def _append(self, table_name: str, rows: list[dict[str, Any]]) -> None:
-        if not rows:
-            return
-        buf = self._buffers.setdefault(table_name, [])
-        buf.extend(rows)
 
     async def _flush_loop(self) -> None:
         while self._running:
@@ -84,350 +156,145 @@ class SessionRecorder:
                 logger.exception("Flush failed")
 
     async def _flush_once(self) -> None:
-        async with self._lock:
-            if not self._buffers:
-                return
-            buffers_to_flush = self._buffers
-            self._buffers = {}
+        async with self._buffer_lock:
+            actions = self._action_buffer
+            cycles = self._cycle_buffer
+            events = self._event_buffer
+            self._action_buffer = []
+            self._cycle_buffer = []
+            self._event_buffer = []
 
-        total_rows = 0
         t0 = time.monotonic()
 
-        table_map = {
-            "snapshots": tables.snapshots,
-            "companies": tables.companies,
-            "finances": tables.finances,
-            "finance_revenue": tables.finance_revenue,
-            "finance_expenses": tables.finance_expenses,
-            "finance_quarterly": tables.finance_quarterly,
-            "infrastructure": tables.infrastructure,
-            "towns": tables.towns,
-            "industries": tables.industries,
-            "industry_production": tables.industry_production,
-            "stations": tables.stations,
-            "station_cargo": tables.station_cargo,
-            "vehicles": tables.vehicles,
-            "vehicle_orders": tables.vehicle_orders,
-            "subsidies": tables.subsidies,
-            "cargo_flows": tables.cargo_flows,
-            "actions": tables.actions,
-            "action_parameters": tables.action_parameters,
-            "events": tables.events,
-            "messages": tables.messages,
-            "metrics": tables.metrics,
-            "agent_connections": tables.agent_connections,
-            "agent_cycles": tables.agent_cycles,
-        }
+        # Write each buffer type as a new fragment file in parallel threads.
+        # Each fragment is a standalone file -- no read-modify-write needed.
+        tasks: list[asyncio.Task[int]] = []
+        if actions:
+            tasks.append(asyncio.ensure_future(asyncio.to_thread(
+                self._write_fragment, "actions", actions,
+            )))
+        if cycles:
+            tasks.append(asyncio.ensure_future(asyncio.to_thread(
+                self._write_fragment, "agent_cycles", cycles,
+            )))
+        if events:
+            tasks.append(asyncio.ensure_future(asyncio.to_thread(
+                self._write_fragment, "events", events,
+            )))
 
-        # Tables that need upsert (unique constraints on non-PK columns)
-        _UPSERT_TABLES = {"agent_connections"}
+        if not tasks:
+            return
 
-        async with get_session() as db:
-            async with db.begin():
-                for table_name, rows in buffers_to_flush.items():
-                    table = table_map.get(table_name)
-                    if table is None:
-                        logger.warning("Unknown table in buffer: %s", table_name)
-                        continue
-                    if not rows:
-                        continue
-                    if table_name in _UPSERT_TABLES:
-                        for row in rows:
-                            stmt = sqlite_insert(table).values(row)
-                            stmt = stmt.on_conflict_do_update(
-                                index_elements=["session_id", "agent_id"],
-                                set_={k: v for k, v in row.items()
-                                       if k not in ("session_id", "agent_id", "id") and v is not None},
-                            )
-                            await db.execute(stmt)
-                    else:
-                        await db.execute(insert(table), rows)
-                    total_rows += len(rows)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        total_rows = 0
+        for r in results:
+            if isinstance(r, Exception):
+                logger.error("Parquet fragment write failed: %s", r)
+            else:
+                total_rows += r
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         self._total_rows_flushed += total_rows
         self._flush_count += 1
         if total_rows > 0:
-            logger.debug("Flushed %d rows across %d tables in %.1fms", total_rows, len(buffers_to_flush), elapsed_ms)
+            logger.debug("Flushed %d rows to fragments in %.1fms", total_rows, elapsed_ms)
+
+    def _write_fragment(self, file_key: str, rows: list[dict[str, Any]]) -> int:
+        """Write rows as a new numbered fragment file. O(n_new_rows) per call."""
+        schema = _SCHEMAS[file_key]
+        seq = self._fragment_seq[file_key]
+        self._fragment_seq[file_key] = seq + 1
+
+        fragment_path = self._fragments_dir / f"{file_key}_{seq:04d}.parquet"
+        table = pa.Table.from_pylist(rows, schema=schema)
+        pq.write_table(table, fragment_path, compression="zstd")
+        return len(rows)
+
+    def _merge_all_fragments(self) -> None:
+        """Merge all fragment files into consolidated Parquet files.
+
+        Called once on session stop. Reads all fragments for each type,
+        concatenates them, writes the final file, and removes the fragments.
+        """
+        for file_key, schema in _SCHEMAS.items():
+            self._merge_fragments(file_key, schema)
+
+        # Remove fragments directory if empty
+        if self._fragments_dir.exists():
+            remaining = list(self._fragments_dir.iterdir())
+            if not remaining:
+                self._fragments_dir.rmdir()
+
+    def _merge_fragments(self, file_key: str, schema: pa.Schema) -> None:
+        """Merge all fragment files for a given type into one consolidated file."""
+        pattern = f"{file_key}_*.parquet"
+        fragments = sorted(self._fragments_dir.glob(pattern))
+        if not fragments:
+            return
+
+        tables: list[pa.Table] = []
+        for frag_path in fragments:
+            try:
+                tables.append(pq.read_table(frag_path, schema=schema))
+            except Exception:
+                logger.warning("Failed to read fragment %s, skipping", frag_path.name)
+
+        if not tables:
+            return
+
+        merged = pa.concat_tables(tables)
+        output_path = self._session_dir / f"{file_key}.parquet"
+        pq.write_table(merged, output_path, compression="zstd")
+
+        # Clean up fragment files
+        for frag_path in fragments:
+            frag_path.unlink(missing_ok=True)
+
+        logger.info(
+            "Merged %d %s fragments (%d rows) into %s",
+            len(fragments), file_key, merged.num_rows, output_path.name,
+        )
 
     # ------------------------------------------------------------------
-    # Snapshot recording (non-blocking: appends to buffers)
+    # Snapshot recording
     # ------------------------------------------------------------------
 
     def record_snapshot(self, snapshot: StateSnapshot) -> None:
-        game_date = snapshot.game.game_date
-        sid = self.session_id
+        """Record snapshot to Parquet."""
         self._snapshot_count += 1
-
-        # Snapshot metadata to DB; full state to Parquet for replay
-        self._append("snapshots", [
-            {
-                "session_id": sid,
-                "snapshot_id": snapshot.game.snapshot_id,
-                "game_date": game_date,
-                "tick": snapshot.game.tick,
-            }
-        ])
         self._parquet.append(snapshot)
 
-        self._record_companies(sid, game_date, snapshot)
-        self._record_finances(sid, game_date, snapshot)
-        self._record_towns(sid, game_date, snapshot)
-        self._record_industries(sid, game_date, snapshot)
-        self._record_stations(sid, game_date, snapshot)
-        self._record_vehicles(sid, game_date, snapshot)
-        self._record_subsidies(sid, game_date, snapshot)
-        self._record_metrics(sid, game_date, snapshot)
-
-        buf_size = sum(len(v) for v in self._buffers.values())
+        buf_size = len(self._action_buffer) + len(self._cycle_buffer) + len(self._event_buffer)
         if buf_size >= _MAX_BUFFER_SIZE:
             asyncio.create_task(self._flush_once())
 
-    def _record_companies(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        self._append("companies", [
-            {
-                "session_id": sid,
-                "game_date": game_date,
-                "company_id": c.id,
-                "name": c.name,
-                "manager": c.manager,
-                "color": c.color,
-                "is_ai": c.is_ai,
-                "is_active": c.is_active,
-            }
-            for c in snapshot.companies
-        ])
-
-    def _record_finances(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        self._append("finances", [
-            {
-                "session_id": sid,
-                "game_date": game_date,
-                "company_id": c.id,
-                "balance": c.money,
-                "loan": c.loan,
-                "max_loan": 0,
-                "income": c.income,
-                "expenses": 0,
-                "company_value": c.value,
-                "performance_rating": 0,
-                "cargo_delivered": 0,
-            }
-            for c in snapshot.companies
-        ])
-
-    def _record_towns(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        self._append("towns", [
-            {
-                "session_id": sid,
-                "game_date": game_date,
-                "town_id": t.id,
-                "name": t.name,
-                "population": t.population,
-                "houses": t.houses,
-                "x": t.x,
-                "y": t.y,
-                "is_city": t.is_city,
-                "growth_rate": t.growth_rate,
-            }
-            for t in snapshot.towns
-        ])
-
-    def _record_industries(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        ind_rows = []
-        prod_rows = []
-        for ind in snapshot.industries:
-            ind_rows.append({
-                "session_id": sid,
-                "game_date": game_date,
-                "industry_id": ind.id,
-                "name": ind.name,
-                "type_id": ind.type_id,
-                "type_name": ind.type_name,
-                "x": ind.x,
-                "y": ind.y,
-                "is_raw": ind.is_raw,
-                "is_processing": ind.is_processing,
-            })
-            for p in ind.production:
-                prod_rows.append({
-                    "session_id": sid,
-                    "game_date": game_date,
-                    "industry_id": ind.id,
-                    "cargo_id": p.cargo_id,
-                    "cargo_label": p.cargo_label,
-                    "produced": p.last_month,
-                    "transported_pct": p.transported,
-                })
-        self._append("industries", ind_rows)
-        self._append("industry_production", prod_rows)
-
-    def _record_stations(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        stn_rows = []
-        cargo_rows = []
-        for s in snapshot.stations:
-            stn_rows.append({
-                "session_id": sid,
-                "game_date": game_date,
-                "station_id": s.id,
-                "company_id": s.company_id,
-                "name": s.name,
-                "x": s.x,
-                "y": s.y,
-                "has_rail": s.has_rail,
-                "has_truck": s.has_truck,
-                "has_bus": s.has_bus,
-                "has_airport": s.has_airport,
-                "has_dock": s.has_dock,
-            })
-            for cw in s.cargo_waiting:
-                cargo_rows.append({
-                    "session_id": sid,
-                    "game_date": game_date,
-                    "station_id": s.id,
-                    "cargo_id": cw.cargo_id,
-                    "cargo_label": cw.cargo_label,
-                    "waiting": cw.waiting,
-                    "rating": None,
-                })
-        self._append("stations", stn_rows)
-        self._append("station_cargo", cargo_rows)
-
-    def _record_vehicles(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        veh_rows = []
-        order_rows = []
-        for v in snapshot.vehicles:
-            veh_rows.append({
-                "session_id": sid,
-                "game_date": game_date,
-                "vehicle_id": v.id,
-                "company_id": v.company_id,
-                "vehicle_type": v.type,
-                "name": v.name,
-                "engine_id": v.engine_id,
-                "x": v.x,
-                "y": v.y,
-                "profit_this_year": v.profit_this_year,
-                "profit_last_year": v.profit_last_year,
-                "age": v.age,
-                "max_age": v.max_age,
-                "current_speed": v.current_speed,
-                "state": v.state,
-                "running": v.running,
-                "in_depot": v.in_depot,
-            })
-            for o in v.orders:
-                if o.is_goto_station:
-                    order_type = "station"
-                elif o.is_goto_depot:
-                    order_type = "depot"
-                elif o.is_goto_waypoint:
-                    order_type = "waypoint"
-                else:
-                    order_type = "unknown"
-                order_rows.append({
-                    "session_id": sid,
-                    "game_date": game_date,
-                    "vehicle_id": v.id,
-                    "order_index": o.index,
-                    "destination_id": o.destination,
-                    "order_type": order_type,
-                    "flags": o.flags,
-                })
-        self._append("vehicles", veh_rows)
-        self._append("vehicle_orders", order_rows)
-
-    def _record_subsidies(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        self._append("subsidies", [
-            {
-                "session_id": sid,
-                "game_date": game_date,
-                "subsidy_id": s.id,
-                "cargo_id": s.cargo_id,
-                "cargo_label": s.cargo_label,
-                "src_type": s.src_type,
-                "src_id": s.src_id,
-                "src_name": s.src_name,
-                "dst_type": s.dst_type,
-                "dst_id": s.dst_id,
-                "dst_name": s.dst_name,
-                "value": s.value,
-                "remaining_years": s.remaining_years,
-            }
-            for s in snapshot.subsidies
-        ])
-
-    def _record_metrics(self, sid: str, game_date: int, snapshot: StateSnapshot) -> None:
-        rows: list[dict[str, Any]] = []
-        base = {"session_id": sid, "game_date": game_date}
-        for c in snapshot.companies:
-            cb = {**base, "company_id": c.id}
-            rows.extend([
-                {**cb, "metric_name": "balance", "metric_value": float(c.money)},
-                {**cb, "metric_name": "loan", "metric_value": float(c.loan)},
-                {**cb, "metric_name": "income", "metric_value": float(c.income)},
-                {**cb, "metric_name": "company_value", "metric_value": float(c.value)},
-                {**cb, "metric_name": "profit_last_year", "metric_value": float(c.profit_last_year)},
-            ])
-
-        vehicle_counts: dict[tuple[int, str], int] = {}
-        for v in snapshot.vehicles:
-            key = (v.company_id, v.type)
-            vehicle_counts[key] = vehicle_counts.get(key, 0) + 1
-        for (cid, vtype), count in vehicle_counts.items():
-            rows.append({
-                **base, "company_id": cid,
-                "metric_name": f"vehicles_{vtype}", "metric_value": float(count),
-            })
-
-        station_counts: dict[int, int] = {}
-        for s in snapshot.stations:
-            station_counts[s.company_id] = station_counts.get(s.company_id, 0) + 1
-        for cid, count in station_counts.items():
-            rows.append({
-                **base, "company_id": cid,
-                "metric_name": "stations", "metric_value": float(count),
-            })
-
-        total_pop = sum(t.population for t in snapshot.towns)
-        rows.append({
-            **base, "company_id": None,
-            "metric_name": "total_population", "metric_value": float(total_pop),
-        })
-
-        self._append("metrics", rows)
-
     # ------------------------------------------------------------------
-    # Action recording (non-blocking)
+    # Action recording
     # ------------------------------------------------------------------
 
     def record_action(self, envelope: ActionEnvelope, result: ActionResult) -> None:
-        self._append("actions", [
-            {
-                "session_id": self.session_id,
-                "action_id": envelope.action_id,
-                "participant_id": envelope.metadata.get("participant_id"),
-                "participant_type": envelope.metadata.get("participant_type"),
-                "company_id": envelope.company_id,
-                "game_date": envelope.metadata.get("game_date"),
-                "action_type": envelope.action_type,
-                "action_mode": envelope.mode,
-                "status": result.status,
-                "error": result.error if result.error else None,
-                "cost": envelope.metadata.get("cost"),
-                "submitted_at": envelope.metadata.get("submitted_at"),
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-            }
-        ])
+        submitted_str = envelope.metadata.get("submitted_at")
+        submitted_at = None
+        if submitted_str:
+            try:
+                submitted_at = datetime.fromisoformat(submitted_str)
+            except (ValueError, TypeError):
+                submitted_at = datetime.now(timezone.utc)
 
-        param_rows = [
-            {"action_id": envelope.action_id, "param_key": k, "param_value": str(v)}
-            for k, v in envelope.parameters.items()
-        ]
-        self._append("action_parameters", param_rows)
+        self._action_buffer.append({
+            "action_id": envelope.action_id,
+            "agent_id": envelope.metadata.get("participant_id", ""),
+            "company_id": envelope.company_id,
+            "game_date": envelope.metadata.get("game_date", 0),
+            "action_type": envelope.action_type,
+            "status": str(result.status),
+            "error": result.error or "",
+            "parameters_json": json.dumps(envelope.parameters, default=str),
+            "submitted_at": submitted_at or datetime.now(timezone.utc),
+        })
 
     # ------------------------------------------------------------------
-    # Event recording (non-blocking)
+    # Event recording
     # ------------------------------------------------------------------
 
     def record_event(
@@ -439,68 +306,34 @@ class SessionRecorder:
         entity_id: int | None = None,
         detail: str | None = None,
     ) -> None:
-        self._append("events", [
-            {
-                "session_id": self.session_id,
-                "game_date": game_date,
-                "event_type": event_type,
-                "company_id": company_id,
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "detail": detail,
-            }
-        ])
+        self._event_buffer.append({
+            "game_date": game_date,
+            "event_type": event_type,
+            "company_id": company_id or 0,
+            "detail": detail or "",
+            "timestamp": datetime.now(timezone.utc),
+        })
 
     # ------------------------------------------------------------------
-    # Message recording (non-blocking)
-    # ------------------------------------------------------------------
-
-    def record_message(
-        self,
-        message_id: str,
-        game_date: int | None,
-        message_type: str,
-        from_id: str | None = None,
-        to_id: str | None = None,
-        company_id: int | None = None,
-        body: str | None = None,
-    ) -> None:
-        self._append("messages", [
-            {
-                "session_id": self.session_id,
-                "message_id": message_id,
-                "game_date": game_date,
-                "message_type": message_type,
-                "from_id": from_id,
-                "to_id": to_id,
-                "company_id": company_id,
-                "body": body,
-            }
-        ])
-
-    # ------------------------------------------------------------------
-    # Agent tracking (non-blocking)
+    # Agent tracking
     # ------------------------------------------------------------------
 
     def record_agent_cycle(self, record: CycleRecord) -> None:
-        """Record a single agent cycle to the agent_cycles table."""
-        self._append("agent_cycles", [
-            {
-                "connection_id": record.connection_id,
-                "session_id": record.session_id,
-                "cycle_number": record.cycle_number,
-                "game_date": record.game_date,
-                "observe_ms": record.observe_ms,
-                "decide_ms": record.decide_ms,
-                "execute_ms": record.execute_ms,
-                "total_ms": record.total_ms,
-                "actions_proposed": record.actions_proposed,
-                "actions_executed": record.actions_executed,
-                "actions_succeeded": record.actions_succeeded,
-                "actions_failed": record.actions_failed,
-                "observation_size_bytes": record.observation_size_bytes,
-            }
-        ])
+        """Record a single agent cycle to the agent_cycles buffer."""
+        self._cycle_buffer.append({
+            "connection_id": record.connection_id,
+            "cycle_number": record.cycle_number,
+            "game_date": record.game_date,
+            "observe_ms": record.observe_ms,
+            "decide_ms": record.decide_ms,
+            "execute_ms": record.execute_ms,
+            "total_ms": record.total_ms,
+            "actions_proposed": record.actions_proposed,
+            "actions_executed": record.actions_executed,
+            "actions_succeeded": record.actions_succeeded,
+            "actions_failed": record.actions_failed,
+            "observation_size_bytes": record.observation_size_bytes,
+        })
 
     def record_agent_connection(
         self,
@@ -520,24 +353,27 @@ class SessionRecorder:
         avg_cycle_ms: float = 0.0,
         avg_decide_ms: float = 0.0,
     ) -> None:
-        """Record or update an agent connection in the agent_connections table."""
-        self._append("agent_connections", [
-            {
-                "connection_id": connection_id,
-                "session_id": self.session_id,
-                "agent_id": agent_id,
-                "company_id": company_id,
-                "framework": framework,
-                "model": model,
-                "observation_mode": observation_mode,
-                "poll_interval": poll_interval,
-                "started_at": started_at,
-                "stopped_at": stopped_at,
-                "total_cycles": total_cycles,
-                "total_actions": total_actions,
-                "successful_actions": successful_actions,
-                "failed_actions": failed_actions,
-                "avg_cycle_ms": avg_cycle_ms,
-                "avg_decide_ms": avg_decide_ms,
-            }
-        ])
+        """Write agent connection data to agents.conf via conf_writer."""
+        from nttd.db.conf_writer import update_agent_in_conf
+
+        agent_data: dict[str, Any] = {
+            "connection_id": connection_id,
+            "company_id": company_id,
+            "framework": framework,
+            "model": model,
+            "observation_mode": observation_mode,
+            "poll_interval": poll_interval,
+        }
+        if started_at:
+            agent_data["started_at"] = started_at.isoformat()
+        if stopped_at:
+            agent_data["stopped_at"] = stopped_at.isoformat()
+        if total_cycles > 0:
+            agent_data["total_cycles"] = total_cycles
+            agent_data["total_actions"] = total_actions
+            agent_data["successful_actions"] = successful_actions
+            agent_data["failed_actions"] = failed_actions
+            agent_data["avg_cycle_ms"] = round(avg_cycle_ms, 1)
+            agent_data["avg_decide_ms"] = round(avg_decide_ms, 1)
+
+        update_agent_in_conf(self._session_dir, agent_id, agent_data)

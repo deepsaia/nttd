@@ -12,7 +12,7 @@ This test validates their logic in isolation by mocking the tool layer.
 """
 import logging
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -68,7 +68,7 @@ def _make_context(
         history=[],
         company_id=0,
         game_date=18628,
-        heartbeat_count=heartbeat_count,
+        cycle_count=heartbeat_count,
     )
 
 
@@ -273,7 +273,6 @@ async def test_full_agent_loop_all_phases() -> None:
             [a.action for a in actions] or "(none)",
         )
 
-    phases = ["build_stops", "build_stops", "buy_vehicle", "running", "running"]
     assert agent._phase == "running", f"Expected final phase 'running', got '{agent._phase}'"
 
     # At least one heartbeat should have submitted build actions

@@ -2,11 +2,11 @@
 
 import pytest
 
-from nttd.pathfinding.astar import PathNode, PathResult, find_path
-from nttd.pathfinding.road import RoadCostFunction
+from nttd.pathfinding.astar import find_path
 from nttd.pathfinding.rail import RailCostFunction
-from nttd.pathfinding.water import WaterCostFunction
+from nttd.pathfinding.road import RoadCostFunction
 from nttd.pathfinding.tile_cache import TileCache, TileData
+from nttd.pathfinding.water import WaterCostFunction
 
 
 def _make_cache(width: int, height: int) -> TileCache:

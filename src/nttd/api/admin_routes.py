@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 import nttd.api.dependencies as deps
 from nttd.db.repositories import session_repo
+from nttd.utils.name_generator import generate_session_name
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -95,11 +96,12 @@ class DeityTownRatingRequest(BaseModel):
 
 @router.post("/sessions/new")
 async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
+    name = request.name or generate_session_name()
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
 
     await session_repo.create_session(
         session_id=session_id,
-        name=request.name or f"Session {session_id[:8]}",
+        name=name,
         status="pending",
     )
 

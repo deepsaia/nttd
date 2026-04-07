@@ -15,21 +15,19 @@ from nttd.api.control_routes import router as control_router
 from nttd.api.gameloop_routes import router as gameloop_router
 from nttd.api.metrics_routes import router as metrics_router
 from nttd.api.observation_routes import router as observation_router
+from nttd.api.snapshot_routes import router as snapshot_router
 from nttd.api.ws_routes import router as ws_router
-from nttd.db.engine import close_engine, init_engine
-from nttd.db.migrations import apply_migrations
 from nttd.runtime.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.environ.get("NTTD_DB_PATH", "nttd.db")
 ADMIN_PASSWORD = os.environ.get("NTTD_ADMIN_PASSWORD", "nttd")
 OPENTTD_BINARY = os.environ.get(
     "NTTD_OPENTTD_BINARY",
     "/Applications/OpenTTD.app/Contents/MacOS/openttd",
 )
 BASE_CONFIG_DIR = Path(os.environ.get("NTTD_BASE_CONFIG", "ottd_config"))
-SESSIONS_DIR = Path(os.environ.get("NTTD_SESSIONS_DIR", "runs"))
+SESSIONS_DIR = Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
 PORT_RANGE_START = int(os.environ.get("NTTD_PORT_RANGE_START", "4000"))
 
 
@@ -40,9 +38,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
-    # Initialize database
-    await init_engine(DB_PATH)
-    await apply_migrations()
+    # Configure repository paths
+    from nttd.db.repositories import session_repo
+    session_repo.set_sessions_dir(SESSIONS_DIR)
 
     # Initialize session manager
     deps.session_manager = SessionManager(
@@ -66,7 +64,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Shutting down nttd...")
     if deps.session_manager:
         await deps.session_manager.shutdown_all()
-    await close_engine()
     logger.info("nttd shut down")
 
 
@@ -86,6 +83,7 @@ app.include_router(metrics_router)
 app.include_router(ws_router)
 app.include_router(benchmark_router)
 app.include_router(gameloop_router)
+app.include_router(snapshot_router)
 
 
 @app.get("/health")

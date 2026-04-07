@@ -1,11 +1,32 @@
-"""Repository for time-series metrics queries (dashboard charts)."""
+"""Repository for time-series metrics queries -- reads from Parquet.
 
+Finance and metric time-series are extracted from the columnar Parquet file
+for fast dashboard access. Falls back to parsing snapshot_json for detailed
+queries not covered by the extracted columns.
+"""
+
+import json
+import logging
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import and_, func, select
+import pyarrow.parquet as pq
 
-from nttd.db.engine import get_session
-from nttd.db.tables import companies, finances, metrics
+logger = logging.getLogger(__name__)
+
+_DATA_DIR = Path("logs/sessions")
+
+# Metric names that map to extracted Parquet columns (no JSON parsing needed)
+_COLUMN_METRICS = {
+    "balance": "c0_balance",
+    "loan": "c0_loan",
+    "income": "c0_income",
+    "company_value": "c0_value",
+    "num_vehicles": "num_vehicles",
+    "num_stations": "num_stations",
+    "num_towns": "num_towns",
+    "num_companies": "num_companies",
+}
 
 
 async def get_metric_series(
@@ -16,26 +37,49 @@ async def get_metric_series(
     to_date: int | None = None,
 ) -> list[dict[str, Any]]:
     """Return time-series data for a named metric."""
-    async with get_session() as db:
-        conditions = [
-            metrics.c.session_id == session_id,
-            metrics.c.metric_name == metric_name,
-        ]
-        if company_id is not None:
-            conditions.append(metrics.c.company_id == company_id)
-        if from_date is not None:
-            conditions.append(metrics.c.game_date >= from_date)
-        if to_date is not None:
-            conditions.append(metrics.c.game_date <= to_date)
+    parquet_path = _DATA_DIR / session_id / "snapshots.parquet"
+    if not parquet_path.exists():
+        return []
 
-        rows = (
-            await db.execute(
-                select(metrics.c.game_date, metrics.c.company_id, metrics.c.metric_value)
-                .where(and_(*conditions))
-                .order_by(metrics.c.game_date)
-            )
-        ).fetchall()
-        return [dict(r._mapping) for r in rows]
+    col_name = _COLUMN_METRICS.get(metric_name)
+    if col_name and (company_id is None or company_id == 0):
+        columns = ["game_date", col_name]
+        table = pq.read_table(parquet_path, columns=columns)
+        results = []
+        for i in range(table.num_rows):
+            gd = table.column("game_date")[i].as_py()
+            if from_date is not None and gd < from_date:
+                continue
+            if to_date is not None and gd > to_date:
+                continue
+            results.append({
+                "game_date": gd,
+                "company_id": company_id or 0,
+                "metric_value": table.column(col_name)[i].as_py(),
+            })
+        return results
+
+    # Fallback: parse snapshot_json
+    table = pq.read_table(parquet_path, columns=["game_date", "snapshot_json"])
+    results = []
+    for i in range(table.num_rows):
+        gd = table.column("game_date")[i].as_py()
+        if from_date is not None and gd < from_date:
+            continue
+        if to_date is not None and gd > to_date:
+            continue
+        snap = json.loads(table.column("snapshot_json")[i].as_py())
+        for company in snap.get("companies", []):
+            if company_id is not None and company.get("id") != company_id:
+                continue
+            value = company.get(metric_name)
+            if value is not None:
+                results.append({
+                    "game_date": gd,
+                    "company_id": company.get("id"),
+                    "metric_value": value,
+                })
+    return results
 
 
 async def get_finance_series(
@@ -45,62 +89,87 @@ async def get_finance_series(
     to_date: int | None = None,
 ) -> list[dict[str, Any]]:
     """Return financial time-series for a company."""
-    async with get_session() as db:
-        conditions = [
-            finances.c.session_id == session_id,
-            finances.c.company_id == company_id,
-        ]
-        if from_date is not None:
-            conditions.append(finances.c.game_date >= from_date)
-        if to_date is not None:
-            conditions.append(finances.c.game_date <= to_date)
+    parquet_path = _DATA_DIR / session_id / "snapshots.parquet"
+    if not parquet_path.exists():
+        return []
 
-        rows = (
-            await db.execute(
-                select(finances)
-                .where(and_(*conditions))
-                .order_by(finances.c.game_date)
-            )
-        ).fetchall()
-        return [dict(r._mapping) for r in rows]
+    if company_id == 0:
+        columns = ["game_date", "c0_balance", "c0_loan", "c0_income", "c0_value"]
+        table = pq.read_table(parquet_path, columns=columns)
+        results = []
+        for i in range(table.num_rows):
+            gd = table.column("game_date")[i].as_py()
+            if from_date is not None and gd < from_date:
+                continue
+            if to_date is not None and gd > to_date:
+                continue
+            results.append({
+                "game_date": gd,
+                "company_id": 0,
+                "balance": table.column("c0_balance")[i].as_py(),
+                "loan": table.column("c0_loan")[i].as_py(),
+                "income": table.column("c0_income")[i].as_py(),
+                "company_value": table.column("c0_value")[i].as_py(),
+            })
+        return results
+
+    # For non-zero companies, parse snapshot_json
+    table = pq.read_table(parquet_path, columns=["game_date", "snapshot_json"])
+    results = []
+    for i in range(table.num_rows):
+        gd = table.column("game_date")[i].as_py()
+        if from_date is not None and gd < from_date:
+            continue
+        if to_date is not None and gd > to_date:
+            continue
+        snap = json.loads(table.column("snapshot_json")[i].as_py())
+        for company in snap.get("companies", []):
+            if company.get("id") == company_id:
+                results.append({
+                    "game_date": gd,
+                    "company_id": company_id,
+                    "balance": company.get("money", 0),
+                    "loan": company.get("loan", 0),
+                    "income": company.get("income", 0),
+                    "company_value": company.get("value", 0),
+                })
+                break
+    return results
 
 
 async def get_company_latest(session_id: str) -> list[dict[str, Any]]:
     """Return latest snapshot for each company in a session."""
-    async with get_session() as db:
-        subq = (
-            select(
-                companies.c.company_id,
-                func.max(companies.c.game_date).label("max_date"),
-            )
-            .where(companies.c.session_id == session_id)
-            .group_by(companies.c.company_id)
-            .subquery()
-        )
-        rows = (
-            await db.execute(
-                select(companies)
-                .join(
-                    subq,
-                    and_(
-                        companies.c.company_id == subq.c.company_id,
-                        companies.c.game_date == subq.c.max_date,
-                        companies.c.session_id == session_id,
-                    ),
-                )
-            )
-        ).fetchall()
-        return [dict(r._mapping) for r in rows]
+    parquet_path = _DATA_DIR / session_id / "snapshots.parquet"
+    if not parquet_path.exists():
+        return []
+
+    table = pq.read_table(parquet_path, columns=["game_date", "snapshot_json"])
+    if table.num_rows == 0:
+        return []
+
+    # Find the row with the max game_date
+    dates = table.column("game_date").to_pylist()
+    max_idx = max(range(len(dates)), key=lambda i: dates[i])
+    snap = json.loads(table.column("snapshot_json")[max_idx].as_py())
+    return snap.get("companies", [])
 
 
 async def get_available_metrics(session_id: str) -> list[str]:
-    """Return distinct metric names for a session."""
-    async with get_session() as db:
-        rows = (
-            await db.execute(
-                select(metrics.c.metric_name)
-                .where(metrics.c.session_id == session_id)
-                .distinct()
-            )
-        ).fetchall()
-        return [r.metric_name for r in rows]
+    """Return available metric names for a session."""
+    parquet_path = _DATA_DIR / session_id / "snapshots.parquet"
+    if not parquet_path.exists():
+        return []
+
+    available = list(_COLUMN_METRICS.keys())
+
+    # Check snapshot_json for company-level fields
+    table = pq.read_table(parquet_path, columns=["snapshot_json"])
+    if table.num_rows > 0:
+        snap = json.loads(table.column("snapshot_json")[0].as_py())
+        companies = snap.get("companies", [])
+        if companies:
+            for key in companies[0]:
+                if key not in ("id", "name", "manager", "color", "is_ai", "is_active"):
+                    if key not in available:
+                        available.append(key)
+    return available

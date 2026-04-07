@@ -1,11 +1,19 @@
-"""Repository for game event queries."""
+"""Repository for game event queries -- reads from Parquet."""
 
+import logging
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import and_, select
+import pyarrow.parquet as pq
 
-from nttd.db.engine import get_session
-from nttd.db.tables import events, messages
+logger = logging.getLogger(__name__)
+
+_SESSIONS_DIR = Path("logs/sessions")
+
+
+def set_sessions_dir(path: Path) -> None:
+    global _SESSIONS_DIR
+    _SESSIONS_DIR = path
 
 
 async def get_events(
@@ -18,27 +26,25 @@ async def get_events(
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Query game events with optional filters."""
-    async with get_session() as db:
-        conditions = [events.c.session_id == session_id]
-        if event_type is not None:
-            conditions.append(events.c.event_type == event_type)
-        if company_id is not None:
-            conditions.append(events.c.company_id == company_id)
-        if from_date is not None:
-            conditions.append(events.c.game_date >= from_date)
-        if to_date is not None:
-            conditions.append(events.c.game_date <= to_date)
+    parquet_path = _SESSIONS_DIR / session_id / "events.parquet"
+    if not parquet_path.exists():
+        return []
 
-        rows = (
-            await db.execute(
-                select(events)
-                .where(and_(*conditions))
-                .order_by(events.c.id.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-        ).fetchall()
-        return [dict(r._mapping) for r in rows]
+    table = pq.read_table(parquet_path)
+    rows = table.to_pylist()
+
+    if event_type is not None:
+        rows = [r for r in rows if r.get("event_type") == event_type]
+    if company_id is not None:
+        rows = [r for r in rows if r.get("company_id") == company_id]
+    if from_date is not None:
+        rows = [r for r in rows if r.get("game_date", 0) >= from_date]
+    if to_date is not None:
+        rows = [r for r in rows if r.get("game_date", 0) <= to_date]
+
+    # Most recent first
+    rows.reverse()
+    return rows[offset:offset + limit]
 
 
 async def get_messages(
@@ -48,21 +54,5 @@ async def get_messages(
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Query messages with optional filters."""
-    async with get_session() as db:
-        conditions = [messages.c.session_id == session_id]
-        if message_type is not None:
-            conditions.append(messages.c.message_type == message_type)
-        if company_id is not None:
-            conditions.append(messages.c.company_id == company_id)
-
-        rows = (
-            await db.execute(
-                select(messages)
-                .where(and_(*conditions))
-                .order_by(messages.c.id.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-        ).fetchall()
-        return [dict(r._mapping) for r in rows]
+    """Messages are no longer stored separately -- return empty list."""
+    return []

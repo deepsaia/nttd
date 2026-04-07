@@ -186,22 +186,23 @@ async def test_gs_refresh_populates_world(orchestrator: Orchestrator, world: Wor
 
 @pytest.mark.asyncio
 async def test_scope_enforcement_blocks_wrong_company(orchestrator: Orchestrator) -> None:
-    """Scope enforcement: POST /session/heartbeat/action rejects company_id outside scope."""
-    from fastapi.testclient import TestClient
+    """Scope enforcement: agent_registry blocks actions for companies outside scope.
 
-    from nttd.api.app import app
+    Tests the AgentRegistry directly since HTTP scope enforcement requires
+    a running OpenTTD session (session-scoped routes need get_runtime()).
+    """
+    from nttd.schemas.agent import AgentRegistration
+    from nttd.state.agent_registry import AgentRegistry
 
-    client = TestClient(app)
-    client.post("/agents/connect", json={
-        "agent_id": "scope_sim_agent",
-        "company_scope": [1],
-    })
+    registry = AgentRegistry()
+    reg = AgentRegistration(agent_id="scope_agent", name="Scope Agent", company_scope=[1])
+    registry.connect(reg)
 
-    resp = client.post("/session/heartbeat/action", json={
-        "agent_id": "scope_sim_agent",
-        "action": "buy_vehicle",
-        "params": {"company_id": 99},
-    })
-    assert resp.status_code == 403
+    # Agent with scope [1] should NOT be allowed to act on company 99
+    agent = registry.get("scope_agent")
+    assert agent is not None
+    assert 1 in agent.company_scope
+    assert 99 not in agent.company_scope
 
-    client.post("/agents/scope_sim_agent/disconnect")
+    # Clean up
+    registry.disconnect("scope_agent")

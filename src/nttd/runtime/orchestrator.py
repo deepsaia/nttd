@@ -3,10 +3,12 @@
 Heartbeat mode is the primary mode for agent benchmarking:
   pause → GS refresh → snapshot → action window → execute actions → unpause → advance N days → repeat
 """
+from __future__ import annotations
+
 import asyncio
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
@@ -18,6 +20,9 @@ from nttd.schemas.action_result import ActionStatus
 from nttd.schemas.game import RuntimeMode
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.state.world import WorldState
+
+if TYPE_CHECKING:
+    from nttd.db.recorder import SessionRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +39,20 @@ _TIMEOUT_MULTIPLIER = 3.0
 class Orchestrator:
     """Controls the runtime loop and broker between the bridge, agents, and GS."""
 
-    def __init__(self, world: WorldState, client: AdminClient) -> None:
+    def __init__(
+        self,
+        world: WorldState,
+        client: AdminClient,
+        recorder: SessionRecorder | None = None,
+    ) -> None:
         self.world = world
         self.client = client
+        self.recorder = recorder
         self._running = False
         self._heartbeat_interval_days: int = 30
         self._action_window_seconds: float = 5.0
+        self._snapshot_interval_days: int = 1
+        self._last_snapshot_date: int = -1
         self._observers: list[Any] = []
 
         # Heartbeat action queue — agents push here during the action window
@@ -53,8 +66,7 @@ class Orchestrator:
         self._assist_approved: asyncio.Event = asyncio.Event()
         self._assist_actions: list[dict[str, Any]] = []
 
-        # Optional event logger and action tracker (set from app.py)
-        self.event_logger: Any = None
+        # Optional action tracker (set from app.py)
         self.action_tracker: ActionTracker | None = None
         self._secs_per_game_day: float = _SECS_PER_GAME_DAY
 
@@ -77,6 +89,7 @@ class Orchestrator:
         """Apply scenario config to orchestrator (heartbeat interval, action window, end conditions)."""
         self._heartbeat_interval_days = config.heartbeat.interval_days
         self._action_window_seconds = config.heartbeat.action_window_seconds
+        self._snapshot_interval_days = config.runtime.snapshot_interval_days
         self._end_checker = EndConditionChecker(config.end_conditions)
         # At game_speed > 1 (fast-forward) the game runs faster; scale timeout down.
         if config.heartbeat.game_speed > 1:
@@ -84,10 +97,11 @@ class Orchestrator:
         else:
             self._secs_per_game_day = _SECS_PER_GAME_DAY
         logger.info(
-            "Scenario loaded: %s | heartbeat=%d days | action_window=%.1fs | end_logic=%s",
+            "Scenario loaded: %s | heartbeat=%d days | action_window=%.1fs | snapshot_interval=%d days | end_logic=%s",
             config.name,
             config.heartbeat.interval_days,
             config.heartbeat.action_window_seconds,
+            config.runtime.snapshot_interval_days,
             config.end_conditions.logic,
         )
 
@@ -206,8 +220,6 @@ class Orchestrator:
             try:
                 async with lock:
                     result = await self.client.send_gamescript(gs_action, gs_params)
-                    if self.event_logger:
-                        self.event_logger.log_gs_command(gs_action, gs_params, result)
                     if result.get("success"):
                         if self.action_tracker:
                             self.action_tracker.update_result(
@@ -245,6 +257,8 @@ class Orchestrator:
             "Heartbeat mode started (interval=%d days, action_window=%.1fs)",
             self._heartbeat_interval_days, self._action_window_seconds,
         )
+        if self.recorder:
+            self.recorder.record_event(self.world.game.game_date, "session_start", detail="heartbeat")
 
         while self._running:
             # 1. Pause
@@ -263,8 +277,9 @@ class Orchestrator:
                 step_count, snapshot.game.game_date, len(snapshot.companies),
                 len(snapshot.towns), len(snapshot.vehicles),
             )
-            if self.event_logger:
-                self.event_logger.log_observation(snapshot)
+            # Record snapshot to Parquet (heartbeat records every cycle)
+            if self.recorder:
+                self.recorder.record_snapshot(snapshot)
 
             # 4. Notify observers (agents receive snapshot, may push heartbeat actions)
             self._pending_actions.clear()
@@ -311,6 +326,8 @@ class Orchestrator:
             await self.client.send_rcon("pause")
         self.world.set_paused(True)
         self._running = False
+        if self.recorder:
+            self.recorder.record_event(self.world.game.game_date, "session_stop", detail="heartbeat")
         logger.info("Heartbeat mode stopped after %d steps", step_count)
 
     # -------------------------------------------------------------------------
@@ -330,6 +347,8 @@ class Orchestrator:
         """
         self._running = True
         logger.info("Async real-time mode started")
+        if self.recorder:
+            self.recorder.record_event(self.world.game.game_date, "session_start", detail="async_realtime")
         last_gs_refresh = 0.0
 
         while self._running:
@@ -341,9 +360,14 @@ class Orchestrator:
                 last_gs_refresh = now
 
             snapshot = self.world.snapshot()
-            if self.event_logger:
-                self.event_logger.log_observation(snapshot)
             await self._notify_observers(snapshot)
+
+            # Record snapshot to Parquet (respecting snapshot_interval_days)
+            if self.recorder:
+                game_date = snapshot.game.game_date
+                if game_date - self._last_snapshot_date >= self._snapshot_interval_days:
+                    self.recorder.record_snapshot(snapshot)
+                    self._last_snapshot_date = game_date
 
             # Check end conditions (wall-clock, game date, revenue, cargo)
             end_result = self._end_checker.check(snapshot)
@@ -359,6 +383,8 @@ class Orchestrator:
                 break
 
         self._running = False
+        if self.recorder:
+            self.recorder.record_event(self.world.game.game_date, "session_stop", detail="async_realtime")
         logger.info("Async real-time mode stopped")
 
     # -------------------------------------------------------------------------
@@ -380,8 +406,6 @@ class Orchestrator:
 
         await self._refresh_world_from_gs()
         self._assist_snapshot = self.world.snapshot()
-        if self.event_logger:
-            self.event_logger.log_observation(self._assist_snapshot)
 
         self._assist_state = "ready"
         return self._assist_snapshot

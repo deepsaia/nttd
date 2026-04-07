@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING, Any
 
 from examples.agent_instructions import (
     get_air_agent_prompt,
-    get_bus_agent_prompt,
     get_general_agent_prompt,
     get_rail_agent_prompt,
+    get_road_agent_prompt,
     get_water_agent_prompt,
 )
 from nttd.gameloop.adapters.base import BaseAdapter
@@ -21,6 +21,8 @@ from nttd.gameloop.schemas import AgentConfig, ConnectionStatus
 from nttd.gameloop.tracker import ConnectionTracker
 from nttd.interpreter.parser import parse_action_list
 from nttd.interpreter.validator import validate_actions
+from nttd.schemas.action_envelope import ActionEnvelope
+from nttd.schemas.action_result import ActionResult, ActionStatus
 
 if TYPE_CHECKING:
     from nttd.runtime.session_runtime import SessionRuntime
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 _LLM_TIMEOUT_SECONDS = 120.0  # Multi-turn tool calling can take several rounds
 
 _PROMPT_MAP: dict[str, Any] = {
-    "bus": get_bus_agent_prompt,
+    "road": get_road_agent_prompt,
     "rail": get_rail_agent_prompt,
     "air": get_air_agent_prompt,
     "water": get_water_agent_prompt,
@@ -63,7 +65,7 @@ class AgentConnection:
 
         # Default instructions when none provided — select by agent_type
         if not config.instructions:
-            prompt_fn = _PROMPT_MAP.get(config.agent_type, get_bus_agent_prompt)
+            prompt_fn = _PROMPT_MAP.get(config.agent_type, get_road_agent_prompt)
             config.instructions = prompt_fn(config.company_id)
             logger.info(
                 "Agent %s using default %s prompt", config.agent_id, config.agent_type,
@@ -109,7 +111,13 @@ class AgentConnection:
         self._task = asyncio.create_task(self._run(), name=f"agent:{self.config.agent_id}")
         logger.info("Agent %s started (connection %s)", self.config.agent_id, self.connection_id)
 
-        # Record connection start to DB
+        # Record agent start event and connection to DB
+        self.runtime.recorder.record_event(
+            game_date=self.runtime.world.game.game_date,
+            event_type="agent_start",
+            company_id=self.config.company_id,
+            detail=self.config.agent_id,
+        )
         self.runtime.recorder.record_agent_connection(
             connection_id=self.connection_id,
             agent_id=self.config.agent_id,
@@ -132,6 +140,14 @@ class AgentConnection:
                 pass
         await self.adapter.close()
         logger.info("Agent %s stopped (connection %s)", self.config.agent_id, self.connection_id)
+
+        # Record agent stop event
+        self.runtime.recorder.record_event(
+            game_date=self.runtime.world.game.game_date,
+            event_type="agent_stop",
+            company_id=self.config.company_id,
+            detail=self.config.agent_id,
+        )
 
         # Record connection stop with final aggregate stats to DB
         self.runtime.recorder.record_agent_connection(
@@ -238,7 +254,7 @@ class AgentConnection:
         succeeded = 0
         failed = 0
         if valid_actions:
-            results = await self._execute(valid_actions)
+            results = await self._execute(valid_actions, game_date)
             for r in results:
                 if r.get("status") == "success":
                     succeeded += 1
@@ -267,80 +283,141 @@ class AgentConnection:
         )
 
     async def _observe(self) -> dict[str, Any]:
-        """Build the observation for this agent from the runtime's WorldState."""
+        """Build the observation for this agent based on its snapshot class."""
         world = self.runtime.world
         game = world.game
+        company_id = self.config.company_id
 
-        if self.config.observation_mode == "full":
+        # Resolve snapshot class
+        class_name = self.config.effective_snapshot_class
+        try:
+            snap_class = self.runtime.snapshot_class_registry.get(class_name)
+        except KeyError:
+            logger.warning(
+                "Agent %s: unknown snapshot class %r, falling back to compact",
+                self.config.agent_id, class_name,
+            )
+            snap_class = self.runtime.snapshot_class_registry.get("compact")
+
+        sections = snap_class.sections
+
+        # "full" class returns the entire StateSnapshot as JSON
+        if class_name == "full":
             snapshot = world.snapshot()
             return json.loads(snapshot.model_dump_json())
 
-        # Compact mode — build a lightweight dict directly
-        company_id = self.config.company_id
-        company = world.companies.get(company_id)
-        company_dict: dict[str, Any] | None = None
-        if company:
-            company_dict = {
-                "id": company.id,
-                "name": company.name,
-                "balance": company.money,
-                "loan": company.loan,
-                "income": company.income,
-                "company_value": company.value,
-                "profit_last_year": company.profit_last_year,
-            }
-            # Optional detailed finance via GS query
-            if self.config.include_finance:
-                try:
-                    fin = await self.runtime.admin_client.send_gamescript(
-                        "get_company_finance", {"company_id": company_id}, timeout=10.0,
-                    )
-                    if fin.get("success"):
-                        fin_data = fin.get("result", {})
-                        company_dict["max_loan"] = fin_data.get("max_loan")
-                        company_dict["q1_income"] = fin_data.get("q1_income")
-                        company_dict["q1_expenses"] = fin_data.get("q1_expenses")
-                except Exception:
-                    logger.debug("Agent %s finance fetch failed", self.config.agent_id)
-
-        company_vehicles = [
-            v for v in world.vehicles.values()
-            if v.company_id == company_id
-        ]
-        vehicles_dict = {
-            "total": len(company_vehicles),
-            "in_depot": sum(1 for v in company_vehicles if v.in_depot),
-        }
-
-        company_stations = [
-            s for s in world.stations.values()
-            if s.company_id == company_id
-        ]
-
-        top_towns = sorted(
-            world.towns.values(),
-            key=lambda t: t.population,
-            reverse=True,
-        )[:10]
-
-        return {
+        # Build observation dict from requested sections
+        obs: dict[str, Any] = {
             "game_date": game.game_date,
             "paused": game.paused,
-            "company": company_dict,
-            "vehicles": vehicles_dict,
-            "total_stations": len(company_stations),
-            "total_towns": len(world.towns),
-            "top_towns": [
-                {"id": t.id, "name": t.name, "population": t.population}
-                for t in top_towns
-            ],
         }
 
-    async def _execute(self, actions: list[Any]) -> list[dict[str, Any]]:
+        if "company" in sections:
+            company = world.companies.get(company_id)
+            if company:
+                obs["company"] = {
+                    "id": company.id,
+                    "name": company.name,
+                    "balance": company.money,
+                    "loan": company.loan,
+                    "income": company.income,
+                    "company_value": company.value,
+                    "profit_last_year": company.profit_last_year,
+                }
+                if self.config.include_finance:
+                    try:
+                        fin = await self.runtime.admin_client.send_gamescript(
+                            "get_company_finance", {"company_id": company_id}, timeout=10.0,
+                        )
+                        if fin.get("success"):
+                            fin_data = fin.get("result", {})
+                            obs["company"]["max_loan"] = fin_data.get("max_loan")
+                            obs["company"]["q1_income"] = fin_data.get("q1_income")
+                            obs["company"]["q1_expenses"] = fin_data.get("q1_expenses")
+                    except Exception:
+                        logger.debug("Agent %s finance fetch failed", self.config.agent_id)
+
+        if "vehicles" in sections:
+            company_vehicles = [v for v in world.vehicles.values() if v.company_id == company_id]
+            obs["vehicles"] = [
+                {
+                    "id": v.id, "type": v.type, "name": v.name,
+                    "running": v.running, "in_depot": v.in_depot,
+                    "profit_this_year": v.profit_this_year,
+                }
+                for v in company_vehicles
+            ]
+        elif "vehicles_summary" in sections:
+            company_vehicles = [v for v in world.vehicles.values() if v.company_id == company_id]
+            obs["vehicles"] = {
+                "total": len(company_vehicles),
+                "in_depot": sum(1 for v in company_vehicles if v.in_depot),
+            }
+
+        if "stations" in sections:
+            company_stations = [s for s in world.stations.values() if s.company_id == company_id]
+            obs["stations"] = [
+                {"id": s.id, "name": s.name, "x": s.x, "y": s.y}
+                for s in company_stations
+            ]
+        elif "stations_count" in sections:
+            company_stations = [s for s in world.stations.values() if s.company_id == company_id]
+            obs["total_stations"] = len(company_stations)
+
+        if "towns" in sections:
+            obs["towns"] = [
+                {"id": t.id, "name": t.name, "population": t.population, "x": t.x, "y": t.y}
+                for t in world.towns.values()
+            ]
+        elif "top_towns" in sections:
+            top_towns = sorted(world.towns.values(), key=lambda t: t.population, reverse=True)[:10]
+            obs["top_towns"] = [
+                {"id": t.id, "name": t.name, "population": t.population}
+                for t in top_towns
+            ]
+            obs["total_towns"] = len(world.towns)
+
+        if "industries" in sections:
+            obs["industries"] = [
+                {
+                    "id": ind.id, "name": ind.name, "type_name": ind.type_name,
+                    "x": ind.x, "y": ind.y, "is_raw": ind.is_raw,
+                }
+                for ind in world.industries.values()
+            ]
+
+        if "subsidies" in sections:
+            obs["subsidies"] = [
+                {
+                    "id": s.id, "cargo_label": s.cargo_label,
+                    "src_name": s.src_name, "dst_name": s.dst_name,
+                }
+                for s in world.subsidies.values()
+            ]
+
+        if "routes" in sections:
+            obs["routes"] = []
+
+        if "game" in sections:
+            obs["game"] = {
+                "game_date": game.game_date,
+                "tick": game.tick,
+                "paused": game.paused,
+                "mode": game.mode,
+            }
+
+        return obs
+
+    async def _execute(self, actions: list[Any], game_date: int = 0) -> list[dict[str, Any]]:
         """Execute validated actions via GS commands through the admin client."""
         results: list[dict[str, Any]] = []
-        for action in actions:
+        cycle_num = self.tracker.cycle_count
+        for i, action in enumerate(actions):
             params = {**action.parameters, "company_id": self.config.company_id}
+            action_id = f"{self.connection_id}:{cycle_num}:{i}"
+            status = ActionStatus.FAILED
+            error = ""
+
             try:
                 gs_result = await self.runtime.admin_client.send_gamescript(
                     action.action_type, params,
@@ -350,6 +427,7 @@ class AgentConnection:
                         "Agent %s action %s OK: %s",
                         self.config.agent_id, action.action_type, gs_result.get("result", {}),
                     )
+                    status = ActionStatus.SUCCESS
                     results.append({"status": "success", "result": gs_result.get("result", {})})
                 else:
                     error = gs_result.get("error", "GS returned failure")
@@ -359,9 +437,32 @@ class AgentConnection:
                     )
                     results.append({"status": "failed", "error": error})
             except Exception as exc:
+                error = str(exc)
                 logger.warning(
                     "Agent %s action %s failed: %s",
                     self.config.agent_id, action.action_type, exc,
                 )
-                results.append({"status": "error", "error": str(exc)})
+                results.append({"status": "error", "error": error})
+
+            # Record action to DB
+            self.runtime.recorder.record_action(
+                envelope=ActionEnvelope(
+                    action_id=action_id,
+                    action_type=action.action_type,
+                    parameters=params,
+                    company_id=self.config.company_id,
+                    metadata={
+                        "participant_id": self.config.agent_id,
+                        "participant_type": "agent",
+                        "game_date": game_date,
+                        "submitted_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                ),
+                result=ActionResult(
+                    action_id=action_id,
+                    status=status,
+                    error=error,
+                ),
+            )
+
         return results

@@ -6,6 +6,7 @@ The SessionManager handles port allocation, process lifecycle, and orphan recove
 
 import logging
 import os
+import shutil
 import socket
 from pathlib import Path
 from typing import Any
@@ -116,6 +117,12 @@ class SessionManager:
             agent_companies=agent_companies,
         )
 
+        # Persist effective settings to DB for reproducibility
+        persist_settings = dict(effective_settings)
+        persist_settings["_agent_companies"] = str(agent_companies)
+        persist_settings["_ai_opponents"] = str(ai_count)
+        await session_repo.upsert_settings(session_id, persist_settings)
+
         # Create runtime and start server
         runtime = SessionRuntime(
             session_id=session_id,
@@ -143,13 +150,20 @@ class SessionManager:
         return runtime
 
     async def stop_session(self, session_id: str, end_reason: str = "manual") -> None:
-        """Stop a running session's OpenTTD server."""
+        """Stop a running session's OpenTTD server and clean up config directory."""
         runtime = self.runtimes.pop(session_id, None)
         if runtime:
             await runtime.shutdown()
 
         await session_repo.end_session(session_id, end_reason=end_reason)
         await session_repo.update_session_pid(session_id, None)
+
+        # Clean up per-session config directory (ports, cfg, symlinks, saves)
+        session_dir = self.sessions_dir / session_id
+        if session_dir.exists():
+            shutil.rmtree(session_dir, ignore_errors=True)
+            logger.info("Cleaned up session config dir: %s", session_dir)
+
         logger.info("Session %s stopped (reason=%s)", session_id, end_reason)
 
     async def recover_orphans(self) -> None:
