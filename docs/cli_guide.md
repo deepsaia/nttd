@@ -6,7 +6,7 @@ The `nttd` CLI is the primary interface for running OpenTTD AI simulations. Ever
 
 ## Installing OpenTTD
 
-nttd requires OpenTTD 14.x or 15.x installed on your system.
+nttd requires OpenTTD 15.2 or later installed on your system.
 
 ### macOS
 
