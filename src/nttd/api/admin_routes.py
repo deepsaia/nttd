@@ -183,13 +183,6 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
     if mgr.get_runtime(session_id):
         raise HTTPException(status_code=409, detail="Session is already running")
 
-    # Stamp the session name with start time in local timezone
-    current_name = session.get("name", "")
-    now = datetime.now().astimezone()
-    ts = now.strftime("%d%b%Y-%H%M%S%Z").lower()  # e.g. 01apr2026-193901pdt
-    stamped_name = f"{current_name}-{ts}" if current_name else ts
-    await session_repo.update_session_name(session_id, stamped_name)
-
     # Get stored settings
     settings = await session_repo.get_settings(session_id)
 
