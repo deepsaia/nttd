@@ -18,23 +18,22 @@ venv/
 .ruff_cache/
 .pytest_cache/
 
-# OpenTTD — ignore everything auto-generated, keep only our config and scripts.
-# Root-level strays (from runs before ottd_config/ existed)
-favs.cfg
-hotkeys.cfg
-hs.dat
-private.cfg
-windows.cfg
-secrets.cfg
-*.sav
-
-# ottd_config/ — ignore all auto-generated files, whitelist what we need
+# OpenTTD — ignore auto-generated files, whitelist what we need.
+# ottd_config/ contains the base template; only these are tracked:
+#   openttd.cfg      — base game settings (patched per-session)
+#   README.md        — documentation
+#   game/nttd-gs/    — our GameScript (info.nut, main.nut)
+#   ai/nttd-idle/    — idle AI for agent company slots
+#   scripts/         — autoexec.scr
 ottd_config/*
 !ottd_config/openttd.cfg
 !ottd_config/README.md
 !ottd_config/game/
 ottd_config/game/*
 !ottd_config/game/nttd-gs/
+!ottd_config/ai/
+ottd_config/ai/*
+!ottd_config/ai/nttd-idle/
 !ottd_config/scripts/
 
 # nttd runtime output

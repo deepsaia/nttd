@@ -54,22 +54,20 @@ def session_create(
     resp.raise_for_status()
     session_id = resp.json()["session_id"]
 
-    ec_payload = build_end_conditions_payload(cfg.end_conditions)
-    if len(ec_payload) > 1:
-        requests.post(
-            f"{url}/admin/sessions/{session_id}/end-conditions",
-            json=ec_payload,
-            timeout=10,
-        )
+    # End conditions are stored in settings and applied at session start
+    # Read display values from settings (already parsed from raw config)
+    map_x = 2 ** int(settings.get("game_creation.map_x", "8"))
+    map_y = 2 ** int(settings.get("game_creation.map_y", "8"))
+    landscape = settings.get("_runtime_mode", "async_realtime")
+    ai_count = settings.get("difficulty.max_no_competitors", "0")
 
     console.print(Panel(
         f"[bold]Session ID:[/]  [cyan]{session_id}[/]\n"
         f"[bold]Name:[/]        {session_name}\n"
         f"[bold]Config:[/]      {config or 'defaults'}\n"
-        f"[bold]Map:[/]         {cfg.map.size_x}x{cfg.map.size_y} {cfg.map.landscape}\n"
-        f"[bold]AI opponents:[/] {cfg.companies.num_ai_companies}\n"
+        f"[bold]Map:[/]         {map_x}x{map_y}\n"
+        f"[bold]AI opponents:[/] {ai_count}\n"
         f"[bold]Runtime:[/]     {cfg.runtime.mode} @ {cfg.runtime.game_speed}x\n"
-        f"[bold]Agents:[/]      {len(cfg.agents)} configured\n"
         + format_end_conditions_brief(cfg.end_conditions),
         title="Session created",
     ))

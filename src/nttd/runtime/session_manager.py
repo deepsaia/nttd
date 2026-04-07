@@ -4,13 +4,25 @@ Each session gets its own server process, config directory, and runtime stack.
 The SessionManager handles port allocation, process lifecycle, and orphan recovery.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import shutil
 import socket
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from nttd.runtime.orchestrator import Orchestrator
+
+from nttd.config.scenario_config import (
+    CargoThresholdConfig,
+    EndConditionsConfig,
+    GameDateLimitConfig,
+    RevenueThresholdConfig,
+    TimeLimitConfig,
+)
 from nttd.db.repositories import session_repo
 from nttd.runtime.config_builder import build_session_config
 from nttd.runtime.session_runtime import SessionRuntime
@@ -142,15 +154,39 @@ class SessionManager:
         # Start AI companies (no newgame needed — settings already in config)
         await runtime.start_companies(ai_count, agent_companies)
 
+        # Configure orchestrator from runtime settings
+        orch = runtime.orchestrator
+        orch._screenshot_interval_seconds = float(
+            effective_settings.get("_screenshot_interval_seconds", "60"),
+        )
+        orch._screenshot_type = effective_settings.get("_screenshot_type", "minimap")
+        orch._save_interval_seconds = float(
+            effective_settings.get("_save_interval_seconds", "300"),
+        )
+        snapshot_days = effective_settings.get("_snapshot_interval_days")
+        if snapshot_days:
+            orch._snapshot_interval_days = int(snapshot_days)
+
+        # Configure end conditions from settings
+        self._apply_end_conditions(orch, effective_settings)
+
+        # Auto-start the orchestrator loop for snapshot capture
+        runtime_mode = effective_settings.get("_runtime_mode", "async_realtime")
+        runtime.start_orchestrator(mode=runtime_mode)
+
         self.runtimes[session_id] = runtime
         logger.info(
-            "Session %s started: game_port=%d, admin_port=%d, pid=%s",
-            session_id, game_port, admin_port, pid,
+            "Session %s started: game_port=%d, admin_port=%d, pid=%s, mode=%s",
+            session_id, game_port, admin_port, pid, runtime_mode,
         )
         return runtime
 
     async def stop_session(self, session_id: str, end_reason: str = "manual") -> None:
-        """Stop a running session's OpenTTD server and clean up config directory."""
+        """Stop a running session's OpenTTD server and clean up transient files.
+
+        Preserves session data (Parquet, session.conf, agents.conf) while removing
+        OpenTTD config artifacts (openttd.cfg, secrets.cfg, symlinks, saves).
+        """
         runtime = self.runtimes.pop(session_id, None)
         if runtime:
             await runtime.shutdown()
@@ -158,13 +194,69 @@ class SessionManager:
         await session_repo.end_session(session_id, end_reason=end_reason)
         await session_repo.update_session_pid(session_id, None)
 
-        # Clean up per-session config directory (ports, cfg, symlinks, saves)
+        # Clean up OpenTTD config artifacts only -- preserve session data
         session_dir = self.sessions_dir / session_id
         if session_dir.exists():
-            shutil.rmtree(session_dir, ignore_errors=True)
-            logger.info("Cleaned up session config dir: %s", session_dir)
+            self._cleanup_config_artifacts(session_dir)
 
         logger.info("Session %s stopped (reason=%s)", session_id, end_reason)
+
+    def _cleanup_config_artifacts(self, session_dir: Path) -> None:
+        """Remove OpenTTD config files and symlinks, keep session data.
+
+        Preserves: session.conf, agents.conf, _fragments/, *.parquet,
+                   save/ (game saves), screenshot/ (minimap captures).
+        """
+        # Files created by config_builder or OpenTTD runtime
+        config_files = [
+            "openttd.cfg", "secrets.cfg", "private.cfg",
+            "favs.cfg", "hotkeys.cfg", "hs.dat", "windows.cfg",
+        ]
+        for name in config_files:
+            p = session_dir / name
+            if p.exists():
+                p.unlink()
+
+        # Symlinks to shared dirs (game, ai, baseset, etc.)
+        symlink_dirs = ["game", "ai", "baseset", "newgrf", "content_download", "scripts"]
+        for name in symlink_dirs:
+            p = session_dir / name
+            if p.is_symlink():
+                p.unlink()
+
+        # Only remove truly transient OpenTTD dirs (not save/ or screenshot/)
+        transient_dirs = ["scenario"]
+        for name in transient_dirs:
+            p = session_dir / name
+            if p.is_dir() and not p.is_symlink():
+                shutil.rmtree(p, ignore_errors=True)
+
+        logger.info("Cleaned up config artifacts in %s", session_dir)
+
+    def _apply_end_conditions(
+        self, orch: Orchestrator, settings: dict[str, str],
+    ) -> None:
+        """Configure end conditions on the orchestrator from _ec_* settings."""
+        logic = settings.get("_ec_logic")
+        if not logic:
+            return
+
+        config = EndConditionsConfig(logic=logic)
+        wall_min = settings.get("_ec_wall_minutes")
+        if wall_min:
+            config.time_limit = TimeLimitConfig(enabled=True, wall_minutes=float(wall_min))
+        end_year = settings.get("_ec_end_year")
+        if end_year:
+            config.game_date_limit = GameDateLimitConfig(enabled=True, end_year=int(end_year))
+        revenue = settings.get("_ec_revenue")
+        if revenue:
+            config.revenue_threshold = RevenueThresholdConfig(enabled=True, total_revenue=int(revenue))
+        cargo = settings.get("_ec_cargo")
+        if cargo:
+            config.cargo_threshold = CargoThresholdConfig(enabled=True, total_cargo_delivered=int(cargo))
+
+        orch.configure_end_conditions(config)
+        logger.info("End conditions applied: logic=%s, time=%s, year=%s", logic, wall_min, end_year)
 
     async def recover_orphans(self) -> None:
         """On nttd restart, try to reconnect to still-running OpenTTD servers."""

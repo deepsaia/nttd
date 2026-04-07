@@ -71,21 +71,28 @@ def build_session_config(
 
     dst_cfg.write_text(cfg_content)
 
-    # --- secrets.cfg: copy and patch admin password ---
+    # --- secrets.cfg: copy and patch, or generate from scratch ---
     src_secrets = base_config_dir / "secrets.cfg"
     dst_secrets = session_dir / "secrets.cfg"
     if src_secrets.exists():
         secrets_content = src_secrets.read_text()
         secrets_content = _patch_ini_value(secrets_content, "admin_password", admin_password)
-        dst_secrets.write_text(secrets_content)
+    else:
+        secrets_content = (
+            "[network]\n"
+            "server_password = \n"
+            "rcon_password = \n"
+            f"admin_password = {admin_password}\n"
+        )
+    dst_secrets.write_text(secrets_content)
 
-    # --- private.cfg: copy as-is ---
+    # --- private.cfg: copy if exists (not required, OpenTTD generates defaults) ---
     src_private = base_config_dir / "private.cfg"
     if src_private.exists():
         shutil.copy2(src_private, session_dir / "private.cfg")
 
     # --- Symlink shared directories ---
-    symlink_dirs = ["game", "ai", "baseset", "newgrf", "content_download", "scripts"]
+    symlink_dirs = ["game", "ai", "scripts"]
     for dirname in symlink_dirs:
         src = base_config_dir / dirname
         dst = session_dir / dirname

@@ -339,6 +339,36 @@ def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
     if max_loan != 300000:
         settings["difficulty.max_loan"] = str(max_loan)
 
+    # nttd-internal runtime metadata (prefixed with _)
+    rt = _get(raw, "runtime", {})
+    settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))
+    game_speed = int(_get(rt, "game_speed", 1))
+    if game_speed != 1:
+        settings["_game_speed"] = str(game_speed)
+    snapshot_interval = int(_get(rt, "snapshot_interval_days", 1))
+    if snapshot_interval != 1:
+        settings["_snapshot_interval_days"] = str(snapshot_interval)
+    settings["_screenshot_interval_seconds"] = str(int(_get(rt, "screenshot_interval_seconds", 60)))
+    settings["_screenshot_type"] = str(_get(rt, "screenshot_type", "minimap"))
+    settings["_save_interval_seconds"] = str(int(_get(rt, "save_interval_seconds", 300)))
+
+    # End conditions -- stored in settings so they can be applied at session start
+    ec = _get(raw, "end_conditions", {})
+    if ec:
+        settings["_ec_logic"] = str(_get(ec, "logic", "any"))
+        tl = _get(ec, "time_limit", {})
+        if _get(tl, "enabled", False):
+            settings["_ec_wall_minutes"] = str(float(_get(tl, "wall_minutes", 15)))
+        gd = _get(ec, "game_date_limit", {})
+        if _get(gd, "enabled", False):
+            settings["_ec_end_year"] = str(int(_get(gd, "end_year", 2000)))
+        rv = _get(ec, "revenue_threshold", {})
+        if _get(rv, "enabled", False):
+            settings["_ec_revenue"] = str(int(_get(rv, "total_revenue", 1000000)))
+        ct = _get(ec, "cargo_threshold", {})
+        if _get(ct, "enabled", False):
+            settings["_ec_cargo"] = str(int(_get(ct, "total_cargo_delivered", 50000)))
+
     return settings
 
 

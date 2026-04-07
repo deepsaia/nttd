@@ -19,7 +19,7 @@ from nttd.schemas.snapshot import StateSnapshot
 
 logger = logging.getLogger(__name__)
 
-_FLUSH_THRESHOLD: int = 50
+_FLUSH_THRESHOLD: int = 10
 
 _SCHEMA = pa.schema([
     ("session_id", pa.string()),

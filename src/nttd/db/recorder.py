@@ -182,6 +182,10 @@ class SessionRecorder:
                 self._write_fragment, "events", events,
             )))
 
+        # Also flush snapshot ParquetWriter buffer if it has data
+        if self._parquet._buffer:
+            tasks.append(asyncio.ensure_future(asyncio.to_thread(self._parquet.flush)))
+
         if not tasks:
             return
 

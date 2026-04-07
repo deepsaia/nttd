@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
+from nttd.utils.name_generator import generate_timestamp
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
 from nttd.runtime.company_lock import CompanyLockManager
 from nttd.runtime.end_conditions import EndConditionChecker
@@ -72,6 +73,11 @@ class Orchestrator:
 
         # End-condition checker (defaults to disabled; set via load_scenario())
         self._end_checker: EndConditionChecker = EndConditionChecker(EndConditionsConfig())
+
+        # Periodic screenshot/save intervals (wall-clock seconds, 0 = disabled)
+        self._screenshot_interval_seconds: float = 60.0
+        self._screenshot_type: str = "minimap"  # normal | giant | minimap
+        self._save_interval_seconds: float = 300.0
         # Notified when the simulation ends due to an end condition
         self.on_end: list[Any] = []
 
@@ -131,6 +137,27 @@ class Orchestrator:
                     await result
             except Exception:
                 logger.exception("Observer error")
+
+    async def _capture_screenshot(self) -> None:
+        """Fire-and-forget RCON screenshot. Does not block the game loop."""
+        try:
+            ts = generate_timestamp()
+            game_date = self.world.game.game_date
+            cmd = f"screenshot {self._screenshot_type} d{game_date}-{ts}"
+            asyncio.create_task(self.client.send_rcon(cmd))
+            logger.debug("Screenshot requested: %s", cmd)
+        except Exception:
+            logger.debug("Screenshot request failed (non-critical)")
+
+    async def _capture_save(self, game_date: int, suffix: str = "") -> None:
+        """Fire-and-forget RCON save. Does not block the game loop."""
+        try:
+            ts = generate_timestamp()
+            filename = f"d{game_date}-{ts}{suffix}"
+            asyncio.create_task(self.client.send_rcon(f"save {filename}"))
+            logger.debug("Save requested: %s", filename)
+        except Exception:
+            logger.debug("Save request failed (non-critical)")
 
     async def _refresh_world_from_gs(self) -> None:
         """Pull world entities from GS and update WorldState.
@@ -342,6 +369,7 @@ class Orchestrator:
     async def run_async_realtime(self) -> None:
         """Game runs continuously, GS refresh every 10s, snapshots pushed every 2s.
 
+        Also captures periodic minimap screenshots and game saves via RCON.
         End conditions are checked on each snapshot cycle. When triggered,
         the ``on_end`` callbacks fire and the loop exits.
         """
@@ -350,6 +378,8 @@ class Orchestrator:
         if self.recorder:
             self.recorder.record_event(self.world.game.game_date, "session_start", detail="async_realtime")
         last_gs_refresh = 0.0
+        last_screenshot = 0.0
+        last_save = 0.0
 
         while self._running:
             await asyncio.sleep(2.0)
@@ -369,10 +399,27 @@ class Orchestrator:
                     self.recorder.record_snapshot(snapshot)
                     self._last_snapshot_date = game_date
 
+            # Periodic minimap screenshot
+            if self._screenshot_interval_seconds > 0 and self.client.connected:
+                if now - last_screenshot >= self._screenshot_interval_seconds:
+                    await self._capture_screenshot()
+                    last_screenshot = now
+
+            # Periodic game save
+            if self._save_interval_seconds > 0 and self.client.connected:
+                if now - last_save >= self._save_interval_seconds:
+                    game_date = snapshot.game.game_date
+                    await self._capture_save(game_date)
+                    last_save = now
+
             # Check end conditions (wall-clock, game date, revenue, cargo)
             end_result = self._end_checker.check(snapshot)
             if end_result.triggered:
                 logger.info("Async real-time simulation ended: %s", end_result.reason)
+                # Final screenshot and save before ending
+                if self.client.connected:
+                    await self._capture_screenshot()
+                    await self._capture_save(snapshot.game.game_date, suffix="_final")
                 for cb in self.on_end:
                     try:
                         result = cb(end_result.reason)

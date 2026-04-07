@@ -59,6 +59,7 @@ class SessionRuntime:
 
         self.process: asyncio.subprocess.Process | None = None
         self.poll_task: asyncio.Task[None] | None = None
+        self.orchestrator_task: asyncio.Task[None] | None = None
 
     @property
     def connected(self) -> bool:
@@ -179,9 +180,43 @@ class SessionRuntime:
         except Exception:
             logger.exception("Tile capture error for session %s", self.session_id)
 
+    def start_orchestrator(self, mode: str = "async_realtime") -> None:
+        """Start the orchestrator loop for snapshot capture and end-condition checks."""
+        if self.orchestrator_task and not self.orchestrator_task.done():
+            logger.warning("Orchestrator already running for session %s", self.session_id)
+            return
+
+        self.orchestrator.stop()  # reset running flag
+
+        if mode == "heartbeat":
+            self.orchestrator_task = asyncio.create_task(
+                self.orchestrator.run_heartbeat(),
+                name=f"orchestrator-{self.session_id}",
+            )
+        elif mode == "async_realtime":
+            self.orchestrator_task = asyncio.create_task(
+                self.orchestrator.run_async_realtime(),
+                name=f"orchestrator-{self.session_id}",
+            )
+        else:
+            logger.warning("Unknown orchestrator mode %r, not starting", mode)
+            return
+
+        logger.info("Orchestrator started for session %s in %s mode", self.session_id, mode)
+
     async def shutdown(self) -> None:
         """Stop the server process and clean up."""
         logger.info("Shutting down session %s", self.session_id)
+
+        # Stop orchestrator loop
+        self.orchestrator.stop()
+        if self.orchestrator_task and not self.orchestrator_task.done():
+            self.orchestrator_task.cancel()
+            try:
+                await self.orchestrator_task
+            except asyncio.CancelledError:
+                pass
+            self.orchestrator_task = None
 
         # Stop all gameloop agents first
         await self.gameloop_manager.stop_all()

@@ -13,9 +13,6 @@ from nttd.schemas.game import GameState, RuntimeMode
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sessions/{session_id}", tags=["control"])
 
-# Per-session orchestrator tasks, keyed by session_id
-_orchestrator_tasks: dict[str, asyncio.Task[None]] = {}
-
 
 @router.get("/status", response_model=GameState)
 def get_status(session_id: str) -> GameState:
@@ -54,25 +51,17 @@ async def set_speed(session_id: str, speed: int) -> dict[str, int]:
 async def set_mode(session_id: str, mode: RuntimeMode) -> dict[str, str]:
     runtime = deps.get_runtime(session_id)
 
+    # Stop existing orchestrator if running
     runtime.orchestrator.stop()
-    old_task = _orchestrator_tasks.pop(session_id, None)
-    if old_task is not None:
-        old_task.cancel()
+    if runtime.orchestrator_task and not runtime.orchestrator_task.done():
+        runtime.orchestrator_task.cancel()
         try:
-            await old_task
+            await runtime.orchestrator_task
         except asyncio.CancelledError:
             pass
 
     runtime.world.set_mode(mode)
-
-    if mode == RuntimeMode.HEARTBEAT:
-        _orchestrator_tasks[session_id] = asyncio.create_task(
-            runtime.orchestrator.run_heartbeat()
-        )
-    elif mode == RuntimeMode.ASYNC_REALTIME:
-        _orchestrator_tasks[session_id] = asyncio.create_task(
-            runtime.orchestrator.run_async_realtime()
-        )
+    runtime.start_orchestrator(mode=mode.value)
 
     return {"mode": mode.value}
 
@@ -81,13 +70,13 @@ async def set_mode(session_id: str, mode: RuntimeMode) -> dict[str, str]:
 async def stop_orchestrator(session_id: str) -> dict[str, str]:
     runtime = deps.get_runtime(session_id)
     runtime.orchestrator.stop()
-    old_task = _orchestrator_tasks.pop(session_id, None)
-    if old_task is not None:
-        old_task.cancel()
+    if runtime.orchestrator_task and not runtime.orchestrator_task.done():
+        runtime.orchestrator_task.cancel()
         try:
-            await old_task
+            await runtime.orchestrator_task
         except asyncio.CancelledError:
             pass
+        runtime.orchestrator_task = None
     return {"status": "stopped"}
 
 

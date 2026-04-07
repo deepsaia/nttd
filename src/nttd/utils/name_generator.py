@@ -52,11 +52,14 @@ _VERBS = [
 ]
 
 
-def _local_tz_suffix() -> str:
-    """Return lowercase timezone abbreviation (e.g. 'pdt', 'est', 'utc')."""
+def generate_timestamp() -> str:
+    """Generate a timestamp suffix like '06apr2026-160734pdt'."""
     now = datetime.now().astimezone()
+    date_str = now.strftime("%d%b%Y").lower()
+    time_str = now.strftime("%H%M%S")
     tz_name = now.strftime("%Z").lower()
-    return tz_name if tz_name else "utc"
+    tz_str = tz_name if tz_name else "utc"
+    return f"{date_str}-{time_str}{tz_str}"
 
 
 def generate_session_name() -> str:
@@ -67,10 +70,4 @@ def generate_session_name() -> str:
     adj = random.choice(_ADJECTIVES)
     noun = random.choice(_NOUNS)
     verb = random.choice(_VERBS)
-
-    now = datetime.now().astimezone()
-    date_str = now.strftime("%d%b%Y").lower()
-    time_str = now.strftime("%H%M%S")
-    tz_str = _local_tz_suffix()
-
-    return f"{adj}-{noun}-{verb}-{date_str}-{time_str}{tz_str}"
+    return f"{adj}-{noun}-{verb}-{generate_timestamp()}"
