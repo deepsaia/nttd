@@ -389,6 +389,14 @@ class AgentConnection:
                         {"cargo_label": cw.cargo_label, "waiting": cw.waiting}
                         for cw in s.cargo_waiting
                     ],
+                    "cargo_acceptance": [
+                        {
+                            "cargo_label": ca.cargo_label,
+                            "accepts": ca.accepts,
+                            "produces": ca.produces,
+                        }
+                        for ca in s.cargo_acceptance
+                    ],
                 }
                 for s in company_stations
             ]

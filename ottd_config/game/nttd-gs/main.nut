@@ -638,6 +638,7 @@ class NttdGS extends GSController {
     foreach (id, _ in GSStationList(GSStation.STATION_ANY)) {
       local loc = GSBaseStation.GetLocation(id);
       local cw = [];
+      local ca = [];
       foreach (cargo_id, _ in GSCargoList()) {
         local w = GSStation.GetCargoWaiting(id, cargo_id);
         if (w > 0) {
@@ -645,6 +646,19 @@ class NttdGS extends GSController {
             cargo_id = cargo_id,
             cargo_label = GSCargo.GetCargoLabel(cargo_id),
             waiting = w
+          });
+        }
+        local has_rating = GSStation.HasCargoRating(id, cargo_id);
+        local acc = GSTile.GetCargoAcceptance(loc, cargo_id, 1, 1, 4);
+        local prod = GSTile.GetCargoProduction(loc, cargo_id, 1, 1, 4);
+        if (acc >= 8 || prod > 0 || has_rating) {
+          ca.append({
+            cargo_id = cargo_id,
+            cargo_label = GSCargo.GetCargoLabel(cargo_id),
+            accepts = acc >= 8,
+            produces = prod > 0,
+            supply = prod,
+            rated = has_rating
           });
         }
       }
@@ -656,7 +670,8 @@ class NttdGS extends GSController {
         has_bus = GSStation.HasStationType(id, GSStation.STATION_BUS_STOP),
         has_airport = GSStation.HasStationType(id, GSStation.STATION_AIRPORT),
         has_dock = GSStation.HasStationType(id, GSStation.STATION_DOCK),
-        cargo_waiting = cw
+        cargo_waiting = cw,
+        cargo_acceptance = ca
       });
     }
     return { success = true, result = stations };
@@ -968,12 +983,23 @@ class NttdGS extends GSController {
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
+        local cargo_info = this._GetTileCargoInfo(tile, 1, 1, 3);
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
-          adjacent_road_count = adj.len() });
+          adjacent_road_count = adj.len(),
+          cargo_acceptance = cargo_info });
       }
     }
-    this._SortByDistance(spots);
+    // Sort by cargo acceptance count (desc), then distance (asc) — prefer spots with more cargo types
+    for (local i = 1; i < spots.len(); i++) {
+      local key = spots[i];
+      local j = i - 1;
+      while (j >= 0 && (spots[j].cargo_acceptance.len() < key.cargo_acceptance.len()
+        || (spots[j].cargo_acceptance.len() == key.cargo_acceptance.len() && spots[j].distance > key.distance))) {
+        spots[j + 1] = spots[j]; j--;
+      }
+      spots[j + 1] = key;
+    }
     if (spots.len() > max_results) spots = spots.slice(0, max_results);
     return { success = true, result = spots };
   }
@@ -1025,11 +1051,21 @@ class NttdGS extends GSController {
           local test_mode = GSTestMode();
           if (!GSAirport.BuildAirport(tile, airport_type, GSStation.STATION_NEW)) continue;
         }
+        local cargo_info = this._GetTileCargoInfo(tile, aw, ah, 4);
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
-          width = aw, height = ah });
+          width = aw, height = ah, cargo_acceptance = cargo_info });
       }
     }
-    this._SortByDistance(spots);
+    // Sort by cargo acceptance count (desc), then distance (asc)
+    for (local i = 1; i < spots.len(); i++) {
+      local key = spots[i];
+      local j = i - 1;
+      while (j >= 0 && (spots[j].cargo_acceptance.len() < key.cargo_acceptance.len()
+        || (spots[j].cargo_acceptance.len() == key.cargo_acceptance.len() && spots[j].distance > key.distance))) {
+        spots[j + 1] = spots[j]; j--;
+      }
+      spots[j + 1] = key;
+    }
     if (spots.len() > max_results) spots = spots.slice(0, max_results);
     return { success = true, result = spots,
       airport_type = airport_type, airport_width = aw, airport_height = ah };
@@ -1055,11 +1091,21 @@ class NttdGS extends GSController {
           local test_mode = GSTestMode();
           if (!GSMarine.BuildDock(tile, GSStation.STATION_NEW)) continue;
         }
+        local cargo_info = this._GetTileCargoInfo(tile, 1, 1, 4);
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
-          slope = GSTile.GetSlope(tile) });
+          slope = GSTile.GetSlope(tile), cargo_acceptance = cargo_info });
       }
     }
-    this._SortByDistance(spots);
+    // Sort by cargo acceptance count (desc), then distance (asc)
+    for (local i = 1; i < spots.len(); i++) {
+      local key = spots[i];
+      local j = i - 1;
+      while (j >= 0 && (spots[j].cargo_acceptance.len() < key.cargo_acceptance.len()
+        || (spots[j].cargo_acceptance.len() == key.cargo_acceptance.len() && spots[j].distance > key.distance))) {
+        spots[j + 1] = spots[j]; j--;
+      }
+      spots[j + 1] = key;
+    }
     if (spots.len() > max_results) spots = spots.slice(0, max_results);
     return { success = true, result = spots };
   }
@@ -1092,8 +1138,9 @@ class NttdGS extends GSController {
           }
           if (!ok) continue;
         }
+        local cargo_info = this._GetTileCargoInfo(tile, min_size, min_size, 4);
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
-          max_height = GSTile.GetMaxHeight(tile) });
+          max_height = GSTile.GetMaxHeight(tile), cargo_acceptance = cargo_info });
       }
     }
     this._SortByDistance(spots);
@@ -2468,6 +2515,26 @@ class NttdGS extends GSController {
       while (j >= 0 && arr[j].distance > key.distance) { arr[j + 1] = arr[j]; j--; }
       arr[j + 1] = key;
     }
+  }
+
+  // Check cargo acceptance and production around a tile area.
+  // Returns array of {cargo_id, cargo_label, acceptance, production} for cargos with acceptance >= 8 or production > 0.
+  // width/height/radius define the area to check (1,1,3 = single tile with 3-tile radius).
+  function _GetTileCargoInfo(tile, width, height, radius) {
+    local result = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      local acc = GSTile.GetCargoAcceptance(tile, cargo_id, width, height, radius);
+      local prod = GSTile.GetCargoProduction(tile, cargo_id, width, height, radius);
+      if (acc >= 8 || prod > 0) {
+        result.append({
+          cargo_id = cargo_id,
+          cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          acceptance = acc,
+          production = prod
+        });
+      }
+    }
+    return result;
   }
 
   function _VehicleTypeName(vt) {

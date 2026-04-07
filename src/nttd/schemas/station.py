@@ -7,6 +7,15 @@ class CargoWaiting(BaseModel):
     waiting: int = 0
 
 
+class CargoAcceptance(BaseModel):
+    cargo_id: int = 0
+    cargo_label: str = ""
+    accepts: bool = False
+    produces: bool = False
+    supply: int = 0
+    rated: bool = False
+
+
 class Station(BaseModel):
     id: int
     name: str = ""
@@ -19,3 +28,4 @@ class Station(BaseModel):
     has_airport: bool = False
     has_dock: bool = False
     cargo_waiting: list[CargoWaiting] = []
+    cargo_acceptance: list[CargoAcceptance] = []

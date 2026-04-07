@@ -185,8 +185,11 @@ STRATEGY:
    the maximum, IMMEDIATELY take the max loan with set_loan(amount=<max_loan_value>).
    This gives you capital to build. Call get_engines(vehicle_type=1) to find available buses.
 2. PLAN: Pick two high-population towns from the observation. Call find_bus_stop_spots(town_id=X)
-   for each to get valid tile IDs for bus stops. Call find_depot_spots(town_id=X) for a depot.
-3. BUILD: Use the tile IDs from tool results to build bus stops and a depot.
+   for each to get valid tile IDs for bus stops. CHECK the cargo_acceptance field in results —
+   pick spots that ACCEPT passengers (cargo_label="PASS"). Spots without passenger acceptance
+   will never generate passengers. Call find_depot_spots(town_id=X) for a depot.
+3. BUILD: Use the tile IDs from tool results to build bus stops and a depot. Only build at
+   spots where cargo_acceptance includes PASS (passengers).
 4. DEPLOY: Buy a bus at the depot, then add orders WITH order_flags:
    - add_order(vehicle_id=X, station_id=<stop_A>, order_flags=5) — full load at first stop
    - add_order(vehicle_id=X, station_id=<stop_B>, order_flags=1) — non-stop to second stop
@@ -292,8 +295,9 @@ STRATEGY:
    farm → factory, forest → sawmill).
 2. SCOUT: Call find_flat_spots(tile=<industry_tile>, radius=10, min_size=2) near each industry
    to find flat tiles for depots and stations. The returned tiles are pre-validated as flat
-   and buildable. Call get_rail_types to see available track types.
-   Call get_engines(vehicle_type=0) for trains.
+   and buildable. Also use get_industry_info to check what cargo each industry produces and
+   accepts — match your route to actual cargo flows. Call get_rail_types to see available
+   track types. Call get_engines(vehicle_type=0) for trains.
 3. BUILD INFRASTRUCTURE (in this exact order):
    a. build_rail_depot — on a flat tile near the source industry (rail_type=0 for default)
    b. build_rail_station — near the source industry (num_platforms=1, platform_length=3, rail_type=0).
@@ -365,7 +369,8 @@ STRATEGY:
    Call get_towns to find the two largest towns by population.
 2. FIND AIRPORT SITES: Call find_airport_spots(town_id=X, airport_type=0) for each town.
    This returns tiles that are PRE-VALIDATED — the entire airport footprint is flat and clear.
-   Use the "tile" field directly in build_airport. No need to scan or verify manually.
+   CHECK the cargo_acceptance field in results — pick spots that ACCEPT passengers (PASS).
+   Airports far from town buildings won't get passengers. Use the "tile" field directly.
    If find_airport_spots returns empty results for a town, try the next largest town.
 3. BUILD AIRPORTS (one cycle):
    a. build_airport(x=<spot.x>, y=<spot.y>, airport_type=0) — in town A using a tile from find_airport_spots.
@@ -441,8 +446,10 @@ STRATEGY:
    (e.g. oil rigs produce oil that can be shipped).
    Call get_engines(vehicle_type=2) for available ships.
 2. FIND SITES: Call find_dock_spots(town_id=X) for candidate towns — returns coast tiles
-   pre-validated for dock construction. Call find_water_depot_spots(town_id=X) to find
-   water tiles for the ship depot. Use the "tile" field directly from these tools.
+   pre-validated for dock construction. CHECK the cargo_acceptance field — pick dock spots
+   that ACCEPT or PRODUCE cargo (e.g. PASS for passengers, OIL_ for oil). Docks far from
+   town/industry catchment won't receive cargo. Call find_water_depot_spots(town_id=X) to
+   find water tiles for the ship depot. Use the "tile" field directly from these tools.
 3. BUILD INFRASTRUCTURE (one cycle — set_loan + docks + depot):
    a. set_loan(amount=<max_loan_value>) — take the max loan first.
    b. build_dock — use the "tile" field from find_dock_spots (e.g. build_dock(tile=<spot.tile>)).

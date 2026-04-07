@@ -9,7 +9,7 @@ from nttd.schemas.industry import Industry, IndustryProduction
 from nttd.schemas.infrastructure import InfrastructureCosts
 from nttd.schemas.route import Route
 from nttd.schemas.snapshot import StateSnapshot
-from nttd.schemas.station import CargoWaiting, Station
+from nttd.schemas.station import CargoAcceptance, CargoWaiting, Station
 from nttd.schemas.subsidy import Subsidy
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Order, Vehicle
@@ -137,6 +137,17 @@ class WorldState:
                 )
                 for c in r.get("cargo_waiting", [])
             ]
+            cargo_acceptance = [
+                CargoAcceptance(
+                    cargo_id=c.get("cargo_id", 0),
+                    cargo_label=c.get("cargo_label", ""),
+                    accepts=c.get("accepts", False),
+                    produces=c.get("produces", False),
+                    supply=c.get("supply", 0),
+                    rated=c.get("rated", False),
+                )
+                for c in r.get("cargo_acceptance", [])
+            ]
             self.stations[sid] = Station(
                 id=sid,
                 name=r.get("name", ""),
@@ -149,6 +160,7 @@ class WorldState:
                 has_airport=r.get("has_airport", False),
                 has_dock=r.get("has_dock", False),
                 cargo_waiting=cargo_waiting,
+                cargo_acceptance=cargo_acceptance,
             )
         logger.debug("WorldState: refreshed %d stations for company %d", len(seen), company_id)
 
