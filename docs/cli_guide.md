@@ -50,7 +50,7 @@ OpenTTD downloads base graphics (OpenGFX) automatically on first launch. If runn
 ## Prerequisites
 
 - OpenTTD installed (see above)
-- Python 3.11+ with nttd installed:
+- Python 3.13+ with nttd installed:
   ```bash
   uv sync              # core dependencies
   uv sync --extra agents  # adds LangChain + OpenAI adapters for AI agents
