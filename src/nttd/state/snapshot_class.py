@@ -10,8 +10,10 @@ from dataclasses import dataclass, field
 ALL_SECTIONS: frozenset[str] = frozenset({
     "company",
     "vehicles",
+    "vehicles_detail",
     "vehicles_summary",
     "stations",
+    "stations_detail",
     "stations_count",
     "towns",
     "top_towns",
@@ -39,6 +41,13 @@ _BUILTIN_PRESETS: list[SnapshotClass] = [
         name="compact",
         sections=frozenset({"company", "vehicles_summary", "stations_count", "top_towns"}),
         description="Lightweight summary for fast cycles",
+    ),
+    SnapshotClass(
+        name="agent",
+        sections=frozenset({
+            "company", "vehicles_detail", "stations_detail", "top_towns", "industries",
+        }),
+        description="Rich observation for agents: vehicles with orders, stations with cargo, industries",
     ),
     SnapshotClass(
         name="standard",

@@ -145,14 +145,23 @@ VEHICLES:
   rename_vehicle        vehicle_id, name
 
 ORDERS:
-  add_order             vehicle_id, station_id OR destination(tile of stop/station)
-  insert_order          vehicle_id, order_index, destination(tile)
+  add_order             vehicle_id, station_id, order_flags (int, see below)
+  insert_order          vehicle_id, order_index, station_id, order_flags
   remove_order          vehicle_id, order_index
   skip_to_order         vehicle_id, order_index
   move_order            vehicle_id, from_index, to_index
-  set_order_flags       vehicle_id, order_index, flags
+  set_order_flags       vehicle_id, order_position, order_flags
   share_orders          vehicle_id, main_vehicle_id
   copy_orders           vehicle_id, main_vehicle_id
+
+ORDER FLAGS (pass as order_flags parameter):
+  0  = implicit load/unload (default -- may not load cargo reliably)
+  1  = non-stop to destination (skip intermediate stations)
+  5  = full load any cargo + non-stop (RECOMMENDED for source/pickup stations)
+  17 = no loading + non-stop (for drop-off only stations)
+
+IMPORTANT: Always use order_flags=5 at source stations so vehicles wait for cargo.
+Use order_flags=1 at destination stations for non-stop unload.
 
 COMPANY:
   build_company_hq      tile
@@ -178,7 +187,10 @@ STRATEGY:
 2. PLAN: Pick two high-population towns from the observation. Call find_bus_stop_spots(town_id=X)
    for each to get valid tile IDs for bus stops. Call find_depot_spots(town_id=X) for a depot.
 3. BUILD: Use the tile IDs from tool results to build bus stops and a depot.
-4. DEPLOY: Buy a bus at the depot, add orders for both stop tiles, start it.
+4. DEPLOY: Buy a bus at the depot, then add orders WITH order_flags:
+   - add_order(vehicle_id=X, station_id=<stop_A>, order_flags=5) — full load at first stop
+   - add_order(vehicle_id=X, station_id=<stop_B>, order_flags=1) — non-stop to second stop
+   Then start_vehicle. The order_flags=5 makes the bus wait for passengers before departing.
 5. EXPAND: In later cycles, check get_vehicles for profits. Clone profitable vehicles.
    Repay loan when balance is comfortably high (> 300,000).
 
@@ -289,8 +301,10 @@ STRATEGY:
    c. build_rail_station — near the destination industry (also on flat land)
    d. Connect the two stations with rail by building SHORT ADJACENT segments. See RAIL CONSTRUCTION below.
    e. build_rail_signal — ONLY on tiles that already have track laid on them.
-4. DEPLOY: buy_vehicle at the depot → add_order for source station tile → add_order for
-   destination station tile → start_vehicle.
+4. DEPLOY: buy_vehicle at the depot, then add orders WITH order_flags:
+   - add_order(vehicle_id=X, station_id=<source_station>, order_flags=5) — full load at source
+   - add_order(vehicle_id=X, station_id=<dest_station>, order_flags=1) — non-stop to destination
+   Then start_vehicle. The order_flags=5 makes the train wait for cargo before departing.
 5. EXPAND: In later cycles, check get_vehicles for profit. Clone profitable trains.
 
 RAIL CONSTRUCTION — CRITICAL:
@@ -364,9 +378,9 @@ STRATEGY:
    c. buy_vehicle(depot_tile=<hangar_tile>, engine_id=<engine_id>).
    d. In the NEXT cycle after buying: call get_vehicles to find the vehicle_id.
    e. Call get_stations to get airport station tiles for orders.
-   f. add_order — destination = airport station tile of town A
-   g. add_order — destination = airport station tile of town B
-   h. start_vehicle
+   f. add_order(vehicle_id=X, station_id=<airport_A>, order_flags=5) — full load passengers
+   g. add_order(vehicle_id=X, station_id=<airport_B>, order_flags=1) — non-stop to destination
+   h. start_vehicle. The order_flags=5 makes the aircraft wait for passengers before departing.
 5. EXPAND: In later cycles, check get_vehicles for profit. Buy more aircraft at existing
    airports (use get_hangars again for depot tiles). Consider building airports in additional
    large towns. Repay loan when balance is comfortably high (> 300,000).
@@ -442,9 +456,9 @@ STRATEGY:
 5. ADD ORDERS AND START (next cycle — AFTER buying):
    a. Call get_vehicles to find your ship's vehicle_id.
    b. Call get_stations to get your dock station IDs.
-   c. add_order(vehicle_id=<ship_id>, station_id=<dock_station_A_id>).
-   d. add_order(vehicle_id=<ship_id>, station_id=<dock_station_B_id>).
-   e. start_vehicle(vehicle_id=<ship_id>).
+   c. add_order(vehicle_id=<ship_id>, station_id=<dock_station_A_id>, order_flags=5) — full load
+   d. add_order(vehicle_id=<ship_id>, station_id=<dock_station_B_id>, order_flags=1) — non-stop
+   e. start_vehicle(vehicle_id=<ship_id>). The order_flags=5 makes ships wait for cargo.
    NOTE: Use station_id (NOT destination tile) for orders. get_stations returns "id" for each station.
 6. EXPAND: Ships are slow but profitable on long routes. Buy more ships to increase
    cargo throughput. Consider connecting oil rigs (they have built-in docks).

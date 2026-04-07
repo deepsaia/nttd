@@ -337,7 +337,30 @@ class AgentConnection:
                     except Exception:
                         logger.debug("Agent %s finance fetch failed", self.config.agent_id)
 
-        if "vehicles" in sections:
+        if "vehicles_detail" in sections:
+            company_vehicles = [v for v in world.vehicles.values() if v.company_id == company_id]
+            obs["vehicles"] = [
+                {
+                    "id": v.id, "type": v.type, "name": v.name,
+                    "running": v.running, "in_depot": v.in_depot,
+                    "profit_this_year": v.profit_this_year,
+                    "profit_last_year": v.profit_last_year,
+                    "current_speed": v.current_speed,
+                    "age": v.age,
+                    "order_count": v.order_count,
+                    "orders": [
+                        {
+                            "destination": o.destination,
+                            "flags": o.flags,
+                            "is_goto_station": o.is_goto_station,
+                            "is_goto_depot": o.is_goto_depot,
+                        }
+                        for o in v.orders
+                    ],
+                }
+                for v in company_vehicles
+            ]
+        elif "vehicles" in sections:
             company_vehicles = [v for v in world.vehicles.values() if v.company_id == company_id]
             obs["vehicles"] = [
                 {
@@ -354,7 +377,22 @@ class AgentConnection:
                 "in_depot": sum(1 for v in company_vehicles if v.in_depot),
             }
 
-        if "stations" in sections:
+        if "stations_detail" in sections:
+            company_stations = [s for s in world.stations.values() if s.company_id == company_id]
+            obs["stations"] = [
+                {
+                    "id": s.id, "name": s.name, "x": s.x, "y": s.y,
+                    "has_rail": s.has_rail, "has_bus": s.has_bus,
+                    "has_truck": s.has_truck, "has_airport": s.has_airport,
+                    "has_dock": s.has_dock,
+                    "cargo_waiting": [
+                        {"cargo_label": cw.cargo_label, "waiting": cw.waiting}
+                        for cw in s.cargo_waiting
+                    ],
+                }
+                for s in company_stations
+            ]
+        elif "stations" in sections:
             company_stations = [s for s in world.stations.values() if s.company_id == company_id]
             obs["stations"] = [
                 {"id": s.id, "name": s.name, "x": s.x, "y": s.y}

@@ -17,7 +17,7 @@ from nttd.gameloop.adapters.base import BaseAdapter, ToolExecutor
 
 logger = logging.getLogger(__name__)
 
-_MAX_HISTORY_CYCLES = 10
+_MAX_HISTORY_CYCLES = 2
 
 # Model prefix → (package, class name, env var default)
 _PROVIDER_MAP: dict[str, tuple[str, str, str]] = {

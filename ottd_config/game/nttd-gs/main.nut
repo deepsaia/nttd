@@ -637,6 +637,17 @@ class NttdGS extends GSController {
     local stations = [];
     foreach (id, _ in GSStationList(GSStation.STATION_ANY)) {
       local loc = GSBaseStation.GetLocation(id);
+      local cw = [];
+      foreach (cargo_id, _ in GSCargoList()) {
+        local w = GSStation.GetCargoWaiting(id, cargo_id);
+        if (w > 0) {
+          cw.append({
+            cargo_id = cargo_id,
+            cargo_label = GSCargo.GetCargoLabel(cargo_id),
+            waiting = w
+          });
+        }
+      }
       stations.append({
         id = id, name = GSBaseStation.GetName(id),
         x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
@@ -644,7 +655,8 @@ class NttdGS extends GSController {
         has_truck = GSStation.HasStationType(id, GSStation.STATION_TRUCK_STOP),
         has_bus = GSStation.HasStationType(id, GSStation.STATION_BUS_STOP),
         has_airport = GSStation.HasStationType(id, GSStation.STATION_AIRPORT),
-        has_dock = GSStation.HasStationType(id, GSStation.STATION_DOCK)
+        has_dock = GSStation.HasStationType(id, GSStation.STATION_DOCK),
+        cargo_waiting = cw
       });
     }
     return { success = true, result = stations };
@@ -703,6 +715,16 @@ class NttdGS extends GSController {
       }
       local loc = GSVehicle.GetLocation(id);
       local eid = GSVehicle.GetEngineType(id);
+      local ords = [];
+      local oc = GSOrder.GetOrderCount(id);
+      for (local oi = 0; oi < oc; oi++) {
+        ords.append({
+          destination = GSOrder.GetOrderDestination(id, oi),
+          flags = GSOrder.GetOrderFlags(id, oi),
+          is_goto_station = GSOrder.IsGotoStationOrder(id, oi),
+          is_goto_depot = GSOrder.IsGotoDepotOrder(id, oi)
+        });
+      }
       vehicles.append({
         id = id, name = GSVehicle.GetName(id),
         type = this._VehicleTypeName(GSVehicle.GetVehicleType(id)),
@@ -718,7 +740,8 @@ class NttdGS extends GSController {
         state = GSVehicle.GetState(id),
         running = GSVehicle.GetState(id) == GSVehicle.VS_RUNNING,
         in_depot = GSVehicle.IsStoppedInDepot(id),
-        order_count = GSOrder.GetOrderCount(id),
+        order_count = oc,
+        orders = ords,
         is_articulated = GSVehicle.IsArticulated(id)
       });
     }
