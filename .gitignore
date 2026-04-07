@@ -1,3 +1,7 @@
+# OS
+.DS_Store
+Thumbs.db
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -39,5 +43,6 @@ ottd_config/ai/*
 # nttd runtime output
 runs/
 logs/
+reports/
 *.db
 *.db-*

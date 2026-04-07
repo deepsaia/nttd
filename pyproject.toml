@@ -17,6 +17,10 @@ dependencies = [
     "setuptools>=40,<72",
     "pyarrow>=18.0",
     "langchain-openai>=1.1.12",
+    "plotly>=6.6.0",
+    "seaborn>=0.13.2",
+    "matplotlib>=3.10.8",
+    "kaleido>=1.2.0",
 ]
 
 [project.optional-dependencies]
