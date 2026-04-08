@@ -300,7 +300,7 @@ nttd analyze <session_id> [OPTIONS]
 | `--reports`, `-r`   | `all`   | Comma-separated report names, or `all`         |
 | `--save`, `-s`      | (none)  | Save formats: `markdown,png,html,json`         |
 | `--output-dir`, `-o`| session dir | Override save directory                     |
-| `--video/--no-video`| off     | Generate screenshot timelapse MP4              |
+| `--video/--no-video`| off     | Generate terrain progression video MP4         |
 | `--compare`         | (none)  | Additional session IDs for multi-session comparison |
 | `--json`            | off     | Print JSON to stdout instead of markdown       |
 | `--open`            | off     | Open saved markdown report in browser          |
@@ -323,7 +323,7 @@ nttd analyze ses_abc123 --save markdown,png
 # Save all formats to custom directory
 nttd analyze ses_abc123 --save markdown,png,json,html --output-dir results/
 
-# Generate video timelapse from screenshots
+# Generate terrain progression video from snapshot data
 nttd analyze ses_abc123 --save png --video
 
 # Compare two sessions side-by-side
