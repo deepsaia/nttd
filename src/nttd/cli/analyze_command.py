@@ -28,6 +28,18 @@ def analyze(
     video: Annotated[
         bool, typer.Option("--video/--no-video", help="Generate terrain video from snapshots"),
     ] = False,
+    video_quality: Annotated[
+        str,
+        typer.Option("--video-quality", help="Video quality: low, medium, high"),
+    ] = "high",
+    video_fps: Annotated[
+        int,
+        typer.Option("--video-fps", help="Video frames per second"),
+    ] = 4,
+    video_max_frames: Annotated[
+        int,
+        typer.Option("--video-max-frames", help="Max frames (0 = all snapshots)"),
+    ] = 0,
     compare: Annotated[
         Optional[str],
         typer.Option("--compare", help="Additional session IDs (comma-separated)"),
@@ -134,16 +146,25 @@ def analyze(
     # Video generation
     if video:
         vid_out = Path(output_dir) if output_dir else SESSIONS_DIR / session_id / "reports"
-        _generate_video(sessions[0], vid_out)
+        _generate_video(sessions[0], vid_out, video_quality, video_fps, video_max_frames)
 
 
-def _generate_video(session: object, output_dir: Path) -> None:
+def _generate_video(
+    session: object,
+    output_dir: Path,
+    quality: str = "high",
+    fps: int = 4,
+    max_frames: int = 0,
+) -> None:
     """Generate terrain-based video from session data."""
     try:
         from nttd.analysis.reports.video import generate_video
 
         sid = session.session_id if hasattr(session, "session_id") else "unknown"
-        video_path = generate_video(session, output_dir / f"game_progression_{sid}.mp4")
+        video_path = generate_video(
+            session, output_dir / f"game_progression_{sid}.mp4",
+            fps=fps, quality=quality, max_frames=max_frames,
+        )
         console.print(f"[green]Video:[/] {video_path}")
     except ImportError:
         console.print("[yellow]Video generation requires imageio[pyav] -- skipping[/]")

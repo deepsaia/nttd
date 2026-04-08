@@ -94,6 +94,10 @@ class SessionRuntime:
             await self.shutdown()
             return False
 
+        # Apply welcome data (map size, landscape) to world state
+        if self.admin_client.welcome:
+            self.bridge.apply_welcome(self.admin_client.welcome)
+
         # Start the receive loop
         self.poll_task = asyncio.create_task(
             self.admin_client.poll_loop(),
@@ -110,6 +114,8 @@ class SessionRuntime:
         """Connect to an already-running OpenTTD server (orphan recovery)."""
         ok = await self.admin_client.connect(password=admin_password, name=f"nttd_{self.session_id}")
         if ok:
+            if self.admin_client.welcome:
+                self.bridge.apply_welcome(self.admin_client.welcome)
             self.poll_task = asyncio.create_task(
                 self.admin_client.poll_loop(),
                 name=f"poll_{self.session_id}",
