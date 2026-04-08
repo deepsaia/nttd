@@ -14,12 +14,57 @@ logger = logging.getLogger(__name__)
 
 
 def _patch_ini_value(content: str, key: str, value: str) -> str:
-    """Replace an INI-style key = value line, preserving surrounding content."""
+    """Replace an INI-style key = value line, preserving surrounding content.
+
+    Supports section-qualified keys like ``game_creation.map_x`` which means
+    key ``map_x`` inside the ``[game_creation]`` section.  Falls back to a
+    global (section-unaware) match when no dot is present.
+    """
+    if "." in key and not key.startswith("_"):
+        section, bare_key = key.split(".", 1)
+        return _patch_ini_value_in_section(content, section, bare_key, value)
+
     pattern = re.compile(rf"^({re.escape(key)}\s*=\s*).*$", re.MULTILINE)
     if pattern.search(content):
         return pattern.sub(rf"\g<1>{value}", content)
-    # Key not found — append to end
+    # Key not found -- append to end
     return content + f"\n{key} = {value}\n"
+
+
+def _patch_ini_value_in_section(content: str, section: str, key: str, value: str) -> str:
+    """Patch *key* inside ``[section]``.  Adds the key if missing."""
+    lines = content.split("\n")
+    section_header = f"[{section}]"
+    in_section = False
+    key_pattern = re.compile(rf"^({re.escape(key)}\s*=\s*).*$")
+    patched = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == section_header:
+            in_section = True
+            continue
+        if in_section and stripped.startswith("["):
+            # Entered next section without finding key -- insert before this line
+            if not patched:
+                lines.insert(i, f"{key} = {value}")
+                patched = True
+            break
+        if in_section and key_pattern.match(stripped):
+            lines[i] = key_pattern.sub(rf"\g<1>{value}", line)
+            patched = True
+            break
+
+    if not patched:
+        # Section exists but key not found (section was last in file)
+        if in_section:
+            lines.append(f"{key} = {value}")
+        else:
+            # Section doesn't exist -- create it
+            lines.append(f"\n{section_header}")
+            lines.append(f"{key} = {value}")
+
+    return "\n".join(lines)
 
 
 def build_session_config(
@@ -59,15 +104,17 @@ def build_session_config(
     cfg_content = _patch_ini_value(cfg_content, "server_port", str(game_port))
     cfg_content = _patch_ini_value(cfg_content, "server_admin_port", str(admin_port))
 
-    # Bake game settings into the config
+    # Bake game settings into the config (from scenario HOCON)
+    for key, value in (settings or {}).items():
+        cfg_content = _patch_ini_value(cfg_content, key, value)
+
+    # Company slots AFTER settings so agent_companies aren't overridden
+    # by the scenario's num_ai_companies (which excludes agent slots).
     total_companies = ai_opponents + agent_companies
     if total_companies > 0:
         cfg_content = _patch_ini_value(cfg_content, "ai_in_multiplayer", "true")
-        cfg_content = _patch_ini_value(cfg_content, "max_no_competitors", str(total_companies))
-        cfg_content = _patch_ini_value(cfg_content, "competitors_interval", "0")
-
-    for key, value in (settings or {}).items():
-        cfg_content = _patch_ini_value(cfg_content, key, value)
+        cfg_content = _patch_ini_value(cfg_content, "difficulty.max_no_competitors", str(total_companies))
+        cfg_content = _patch_ini_value(cfg_content, "difficulty.competitors_interval", "0")
 
     dst_cfg.write_text(cfg_content)
 

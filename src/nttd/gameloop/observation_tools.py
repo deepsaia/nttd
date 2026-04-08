@@ -6,19 +6,37 @@ query command and returns a JSON string result.
 
 The toolkit produces OpenAI-format function schemas that any adapter
 can convert to its native format. Tool execution goes through
-admin_client.send_gamescript() — the same path used for action execution.
+admin_client.send_gamescript() -- the same path used for action execution.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from nttd.bridge.admin_client import AdminClient
 
 logger = logging.getLogger(__name__)
+
+# Maps agent_type -> set of vehicle type strings visible to that agent
+AGENT_VEHICLE_TYPES: dict[str, set[str]] = {
+    "road": {"road"},
+    "rail": {"train"},
+    "air": {"aircraft"},
+    "water": {"ship"},
+    "general": {"train", "road", "ship", "aircraft"},
+}
+
+# Maps agent_type -> station filter predicate
+AGENT_STATION_FILTERS: dict[str, Callable[[dict[str, Any]], bool]] = {
+    "road": lambda s: s.get("has_bus") or s.get("has_truck"),
+    "rail": lambda s: s.get("has_rail"),
+    "air": lambda s: s.get("has_airport"),
+    "water": lambda s: s.get("has_dock"),
+    "general": lambda s: True,
+}
 
 
 # ── Tool definitions ──────────────────────────────────────────────────
@@ -77,11 +95,18 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "get_engines",
-        "description": "List purchasable engine types. vehicle_type: 0=train, 1=road, 2=ship, 3=aircraft.",
+        "description": (
+            "List purchasable engines. Returns id, name, cargo_label, capacity, price."
+            " For road: cargo_label=PASS means bus, others are trucks."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "vehicle_type": {"type": "integer", "description": "0=train, 1=road, 2=ship, 3=aircraft.", "default": 1},
+                "vehicle_type": {
+                    "type": "integer",
+                    "description": "0=train, 1=road, 2=ship, 3=aircraft.",
+                    "default": 1,
+                },
             },
             "required": [],
         },
@@ -134,7 +159,10 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "find_bus_stop_spots",
-        "description": "Find road tiles near a town suitable for bus/truck stops.",
+        "description": (
+            "Find road tiles near a town suitable for bus/truck stops."
+            " Returns tile, direction (pass to build_road_stop), and cargo_acceptance."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -172,12 +200,19 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "find_airport_spots",
-        "description": "Find tiles near a town where an airport can actually be built (dry-run validated). Returns guaranteed-buildable tiles.",
+        "description": (
+            "Find tiles near a town where an airport can be built (dry-run validated)."
+            " Returns tile, x, y, cargo_acceptance for each spot."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "town_id": {"type": "integer", "description": "Town to search near."},
-                "airport_type": {"type": "integer", "description": "Airport type (0=small, 1=city, 2=metropolitan, etc.). Default 0.", "default": 0},
+                "airport_type": {
+                    "type": "integer",
+                    "description": "Airport type (0=small, 1=city, 2=metro). Default 0.",
+                    "default": 0,
+                },
                 "max_results": {"type": "integer", "description": "Max spots to return.", "default": 5},
             },
             "required": ["town_id"],
@@ -187,7 +222,10 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "find_dock_spots",
-        "description": "Find coast tiles near a town where a dock can actually be built (dry-run validated). Returns guaranteed-buildable tiles.",
+        "description": (
+            "Find coast tiles near a town where a dock can be built (dry-run validated)."
+            " Returns tile, x, y, cargo_acceptance for each spot."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -201,13 +239,20 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "find_flat_spots",
-        "description": "Find flat buildable tiles near a given tile. Useful for rail depots/stations near industries. Optional min_size checks a square area.",
+        "description": (
+            "Find flat buildable tiles near a given tile."
+            " Useful for rail depots/stations near industries."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "tile": {"type": "integer", "description": "Center tile ID (y * map_width + x)."},
                 "radius": {"type": "integer", "description": "Search radius. Default 10.", "default": 10},
-                "min_size": {"type": "integer", "description": "Minimum flat square size (e.g. 2 for 2x2). Default 1.", "default": 1},
+                "min_size": {
+                    "type": "integer",
+                    "description": "Minimum flat square size (e.g. 2 for 2x2). Default 1.",
+                    "default": 1,
+                },
                 "max_results": {"type": "integer", "description": "Max spots to return.", "default": 10},
             },
             "required": ["tile"],
@@ -216,7 +261,10 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "find_water_depot_spots",
-        "description": "Find water tiles where a ship depot can actually be built (dry-run validated). Returns guaranteed-buildable tiles.",
+        "description": (
+            "Find water tiles where a ship depot can be built (dry-run validated)."
+            " Returns tile, x, y for each spot."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -231,7 +279,10 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
     {
         "name": "get_hangars",
-        "description": "List airport hangars (depot tiles) for your company. Returns hangar_tile for use as depot_tile in buy_vehicle for aircraft.",
+        "description": (
+            "List airport hangars (depot tiles) for your company."
+            " Returns hangar_tile for use as depot_tile in buy_vehicle."
+        ),
         "parameters": {"type": "object", "properties": {}, "required": []},
         "gs_action": "get_hangars",
         "inject_company_id": True,
@@ -320,11 +371,16 @@ class ObservationToolkit:
 
     Tools are read-only GS queries that agents can call during the
     decide phase to gather information before choosing actions.
+    Results are filtered by agent_type so each agent only sees its
+    own vehicle and station types.
     """
 
-    def __init__(self, admin_client: AdminClient, company_id: int) -> None:
+    def __init__(self, admin_client: AdminClient, company_id: int, agent_type: str = "general") -> None:
         self._client = admin_client
         self._company_id = company_id
+        self._agent_type = agent_type
+        self._vehicle_types = AGENT_VEHICLE_TYPES.get(agent_type, AGENT_VEHICLE_TYPES["general"])
+        self._station_filter = AGENT_STATION_FILTERS.get(agent_type, AGENT_STATION_FILTERS["general"])
         self._tool_map: dict[str, dict[str, Any]] = {t["name"]: t for t in _TOOL_DEFS}
 
     def get_openai_schemas(self) -> list[dict[str, Any]]:
@@ -369,8 +425,20 @@ class ObservationToolkit:
         try:
             result = await self._client.send_gamescript(gs_action, params, timeout=15.0)
             if result.get("success"):
-                return json.dumps(result.get("result", {}), indent=2)
+                data = result.get("result", {})
+                data = self._filter_by_agent_type(tool_name, data)
+                return json.dumps(data, indent=2)
             return json.dumps({"error": result.get("error", "GS query failed")})
         except Exception as exc:
             logger.warning("Tool %s execution failed: %s", tool_name, exc)
             return json.dumps({"error": str(exc)})
+
+    def _filter_by_agent_type(self, tool_name: str, data: Any) -> Any:
+        """Filter tool results so agents only see their own vehicle/station types."""
+        if not isinstance(data, list):
+            return data
+        if tool_name == "get_vehicles":
+            return [v for v in data if v.get("type") in self._vehicle_types]
+        if tool_name == "get_stations":
+            return [s for s in data if self._station_filter(s)]
+        return data

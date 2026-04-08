@@ -16,7 +16,11 @@ from examples.agent_instructions import (
     get_water_agent_prompt,
 )
 from nttd.gameloop.adapters.base import BaseAdapter
-from nttd.gameloop.observation_tools import ObservationToolkit
+from nttd.gameloop.observation_tools import (
+    AGENT_STATION_FILTERS,
+    AGENT_VEHICLE_TYPES,
+    ObservationToolkit,
+)
 from nttd.gameloop.schemas import AgentConfig, ConnectionStatus
 from nttd.gameloop.tracker import ConnectionTracker
 from nttd.interpreter.parser import parse_action_list
@@ -71,10 +75,15 @@ class AgentConnection:
                 "Agent %s using default %s prompt", config.agent_id, config.agent_type,
             )
 
+        # Last cycle's action results for inclusion in next observation
+        self._last_cycle_results: list[dict[str, Any]] = []
+
         # Build observation toolkit if tools are enabled
         self._toolkit: ObservationToolkit | None = None
         if config.observation_tools:
-            self._toolkit = ObservationToolkit(runtime.admin_client, config.company_id)
+            self._toolkit = ObservationToolkit(
+                runtime.admin_client, config.company_id, config.agent_type,
+            )
 
     @property
     def status(self) -> str:
@@ -253,13 +262,25 @@ class AgentConnection:
         self.tracker.start_execute()
         succeeded = 0
         failed = 0
+        cycle_results: list[dict[str, Any]] = []
         if valid_actions:
             results = await self._execute(valid_actions, game_date)
-            for r in results:
+            for action, r in zip(valid_actions, results):
                 if r.get("status") == "success":
                     succeeded += 1
+                    cycle_results.append({
+                        "action": action.action_type,
+                        "status": "success",
+                        "result": r.get("result", {}),
+                    })
                 else:
                     failed += 1
+                    cycle_results.append({
+                        "action": action.action_type,
+                        "status": "failed",
+                        "error": r.get("error", "unknown"),
+                    })
+        self._last_cycle_results = cycle_results
         self.tracker.end_execute()
 
         # 5. Record
@@ -337,8 +358,13 @@ class AgentConnection:
                     except Exception:
                         logger.debug("Agent %s finance fetch failed", self.config.agent_id)
 
+        # Filter vehicles by agent_type for "agent" snapshot class
+        allowed_vtypes = AGENT_VEHICLE_TYPES.get(self.config.agent_type)
+
         if "vehicles_detail" in sections:
             company_vehicles = [v for v in world.vehicles.values() if v.company_id == company_id]
+            if allowed_vtypes:
+                company_vehicles = [v for v in company_vehicles if v.type in allowed_vtypes]
             obs["vehicles"] = [
                 {
                     "id": v.id, "type": v.type, "name": v.name,
@@ -362,6 +388,8 @@ class AgentConnection:
             ]
         elif "vehicles" in sections:
             company_vehicles = [v for v in world.vehicles.values() if v.company_id == company_id]
+            if allowed_vtypes:
+                company_vehicles = [v for v in company_vehicles if v.type in allowed_vtypes]
             obs["vehicles"] = [
                 {
                     "id": v.id, "type": v.type, "name": v.name,
@@ -372,13 +400,23 @@ class AgentConnection:
             ]
         elif "vehicles_summary" in sections:
             company_vehicles = [v for v in world.vehicles.values() if v.company_id == company_id]
+            if allowed_vtypes:
+                company_vehicles = [v for v in company_vehicles if v.type in allowed_vtypes]
             obs["vehicles"] = {
                 "total": len(company_vehicles),
                 "in_depot": sum(1 for v in company_vehicles if v.in_depot),
             }
 
+        # Filter stations by agent_type for "agent" snapshot class
+        station_filter = AGENT_STATION_FILTERS.get(self.config.agent_type)
+
         if "stations_detail" in sections:
             company_stations = [s for s in world.stations.values() if s.company_id == company_id]
+            if station_filter:
+                company_stations = [s for s in company_stations if station_filter({
+                    "has_rail": s.has_rail, "has_bus": s.has_bus, "has_truck": s.has_truck,
+                    "has_airport": s.has_airport, "has_dock": s.has_dock,
+                })]
             obs["stations"] = [
                 {
                     "id": s.id, "name": s.name, "x": s.x, "y": s.y,
@@ -402,12 +440,22 @@ class AgentConnection:
             ]
         elif "stations" in sections:
             company_stations = [s for s in world.stations.values() if s.company_id == company_id]
+            if station_filter:
+                company_stations = [s for s in company_stations if station_filter({
+                    "has_rail": s.has_rail, "has_bus": s.has_bus, "has_truck": s.has_truck,
+                    "has_airport": s.has_airport, "has_dock": s.has_dock,
+                })]
             obs["stations"] = [
                 {"id": s.id, "name": s.name, "x": s.x, "y": s.y}
                 for s in company_stations
             ]
         elif "stations_count" in sections:
             company_stations = [s for s in world.stations.values() if s.company_id == company_id]
+            if station_filter:
+                company_stations = [s for s in company_stations if station_filter({
+                    "has_rail": s.has_rail, "has_bus": s.has_bus, "has_truck": s.has_truck,
+                    "has_airport": s.has_airport, "has_dock": s.has_dock,
+                })]
             obs["total_stations"] = len(company_stations)
 
         if "towns" in sections:
@@ -418,7 +466,7 @@ class AgentConnection:
         elif "top_towns" in sections:
             top_towns = sorted(world.towns.values(), key=lambda t: t.population, reverse=True)[:10]
             obs["top_towns"] = [
-                {"id": t.id, "name": t.name, "population": t.population}
+                {"id": t.id, "name": t.name, "population": t.population, "x": t.x, "y": t.y}
                 for t in top_towns
             ]
             obs["total_towns"] = len(world.towns)
@@ -443,6 +491,10 @@ class AgentConnection:
 
         if "routes" in sections:
             obs["routes"] = []
+
+        # Always include previous cycle's action results so agent can learn
+        if self._last_cycle_results:
+            obs["previous_actions"] = self._last_cycle_results
 
         if "game" in sections:
             obs["game"] = {

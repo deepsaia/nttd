@@ -74,25 +74,33 @@ def decide_scout(towns: list[dict]) -> tuple[dict, dict]:
     return town_a, town_b
 
 
-def decide_build(stop_a: int, stop_b: int, depot_tile: int) -> list[dict]:
+def decide_build(
+    stop_a: int, stop_b: int, depot_tile: int, dir_a: int, dir_b: int, depot_dir: int
+) -> list[dict]:
     """Produce the action list for building infrastructure."""
     return [
         {"action_type": "build_road_stop", "parameters": {
-            "tile": stop_a, "length": 1, "is_truck": False, "on_drive_through": False,
+            "tile": stop_a, "direction": dir_a, "is_truck": False, "is_drive_through": False,
         }},
         {"action_type": "build_road_stop", "parameters": {
-            "tile": stop_b, "length": 1, "is_truck": False, "on_drive_through": False,
+            "tile": stop_b, "direction": dir_b, "is_truck": False, "is_drive_through": False,
         }},
-        {"action_type": "build_road_depot", "parameters": {"tile": depot_tile}},
+        {"action_type": "build_road_depot", "parameters": {"tile": depot_tile, "direction": depot_dir}},
     ]
 
 
-def decide_buy_and_route(depot_tile: int, engine_id: int, vehicle_id: int, stop_a: int, stop_b: int) -> list[dict]:
+def decide_buy_and_route(
+    depot_tile: int, engine_id: int, vehicle_id: int, station_a: int, station_b: int
+) -> list[dict]:
     """Produce the action list for buying a bus and setting up its route."""
     return [
         {"action_type": "buy_vehicle", "parameters": {"depot_tile": depot_tile, "engine_id": engine_id}},
-        {"action_type": "add_order", "parameters": {"vehicle_id": vehicle_id, "order_index": 0, "destination": stop_a}},
-        {"action_type": "add_order", "parameters": {"vehicle_id": vehicle_id, "order_index": 1, "destination": stop_b}},
+        {"action_type": "add_order", "parameters": {
+            "vehicle_id": vehicle_id, "station_id": station_a, "order_flags": 1,
+        }},
+        {"action_type": "add_order", "parameters": {
+            "vehicle_id": vehicle_id, "station_id": station_b, "order_flags": 1,
+        }},
         {"action_type": "start_vehicle", "parameters": {"vehicle_id": vehicle_id}},
     ]
 
@@ -112,6 +120,8 @@ async def main(base_url: str, session_id: str, company_id: int, poll_interval: f
         # Phase tracking
         town_a = town_b = None
         stop_a = stop_b = depot_tile = vehicle_id = None
+        dir_a = dir_b = depot_dir = 0
+        station_a = station_b = None
         phase = "scout"
 
         while True:
@@ -143,9 +153,29 @@ async def main(base_url: str, session_id: str, company_id: int, poll_interval: f
                 if spots_a and spots_b and depot_spots:
                     stop_a = spots_a[0]["tile"]
                     stop_b = spots_b[0]["tile"]
+                    dir_a = spots_a[0].get("direction", 0)
+                    dir_b = spots_b[0].get("direction", 0)
                     depot_tile = depot_spots[0]["tile"]
-                    actions = decide_build(stop_a, stop_b, depot_tile)
-                    await interpret_actions(client, session_url, actions, company_id)
+                    depot_dir = depot_spots[0].get("depot_direction", 0)
+                    actions = decide_build(stop_a, stop_b, depot_tile, dir_a, dir_b, depot_dir)
+                    results = await interpret_actions(client, session_url, actions, company_id)
+                    # Extract station_ids from build results
+                    for r in results:
+                        ce = r.get("changed_entities", {})
+                        sid = ce.get("station_id") if isinstance(ce, dict) else None
+                        if sid is not None:
+                            if station_a is None:
+                                station_a = sid
+                            else:
+                                station_b = sid
+                    # Fallback: query stations
+                    if station_a is None or station_b is None:
+                        stns = await gs_query(client, session_url, "get_stations", {
+                            "company_id": company_id,
+                        })
+                        if len(stns) >= 2:
+                            station_a = stns[0]["id"]
+                            station_b = stns[1]["id"]
                     phase = "buy"
                 else:
                     log.warning("Could not find spots — retrying next cycle")
@@ -157,7 +187,7 @@ async def main(base_url: str, session_id: str, company_id: int, poll_interval: f
                 buses = [e for e in engines if e.get("cargo_label") in ("PASS", "PASSENGERS", "")]
                 if not buses:
                     buses = engines
-                if buses:
+                if buses and station_a is not None and station_b is not None:
                     # Buy first, then get vehicle ID, then set orders
                     buy_action = [{"action_type": "buy_vehicle", "parameters": {
                         "depot_tile": depot_tile, "engine_id": buses[0]["id"],
@@ -169,15 +199,16 @@ async def main(base_url: str, session_id: str, company_id: int, poll_interval: f
                         vehicle_id = vehicles[-1]["id"]
                         route_actions = [
                             {"action_type": "add_order", "parameters": {
-                                "vehicle_id": vehicle_id, "order_index": 0, "destination": stop_a,
+                                "vehicle_id": vehicle_id, "station_id": station_a, "order_flags": 1,
                             }},
                             {"action_type": "add_order", "parameters": {
-                                "vehicle_id": vehicle_id, "order_index": 1, "destination": stop_b,
+                                "vehicle_id": vehicle_id, "station_id": station_b, "order_flags": 1,
                             }},
                             {"action_type": "start_vehicle", "parameters": {"vehicle_id": vehicle_id}},
                         ]
                         await interpret_actions(client, session_url, route_actions, company_id)
-                        log.info("Bus route active: vehicle %d, %d <-> %d", vehicle_id, stop_a, stop_b)
+                        log.info("Bus route active: vehicle %d, station %d <-> %d",
+                                 vehicle_id, station_a, station_b)
                         phase = "monitor"
 
             elif phase == "monitor":

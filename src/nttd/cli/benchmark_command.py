@@ -1,9 +1,9 @@
-"""nttd benchmark command — run a full benchmark from HOCON config."""
+"""nttd benchmark command -- run a full benchmark from HOCON config."""
 
 import json
 import time
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 import typer
 from rich.panel import Panel
@@ -17,6 +17,43 @@ from nttd.cli.helpers import (
     get_base_url,
     load_instructions,
 )
+
+
+def _get_raw(cfg: Any, path: str, default: Any = None) -> Any:
+    """Safely traverse a pyhocon ConfigTree by dot-path."""
+    try:
+        parts = path.split(".")
+        node = cfg
+        for part in parts:
+            node = node[part]
+        return node
+    except Exception:
+        return default
+
+
+def _parse_agents(raw: Any) -> list[dict[str, Any]]:
+    """Parse agent definitions from the raw ConfigTree into dicts."""
+    agents_raw = _get_raw(raw, "agents", [])
+    if not agents_raw:
+        return []
+
+    agents: list[dict[str, Any]] = []
+    for a in agents_raw:
+        agents.append({
+            "agent_id": a.get("agent_id", "agent"),
+            "company_id": int(a.get("company_id", 0)),
+            "framework": a.get("framework", "openai"),
+            "model": a.get("model", "gpt-4o"),
+            "agent_type": a.get("agent_type", "road"),
+            "instructions": a.get("instructions", ""),
+            "instructions_file": a.get("instructions_file", ""),
+            "observation_mode": a.get("observation_mode", "compact"),
+            "poll_interval": float(a.get("poll_interval", 5.0)),
+            "observation_tools": bool(a.get("observation_tools", True)),
+            "max_actions_per_cycle": int(a.get("max_actions_per_cycle", 10)),
+            "api_key_env": a.get("api_key_env", "OPENAI_API_KEY"),
+        })
+    return agents
 
 
 def benchmark(
@@ -48,14 +85,22 @@ def benchmark(
     if speed >= 0:
         cfg.runtime.game_speed = speed
     settings = scenario_to_settings(cfg)
-    ai_count = ai_opponents if ai_opponents >= 0 else cfg.companies.num_ai_companies
+
+    # Read display values from flattened settings (same pattern as session create)
+    map_x = 2 ** int(settings.get("game_creation.map_x", "8"))
+    map_y = 2 ** int(settings.get("game_creation.map_y", "8"))
+    ai_count = ai_opponents if ai_opponents >= 0 else int(settings.get("difficulty.max_no_competitors", "0"))
+
+    # Parse agents from raw ConfigTree
+    raw = cfg._raw or {}
+    agents_list = _parse_agents(raw)
 
     console.print(Panel(
-        f"[bold]Config:[/]      {config}\n"
-        f"[bold]Map:[/]         {cfg.map.size_x}x{cfg.map.size_y} {cfg.map.landscape}\n"
-        f"[bold]Speed:[/]       {cfg.runtime.game_speed}x\n"
-        f"[bold]AI opponents:[/]{ai_count}\n"
-        f"[bold]Agents:[/]      {len(cfg.agents)}\n"
+        f"[bold]Config:[/]       {config}\n"
+        f"[bold]Map:[/]          {map_x}x{map_y}\n"
+        f"[bold]Speed:[/]        {cfg.runtime.game_speed}x\n"
+        f"[bold]AI opponents:[/] {ai_count}\n"
+        f"[bold]Agents:[/]       {len(agents_list)}\n"
         + format_end_conditions_brief(cfg.end_conditions),
         title="Benchmark configuration",
     ))
@@ -86,7 +131,7 @@ def benchmark(
             json={
                 "mode": "newgame",
                 "ai_opponents": ai_count,
-                "agent_companies": len(cfg.agents),
+                "agent_companies": len({a["company_id"] for a in agents_list}),
             },
             timeout=30,
         )
@@ -113,22 +158,23 @@ def benchmark(
     )
 
     # 7. Register and start agents from config
-    for agent_cfg in cfg.agents:
-        agent_instructions = agent_cfg.instructions
-        if agent_cfg.instructions_file:
-            agent_instructions = load_instructions(agent_cfg.instructions_file)
+    for agent_cfg in agents_list:
+        agent_instructions = agent_cfg["instructions"]
+        if agent_cfg["instructions_file"]:
+            agent_instructions = load_instructions(agent_cfg["instructions_file"])
 
         agent_payload = {
-            "agent_id": agent_cfg.agent_id,
-            "company_id": agent_cfg.company_id,
-            "framework": agent_cfg.framework,
-            "model": agent_cfg.model,
+            "agent_id": agent_cfg["agent_id"],
+            "company_id": agent_cfg["company_id"],
+            "framework": agent_cfg["framework"],
+            "model": agent_cfg["model"],
+            "agent_type": agent_cfg["agent_type"],
             "instructions": agent_instructions,
-            "observation_mode": agent_cfg.observation_mode,
-            "poll_interval": agent_cfg.poll_interval,
-            "observation_tools": agent_cfg.observation_tools,
-            "max_actions_per_cycle": agent_cfg.max_actions_per_cycle,
-            "api_key_env": agent_cfg.api_key_env,
+            "observation_mode": agent_cfg["observation_mode"],
+            "poll_interval": agent_cfg["poll_interval"],
+            "observation_tools": agent_cfg["observation_tools"],
+            "max_actions_per_cycle": agent_cfg["max_actions_per_cycle"],
+            "api_key_env": agent_cfg["api_key_env"],
         }
         resp = requests.post(
             f"{url}/sessions/{session_id}/gameloop/agents/register",
@@ -136,28 +182,31 @@ def benchmark(
             timeout=10,
         )
         if resp.ok:
-            console.print(f"  [green]Registered:[/] {agent_cfg.agent_id} (company {agent_cfg.company_id})")
+            console.print(
+                f"  [green]Registered:[/] {agent_cfg['agent_id']} "
+                f"(company {agent_cfg['company_id']}, {agent_cfg['model']})"
+            )
         else:
-            console.print(f"  [red]Failed to register {agent_cfg.agent_id}:[/] {resp.text}")
+            console.print(f"  [red]Failed to register {agent_cfg['agent_id']}:[/] {resp.text}")
             continue
 
         resp = requests.post(
-            f"{url}/sessions/{session_id}/gameloop/agents/{agent_cfg.agent_id}/start",
+            f"{url}/sessions/{session_id}/gameloop/agents/{agent_cfg['agent_id']}/start",
             timeout=10,
         )
         if resp.ok:
-            console.print(f"  [green]Started:[/]    {agent_cfg.agent_id}")
+            console.print(f"  [green]Started:[/]    {agent_cfg['agent_id']}")
         else:
-            console.print(f"  [red]Failed to start {agent_cfg.agent_id}:[/] {resp.text}")
+            console.print(f"  [red]Failed to start {agent_cfg['agent_id']}:[/] {resp.text}")
 
     # 8. Monitor until end condition
-    console.print("\n[bold]Benchmark running[/] — waiting for end condition...")
+    console.print("\n[bold]Benchmark running[/] -- waiting for end condition...")
     console.print("[dim]Press Ctrl+C to stop early[/]\n")
 
     try:
         _monitor_loop(url, session_id)
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted — stopping session...[/]")
+        console.print("\n[yellow]Interrupted -- stopping session...[/]")
 
     # 9. Export results
     _export_results(url, session_id, output)
@@ -191,7 +240,7 @@ def _monitor_loop(base_url: str, session_id: str) -> None:
                 game_resp = requests.get(f"{base_url}/sessions/{session_id}/status", timeout=5)
                 game = game_resp.json() if game_resp.ok else {}
 
-                table = Table(title=f"Benchmark — cycle {cycle}")
+                table = Table(title=f"Benchmark -- cycle {cycle}")
                 table.add_column("Metric")
                 table.add_column("Value")
                 table.add_row("Session", session_id)

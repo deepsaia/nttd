@@ -7,7 +7,6 @@ from rich.panel import Panel
 from rich.table import Table
 
 from nttd.cli.helpers import (
-    build_end_conditions_payload,
     check_server,
     console,
     format_end_conditions_brief,
@@ -58,7 +57,6 @@ def session_create(
     # Read display values from settings (already parsed from raw config)
     map_x = 2 ** int(settings.get("game_creation.map_x", "8"))
     map_y = 2 ** int(settings.get("game_creation.map_y", "8"))
-    landscape = settings.get("_runtime_mode", "async_realtime")
     ai_count = settings.get("difficulty.max_no_competitors", "0")
 
     console.print(Panel(

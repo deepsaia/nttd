@@ -813,9 +813,12 @@ class NttdGS extends GSController {
     local engines = [];
     foreach (id, _ in GSEngineList(vt)) {
       if (!GSEngine.IsBuildable(id)) continue;
+      local ct = GSEngine.GetCargoType(id);
+      local cl = GSCargo.IsValidCargo(ct) ? GSCargo.GetCargoLabel(ct) : "";
       engines.append({
         id = id, name = GSEngine.GetName(id),
-        cargo_type = GSEngine.GetCargoType(id),
+        cargo_type = ct,
+        cargo_label = cl,
         capacity = GSEngine.GetCapacity(id),
         max_speed = GSEngine.GetMaxSpeed(id),
         price = GSEngine.GetPrice(id),
@@ -987,6 +990,7 @@ class NttdGS extends GSController {
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
           adjacent_road_count = adj.len(),
+          direction = adj[0].dir,
           cargo_acceptance = cargo_info });
       }
     }
@@ -1285,7 +1289,10 @@ class NttdGS extends GSController {
     local ok = is_dt
       ? GSRoad.BuildDriveThroughRoadStation(r.tile, front, stop_type, GSStation.STATION_NEW)
       : GSRoad.BuildRoadStation(r.tile, front, stop_type, GSStation.STATION_NEW);
-    if (ok) return { success = true, result = { tile = r.tile, x = r.x, y = r.y, type = is_truck ? "truck" : "bus" } };
+    if (ok) {
+      local sid = GSStation.GetStationID(r.tile);
+      return { success = true, result = { tile = r.tile, x = r.x, y = r.y, type = is_truck ? "truck" : "bus", station_id = sid } };
+    }
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -1363,7 +1370,8 @@ class NttdGS extends GSController {
     local tile = GSMap.GetTileIndex(p.x, p.y);
     local track = (dir == 1) ? GSRail.RAILTRACK_NW_SE : GSRail.RAILTRACK_NE_SW;
     if (GSRail.BuildRailStation(tile, track, platforms, length, GSStation.STATION_NEW)) {
-      return { success = true, result = { tile = [p.x, p.y], platforms = platforms, length = length } };
+      local sid = GSStation.GetStationID(tile);
+      return { success = true, result = { tile = [p.x, p.y], platforms = platforms, length = length, station_id = sid } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -1509,7 +1517,8 @@ class NttdGS extends GSController {
     local airport_type = ("airport_type" in p) ? p.airport_type : 0;
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSAirport.BuildAirport(tile, airport_type, GSStation.STATION_NEW)) {
-      return { success = true, result = { tile = [p.x, p.y], type = airport_type } };
+      local sid = GSStation.GetStationID(tile);
+      return { success = true, result = { tile = [p.x, p.y], type = airport_type, station_id = sid } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
   }
@@ -1532,7 +1541,10 @@ class NttdGS extends GSController {
   function CmdBuildDock(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
-    if (GSMarine.BuildDock(tile, GSStation.STATION_NEW)) return { success = true, result = { tile = [p.x, p.y] } };
+    if (GSMarine.BuildDock(tile, GSStation.STATION_NEW)) {
+      local sid = GSStation.GetStationID(tile);
+      return { success = true, result = { tile = [p.x, p.y], station_id = sid } };
+    }
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -1819,7 +1831,9 @@ class NttdGS extends GSController {
 
   function CmdRefitVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.RefitVehicle(p.vehicle_id, p.cargo_id)) return { success = true, result = {} };
+    local cid = ("cargo_id" in p) ? p.cargo_id : ("cargo_type" in p) ? p.cargo_type : null;
+    if (cid == null) return { success = false, error = "Need cargo_id or cargo_type" };
+    if (GSVehicle.RefitVehicle(p.vehicle_id, cid)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
@@ -1841,14 +1855,64 @@ class NttdGS extends GSController {
   // ORDER COMMANDS
   // ===========================================================================
 
+  // Validate that a vehicle type can use a station type.
+  // Returns null if OK, or an error string if mismatched.
+  function _ValidateVehicleStation(vehicle_id, sid) {
+    if (!GSVehicle.IsValidVehicle(vehicle_id)) return null;
+    if (!GSStation.IsValidStation(sid)) return null;
+    local vt = GSVehicle.GetVehicleType(vehicle_id);
+    local ok = false;
+    switch (vt) {
+      case GSVehicle.VT_ROAD:
+        ok = GSStation.HasStationType(sid, GSStation.STATION_BUS_STOP) ||
+             GSStation.HasStationType(sid, GSStation.STATION_TRUCK_STOP);
+        break;
+      case GSVehicle.VT_RAIL:
+        ok = GSStation.HasStationType(sid, GSStation.STATION_TRAIN);
+        break;
+      case GSVehicle.VT_AIR:
+        ok = GSStation.HasStationType(sid, GSStation.STATION_AIRPORT);
+        break;
+      case GSVehicle.VT_WATER:
+        ok = GSStation.HasStationType(sid, GSStation.STATION_DOCK);
+        break;
+    }
+    if (!ok) {
+      return "ERR_VEHICLE_STATION_MISMATCH: " + this._VehicleTypeName(vt) + " cannot use station " + sid;
+    }
+    return null;
+  }
+
+  // Resolve a station_id to the correct order destination tile.
+  // GSOrder.AppendOrder expects the station's reference tile from GetLocation().
+  // This works for all station types (bus, train, airport, dock).
+  function _ResolveOrderDest(sid) {
+    if (!GSStation.IsValidStation(sid)) return null;
+    return GSStation.GetLocation(sid);
+  }
+
+  // Sanitize order flags for vehicle type compatibility.
+  // OpenTTD 15.x requires OF_NON_STOP_INTERMEDIATE (bit 0) to be set for all
+  // vehicle types in GSOrder.AppendOrder. Ensure it is always present.
+  function _SanitizeOrderFlags(vehicle_id, flags) {
+    // Always set OF_NON_STOP_INTERMEDIATE (bit 0) -- required by OpenTTD 15.x
+    flags = flags | 1;
+    return flags;
+  }
+
   function CmdAddOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local flags = ("order_flags" in p) ? p.order_flags : 0;
+    flags = _SanitizeOrderFlags(p.vehicle_id, flags);
     // Accept station_id OR destination (tile ID of the station)
     local dest = null;
     if ("station_id" in p) {
-      if (GSStation.IsValidStation(p.station_id)) {
-        dest = GSStation.GetLocation(p.station_id);
+      local sid = p.station_id;
+      if (GSStation.IsValidStation(sid)) {
+        dest = _ResolveOrderDest(sid);
+      } else if (GSMap.IsValidTile(sid)) {
+        // Agent likely passed a tile instead of station ID -- accept it
+        dest = sid;
       }
     } else if ("dest_tile" in p) {
       dest = p.dest_tile;
@@ -1858,29 +1922,53 @@ class NttdGS extends GSController {
         dest = d;
       } else if (GSStation.IsValidStation(d)) {
         // Fallback: treat small numbers as station IDs
-        dest = GSStation.GetLocation(d);
+        dest = _ResolveOrderDest(d);
       }
     }
-    if (dest == null || !GSMap.IsValidTile(dest)) return { success = false, error = "Need station_id or destination (tile)" };
+    if (dest == null || !GSMap.IsValidTile(dest)) {
+      local got = ("station_id" in p) ? "station_id=" + p.station_id :
+                  ("dest_tile" in p) ? "dest_tile=" + p.dest_tile :
+                  ("destination" in p) ? "destination=" + p.destination : "none";
+      return { success = false, error = "Need valid station_id or destination tile (" + got + ")" };
+    }
+    // Validate vehicle-station type compatibility
+    if ("station_id" in p && GSStation.IsValidStation(p.station_id)) {
+      local mismatch = _ValidateVehicleStation(p.vehicle_id, p.station_id);
+      if (mismatch != null) return { success = false, error = mismatch };
+    }
     if (GSOrder.AppendOrder(p.vehicle_id, dest, flags)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    local err = GSError.GetLastErrorString();
+    return { success = false, error = err + " (vehicle=" + p.vehicle_id + " dest_tile=" + dest + ")" };
   }
 
   function CmdInsertOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local flags = ("order_flags" in p) ? p.order_flags : 0;
+    flags = _SanitizeOrderFlags(p.vehicle_id, flags);
     local dest = null;
     if ("station_id" in p) {
-      dest = GSStation.GetLocation(p.station_id);
+      local sid = p.station_id;
+      if (GSStation.IsValidStation(sid)) {
+        dest = _ResolveOrderDest(sid);
+      } else if (GSMap.IsValidTile(sid)) {
+        dest = sid;
+      }
     } else if ("dest_tile" in p) {
       dest = p.dest_tile;
     } else if ("destination" in p) {
       dest = p.destination.tointeger();
     }
-    if (dest == null || !GSMap.IsValidTile(dest)) return { success = false, error = "Need station_id or destination (tile)" };
-    if (GSOrder.InsertOrder(p.vehicle_id, p.order_position, dest, flags)) {
+    if (dest == null || !GSMap.IsValidTile(dest)) return { success = false, error = "Need valid station_id or destination tile" };
+    // Validate vehicle-station type compatibility
+    if ("station_id" in p && GSStation.IsValidStation(p.station_id)) {
+      local mismatch = _ValidateVehicleStation(p.vehicle_id, p.station_id);
+      if (mismatch != null) return { success = false, error = mismatch };
+    }
+    local idx = ("order_index" in p) ? p.order_index :
+                ("order_position" in p) ? p.order_position : 0;
+    if (GSOrder.InsertOrder(p.vehicle_id, idx, dest, flags)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
@@ -1888,7 +1976,10 @@ class NttdGS extends GSController {
 
   function CmdRemoveOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSOrder.RemoveOrder(p.vehicle_id, p.order_position)) {
+    local idx = ("order_index" in p) ? p.order_index :
+                ("order_position" in p) ? p.order_position : null;
+    if (idx == null) return { success = false, error = "Need order_index or order_position" };
+    if (GSOrder.RemoveOrder(p.vehicle_id, idx)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
@@ -1896,19 +1987,30 @@ class NttdGS extends GSController {
 
   function CmdSkipToOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSOrder.SkipToOrder(p.vehicle_id, p.order_position)) return { success = true, result = {} };
+    local idx = ("order_index" in p) ? p.order_index :
+                ("order_position" in p) ? p.order_position : null;
+    if (idx == null) return { success = false, error = "Need order_index or order_position" };
+    if (GSOrder.SkipToOrder(p.vehicle_id, idx)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdMoveOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSOrder.MoveOrder(p.vehicle_id, p.from_position, p.to_position)) return { success = true, result = {} };
+    local from_idx = ("from_index" in p) ? p.from_index :
+                     ("from_position" in p) ? p.from_position : null;
+    local to_idx = ("to_index" in p) ? p.to_index :
+                   ("to_position" in p) ? p.to_position : null;
+    if (from_idx == null || to_idx == null) return { success = false, error = "Need from_index/to_index" };
+    if (GSOrder.MoveOrder(p.vehicle_id, from_idx, to_idx)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdSetOrderFlags(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSOrder.SetOrderFlags(p.vehicle_id, p.order_position, p.order_flags)) return { success = true, result = {} };
+    local idx = ("order_index" in p) ? p.order_index :
+                ("order_position" in p) ? p.order_position : null;
+    if (idx == null) return { success = false, error = "Need order_index or order_position" };
+    if (GSOrder.SetOrderFlags(p.vehicle_id, idx, p.order_flags)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 

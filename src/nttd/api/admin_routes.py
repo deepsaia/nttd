@@ -6,7 +6,6 @@ stopping it kills the process. All operations target a specific session's runtim
 
 import logging
 import uuid
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException

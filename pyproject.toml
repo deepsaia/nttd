@@ -76,3 +76,6 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "gs_test: Integration tests requiring a live OpenTTD session (pass --session-id to run)",
+]

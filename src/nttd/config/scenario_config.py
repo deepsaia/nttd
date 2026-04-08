@@ -257,7 +257,7 @@ def _validate_config(m: Any, co: Any) -> None:
         )
 
     # --- Starting year: OpenTTD range ---
-    year = int(_get(m, "starting_year", 1950))
+    year = int(_get(m, "starting_year", 1960))
     if year < 0 or year > 5000000:
         logger.warning("starting_year = %d is outside reasonable range", year)
 
@@ -329,7 +329,7 @@ def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
         settings["game_creation.custom_industry_number"] = str(int(_get(m, "custom_industry_number", 1)))
 
     # Start date
-    settings["game_creation.starting_year"] = str(int(_get(m, "starting_year", 1950)))
+    settings["game_creation.starting_year"] = str(int(_get(m, "starting_year", 1960)))
 
     # AI / company settings
     num_ai = int(_get(co, "num_ai_companies", 2))
