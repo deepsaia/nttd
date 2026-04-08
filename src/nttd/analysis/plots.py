@@ -137,7 +137,8 @@ def agent_performance_bars(sessions: list[SessionData]) -> go.Figure:
     fig.update_layout(
         title="Agent Performance: Model Comparison",
         barmode="group", template=_TEMPLATE,
-        height=650, legend=dict(orientation="h", y=1.06),
+        height=700, legend=dict(orientation="h", y=1.08, font=dict(size=10)),
+        margin=dict(t=80),
     )
     return fig
 
@@ -202,8 +203,9 @@ def company_finances_timeseries(sessions: list[SessionData]) -> go.Figure:
         _apply_date_xaxis(fig, all_dates, row=3, col=1)
     fig.update_layout(
         title="Company 0 Finances Over Time",
-        template=_TEMPLATE, height=700,
-        legend=dict(orientation="h", y=1.04),
+        template=_TEMPLATE, height=750,
+        legend=dict(orientation="h", y=1.06, font=dict(size=10)),
+        margin=dict(t=80),
     )
     return fig
 
@@ -280,8 +282,9 @@ def entity_growth_timeseries(sessions: list[SessionData]) -> go.Figure:
         _apply_date_xaxis(fig, all_dates, row=2, col=1)
     fig.update_layout(
         title="Infrastructure Growth Over Time",
-        template=_TEMPLATE, height=500,
-        legend=dict(orientation="h", y=1.05),
+        template=_TEMPLATE, height=550,
+        legend=dict(orientation="h", y=1.08, font=dict(size=10)),
+        margin=dict(t=80),
     )
     return fig
 
@@ -316,9 +319,9 @@ def action_type_distribution(sessions: list[SessionData]) -> go.Figure:
     fig.update_layout(
         title="Action Types: Success vs Failure",
         barmode="stack", template=_TEMPLATE,
-        height=max(450, 28 * n_types),
-        legend=dict(orientation="h", y=1.05),
-        margin=dict(l=160),
+        height=max(500, 28 * n_types),
+        legend=dict(orientation="h", y=1.08, font=dict(size=10)),
+        margin=dict(l=160, t=80),
     )
     return fig
 
@@ -417,8 +420,9 @@ def cycle_timing_boxplots(sessions: list[SessionData]) -> go.Figure:
 
     fig.update_layout(
         title="Cycle Timing Distribution by Agent",
-        boxmode="group", template=_TEMPLATE, height=450,
-        legend=dict(orientation="h", y=1.08),
+        boxmode="group", template=_TEMPLATE, height=500,
+        legend=dict(orientation="h", y=1.1, font=dict(size=10)),
+        margin=dict(t=80),
     )
     return fig
 
@@ -575,8 +579,9 @@ def agent_spending_proxy(sessions: list[SessionData]) -> go.Figure:
     fig.update_yaxes(title_text="Balance", secondary_y=True)
     fig.update_layout(
         title="Agent Infrastructure Spending vs Company Balance",
-        template=_TEMPLATE, height=450,
-        legend=dict(orientation="h", y=1.1),
+        template=_TEMPLATE, height=500,
+        legend=dict(orientation="h", y=1.12, font=dict(size=10)),
+        margin=dict(t=80),
     )
     return fig
 
@@ -688,8 +693,9 @@ def transport_mode_finances(sessions: list[SessionData]) -> go.Figure:
             _apply_date_xaxis(fig, all_dates, row=2, col=i + 1)
     fig.update_layout(
         title="Per-Transport Mode: Vehicle Revenue and Infrastructure Costs",
-        template=_TEMPLATE, height=650,
-        legend=dict(orientation="h", y=1.06),
+        template=_TEMPLATE, height=700,
+        legend=dict(orientation="h", y=1.08, font=dict(size=10)),
+        margin=dict(t=80),
     )
     return fig
 

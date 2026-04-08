@@ -348,7 +348,7 @@ def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
     snapshot_interval = int(_get(rt, "snapshot_interval_days", 1))
     if snapshot_interval != 1:
         settings["_snapshot_interval_days"] = str(snapshot_interval)
-    settings["_screenshot_interval_seconds"] = str(int(_get(rt, "screenshot_interval_seconds", 60)))
+    settings["_screenshot_interval_seconds"] = str(int(_get(rt, "screenshot_interval_seconds", 0)))
     settings["_screenshot_type"] = str(_get(rt, "screenshot_type", "minimap"))
     settings["_save_interval_seconds"] = str(int(_get(rt, "save_interval_seconds", 300)))
 

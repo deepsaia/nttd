@@ -1,4 +1,4 @@
-"""nttd CLI — command-line interface for managing sessions, agents, and benchmarks.
+"""nttd CLI -- command-line interface for managing sessions, agents, and benchmarks.
 
 Commands:
   nttd server                Start the nttd API server (uvicorn)
@@ -12,11 +12,13 @@ Commands:
   nttd agent stop            Stop an agent's cycle loop
   nttd agent list            List agents for a session
   nttd benchmark             Run a full benchmark from HOCON config
+  nttd analyze               Generate session analysis reports
 """
 
 import typer
 
 from nttd.cli.agent_commands import agent_app
+from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
 from nttd.cli.server_command import server
 from nttd.cli.session_commands import session_app
@@ -31,6 +33,7 @@ app.add_typer(session_app, name="session")
 app.add_typer(agent_app, name="agent")
 app.command()(server)
 app.command()(benchmark)
+app.command()(analyze)
 
 
 def main() -> None:

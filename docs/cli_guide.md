@@ -287,6 +287,53 @@ The benchmark command requires agents to be defined in the HOCON config (see bel
 
 ---
 
+### `nttd analyze`
+
+Generate analysis reports for a completed or in-progress session. By default, prints reports to the terminal. Use `--save` to write files.
+
+```bash
+nttd analyze <session_id> [OPTIONS]
+```
+
+| Option              | Default | Description                                    |
+|---------------------|---------|------------------------------------------------|
+| `--reports`, `-r`   | `all`   | Comma-separated report names, or `all`         |
+| `--save`, `-s`      | (none)  | Save formats: `markdown,png,html,json`         |
+| `--output-dir`, `-o`| session dir | Override save directory                     |
+| `--video/--no-video`| off     | Generate screenshot timelapse MP4              |
+| `--compare`         | (none)  | Additional session IDs for multi-session comparison |
+| `--json`            | off     | Print JSON to stdout instead of markdown       |
+| `--open`            | off     | Open saved markdown report in browser          |
+
+**Available reports:** `session_summary`, `agent_performance`, `financial`, `cargo_delivery`, `vehicle_fleet`, `infrastructure`, `events_timeline`, `action_analysis`, `orders`, `world_state`, `tile_map`
+
+```bash
+# Print all reports to terminal
+nttd analyze ses_abc123
+
+# Print specific reports
+nttd analyze ses_abc123 --reports session_summary,financial
+
+# Print as JSON (for piping)
+nttd analyze ses_abc123 --json
+
+# Save markdown + PNG plots to session directory
+nttd analyze ses_abc123 --save markdown,png
+
+# Save all formats to custom directory
+nttd analyze ses_abc123 --save markdown,png,json,html --output-dir results/
+
+# Generate video timelapse from screenshots
+nttd analyze ses_abc123 --save png --video
+
+# Compare two sessions side-by-side
+nttd analyze ses_abc123 --compare ses_def456
+```
+
+The analysis system also exposes API endpoints at `/analysis/` for frontend consumption. See `docs/session_analyzer.md` for full details.
+
+---
+
 ## HOCON Configuration
 
 All session configuration lives in a single HOCON file (typically `config/scenario.conf`). The file controls map generation, company setup, runtime settings, end conditions, and agent definitions.

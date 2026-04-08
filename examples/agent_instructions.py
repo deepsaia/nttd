@@ -170,14 +170,14 @@ ORDERS:
   copy_orders           vehicle_id, main_vehicle_id
 
 ORDER FLAGS (pass as order_flags parameter):
-  1  = non-stop to destination (REQUIRED for all vehicle types)
-  5  = full load any cargo + non-stop (use ONLY after station has cargo flowing)
-  17 = no loading + non-stop (for drop-off only stations)
+  0  = default (non-stop is automatic in OpenTTD 14+, load/unload as accepted)
+  96 = full load any cargo (vehicle waits until full -- use ONLY after cargo is flowing)
+  128 = no loading (skip loading at this station -- for drop-off only)
 
-IMPORTANT: ALWAYS use order_flags=1 (non-stop) for ALL vehicle types (road, rail,
-aircraft, ships). This is REQUIRED by OpenTTD for orders to work correctly.
+IMPORTANT: Use order_flags=0 for all initial orders. Non-stop is the default behavior
+in OpenTTD 14+ so you do NOT need to set it explicitly.
 Stations only start producing cargo AFTER a vehicle visits them. Do NOT use
-order_flags=5 (full load) on new routes -- vehicles will wait forever at empty stations.
+order_flags=96 (full load) on new routes -- vehicles will wait forever at empty stations.
 
 COMPANY:
   build_company_hq      tile
@@ -235,8 +235,8 @@ PHASE 3 -- ORDERS AND START (cycle 3):
   a. Call get_vehicles to find your new vehicle's ID.
   b. Call get_stations to get station IDs for your two stops.
   c. Add orders and start:
-     - add_order(vehicle_id=X, station_id=<stop_A_id>, order_flags=1)
-     - add_order(vehicle_id=X, station_id=<stop_B_id>, order_flags=1)
+     - add_order(vehicle_id=X, station_id=<stop_A_id>, order_flags=0)
+     - add_order(vehicle_id=X, station_id=<stop_B_id>, order_flags=0)
      - start_vehicle(vehicle_id=X)
 
 PHASE 4 -- VERIFY (cycles 4-6):
@@ -385,8 +385,8 @@ PHASE 4 -- ORDERS AND START (cycle 4):
   a. Check previous_actions -- did the build and buy succeed?
   b. Call get_vehicles to find the train's vehicle_id.
   c. Call get_stations to get station IDs.
-  d. add_order(vehicle_id=X, station_id=<source_station_id>, order_flags=1)
-  e. add_order(vehicle_id=X, station_id=<dest_station_id>, order_flags=1)
+  d. add_order(vehicle_id=X, station_id=<source_station_id>, order_flags=0)
+  e. add_order(vehicle_id=X, station_id=<dest_station_id>, order_flags=0)
   f. start_vehicle(vehicle_id=X)
 
 PHASE 5 -- VERIFY (cycles 5-7):
@@ -470,8 +470,8 @@ PHASE 3 -- ORDERS AND START (cycle 3):
   a. Check previous_actions -- did the buy succeed?
   b. Call get_vehicles to find the aircraft's vehicle_id.
   c. Call get_stations to get airport station IDs (the "id" field).
-  d. add_order(vehicle_id=X, station_id=<airport_A_station_id>, order_flags=1)
-  e. add_order(vehicle_id=X, station_id=<airport_B_station_id>, order_flags=1)
+  d. add_order(vehicle_id=X, station_id=<airport_A_station_id>, order_flags=0)
+  e. add_order(vehicle_id=X, station_id=<airport_B_station_id>, order_flags=0)
   f. start_vehicle(vehicle_id=X)
 
 PHASE 4 -- VERIFY (cycles 4-6):
@@ -553,8 +553,8 @@ PHASE 3 -- ORDERS AND START (cycle 3):
   a. Check previous_actions -- did the buy succeed?
   b. Call get_vehicles to find the ship's vehicle_id.
   c. Call get_stations to get dock station IDs.
-  d. add_order(vehicle_id=X, station_id=<dock_A_station_id>, order_flags=1)
-  e. add_order(vehicle_id=X, station_id=<dock_B_station_id>, order_flags=1)
+  d. add_order(vehicle_id=X, station_id=<dock_A_station_id>, order_flags=0)
+  e. add_order(vehicle_id=X, station_id=<dock_B_station_id>, order_flags=0)
   f. start_vehicle(vehicle_id=X)
 
 PHASE 4 -- VERIFY (cycles 4-8):

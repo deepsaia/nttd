@@ -1,4 +1,8 @@
-"""Load session data from logs/sessions/<session_id>/ into analysis-friendly structures."""
+"""Load session data from logs/sessions/<session_id>/ into analysis-friendly structures.
+
+Supports both completed sessions (merged parquet files) and in-progress
+sessions (fragment files under _fragments/).
+"""
 
 from __future__ import annotations
 
@@ -9,12 +13,14 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import pyarrow.parquet as pq
+import polars as pl
 from pyhocon import ConfigFactory
 
 logger = logging.getLogger(__name__)
 
 SESSIONS_DIR = Path("logs/sessions")
+
+_PARQUET_TYPES = ("actions", "agent_cycles", "events", "snapshots", "tiles")
 
 
 @dataclass
@@ -62,9 +68,60 @@ class SessionData:
         return 0.0
 
     @property
+    def is_in_progress(self) -> bool:
+        """True if session has unmerged fragments (still running or stopped uncleanly)."""
+        fragments_dir = self.session_dir / "_fragments"
+        return fragments_dir.exists() and any(fragments_dir.iterdir())
+
+    @property
     def label(self) -> str:
         """Short label for plots: name (model)."""
         return f"{self.name} ({self.model})"
+
+
+def load_fragments(session_dir: Path, parquet_type: str) -> pd.DataFrame:
+    """Read all fragment files for a parquet type and concatenate into one DataFrame.
+
+    Uses polars for fast parquet I/O, converts to pandas for compatibility
+    with existing plot functions. Returns an empty DataFrame if no fragments exist.
+    """
+    fragments_dir = session_dir / "_fragments"
+    if not fragments_dir.exists():
+        return pd.DataFrame()
+
+    pattern = f"{parquet_type}_*.parquet"
+    fragment_paths = sorted(fragments_dir.glob(pattern))
+    if not fragment_paths:
+        return pd.DataFrame()
+
+    frames: list[pl.DataFrame] = []
+    for frag_path in fragment_paths:
+        try:
+            frames.append(pl.read_parquet(frag_path))
+        except Exception:
+            logger.warning("Failed to read fragment %s, skipping", frag_path)
+
+    if not frames:
+        return pd.DataFrame()
+
+    return pl.concat(frames).to_pandas()
+
+
+def _load_parquet_with_fragments(session_dir: Path, parquet_type: str) -> pd.DataFrame:
+    """Load a parquet type, preferring merged file but falling back to fragments.
+
+    Uses polars for fast parquet I/O. If the merged file exists, returns it.
+    Otherwise reads fragments. Converts to pandas for compatibility with
+    existing plot functions.
+    """
+    merged_path = session_dir / f"{parquet_type}.parquet"
+    if merged_path.exists():
+        try:
+            return pl.read_parquet(merged_path).to_pandas()
+        except Exception:
+            logger.warning("Failed to read %s", merged_path)
+
+    return load_fragments(session_dir, parquet_type)
 
 
 def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> SessionData:
@@ -98,21 +155,11 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
         for agent_id in agents_tree:
             data.agents[agent_id] = dict(agents_tree[agent_id])
 
-    # Load Parquet files
-    for attr, filename in [
-        ("actions", "actions.parquet"),
-        ("agent_cycles", "agent_cycles.parquet"),
-        ("events", "events.parquet"),
-        ("snapshots", "snapshots.parquet"),
-        ("tiles", "tiles.parquet"),
-    ]:
-        parquet_path = session_dir / filename
-        if parquet_path.exists():
-            try:
-                table = pq.read_table(parquet_path)
-                setattr(data, attr, table.to_pandas())
-            except Exception:
-                logger.warning("Failed to read %s", parquet_path)
+    # Load Parquet files (merged or fragments for in-progress sessions)
+    for parquet_type in _PARQUET_TYPES:
+        df = _load_parquet_with_fragments(session_dir, parquet_type)
+        if not df.empty:
+            setattr(data, parquet_type, df)
 
     # Tag DataFrames with session info for multi-session analysis
     for attr in ("actions", "agent_cycles", "events", "snapshots"):
@@ -148,18 +195,22 @@ def combine_dataframes(
     return pd.concat(frames, ignore_index=True)
 
 
+def _extract_json_field(json_str: str, field_path: str) -> Any:
+    """Extract a nested field from a JSON string by dot-separated path."""
+    try:
+        data = json.loads(json_str)
+        for key in field_path.split("."):
+            data = data[key]
+        return data
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
 def extract_snapshot_json(snapshots_df: pd.DataFrame, field_path: str) -> pd.Series:
     """Extract a nested field from snapshot_json column.
 
     Example: extract_snapshot_json(df, "companies") returns a Series of company lists.
     """
-    def _extract(json_str: str) -> Any:
-        try:
-            data = json.loads(json_str)
-            for key in field_path.split("."):
-                data = data[key]
-            return data
-        except (json.JSONDecodeError, KeyError, TypeError):
-            return None
-
-    return snapshots_df["snapshot_json"].apply(_extract)
+    return snapshots_df["snapshot_json"].apply(
+        lambda s: _extract_json_field(s, field_path)
+    )

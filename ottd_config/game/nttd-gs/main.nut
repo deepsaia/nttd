@@ -1892,11 +1892,15 @@ class NttdGS extends GSController {
   }
 
   // Sanitize order flags for vehicle type compatibility.
-  // OpenTTD 15.x requires OF_NON_STOP_INTERMEDIATE (bit 0) to be set for all
-  // vehicle types in GSOrder.AppendOrder. Ensure it is always present.
+  // Non-stop flags (bits 0-1) only affect road/rail behavior but are technically
+  // valid in AreOrderFlagsValid for all vehicle types. Clear them for air/water
+  // to avoid any potential issues.
   function _SanitizeOrderFlags(vehicle_id, flags) {
-    // Always set OF_NON_STOP_INTERMEDIATE (bit 0) -- required by OpenTTD 15.x
-    flags = flags | 1;
+    if (typeof flags != "integer") flags = flags.tointeger();
+    local vt = GSVehicle.GetVehicleType(vehicle_id);
+    if (vt == GSVehicle.VT_AIR || vt == GSVehicle.VT_WATER) {
+      flags = flags & ~3;  // Clear non-stop bits for air/water
+    }
     return flags;
   }
 
@@ -1936,11 +1940,23 @@ class NttdGS extends GSController {
       local mismatch = _ValidateVehicleStation(p.vehicle_id, p.station_id);
       if (mismatch != null) return { success = false, error = mismatch };
     }
-    if (GSOrder.AppendOrder(p.vehicle_id, dest, flags)) {
-      return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
+    // Ensure integer types for AppendOrder parameters
+    local vid = p.vehicle_id.tointeger();
+    local dest_int = dest.tointeger();
+    local flags_int = flags.tointeger();
+    if (GSOrder.AppendOrder(vid, dest_int, flags_int)) {
+      return { success = true, result = { order_count = GSOrder.GetOrderCount(vid) } };
     }
     local err = GSError.GetLastErrorString();
-    return { success = false, error = err + " (vehicle=" + p.vehicle_id + " dest_tile=" + dest + ")" };
+    // Diagnostic info for debugging order failures
+    local vt = GSVehicle.IsValidVehicle(vid) ? GSVehicle.GetVehicleType(vid) : -1;
+    local vtn = this._VehicleTypeName(vt);
+    local diag = err + " (v=" + vid + " dest=" + dest_int + " flags=" + flags_int
+      + " vtype=" + vtn
+      + " tv=" + typeof p.vehicle_id + "/" + typeof dest + "/" + typeof flags
+      + " primary=" + GSVehicle.IsPrimaryVehicle(vid)
+      + ")";
+    return { success = false, error = diag };
   }
 
   function CmdInsertOrder(p) {
@@ -1968,10 +1984,15 @@ class NttdGS extends GSController {
     }
     local idx = ("order_index" in p) ? p.order_index :
                 ("order_position" in p) ? p.order_position : 0;
-    if (GSOrder.InsertOrder(p.vehicle_id, idx, dest, flags)) {
-      return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
+    local vid = p.vehicle_id.tointeger();
+    local dest_int = dest.tointeger();
+    local flags_int = flags.tointeger();
+    if (GSOrder.InsertOrder(vid, idx, dest_int, flags_int)) {
+      return { success = true, result = { order_count = GSOrder.GetOrderCount(vid) } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    local err = GSError.GetLastErrorString();
+    local vt = GSVehicle.IsValidVehicle(vid) ? GSVehicle.GetVehicleType(vid) : -1;
+    return { success = false, error = err + " (v=" + vid + " dest=" + dest_int + " flags=" + flags_int + " vtype=" + this._VehicleTypeName(vt) + ")" };
   }
 
   function CmdRemoveOrder(p) {
