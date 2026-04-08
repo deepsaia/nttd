@@ -6,6 +6,7 @@ stopping it kills the process. All operations target a specific session's runtim
 
 import logging
 import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -97,7 +98,8 @@ class DeityTownRatingRequest(BaseModel):
 @router.post("/sessions/new")
 async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
     name = request.name or generate_session_name()
-    session_id = f"ses_{uuid.uuid4().hex[:12]}"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = f"ses_{ts}_{uuid.uuid4().hex[:8]}"
 
     # If config_path provided, load and convert to settings
     settings = dict(request.settings)
