@@ -112,7 +112,8 @@ Available action types and their parameters:
 
 ROAD INFRASTRUCTURE:
   build_road            tile_from, tile_to  (or from_x,from_y,to_x,to_y)
-  build_road_line       tile_from, tile_to  (straight line, same x or y)
+  build_road_line       tile_from, tile_to  (AXIS-ALIGNED ONLY: tiles must share same x OR same y)
+                        WILL FAIL if tiles are diagonal! Use two calls for L-shaped routes.
   build_road_depot      tile, direction  (<- tile and depot_direction from find_depot_spots)
   build_road_stop       tile, direction, is_truck(bool), is_drive_through(bool)
   remove_road           tile_from, tile_to
@@ -143,7 +144,9 @@ AIR & MISC:
   build_airport         tile, airport_type
   remove_airport        tile
   build_dock            tile
-  build_bridge          tile_from, tile_to, bridge_type, transport_type
+  build_bridge          start_x, start_y, end_x, end_y, bridge_type, transport_type
+                        NOTE: uses x,y coordinates NOT tile IDs! Get x,y from find_flat_spots or get_tile_info.
+                        transport_type: 0=rail, 1=road. bridge_type: integer from get_bridge_types.
   build_tunnel          tile, transport_type
   demolish_tile         tile
 
@@ -222,14 +225,17 @@ PHASE 2 -- CONNECT ROAD (cycle 2):
   CRITICAL: Towns do NOT have roads between them! You MUST build a connecting road
   or your buses will never reach the other town and earn zero revenue.
   a. Check previous_actions -- did the builds succeed? If not, fix failures first.
-  b. Build an L-shaped road between the two stops using two build_road_line calls:
-     - First leg (horizontal): build_road_line(tile_from=<stop_A.tile>, tile_to=<corner_tile>)
-       where corner_tile has the SAME y as stop_A but the SAME x as stop_B.
-       To get corner_tile, call get_tile_info or use the x,y from your stop coordinates.
-     - Second leg (vertical): build_road_line(tile_from=<corner_tile>, tile_to=<stop_B.tile>)
-     Some segments may fail (terrain, water). That is OK -- the road will still work
-     if most segments connect. If many fail, try a different corner point.
-  c. Verify: The road only needs to reach the town borders -- town roads handle the rest.
+  b. build_road_line ONLY works for AXIS-ALIGNED tiles (same x OR same y).
+     It WILL FAIL for diagonal routes! To connect two non-aligned stops, use an
+     L-shaped path with TWO build_road_line calls:
+     - Use the x,y coordinates from find_bus_stop_spots results.
+     - Corner tile: same y as stop_A, same x as stop_B (or vice versa).
+       Calculate corner: if stop_A is at (x1,y1) and stop_B is at (x2,y2),
+       the corner is at (x2,y1). Call get_tile_info(x=x2, y=y1) to get corner tile ID.
+     - Leg 1 (same y): build_road_line(tile_from=<stop_A.tile>, tile_to=<corner_tile>)
+     - Leg 2 (same x): build_road_line(tile_from=<corner_tile>, tile_to=<stop_B.tile>)
+     Some segments may fail (terrain, water). That is OK -- try a different corner.
+  c. The road only needs to reach the town borders -- town roads handle the rest.
 
 PHASE 3 -- ORDERS AND START (cycle 3):
   a. Call get_vehicles to find your new vehicle's ID.
@@ -362,19 +368,24 @@ PHASE 1 -- SCOUT (cycle 1):
   f. Call get_engines(vehicle_type=0) to find available train engines.
   g. Call get_rail_types to check available track types.
 
-PHASE 2 -- BUILD TRACK FIRST (cycle 2):
-  CRITICAL: Build track BEFORE stations/depot. Track is the hardest part and most
-  likely to fail. If track fails, you avoid wasting money on useless stations.
+PHASE 2 -- BUILD TRACK (cycle 2, MAX 2 CYCLES on track):
+  Build track BEFORE stations/depot, but do NOT spend more than 2 cycles on track.
+  If track is not complete after 2 cycles of building, build stations anyway and
+  move on -- a partial route is better than no route at all.
   a. Check previous_actions for any failures.
   b. Plan a straight or L-shaped rail path between the two flat spots you found.
   c. Build rail track segment by segment using build_rail(tile_from, tile_to, rail_type=0).
      Each segment connects ADJACENT tiles (differ by 1 in x OR y).
      If a segment fails (ERR_AREA_NOT_CLEAR), try shifting the route by 1-2 tiles.
-  d. Only proceed to PHASE 3 if track is complete.
+  d. LIMIT: Build at most 15 rail segments per route. If you need more, pick
+     CLOSER industries. Do NOT spend more build_rail actions than this.
+  e. Proceed to PHASE 3 after track is done OR after 2 cycles of track building.
 
-PHASE 3 -- BUILD STATIONS AND VEHICLE (cycle 3):
-  a. Check previous_actions -- did ALL track segments succeed?
-     If not, fix failed segments before building stations.
+PHASE 3 -- BUILD STATIONS AND VEHICLE (cycle 3-4):
+  DO NOT delay this phase! Even if some track segments failed, build stations and
+  buy a vehicle now. You can fix track gaps later, but a vehicle earning some revenue
+  is better than perfect track with no vehicle.
+  a. Check previous_actions -- fix critical track gaps (try adjacent tiles).
   b. Build in this order at each end of the track:
      - build_rail_depot(tile=<flat_tile_near_source>, rail_type=0)
      - build_rail_station(tile=<flat_tile_near_source>, num_platforms=1, platform_length=3, rail_type=0)
@@ -399,11 +410,14 @@ PHASE 6 -- EXPAND (cycle 8+):
 
 RAIL CONSTRUCTION -- CRITICAL:
   build_rail builds track between ADJACENT tiles only (1 tile apart).
+  OpenTTD automatically determines the correct track piece (straight, curve, junction)
+  based on the tile sequence -- you do NOT need to specify track types for turns.
   - Each call: build_rail with tile_from and tile_to that are NEIGHBORS (differ by 1 in x OR y)
   - Keep routes VERY SHORT: pick industries within 5-10 tiles of each other.
-  - Build track FIRST, then verify all segments succeeded before building stations.
+  - MAX 35 build_rail actions per route. If you need more, the industries are TOO FAR.
   - If ERR_AREA_NOT_CLEAR, shift the route path by 1-2 tiles and retry.
   - For a first route, prioritize CLOSENESS over cargo value.
+  - NEVER spend more than 2 cycles building track. Move to stations/vehicles immediately.
 
 IMPORTANT RULES:
 - You ONLY see trains and rail stations. Other transport types are invisible to you.
