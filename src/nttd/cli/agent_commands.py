@@ -1,4 +1,4 @@
-"""nttd agent subcommands — register, start, stop, list."""
+"""nttd agent subcommands -- register, start, stop, list."""
 
 from typing import Annotated, Optional
 
@@ -6,14 +6,14 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from nttd.cli.helpers import check_server, console, get_base_url, load_instructions
+from nttd.cli.helpers import check_server, console, get_base_url, load_instructions, resolve_session, session_option
 
 agent_app = typer.Typer(help="Agent registration and control")
 
 
 @agent_app.command("register")
 def agent_register(
-    session_id: Annotated[str, typer.Option("--session", "-s", help="Session ID")],
+    session: Annotated[str, session_option()],
     agent_id: Annotated[str, typer.Option("--agent-id", "-a", help="Agent identifier")],
     company_id: Annotated[int, typer.Option("--company-id", "-c", help="Company ID (0-14)")],
     framework: Annotated[str, typer.Option("--framework", "-f", help="openai | langchain | passthrough")] = "openai",
@@ -29,11 +29,12 @@ def agent_register(
     """Register an agent with the gameloop for a session.
 
     Examples:
-      nttd agent register --session ses_abc --agent-id bus --company-id 0 --framework openai
+      nttd agent register -s ses_abc -a bus -c 0 -f openai
       nttd agent register -s ses_abc -a rail -c 1 -f langchain -m gpt-4o-mini
     """
     import requests
 
+    session_id = resolve_session(session)
     url = base_url or get_base_url()
     check_server(url)
 
@@ -70,18 +71,19 @@ def agent_register(
         f"[bold]Model:[/]         {model}",
         title="Agent registered",
     ))
-    console.print(f"\nStart: [cyan]nttd agent start --session {session_id} --agent-id {agent_id}[/]")
+    console.print(f"\nStart: [cyan]nttd agent start -s {session_id} -a {agent_id}[/]")
 
 
 @agent_app.command("start")
 def agent_start(
-    session_id: Annotated[str, typer.Option("--session", "-s", help="Session ID")],
+    session: Annotated[str, session_option()],
     agent_id: Annotated[str, typer.Option("--agent-id", "-a", help="Agent ID to start")],
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
     """Start an agent's observe-decide-interpret-execute cycle loop."""
     import requests
 
+    session_id = resolve_session(session)
     url = base_url or get_base_url()
     check_server(url)
 
@@ -99,13 +101,14 @@ def agent_start(
 
 @agent_app.command("stop")
 def agent_stop(
-    session_id: Annotated[str, typer.Option("--session", "-s", help="Session ID")],
+    session: Annotated[str, session_option()],
     agent_id: Annotated[str, typer.Option("--agent-id", "-a", help="Agent ID to stop")],
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
     """Stop an agent's cycle loop."""
     import requests
 
+    session_id = resolve_session(session)
     url = base_url or get_base_url()
     check_server(url)
 
@@ -123,12 +126,13 @@ def agent_stop(
 
 @agent_app.command("list")
 def agent_list(
-    session_id: Annotated[str, typer.Option("--session", "-s", help="Session ID")],
+    session: Annotated[str, session_option()],
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
     """List all agents registered in a session's gameloop."""
     import requests
 
+    session_id = resolve_session(session)
     url = base_url or get_base_url()
     check_server(url)
 

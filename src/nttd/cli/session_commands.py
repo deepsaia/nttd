@@ -11,6 +11,8 @@ from nttd.cli.helpers import (
     console,
     format_end_conditions_brief,
     get_base_url,
+    resolve_session,
+    session_option,
 )
 
 session_app = typer.Typer(help="Session lifecycle management")
@@ -69,12 +71,12 @@ def session_create(
         + format_end_conditions_brief(cfg.end_conditions),
         title="Session created",
     ))
-    console.print(f"\nNext: [cyan]nttd session start {session_id}[/]")
+    console.print(f"\nNext: [cyan]nttd session start -s {session_id}[/]")
 
 
 @session_app.command("start")
 def session_start(
-    session_id: Annotated[str, typer.Argument(help="Session ID to start")],
+    session: Annotated[str, session_option()],
     ai_opponents: Annotated[int, typer.Option("--ai-opponents", "-a", help="Number of AI opponents")] = -1,
     agent_companies: Annotated[int, typer.Option(
         "--agent-companies", help="Number of idle company slots for nttd agents",
@@ -87,11 +89,12 @@ def session_start(
     Use --agent-companies to pre-create idle company slots for nttd-controlled agents.
 
     Examples:
-      nttd session start ses_abc123
-      nttd session start ses_abc123 --agent-companies 2
+      nttd session start -s ses_abc123
+      nttd session start --session ses_abc123 --agent-companies 2
     """
     import requests
 
+    session_id = resolve_session(session)
     url = base_url or get_base_url()
     check_server(url)
 
@@ -127,18 +130,19 @@ def session_start(
     ))
     console.print(
         f"\nJoin game: [cyan]127.0.0.1:{data.get('game_port')}[/]"
-        f"\nRegister agents: [cyan]nttd agent register --session {session_id} ...[/]"
+        f"\nRegister agents: [cyan]nttd agent register -s {session_id} ...[/]"
     )
 
 
 @session_app.command("stop")
 def session_stop(
-    session_id: Annotated[str, typer.Argument(help="Session ID to stop")],
+    session: Annotated[str, session_option()],
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
     """Stop a running session and archive it."""
     import requests
 
+    session_id = resolve_session(session)
     url = base_url or get_base_url()
     check_server(url)
 
@@ -187,12 +191,13 @@ def session_list(
 
 @session_app.command("status")
 def session_status(
-    session_id: Annotated[str, typer.Argument(help="Session ID")],
+    session: Annotated[str, session_option()],
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
     """Show detailed status for a session."""
     import requests
 
+    session_id = resolve_session(session)
     url = base_url or get_base_url()
     check_server(url)
 

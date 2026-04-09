@@ -76,23 +76,23 @@ nttd session create --config config/scenario.conf
 # Returns: ses_abc123def456
 
 # 3. Start the session (spawns OpenTTD, auto-starts orchestrator)
-nttd session start ses_abc123def456 --agent-companies 1
+nttd session start -s ses_abc123def456 --agent-companies 1
 
 # 4. Register an agent
 nttd agent register \
-  --session ses_abc123def456 \
-  --agent-id road_builder \
-  --company-id 0 \
-  --framework langchain \
-  --model gpt-4o \
+  -s ses_abc123def456 \
+  -a road_builder \
+  -c 0 \
+  -f langchain \
+  -m gpt-4o \
   --instructions-file examples/agent_instructions.py:get_road_agent_prompt
 
 # 5. Start the agent's cycle loop
-nttd agent start --session ses_abc123def456 --agent-id road_builder
+nttd agent start -s ses_abc123def456 -a road_builder
 
 # 6. Watch it run, then stop when done
-nttd session status ses_abc123def456
-nttd session stop ses_abc123def456
+nttd session status -s ses_abc123def456
+nttd session stop -s ses_abc123def456
 ```
 
 Or run everything at once with `nttd benchmark`:
@@ -153,11 +153,12 @@ Returns a session ID like `ses_abc123def456` used in all subsequent commands.
 Spawn an OpenTTD server for the session. Allocates ports, applies map/company settings, starts the game, and auto-starts the orchestrator (snapshot capture, screenshots, saves, end condition monitoring).
 
 ```bash
-nttd session start <session_id> [--agent-companies N] [--ai-opponents N]
+nttd session start -s <session_id> [--agent-companies N] [--ai-opponents N]
 ```
 
 | Option              | Description                                          |
 |---------------------|------------------------------------------------------|
+| `--session`, `-s`   | Session ID or path to session directory (required)   |
 | `--agent-companies` | Number of idle company slots for nttd agents (0-14)  |
 | `--ai-opponents`    | Number of built-in OpenTTD AI opponents              |
 
@@ -168,7 +169,7 @@ Use `--agent-companies` to pre-create company slots that your agents will contro
 Stop the OpenTTD server and finalize session data (merges Parquet fragments, updates session.conf).
 
 ```bash
-nttd session stop <session_id>
+nttd session stop -s <session_id>
 ```
 
 #### `nttd session list`
@@ -184,7 +185,7 @@ nttd session list
 Show detailed information about a session, including game port and live state if running.
 
 ```bash
-nttd session status <session_id>
+nttd session status -s <session_id>
 ```
 
 ---
@@ -199,11 +200,11 @@ Register an agent with the session's gameloop. The agent is created but not yet 
 
 ```bash
 nttd agent register \
-  --session <session_id> \
-  --agent-id <name> \
-  --company-id <0-14> \
-  [--framework openai|langchain|passthrough] \
-  [--model gpt-4o] \
+  -s <session_id> \
+  -a <name> \
+  -c <0-14> \
+  [-f openai|langchain|passthrough] \
+  [-m gpt-4o] \
   [--instructions-file prompts/road.txt] \
   [--instructions "You are a road transport specialist..."] \
   [--poll-interval 5.0] \
@@ -212,7 +213,7 @@ nttd agent register \
 
 | Option                | Default       | Description                                   |
 |-----------------------|---------------|-----------------------------------------------|
-| `--session`, `-s`     | (required)    | Session ID                                    |
+| `--session`, `-s`     | (required)    | Session ID or path to session directory       |
 | `--agent-id`, `-a`    | (required)    | Unique identifier for this agent              |
 | `--company-id`, `-c`  | (required)    | OpenTTD company slot (0-14)                   |
 | `--framework`, `-f`   | `openai`      | LLM framework adapter                         |
@@ -243,7 +244,7 @@ nttd agent register \
 Start the agent's cycle loop.
 
 ```bash
-nttd agent start --session <session_id> --agent-id <name>
+nttd agent start -s <session_id> -a <name>
 ```
 
 #### `nttd agent stop`
@@ -251,7 +252,7 @@ nttd agent start --session <session_id> --agent-id <name>
 Stop the agent's cycle loop. The agent remains registered but stops running.
 
 ```bash
-nttd agent stop --session <session_id> --agent-id <name>
+nttd agent stop -s <session_id> -a <name>
 ```
 
 #### `nttd agent list`
@@ -259,7 +260,7 @@ nttd agent stop --session <session_id> --agent-id <name>
 List all agents in a session with their status and cycle counts.
 
 ```bash
-nttd agent list --session <session_id>
+nttd agent list -s <session_id>
 ```
 
 ---
@@ -292,42 +293,48 @@ The benchmark command requires agents to be defined in the HOCON config (see bel
 Generate analysis reports for a completed or in-progress session. By default, prints reports to the terminal. Use `--save` to write files.
 
 ```bash
-nttd analyze <session_id> [OPTIONS]
+nttd analyze -s <session_id> [OPTIONS]
 ```
 
-| Option              | Default | Description                                    |
-|---------------------|---------|------------------------------------------------|
-| `--reports`, `-r`   | `all`   | Comma-separated report names, or `all`         |
-| `--save`, `-s`      | (none)  | Save formats: `markdown,png,html,json`         |
-| `--output-dir`, `-o`| session dir | Override save directory                     |
-| `--video/--no-video`| off     | Generate terrain progression video MP4         |
-| `--compare`         | (none)  | Additional session IDs for multi-session comparison |
-| `--json`            | off     | Print JSON to stdout instead of markdown       |
-| `--open`            | off     | Open saved markdown report in browser          |
+| Option              | Default     | Description                                    |
+|---------------------|-------------|------------------------------------------------|
+| `--session`, `-s`   | (required)  | Session ID or path to session directory        |
+| `--reports`, `-r`   | `all`       | Comma-separated report names, or `all`         |
+| `--save`            | (none)      | Save formats: `markdown,png,html,json`         |
+| `--output-dir`, `-o`| session dir | Override save directory                        |
+| `--video/--no-video`| off         | Generate terrain progression video MP4         |
+| `--compare`         | (none)      | Additional session IDs for multi-session comparison |
+| `--json`            | off         | Print JSON to stdout instead of markdown       |
+| `--open`            | off         | Open saved markdown report in browser          |
 
-**Available reports:** `session_summary`, `agent_performance`, `financial`, `cargo_delivery`, `vehicle_fleet`, `infrastructure`, `events_timeline`, `action_analysis`, `orders`, `world_state`, `tile_map`
+**Available reports:** `session_summary`, `agent_performance`, `financial`, `cargo_delivery`, `vehicle_fleet`, `infrastructure`, `events_timeline`, `action_analysis`, `orders`, `world_state`, `tile_map`, `route_completion`, `cargo_distances`, `cargo_routes`
+
+All `--session` and `--reports` options support Tab autocompletion. Install shell completion with `nttd --install-completion`.
 
 ```bash
 # Print all reports to terminal
-nttd analyze ses_abc123
+nttd analyze -s ses_abc123
 
 # Print specific reports
-nttd analyze ses_abc123 --reports session_summary,financial
+nttd analyze -s ses_abc123 -r session_summary,financial
+
+# Use a path instead of session ID
+nttd analyze -s logs/sessions/ses_abc123 -r all
 
 # Print as JSON (for piping)
-nttd analyze ses_abc123 --json
+nttd analyze -s ses_abc123 --json
 
 # Save markdown + PNG plots to session directory
-nttd analyze ses_abc123 --save markdown,png
+nttd analyze -s ses_abc123 --save markdown,png
 
 # Save all formats to custom directory
-nttd analyze ses_abc123 --save markdown,png,json,html --output-dir results/
+nttd analyze -s ses_abc123 --save markdown,png,json,html -o results/
 
 # Generate terrain progression video from snapshot data
-nttd analyze ses_abc123 --save png --video
+nttd analyze -s ses_abc123 --save png --video
 
 # Compare two sessions side-by-side
-nttd analyze ses_abc123 --compare ses_def456
+nttd analyze -s ses_abc123 --compare ses_def456
 ```
 
 The analysis system also exposes API endpoints at `/analysis/` for frontend consumption. See `docs/session_analyzer.md` for full details.

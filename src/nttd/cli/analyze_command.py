@@ -11,15 +11,19 @@ import typer
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from nttd.cli.helpers import console
+from nttd.cli.helpers import complete_reports, console, resolve_session_path, session_option
 
 
 def analyze(
-    session_id: Annotated[str, typer.Argument(help="Session ID to analyze")],
-    reports: Annotated[str, typer.Option("--reports", "-r", help="Comma-separated report names, or 'all'")] = "all",
+    session: Annotated[str, session_option()],
+    reports: Annotated[str, typer.Option(
+        "--reports", "-r",
+        help="Comma-separated report names, or 'all'",
+        autocompletion=complete_reports,
+    )] = "all",
     save: Annotated[
         Optional[str],
-        typer.Option("--save", "-s", help="Save formats: markdown,png,html,json"),
+        typer.Option("--save", help="Save formats: markdown,png,html,json"),
     ] = None,
     output_dir: Annotated[
         Optional[str],
@@ -52,21 +56,24 @@ def analyze(
     By default, prints the report to the terminal. Use --save to write files.
 
     Examples:
-      nttd analyze ses_abc123
-      nttd analyze ses_abc123 --reports session_summary,financial
-      nttd analyze ses_abc123 --save markdown,png
-      nttd analyze ses_abc123 --save json --video
-      nttd analyze ses_abc123 --json
-      nttd analyze ses_abc123 --compare ses_def456,ses_ghi789
+      nttd analyze --session ses_abc123
+      nttd analyze -s ses_abc123 --reports session_summary,financial
+      nttd analyze -s ses_abc123 --save markdown,png
+      nttd analyze -s logs/sessions/ses_abc123 --reports all
+      nttd analyze -s ses_abc123 --json
+      nttd analyze -s ses_abc123 --compare ses_def456,ses_ghi789
     """
     import json
 
-    from nttd.analysis.loader import SESSIONS_DIR, load_session
+    from nttd.analysis.loader import load_session
     from nttd.analysis.reports.registry import list_reports, run_reports
     from nttd.analysis.reports.renderer import render_all
 
+    # Resolve session identifier (ID or path)
+    session_id, session_dir = resolve_session_path(session)
+
     # Collect session IDs
-    session_ids = [session_id]
+    session_ids = [session]
     if compare:
         session_ids.extend(s.strip() for s in compare.split(",") if s.strip())
 
@@ -74,8 +81,9 @@ def analyze(
     with console.status(f"Loading {len(session_ids)} session(s)..."):
         sessions = []
         for sid in session_ids:
+            sid_resolved, sid_dir = resolve_session_path(sid)
             try:
-                sessions.append(load_session(sid))
+                sessions.append(load_session(sid_resolved, sessions_dir=sid_dir.parent))
             except FileNotFoundError:
                 console.print(f"[red]Session not found: {sid}[/]")
                 raise typer.Exit(code=1)
@@ -128,7 +136,7 @@ def analyze(
         if output_dir:
             out_path = Path(output_dir)
         else:
-            out_path = SESSIONS_DIR / session_id / "reports"
+            out_path = session_dir / "reports"
 
         formats = [f.strip() for f in save.split(",") if f.strip()]
         with console.status("Saving outputs..."):
@@ -145,7 +153,7 @@ def analyze(
 
     # Video generation
     if video:
-        vid_out = Path(output_dir) if output_dir else SESSIONS_DIR / session_id / "reports"
+        vid_out = Path(output_dir) if output_dir else session_dir / "reports"
         _generate_video(sessions[0], vid_out, video_quality, video_fps, video_max_frames)
 
 

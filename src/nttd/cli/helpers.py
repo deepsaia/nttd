@@ -82,6 +82,72 @@ def format_end_conditions_brief(ec: EndConditionsConfig) -> str:
     return f"[bold]End:[/]         {', '.join(parts)} (logic={ec.logic})"
 
 
+def resolve_session(value: str) -> str:
+    """Resolve a session identifier to a session ID.
+
+    Accepts either a plain session ID (e.g. ``ses_abc123``) or a
+    relative/absolute path to a session directory (e.g.
+    ``logs/sessions/ses_abc123`` or ``/abs/path/ses_abc123``).
+
+    Returns the session ID string (directory basename).
+    """
+    p = Path(value)
+    if "/" in value or p.is_dir():
+        return p.resolve().name
+    return value
+
+
+def resolve_session_path(value: str) -> tuple[str, Path]:
+    """Resolve a session identifier to (session_id, session_dir).
+
+    Like :func:`resolve_session`, but also returns the resolved directory
+    path for commands that operate on the filesystem (e.g. ``nttd analyze``).
+    """
+    from nttd.analysis.loader import SESSIONS_DIR
+
+    p = Path(value)
+    if "/" in value or p.is_dir():
+        resolved = p.resolve()
+        return resolved.name, resolved
+    return value, SESSIONS_DIR / value
+
+
+def complete_session(incomplete: str) -> list[str]:
+    """Shell autocompletion for session IDs.
+
+    Scans logs/sessions/ for directories matching the incomplete prefix.
+    """
+    import os
+
+    sessions_dir = Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
+    if not sessions_dir.is_dir():
+        return []
+    return [
+        d.name for d in sorted(sessions_dir.iterdir())
+        if d.is_dir() and d.name.startswith(incomplete)
+    ]
+
+
+def complete_reports(incomplete: str) -> list[str]:
+    """Shell autocompletion for report names."""
+    from nttd.analysis.reports.registry import ensure_reports_loaded, list_reports
+
+    try:
+        ensure_reports_loaded()
+        return [r for r in list_reports() if r.startswith(incomplete)]
+    except Exception:
+        return []
+
+
+def session_option() -> typer.Option:
+    """Reusable typer.Option for --session/-s with autocompletion."""
+    return typer.Option(
+        "--session", "-s",
+        help="Session ID or path",
+        autocompletion=complete_session,
+    )
+
+
 def build_end_conditions_payload(ec: EndConditionsConfig) -> dict:
     """Build the end conditions REST payload from config."""
     payload: dict = {"logic": ec.logic}
