@@ -423,8 +423,8 @@ async def run_pathfind(session_id: str, request: PathfindRequest) -> dict[str, A
     runtime = deps.get_runtime(session_id)
 
     if pf_service.get_cache() is None:
-        if runtime.world.game.map_x > 0 and runtime.world.game.map_y > 0:
-            pf_service.init_cache(runtime.world.game.map_x, runtime.world.game.map_y)
+        if runtime.world.game.map_width > 0 and runtime.world.game.map_height > 0:
+            pf_service.init_cache(runtime.world.game.map_width, runtime.world.game.map_height)
         else:
             raise HTTPException(status_code=503, detail="Map dimensions not available yet")
 

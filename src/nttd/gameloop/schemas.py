@@ -63,3 +63,8 @@ class CycleRecord(BaseModel):
     actions_succeeded: int = 0
     actions_failed: int = 0
     observation_size_bytes: int = 0
+    balance: int = 0
+    income: int = 0
+    company_value: int = 0
+    balance_delta: int = 0
+    vehicles_running: int = 0

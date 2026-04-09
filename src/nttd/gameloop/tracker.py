@@ -43,6 +43,7 @@ class ConnectionTracker:
         self._current_decide_ms: float = 0.0
         self._current_execute_ms: float = 0.0
         self._current_obs_bytes: int = 0
+        self._prev_balance: int = 0
 
     def start_cycle(self) -> None:
         """Mark the beginning of a new cycle."""
@@ -86,6 +87,10 @@ class ConnectionTracker:
         actions_executed: int,
         actions_succeeded: int,
         actions_failed: int,
+        balance: int = 0,
+        income: int = 0,
+        company_value: int = 0,
+        vehicles_running: int = 0,
     ) -> CycleRecord:
         """Complete the cycle and produce a CycleRecord."""
         total_ms = (time.monotonic() - self._cycle_start) * 1000
@@ -94,6 +99,9 @@ class ConnectionTracker:
         self.total_actions += actions_proposed
         self.successful_actions += actions_succeeded
         self.failed_actions += actions_failed
+
+        balance_delta = balance - self._prev_balance if self._prev_balance else 0
+        self._prev_balance = balance
 
         record = CycleRecord(
             connection_id=self.connection_id,
@@ -109,6 +117,11 @@ class ConnectionTracker:
             actions_succeeded=actions_succeeded,
             actions_failed=actions_failed,
             observation_size_bytes=self._current_obs_bytes,
+            balance=balance,
+            income=income,
+            company_value=company_value,
+            balance_delta=balance_delta,
+            vehicles_running=vehicles_running,
         )
         self.recent_cycles.append(record)
         return record

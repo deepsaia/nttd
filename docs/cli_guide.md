@@ -302,12 +302,14 @@ nttd analyze -s <session_id> [OPTIONS]
 | `--reports`, `-r`   | `all`       | Comma-separated report names, or `all`         |
 | `--save`            | (none)      | Save formats: `markdown,png,html,json`         |
 | `--output-dir`, `-o`| session dir | Override save directory                        |
-| `--video/--no-video`| off         | Generate terrain progression video MP4         |
 | `--compare`         | (none)      | Additional session IDs for multi-session comparison |
+| `--video-quality`   | `high`      | Video quality: low, medium, high (with `-r video`) |
+| `--video-fps`       | `4`         | Video frames per second (with `-r video`)      |
+| `--video-max-frames`| `0`         | Max video frames, 0=all (with `-r video`)      |
 | `--json`            | off         | Print JSON to stdout instead of markdown       |
 | `--open`            | off         | Open saved markdown report in browser          |
 
-**Available reports:** `session_summary`, `agent_performance`, `financial`, `cargo_delivery`, `vehicle_fleet`, `infrastructure`, `events_timeline`, `action_analysis`, `orders`, `world_state`, `tile_map`, `route_completion`, `cargo_distances`, `cargo_routes`
+**Available reports:** `session_summary`, `agent_performance`, `financial`, `cargo_delivery`, `vehicle_fleet`, `infrastructure`, `events_timeline`, `action_analysis`, `orders`, `world_state`, `tile_map`, `route_completion`, `cargo_distances`, `cargo_routes`, `video`
 
 All `--session` and `--reports` options support Tab autocompletion. Install shell completion with `nttd --install-completion`.
 
@@ -330,8 +332,11 @@ nttd analyze -s ses_abc123 --save markdown,png
 # Save all formats to custom directory
 nttd analyze -s ses_abc123 --save markdown,png,json,html -o results/
 
-# Generate terrain progression video from snapshot data
-nttd analyze -s ses_abc123 --save png --video
+# Generate terrain progression video (auto-saved to session reports dir)
+nttd analyze -s ses_abc123 -r video
+
+# Generate video with custom quality
+nttd analyze -s ses_abc123 -r video --video-quality medium --video-fps 8
 
 # Compare two sessions side-by-side
 nttd analyze -s ses_abc123 --compare ses_def456
@@ -620,6 +625,9 @@ curl -s -X POST "http://localhost:8000/admin/sessions/$SESSION/stop"
 You can also run agents as standalone scripts that call the REST API directly:
 
 ```bash
+# Start a session first
+SESSION=$(nttd session start -c config/my_scenario.conf --json | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
+
 # OpenAI model
 OPENAI_API_KEY=sk-... uv run python examples/langchain_nttd_agent.py \
   --session-id $SESSION --company-id 0 --model gpt-4o --tools
@@ -640,7 +648,7 @@ While agents run, connect to the game in OpenTTD:
 3. Join as spectator (company 255)
 4. Watch AI companies build infrastructure in real time
 
-Find the game port with `nttd session status <session_id>`.
+Find the game port with `nttd session status -s <session_id>`.
 
 ---
 

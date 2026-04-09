@@ -268,16 +268,14 @@ class RoutePlanner:
             )
 
         return {
-            "cargo_routes": cargo[:30],
-            "town_routes": towns[:20],
-            "unserved_cargo_routes": unserved_cargo[:15],
-            "unserved_town_routes": unserved_towns[:10],
             "existing_routes": existing,
+            "top_unserved_cargo": unserved_cargo[:5],
+            "top_unserved_towns": unserved_towns[:5],
             "summary": {
                 "total_cargo_routes": len(cargo),
-                "served_cargo_routes": sum(1 for r in cargo if r["served"]),
+                "unserved_cargo_routes": len(unserved_cargo),
                 "total_town_routes": len(towns),
-                "served_town_routes": sum(1 for r in towns if r["served"]),
+                "unserved_town_routes": len(unserved_towns),
                 "active_routes": len(existing),
             },
         }
@@ -292,37 +290,6 @@ class RoutePlanner:
     ) -> dict[str, Any]:
         """Build a compact route planning dict for token-efficient observations."""
         return {
-            "cargo": [
-                {
-                    "src": r["source_name"],
-                    "dst": r["dest_name"],
-                    "cargo": r["cargo"],
-                    "dist": r["distance"],
-                    "prod": r["monthly_production"],
-                    "served": r["served"],
-                }
-                for r in cargo[:10]
-            ],
-            "towns": [
-                {
-                    "a": r["town_a_name"],
-                    "b": r["town_b_name"],
-                    "dist": r["distance"],
-                    "demand": r["demand_score"],
-                    "served": r["served"],
-                }
-                for r in towns[:10]
-            ],
-            "unserved": [
-                {
-                    "src": r["source_name"],
-                    "dst": r["dest_name"],
-                    "cargo": r["cargo"],
-                    "dist": r["distance"],
-                    "prod": r["monthly_production"],
-                }
-                for r in unserved_cargo[:8]
-            ],
             "active": [
                 {
                     "stations": r["station_names"],
@@ -330,6 +297,33 @@ class RoutePlanner:
                     "profit": r["profit_this_year"],
                 }
                 for r in existing
+            ],
+            "top_cargo": [
+                {
+                    "src": r["source_name"],
+                    "dst": r["dest_name"],
+                    "cargo": r["cargo"],
+                    "dist": r["distance"],
+                    "prod": r["monthly_production"],
+                    "src_x": r["source_x"],
+                    "src_y": r["source_y"],
+                    "dst_x": r["dest_x"],
+                    "dst_y": r["dest_y"],
+                }
+                for r in unserved_cargo[:5]
+            ],
+            "top_towns": [
+                {
+                    "a": r["town_a_name"],
+                    "b": r["town_b_name"],
+                    "dist": r["distance"],
+                    "demand": r["demand_score"],
+                    "a_x": r["town_a_x"],
+                    "a_y": r["town_a_y"],
+                    "b_x": r["town_b_x"],
+                    "b_y": r["town_b_y"],
+                }
+                for r in unserved_towns[:5]
             ],
             "totals": {
                 "cargo_routes": len(cargo),

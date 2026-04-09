@@ -319,6 +319,7 @@ class NttdGS extends GSController {
         case "build_dock":        return this.CmdBuildDock(p);
         case "build_bridge":      return this.CmdBuildBridge(p);
         case "build_tunnel":      return this.CmdBuildTunnel(p);
+        case "build_path":        return this.CmdBuildPath(p);
         case "demolish_tile":     return this.CmdDemolishTile(p);
 
         // ---- COMPANY -------------------------------------------------------
@@ -1598,6 +1599,110 @@ class NttdGS extends GSController {
       }};
     }
     return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdBuildPath(p) {
+    // Executes a pre-calculated path from the Python A* pathfinder.
+    // p.steps = [{x, y, action, ...}, ...] from pathfind() result.
+    // p.transport_type = "road" or "rail"
+    local company_mode = GSCompanyMode(p.company_id);
+    if (!("steps" in p) || p.steps.len() < 2)
+      return { success = false, error = "Need steps array with at least 2 entries" };
+
+    local transport = ("transport_type" in p) ? p.transport_type : "road";
+    local is_rail = (transport == "rail");
+    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    local road_type = ("road_type" in p) ? p.road_type : 0;
+
+    if (is_rail) GSRail.SetCurrentRailType(rail_type);
+    else GSRoad.SetCurrentRoadType(road_type);
+
+    local steps = p.steps;
+    local built = 0;
+    local skipped = 0;
+    local failed = [];
+
+    for (local i = 0; i < steps.len(); i++) {
+      local step = steps[i];
+      local action = ("action" in step) ? step.action : "move";
+      local sx = step.x, sy = step.y;
+
+      // Skip start/end markers and plain movement on existing infra
+      if (action == "start" || action == "end" || action == "move") {
+        skipped++;
+        continue;
+      }
+
+      if (action == "build_bridge") {
+        local bfx = step.bridge_from_x, bfy = step.bridge_from_y;
+        local start_tile = GSMap.GetTileIndex(bfx, bfy);
+        local end_tile = GSMap.GetTileIndex(sx, sy);
+        local vt = is_rail ? GSVehicle.VT_RAIL : GSVehicle.VT_ROAD;
+        // Pick cheapest available bridge type
+        local bt = 0;
+        if (GSBridge.BuildBridge(vt, bt, start_tile, end_tile)) {
+          built++;
+        } else {
+          local err = GSError.GetLastErrorString();
+          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+          else built++;
+        }
+        continue;
+      }
+
+      if (action == "build_tunnel") {
+        local tfx = step.tunnel_from_x, tfy = step.tunnel_from_y;
+        local entrance = GSMap.GetTileIndex(tfx, tfy);
+        local vt = is_rail ? GSVehicle.VT_RAIL : GSVehicle.VT_ROAD;
+        if (GSTunnel.BuildTunnel(vt, entrance)) {
+          built++;
+        } else {
+          local err = GSError.GetLastErrorString();
+          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+          else built++;
+        }
+        continue;
+      }
+
+      // build_road or build_rail: connect to previous step
+      if (action == "build_road" || action == "build_rail") {
+        if (i == 0) { skipped++; continue; }
+        local prev_step = steps[i - 1];
+        local prev_tile = GSMap.GetTileIndex(prev_step.x, prev_step.y);
+        local curr_tile = GSMap.GetTileIndex(sx, sy);
+
+        if (is_rail) {
+          // Rail needs 3-tile context: prev, curr, next
+          local next_step = (i + 1 < steps.len()) ? steps[i + 1] : null;
+          if (next_step == null) { skipped++; continue; }
+          local next_tile = GSMap.GetTileIndex(next_step.x, next_step.y);
+          if (GSRail.BuildRail(prev_tile, curr_tile, next_tile)) {
+            built++;
+          } else {
+            local err = GSError.GetLastErrorString();
+            if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+            else built++;
+          }
+        } else {
+          // Road: connect prev to curr
+          if (GSRoad.BuildRoad(prev_tile, curr_tile)) {
+            built++;
+          } else {
+            local err = GSError.GetLastErrorString();
+            if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+            else built++;
+          }
+        }
+        continue;
+      }
+
+      skipped++;
+    }
+
+    return { success = true, result = {
+      built = built, failed = failed, skipped = skipped,
+      total_steps = steps.len(), errors = failed.len()
+    }};
   }
 
   function CmdDemolishTile(p) {

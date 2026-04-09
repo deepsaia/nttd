@@ -18,13 +18,33 @@ from nttd.analysis.date_utils import game_date_to_str
 if TYPE_CHECKING:
     from nttd.analysis.loader import SessionData
 
-# Consistent color palette
-AGENT_COLORS = {
-    "road-agent": "#4C78A8",
-    "rail-agent": "#F58518",
-    "air-agent": "#E45756",
-    "water-agent": "#72B7B2",
+# Consistent color palette -- maps agent type keywords to colors.
+# Lookup normalizes agent_id (strip separators, lowercase) to match.
+_AGENT_TYPE_COLORS: dict[str, str] = {
+    "road": "#4C78A8",
+    "rail": "#F58518",
+    "air": "#E45756",
+    "water": "#72B7B2",
+    "general": "#B07AA1",
 }
+
+# Fallback palette for unknown agent IDs
+_EXTRA_COLORS = ["#FF9DA7", "#9C755F", "#BAB0AC", "#FABFD2", "#D4A6C8"]
+
+
+def get_agent_color(agent_id: str) -> str:
+    """Get a consistent color for an agent_id, matching by transport type keyword."""
+    normalized = agent_id.lower().replace("-", "_")
+    for type_key, color in _AGENT_TYPE_COLORS.items():
+        if type_key in normalized:
+            return color
+    # Deterministic fallback for unknown agent IDs
+    idx = hash(agent_id) % len(_EXTRA_COLORS)
+    return _EXTRA_COLORS[idx]
+
+
+# Legacy alias for any code that imports AGENT_COLORS directly
+AGENT_COLORS = _AGENT_TYPE_COLORS
 
 MODEL_COLORS = {
     "gpt-4.1-mini": "#636EFA",
@@ -437,7 +457,7 @@ def cycle_decide_over_time(sessions: list[SessionData]) -> go.Figure:
         df["agent"] = df["connection_id"].str.split(":").str[2]
         for agent in sorted(df["agent"].unique()):
             adf = df[df["agent"] == agent].sort_values("cycle_number")
-            color = AGENT_COLORS.get(agent, "#999")
+            color = get_agent_color(agent)
             dash = "solid" if s.model == "gpt-5.2" else "dot"
             fig.add_trace(go.Scatter(
                 x=adf["cycle_number"], y=adf["decide_ms"],
@@ -551,7 +571,7 @@ def agent_spending_proxy(sessions: list[SessionData]) -> go.Figure:
             adf = costly[costly["agent_id"] == agent_id].sort_values("game_date")
             adf = adf.copy()
             adf["cumulative"] = range(1, len(adf) + 1)
-            color = AGENT_COLORS.get(agent_id, "#999")
+            color = get_agent_color(agent_id)
             fig.add_trace(go.Scatter(
                 x=adf["game_date"], y=adf["cumulative"],
                 name=agent_id if i == 0 else None,

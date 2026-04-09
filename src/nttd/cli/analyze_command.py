@@ -29,25 +29,22 @@ def analyze(
         Optional[str],
         typer.Option("--output-dir", "-o", help="Override save directory"),
     ] = None,
-    video: Annotated[
-        bool, typer.Option("--video/--no-video", help="Generate terrain video from snapshots"),
-    ] = False,
-    video_quality: Annotated[
-        str,
-        typer.Option("--video-quality", help="Video quality: low, medium, high"),
-    ] = "high",
-    video_fps: Annotated[
-        int,
-        typer.Option("--video-fps", help="Video frames per second"),
-    ] = 4,
-    video_max_frames: Annotated[
-        int,
-        typer.Option("--video-max-frames", help="Max frames (0 = all snapshots)"),
-    ] = 0,
     compare: Annotated[
         Optional[str],
         typer.Option("--compare", help="Additional session IDs (comma-separated)"),
     ] = None,
+    video_quality: Annotated[
+        str,
+        typer.Option("--video-quality", help="Video quality: low, medium, high", hidden=True),
+    ] = "high",
+    video_fps: Annotated[
+        int,
+        typer.Option("--video-fps", help="Video frames per second", hidden=True),
+    ] = 4,
+    video_max_frames: Annotated[
+        int,
+        typer.Option("--video-max-frames", help="Max video frames, 0=all", hidden=True),
+    ] = 0,
     open_report: Annotated[bool, typer.Option("--open", help="Open markdown report after saving")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Print JSON to stdout instead of markdown")] = False,
 ) -> None:
@@ -59,9 +56,9 @@ def analyze(
       nttd analyze --session ses_abc123
       nttd analyze -s ses_abc123 --reports session_summary,financial
       nttd analyze -s ses_abc123 --save markdown,png
-      nttd analyze -s logs/sessions/ses_abc123 --reports all
       nttd analyze -s ses_abc123 --json
       nttd analyze -s ses_abc123 --compare ses_def456,ses_ghi789
+      nttd analyze -s ses_abc123 -r video --video-quality medium --video-fps 8
     """
     import json
 
@@ -107,6 +104,13 @@ def analyze(
                 console.print(f"Available: {', '.join(available)}")
                 raise typer.Exit(code=1)
 
+    # Configure video report if requested
+    if report_names is None or "video" in (report_names or []):
+        from nttd.analysis.reports import video as video_mod
+        video_mod.video_config["quality"] = video_quality
+        video_mod.video_config["fps"] = video_fps
+        video_mod.video_config["max_frames"] = video_max_frames
+
     # Run reports
     with console.status("Generating reports..."):
         results = run_reports(sessions, report_names)
@@ -131,6 +135,11 @@ def analyze(
             if r.markdown:
                 console.print(Panel(Markdown(r.markdown), title=r.title, border_style="cyan"))
 
+    # Show file artifacts (e.g. video) that were saved by report generators
+    for r in results:
+        for name, fpath in r.files:
+            console.print(f"[green]{r.title}:[/] {fpath}")
+
     # Save to files (only if --save is specified)
     if save:
         if output_dir:
@@ -151,30 +160,3 @@ def analyze(
             if md_path.exists():
                 subprocess.run([sys.executable, "-m", "webbrowser", str(md_path)], check=False)
 
-    # Video generation
-    if video:
-        vid_out = Path(output_dir) if output_dir else session_dir / "reports"
-        _generate_video(sessions[0], vid_out, video_quality, video_fps, video_max_frames)
-
-
-def _generate_video(
-    session: object,
-    output_dir: Path,
-    quality: str = "high",
-    fps: int = 4,
-    max_frames: int = 0,
-) -> None:
-    """Generate terrain-based video from session data."""
-    try:
-        from nttd.analysis.reports.video import generate_video
-
-        sid = session.session_id if hasattr(session, "session_id") else "unknown"
-        video_path = generate_video(
-            session, output_dir / f"game_progression_{sid}.mp4",
-            fps=fps, quality=quality, max_frames=max_frames,
-        )
-        console.print(f"[green]Video:[/] {video_path}")
-    except ImportError:
-        console.print("[yellow]Video generation requires imageio[pyav] -- skipping[/]")
-    except FileNotFoundError as exc:
-        console.print(f"[yellow]{exc}[/]")

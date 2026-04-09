@@ -64,6 +64,11 @@ _AGENT_CYCLES_SCHEMA = pa.schema([
     ("actions_succeeded", pa.int16()),
     ("actions_failed", pa.int16()),
     ("observation_size_bytes", pa.int32()),
+    ("balance", pa.int64()),
+    ("income", pa.int64()),
+    ("company_value", pa.int64()),
+    ("balance_delta", pa.int64()),
+    ("vehicles_running", pa.int16()),
 ])
 
 _EVENTS_SCHEMA = pa.schema([
@@ -337,6 +342,11 @@ class SessionRecorder:
             "actions_succeeded": record.actions_succeeded,
             "actions_failed": record.actions_failed,
             "observation_size_bytes": record.observation_size_bytes,
+            "balance": record.balance,
+            "income": record.income,
+            "company_value": record.company_value,
+            "balance_delta": record.balance_delta,
+            "vehicles_running": record.vehicles_running,
         })
 
     def record_agent_connection(

@@ -210,3 +210,86 @@ goes through the interpreter endpoint.
 - **Order destinations are tile IDs** (stop tiles), not town IDs.
 - **Game speed** is configurable at session start. Faster games need faster agent decisions.
 - **AI opponents**: Set `ai_opponents` when creating a session for competition.
+
+---
+
+## Agent Observe-Decide-Execute Flow
+
+The loop lives in AgentConnection (src/nttd/gameloop/connection.py). Each agent runs an independent cycle:
+
+1. Observe (_observe())
+
+SessionRuntime.world (WorldState)
+    |
+    v
+Snapshot builder compiles game state:
+  - company: finances, vehicles, stations
+  - towns, industries (from GS queries cached in WorldState)
+  - route_planning: RoutePlanner.for_agent() -> existing + top 5 unserved routes
+  - previous_actions: results from last cycle (success/fail + error messages)
+    |
+    v
+Filtered by agent_type:
+  - road agent only sees road vehicles + bus/truck stations
+  - rail agent only sees trains + rail stations
+  (via AGENT_VEHICLE_TYPES and AGENT_STATION_FILTERS)
+    |
+    v
+JSON observation string -> sent to LLM as context
+
+2. Decide (_decide())
+
+LLM receives:
+  - System prompt (from agent_instructions.py, per agent_type)
+  - Observation JSON (game state + route_planning + previous_actions)
+  - Observation tool schemas (if observation_tools=true in config)
+    |
+    v
+Multi-turn tool calling:
+  LLM can call observation tools (get_towns, pathfind, find_bus_stop_spots, etc.)
+  Each tool call -> ObservationToolkit.execute() -> either:
+    - GS bridge: admin_client.send_gamescript(action, params) -> GameScript query -> result
+    - Custom handler: pathfind -> Python A* pathfinder -> path result
+  Tool results fed back to LLM for next turn
+    |
+    v
+Final LLM response: JSON array of actions
+  e.g. [{"action_type": "build_path", "parameters": {"steps": [...], "transport_type": "road"}}]
+
+3. Interpret (parse_action_list())
+
+Raw LLM text -> interpreter/parser.py
+  - Extracts JSON array from LLM response (handles markdown fences, trailing text)
+  - Validates each element has "action_type" (str) and "parameters" (dict)
+  - Returns list[AgentAction] -- fully generic, no action-type-specific validation
+  - AgentAction is just: action_type: str + parameters: dict[str, Any]
+
+4. Execute (_execute())
+
+For each AgentAction:
+    |
+    v
+  Wrap in ActionEnvelope (adds company_id, connection_id, timestamp)
+    |
+    v
+  admin_client.send_gamescript(action_type, parameters)
+    |
+    v
+  Python AdminClient -> JSON message over TCP admin port -> OpenTTD server
+    |
+    v
+  OpenTTD passes message to GameScript (nttd-gs/main.nut)
+    |
+    v
+  GS main.nut::HandleCommand():
+    - Dispatch table maps action_type -> handler function
+    - e.g. "build_path" -> CmdBuildPath(params)
+    - CmdBuildPath enters GSCompanyMode(company_id) -- executes as that company
+    - Iterates path steps, calls GSRoad.BuildRoad / GSRail.BuildRail / GSBridge.BuildBridge
+    - Returns {success: true, result: {built: N, failed: M, ...}}
+    |
+    v
+  Response travels back: GS -> admin port -> AdminClient -> ActionResult
+    |
+    v
+  ActionResult (success/fail + data) stored in previous_actions for next cycle

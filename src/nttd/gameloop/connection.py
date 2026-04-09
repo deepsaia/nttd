@@ -82,8 +82,10 @@ class AgentConnection:
         # Build observation toolkit if tools are enabled
         self._toolkit: ObservationToolkit | None = None
         if config.observation_tools:
+            game = runtime.world.game
             self._toolkit = ObservationToolkit(
                 runtime.admin_client, config.company_id, config.agent_type,
+                map_width=game.map_width, map_height=game.map_height,
             )
 
     @property
@@ -284,13 +286,19 @@ class AgentConnection:
         self._last_cycle_results = cycle_results
         self.tracker.end_execute()
 
-        # 5. Record
+        # 5. Record (extract financial metrics from observation)
+        company_data = observation.get("company", {})
+        vehicles_data = observation.get("vehicles", [])
         record = self.tracker.end_cycle(
             game_date=game_date,
             actions_proposed=len(actions),
             actions_executed=len(valid_actions),
             actions_succeeded=succeeded,
             actions_failed=failed,
+            balance=company_data.get("balance", 0),
+            income=company_data.get("income", 0),
+            company_value=company_data.get("company_value", 0),
+            vehicles_running=sum(1 for v in vehicles_data if v.get("running")),
         )
 
         # Persist cycle record to DB

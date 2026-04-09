@@ -69,6 +69,30 @@ OBSERVATION TOOLS (call these to gather info before acting):
   get_bridge_types       -> available bridge types with costs
   get_map_size           -> map dimensions
   get_date               -> current in-game date
+  pathfind               -> find optimal path between two coordinates (road, rail, or water)
+                            Returns path steps with bridges/tunnels. Use with build_path action.
+
+ROUTE PLANNING (in your observation):
+  Your observation includes a "route_planning" section with pre-computed route opportunities:
+  - existing_routes: your company's active routes (already served)
+  - top_unserved_cargo: best 5 unserved industry cargo routes (sorted by shortest distance)
+    Each has source_x/y, dest_x/y coordinates you can pass directly to pathfind.
+  - top_unserved_towns: best 5 unserved town passenger routes (sorted by demand)
+    Each has town coordinates you can pass to pathfind.
+  USE THIS DATA to pick your first route! Choose the SHORTEST UNSERVED route for your
+  transport type.
+
+PATHFINDING WORKFLOW (for road and rail agents):
+  Instead of building infrastructure tile-by-tile, use pathfind + build_path:
+  1. Pick a route from route_planning (note source_x/y and dest_x/y coordinates)
+  2. Call pathfind(from_x, from_y, to_x, to_y, transport_type) to get the optimal path
+     The pathfinder handles terrain, bridges over water, and tunnels through hills.
+  3. Output a build_path action with the path steps:
+     {{"action_type": "build_path", "parameters": {{
+       "steps": <pathfind_result.path>, "transport_type": "road",
+       "company_id": <your_company_id>}}}}
+  4. Check previous_actions next cycle -- build_path reports built/failed/skipped counts.
+     Some steps may fail (terrain). That is OK -- partial roads still work if towns connect.
 
 HOW TO USE TOOLS:
 1. Examine the game state provided in each cycle, including previous_actions results.
@@ -140,6 +164,15 @@ MARINE:
   build_water_depot     tile
   remove_canal/lock/buoy/water_depot   tile
 
+PATHFINDING:
+  build_path            steps, transport_type, company_id
+                        Executes a pre-calculated path from pathfind tool.
+                        steps = the "path" array from pathfind() result (pass it directly!)
+                        transport_type = "road" or "rail"
+                        company_id = your company ID
+                        Returns: {built, failed, skipped, total_steps, errors}
+                        Some steps may fail (terrain) -- partial success is normal.
+
 AIR & MISC:
   build_airport         tile, airport_type
   remove_airport        tile
@@ -208,10 +241,10 @@ PHASE 1 -- SCOUT AND BUILD (cycle 1):
   a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
      Do NOT max out the loan -- take only what you need. You can increase it later.
   b. Call get_engines(vehicle_type=1) to find buses (cargo_label="PASS").
-  c. Pick TWO DIFFERENT towns with population > 300 from the observation. They must
-     be DIFFERENT towns -- stops in the same town will not generate meaningful revenue.
-     PREFER towns that are CLOSE together (small difference in x AND y coordinates).
-     Closer towns = faster trips = faster revenue. Ideal distance: 20-50 tiles apart.
+  c. Look at route_planning.top_unserved_towns in your observation. Pick the route
+     with the SHORTEST distance and highest demand_score. Note the town IDs and x,y coords.
+     If route_planning is not available, pick TWO DIFFERENT towns with population > 300.
+     PREFER towns that are CLOSE together (20-50 tiles apart).
   d. Call find_bus_stop_spots(town_id=X) for town A. Pick a spot with PASS in
      cargo_acceptance. Call find_bus_stop_spots(town_id=Y) for town B.
   e. Call find_depot_spots(town_id=X) for a depot near town A.
@@ -225,17 +258,17 @@ PHASE 2 -- CONNECT ROAD (cycle 2):
   CRITICAL: Towns do NOT have roads between them! You MUST build a connecting road
   or your buses will never reach the other town and earn zero revenue.
   a. Check previous_actions -- did the builds succeed? If not, fix failures first.
-  b. build_road_line ONLY works for AXIS-ALIGNED tiles (same x OR same y).
-     It WILL FAIL for diagonal routes! To connect two non-aligned stops, use an
-     L-shaped path with TWO build_road_line calls:
-     - Use the x,y coordinates from find_bus_stop_spots results.
-     - Corner tile: same y as stop_A, same x as stop_B (or vice versa).
-       Calculate corner: if stop_A is at (x1,y1) and stop_B is at (x2,y2),
-       the corner is at (x2,y1). Call get_tile_info(x=x2, y=y1) to get corner tile ID.
-     - Leg 1 (same y): build_road_line(tile_from=<stop_A.tile>, tile_to=<corner_tile>)
-     - Leg 2 (same x): build_road_line(tile_from=<corner_tile>, tile_to=<stop_B.tile>)
-     Some segments may fail (terrain, water). That is OK -- try a different corner.
-  c. The road only needs to reach the town borders -- town roads handle the rest.
+  b. Use pathfind + build_path to connect the two towns:
+     - Call pathfind(from_x=<stop_A.x>, from_y=<stop_A.y>, to_x=<stop_B.x>,
+       to_y=<stop_B.y>, transport_type="road")
+     - The pathfinder automatically routes around obstacles, builds bridges over water,
+       and tunnels through hills.
+     - Output: build_path(steps=<pathfind_result.path>, transport_type="road",
+       company_id={company_id})
+  c. Check previous_actions next cycle. build_path reports built/failed/skipped.
+     Some steps may fail (terrain). Partial roads still work if they reach town borders.
+  d. FALLBACK (if pathfind is unavailable): build_road_line ONLY works for AXIS-ALIGNED
+     tiles (same x OR same y). For diagonal routes, use an L-shaped path with TWO calls.
 
 PHASE 3 -- ORDERS AND START (cycle 3):
   a. Call get_vehicles to find your new vehicle's ID.
@@ -289,10 +322,13 @@ COMPLETE-ROUTE-FIRST: Always finish one working route before starting another.
 A working route = two stations in different locations, vehicle with orders, running.
 
 STRATEGY:
-1. Start with a bus route between two large towns (simplest, fastest revenue).
-2. Once that's working, add truck routes connecting industries to towns.
-3. Expand to rail for high-volume cargo.
-4. Consider aircraft for long-distance passenger routes.
+1. Check route_planning in your observation for pre-computed route opportunities.
+   Pick the SHORTEST UNSERVED route for your first route -- short routes = fast revenue.
+2. Start with a bus route between two close towns (simplest, fastest revenue).
+   Use pathfind + build_path to connect them instead of manual road building.
+3. Once that's working, add truck routes connecting industries to towns.
+4. Expand to rail for high-volume cargo. Use pathfind + build_path for track.
+5. Consider aircraft for long-distance passenger routes (100+ tiles apart).
 
 FINANCIAL RULES:
 - FIRST ACTION: Take the maximum loan with set_loan.
@@ -359,27 +395,29 @@ with orders to both stations, running.
 PHASE 1 -- SCOUT (cycle 1):
   a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
      Do NOT max out the loan -- take only what you need. You can increase it later.
-  b. Call get_industries to find production chains (coal mine -> power station,
-     farm -> factory, forest -> sawmill, iron ore mine -> steel mill).
-  c. Pick TWO VERY CLOSE industries (within 10 tiles of each other) that form a supply chain.
-     CLOSENESS IS CRITICAL -- closer industries = less track to build = fewer failures.
-  d. Call find_flat_spots(tile=<source_industry_tile>, radius=5, min_size=2) for station/depot sites.
-  e. Call find_flat_spots(tile=<dest_industry_tile>, radius=5, min_size=2).
-  f. Call get_engines(vehicle_type=0) to find available train engines.
-  g. Call get_rail_types to check available track types.
+  b. Look at route_planning.top_unserved_cargo in your observation. These are the best
+     unserved industry pairs (sorted by distance). Pick the SHORTEST route with
+     high monthly_production. Note source_x/y and dest_x/y coordinates.
+     If route_planning is not available, call get_industries and pick TWO VERY CLOSE
+     industries (within 10-20 tiles) that form a supply chain (coal -> power, farm -> factory).
+  c. Call find_flat_spots(tile=<source_industry_tile>, radius=5, min_size=2) for station/depot sites.
+  d. Call find_flat_spots(tile=<dest_industry_tile>, radius=5, min_size=2).
+  e. Call get_engines(vehicle_type=0) to find available train engines.
+  f. Call get_rail_types to check available track types.
 
-PHASE 2 -- BUILD TRACK (cycle 2, MAX 2 CYCLES on track):
-  Build track BEFORE stations/depot, but do NOT spend more than 2 cycles on track.
-  If track is not complete after 2 cycles of building, build stations anyway and
-  move on -- a partial route is better than no route at all.
+PHASE 2 -- BUILD TRACK (cycle 2):
+  Use pathfind + build_path to connect the two industry sites. This handles terrain,
+  bridges, and tunnels automatically instead of building tile-by-tile.
   a. Check previous_actions for any failures.
-  b. Plan a straight or L-shaped rail path between the two flat spots you found.
-  c. Build rail track segment by segment using build_rail(tile_from, tile_to, rail_type=0).
-     Each segment connects ADJACENT tiles (differ by 1 in x OR y).
-     If a segment fails (ERR_AREA_NOT_CLEAR), try shifting the route by 1-2 tiles.
-  d. LIMIT: Build at most 15 rail segments per route. If you need more, pick
-     CLOSER industries. Do NOT spend more build_rail actions than this.
-  e. Proceed to PHASE 3 after track is done OR after 2 cycles of track building.
+  b. Call pathfind(from_x=<source_x>, from_y=<source_y>, to_x=<dest_x>,
+     to_y=<dest_y>, transport_type="rail")
+     The pathfinder calculates the optimal rail path including bridges and tunnels.
+  c. Output: build_path(steps=<pathfind_result.path>, transport_type="rail",
+     company_id={company_id})
+  d. Check previous_actions next cycle. build_path reports built/failed/skipped.
+     Some steps may fail -- that is OK. Proceed to stations/vehicle.
+  e. FALLBACK (if pathfind unavailable): build rail segment by segment using
+     build_rail(tile_from, tile_to, rail_type=0). Limit to 15 segments max.
 
 PHASE 3 -- BUILD STATIONS AND VEHICLE (cycle 3-4):
   DO NOT delay this phase! Even if some track segments failed, build stations and
@@ -408,13 +446,12 @@ PHASE 5 -- VERIFY (cycles 5-7):
 PHASE 6 -- EXPAND (cycle 8+):
   Clone profitable trains. Build new routes to different industry pairs.
 
-RAIL CONSTRUCTION -- CRITICAL:
-  build_rail builds track between ADJACENT tiles only (1 tile apart).
-  OpenTTD automatically determines the correct track piece (straight, curve, junction)
-  based on the tile sequence -- you do NOT need to specify track types for turns.
+RAIL CONSTRUCTION:
+  PREFERRED METHOD: Use pathfind + build_path (see PHASE 2 above). The pathfinder
+  handles terrain, bridges, and tunnels automatically.
+  MANUAL FALLBACK: build_rail builds track between ADJACENT tiles only (1 tile apart).
   - Each call: build_rail with tile_from and tile_to that are NEIGHBORS (differ by 1 in x OR y)
-  - Keep routes VERY SHORT: pick industries within 5-10 tiles of each other.
-  - MAX 35 build_rail actions per route. If you need more, the industries are TOO FAR.
+  - Keep routes SHORT: pick industries within 10-20 tiles of each other.
   - If ERR_AREA_NOT_CLEAR, shift the route path by 1-2 tiles and retry.
   - For a first route, prioritize CLOSENESS over cargo value.
   - NEVER spend more than 2 cycles building track. Move to stations/vehicles immediately.
@@ -463,7 +500,10 @@ PHASE 1 -- SCOUT AND BUILD AIRPORTS (cycle 1):
   a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
      Do NOT max out the loan -- take only what you need. You can increase it later.
   b. Call get_engines(vehicle_type=3). If empty list, aircraft not available yet -- return [].
-  c. Call get_towns. Pick the TWO LARGEST towns by population. They must be DIFFERENT towns.
+  c. Look at route_planning.top_unserved_towns in your observation. Pick the route with
+     the highest demand_score. These routes are pre-filtered for air transport (100+ tiles).
+     Aircraft are FAST -- they excel at LONG-DISTANCE routes where other modes are slow.
+     If route_planning is not available, call get_towns and pick the TWO LARGEST towns.
   d. Call find_airport_spots(town_id=X, airport_type=0) for town A.
      Call find_airport_spots(town_id=Y, airport_type=0) for town B.
      Pick spots with PASS in cargo_acceptance.
@@ -545,7 +585,11 @@ PHASE 1 -- SCOUT AND BUILD (cycle 1):
   a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
      Do NOT max out the loan -- take only what you need. You can increase it later.
   b. Call get_engines(vehicle_type=2) for available ships.
-  c. Call get_towns. Pick TWO DIFFERENT towns.
+  c. Look at route_planning.top_unserved_towns in your observation. Pick a route where
+     distance is SHORT (under 60 tiles). These routes are pre-filtered for water transport.
+     Ships are VERY SLOW (20-30 km/h) -- long routes take hundreds of game-days with
+     zero revenue until the first delivery. SHORT ROUTES ARE CRITICAL for ships.
+     If route_planning is not available, call get_towns and pick two CLOSE coastal towns.
   d. Call find_dock_spots(town_id=X) for town A.
      Call find_dock_spots(town_id=Y) for town B.
      Pick spots with cargo in cargo_acceptance (PASS for passengers, or industry cargo).

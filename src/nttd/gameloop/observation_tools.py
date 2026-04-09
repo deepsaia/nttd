@@ -7,6 +7,7 @@ query command and returns a JSON string result.
 The toolkit produces OpenAI-format function schemas that any adapter
 can convert to its native format. Tool execution goes through
 admin_client.send_gamescript() -- the same path used for action execution.
+Pathfinding is the exception: it uses the Python A* pathfinder directly.
 """
 
 from __future__ import annotations
@@ -363,6 +364,30 @@ _TOOL_DEFS: list[dict[str, Any]] = [
         "gs_action": "get_town_rating",
         "inject_company_id": True,
     },
+    {
+        "name": "pathfind",
+        "description": (
+            "Find an optimal path between two map coordinates."
+            " Returns a list of path steps including bridges and tunnels."
+            " Use the result with build_path action to build the infrastructure."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "from_x": {"type": "integer", "description": "Start x coordinate."},
+                "from_y": {"type": "integer", "description": "Start y coordinate."},
+                "to_x": {"type": "integer", "description": "End x coordinate."},
+                "to_y": {"type": "integer", "description": "End y coordinate."},
+                "transport_type": {
+                    "type": "string",
+                    "description": "Transport type: road, rail, or water.",
+                    "enum": ["road", "rail", "water"],
+                },
+            },
+            "required": ["from_x", "from_y", "to_x", "to_y", "transport_type"],
+        },
+        "custom_handler": "pathfind",
+    },
 ]
 
 
@@ -373,12 +398,24 @@ class ObservationToolkit:
     decide phase to gather information before choosing actions.
     Results are filtered by agent_type so each agent only sees its
     own vehicle and station types.
+
+    The ``pathfind`` tool is handled specially: it runs the Python A*
+    pathfinder instead of going through the GS bridge.
     """
 
-    def __init__(self, admin_client: AdminClient, company_id: int, agent_type: str = "general") -> None:
+    def __init__(
+        self,
+        admin_client: AdminClient,
+        company_id: int,
+        agent_type: str = "general",
+        map_width: int = 0,
+        map_height: int = 0,
+    ) -> None:
         self._client = admin_client
         self._company_id = company_id
         self._agent_type = agent_type
+        self._map_width = map_width
+        self._map_height = map_height
         self._vehicle_types = AGENT_VEHICLE_TYPES.get(agent_type, AGENT_VEHICLE_TYPES["general"])
         self._station_filter = AGENT_STATION_FILTERS.get(agent_type, AGENT_STATION_FILTERS["general"])
         self._tool_map: dict[str, dict[str, Any]] = {t["name"]: t for t in _TOOL_DEFS}
@@ -415,6 +452,11 @@ class ObservationToolkit:
         if tool_def is None:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
+        # Custom handlers bypass the GS bridge
+        custom = tool_def.get("custom_handler")
+        if custom == "pathfind":
+            return await self._handle_pathfind(arguments)
+
         gs_action = tool_def["gs_action"]
         params = dict(arguments)
 
@@ -431,6 +473,31 @@ class ObservationToolkit:
             return json.dumps({"error": result.get("error", "GS query failed")})
         except Exception as exc:
             logger.warning("Tool %s execution failed: %s", tool_name, exc)
+            return json.dumps({"error": str(exc)})
+
+    async def _handle_pathfind(self, arguments: dict[str, Any]) -> str:
+        """Run the Python A* pathfinder and return the result."""
+        from nttd.pathfinding import service as pf_service
+
+        if pf_service.get_cache() is None:
+            if self._map_width > 0 and self._map_height > 0:
+                pf_service.init_cache(self._map_width, self._map_height)
+            else:
+                return json.dumps({"error": "Map dimensions not available yet"})
+
+        try:
+            result = await pf_service.pathfind(
+                from_x=arguments["from_x"],
+                from_y=arguments["from_y"],
+                to_x=arguments["to_x"],
+                to_y=arguments["to_y"],
+                transport_type=arguments["transport_type"],
+                gs_client=self._client,
+                company_id=self._company_id,
+            )
+            return json.dumps(result)
+        except Exception as exc:
+            logger.warning("Pathfind tool failed: %s", exc)
             return json.dumps({"error": str(exc)})
 
     def _filter_by_agent_type(self, tool_name: str, data: Any) -> Any:
