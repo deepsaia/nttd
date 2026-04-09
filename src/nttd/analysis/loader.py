@@ -60,10 +60,13 @@ class SessionData:
 
     @property
     def duration_minutes(self) -> float:
-        """Session duration in minutes (from timestamps)."""
-        if self.started_at and self.ended_at:
+        """Session duration in minutes (from timestamps).
+
+        For in-progress sessions (no ended_at), uses current UTC time.
+        """
+        if self.started_at:
             start = pd.Timestamp(self.started_at)
-            end = pd.Timestamp(self.ended_at)
+            end = pd.Timestamp(self.ended_at) if self.ended_at else pd.Timestamp.now(tz="UTC")
             return (end - start).total_seconds() / 60
         return 0.0
 

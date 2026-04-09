@@ -1508,6 +1508,8 @@ class NttdGS extends GSController {
 
     while (open.len() > 0 && iterations < max_iterations) {
       iterations++;
+      // Yield every 500 iterations so the GS doesn't block other commands
+      if (iterations % 500 == 0) this.Sleep(1);
       local node = this._HeapPop(open);
       local cur_key = node.v;
       if (cur_key in visited) continue;
@@ -1742,7 +1744,7 @@ class NttdGS extends GSController {
     GSRoad.SetCurrentRoadType(road_type);
     local pair = this._ResolveTilePair(p);
     if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
-    local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
+    local max_iter = ("max_iterations" in p) ? p.max_iterations : 50000;
 
     // Phase 1: Pathfind (runs in GSTestMode internally).
     local pf = this._FindRoadPath(pair.from.tile, pair.to.tile, max_iter);
@@ -1860,34 +1862,77 @@ class NttdGS extends GSController {
   function CmdRemoveRailTrack(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local track = ("track" in p) ? p.track : GSRail.RAILTRACK_NE_SW;
-    local tile = GSMap.GetTileIndex(p.x, p.y);
-    if (GSRail.RemoveRailTrack(tile, track)) return { success = true, result = { tile = [p.x, p.y] } };
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    if (GSRail.RemoveRailTrack(r.tile, track)) return { success = true, result = { tile = r.tile } };
     return { success = false, error = GSError.GetLastErrorString() };
   }
 
   function CmdRemoveSignal(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
-    local front_tile = GSMap.GetTileIndex(p.front_x, p.front_y);
-    if (GSRail.RemoveSignal(tile, front_tile)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    // If front_tile or front_x,front_y given, use directly
+    if ("front_tile" in p) {
+      local ft = p.front_tile.tointeger();
+      if (GSRail.RemoveSignal(r.tile, ft)) return { success = true, result = {} };
+      return { success = false, error = GSError.GetLastErrorString() };
+    }
+    if (("front_x" in p) && ("front_y" in p)) {
+      local ft = GSMap.GetTileIndex(p.front_x, p.front_y);
+      if (GSRail.RemoveSignal(r.tile, ft)) return { success = true, result = {} };
+      return { success = false, error = GSError.GetLastErrorString() };
+    }
+    // Auto-detect: try all 4 adjacent tiles as front
+    local offsets = [
+      GSMap.GetTileIndex(1, 0) - GSMap.GetTileIndex(0, 0),
+      GSMap.GetTileIndex(0, 1) - GSMap.GetTileIndex(0, 0),
+      -(GSMap.GetTileIndex(1, 0) - GSMap.GetTileIndex(0, 0)),
+      -(GSMap.GetTileIndex(0, 1) - GSMap.GetTileIndex(0, 0))
+    ];
+    foreach (off in offsets) {
+      local ft = r.tile + off;
+      if (GSMap.IsValidTile(ft) && GSRail.RemoveSignal(r.tile, ft)) {
+        return { success = true, result = {} };
+      }
+    }
+    return { success = false, error = "No signal found at tile or " + GSError.GetLastErrorString() };
   }
 
   function CmdRemoveRailStation(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
-    local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
     local keep_rail = ("keep_rail" in p) ? p.keep_rail : false;
-    if (GSRail.RemoveRailStationTileRectangle(tile1, tile2, keep_rail)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    // Accept single tile (removes that platform tile) or x1,y1,x2,y2 rectangle
+    local r = this._ResolveTile(p);
+    if (r != null) {
+      if (GSRail.RemoveRailStationTileRectangle(r.tile, r.tile, keep_rail)) return { success = true, result = {} };
+      return { success = false, error = GSError.GetLastErrorString() };
+    }
+    if (("x1" in p) && ("y1" in p) && ("x2" in p) && ("y2" in p)) {
+      local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
+      local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
+      if (GSRail.RemoveRailStationTileRectangle(tile1, tile2, keep_rail)) return { success = true, result = {} };
+      return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = false, error = "Need tile or x,y or x1,y1,x2,y2" };
   }
 
   function CmdConvertRail(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
-    local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
-    if (GSRail.ConvertRailType(tile1, tile2, p.rail_type)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    // Accept single tile or x1,y1,x2,y2 rectangle
+    local r = this._ResolveTile(p);
+    if (r != null) {
+      if (GSRail.ConvertRailType(r.tile, r.tile, rail_type)) return { success = true, result = {} };
+      return { success = false, error = GSError.GetLastErrorString() };
+    }
+    if (("x1" in p) && ("y1" in p) && ("x2" in p) && ("y2" in p)) {
+      local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
+      local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
+      if (GSRail.ConvertRailType(tile1, tile2, rail_type)) return { success = true, result = {} };
+      return { success = false, error = GSError.GetLastErrorString() };
+    }
+    return { success = false, error = "Need tile or x,y or x1,y1,x2,y2" };
   }
 
   // ===========================================================================
@@ -1949,6 +1994,8 @@ class NttdGS extends GSController {
 
     while (open.len() > 0 && iterations < max_iterations) {
       iterations++;
+      // Yield every 500 iterations so the GS doesn't block other commands
+      if (iterations % 500 == 0) this.Sleep(1);
       local node = this._HeapPop(open);
       local cur_key = node.v;
       if (cur_key in visited) continue;
@@ -2011,8 +2058,12 @@ class NttdGS extends GSController {
           }
         }
 
-        // If tile is impassable AND going straight, try bridge/tunnel.
-        if (!is_buildable && !has_rail && exit_dir == entry_dir) {
+        // Try bridge/tunnel when going straight AND tile is impassable, water,
+        // or has steep slope (height diff > 1).
+        local try_bridge_tunnel = (!is_buildable && !has_rail) || is_water ||
+          (GSMap.IsValidTile(next_tile) &&
+           abs(GSTile.GetMaxHeight(next_tile) - GSTile.GetMaxHeight(cur_tile)) > 1);
+        if (try_bridge_tunnel && exit_dir == entry_dir) {
           // Try bridge.
           for (local blen = 2; blen <= MAX_BRIDGE; blen++) {
             local bx = GSMap.GetTileX(cur_tile) + dir_dx[exit_dir] * blen;
@@ -2170,7 +2221,7 @@ class NttdGS extends GSController {
     GSRail.SetCurrentRailType(rail_type);
     local pair = this._ResolveTilePair(p);
     if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
-    local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
+    local max_iter = ("max_iterations" in p) ? p.max_iterations : 50000;
 
     // Phase 1: Pathfind (runs in GSTestMode internally).
     local pf = this._FindRailPath(pair.from.tile, pair.to.tile, max_iter);

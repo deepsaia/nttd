@@ -652,7 +652,8 @@ def transport_mode_finances(sessions: list[SessionData]) -> go.Figure:
                 vtype = v.get("type", "unknown")
                 if vtype not in type_profits:
                     type_profits[vtype] = []
-                type_profits[vtype].append((gd, v.get("profit_this_year", 0)))
+                combined = v.get("profit_this_year", 0) + v.get("profit_last_year", 0)
+                type_profits[vtype].append((gd, combined))
 
             # Infrastructure costs
             for inf in data.get("infrastructure", []):

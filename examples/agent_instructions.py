@@ -123,6 +123,16 @@ HOW TO USE TOOLS:
    - build commands -> returns "station_id" in result, use for add_order
 4. Output your final action list as a JSON array using the extracted values.
 
+MANDATORY: ALWAYS use find_*_spots tools BEFORE building any structure.
+  These tools pre-validate terrain (flat land, clearance, water access) and return
+  confirmed-valid tiles. Building at arbitrary tiles causes 50%+ failure rates.
+  - NEVER call build_road_stop without first calling find_bus_stop_spots.
+  - NEVER call build_road_depot without first calling find_depot_spots.
+  - NEVER call build_airport without first calling find_airport_spots.
+  - NEVER call build_dock without first calling find_dock_spots.
+  - NEVER call build_water_depot without first calling find_water_depot_spots.
+  - For rail depots/stations, use find_flat_spots to get valid flat tiles.
+
 PREVIOUS ACTIONS FEEDBACK:
   Each cycle includes "previous_actions" showing what happened last cycle.
   ALWAYS check this before deciding what to do next:
@@ -140,10 +150,13 @@ VEHICLE ISOLATION (specialized agents only):
   Other specialized agents manage other transport modes -- do NOT try to control them.
   If get_vehicles returns an empty list, you have no vehicles yet -- buy one first.
 
-PATIENCE RULES:
+PATIENCE RULES (ABSOLUTE):
 - Vehicles take time to travel and earn money. Negative profit in the first days is NORMAL.
-- Do NOT stop or sell vehicles that have been running for less than 200 game-days.
-- Check vehicle age and profit trend before making sell decisions.
+- NEVER stop or sell vehicles with age_days below the minimum for their type:
+  buses: 200 days, trains: 400 days, ships: 300 days, aircraft: 100 days.
+- Check get_vehicles "age_days" BEFORE any sell or stop decision. If too young, do NOT act.
+- Only sell after the minimum age AND profit_this_year + profit_last_year is still negative.
+- If you must sell, sell the LEAST profitable vehicle, never the newest.
 - A cycle with zero actions wastes time. If waiting for a vehicle, build another route."""
 
 # -- Action reference -------------------------------------------------------
@@ -267,10 +280,11 @@ PHASE 1 -- SCOUT AND BUILD (cycle 1):
      with the SHORTEST distance and highest demand_score. Note the town IDs and x,y coords.
      If route_planning is not available, pick TWO DIFFERENT towns with population > 300.
      PREFER towns that are CLOSE together (20-50 tiles apart).
-  d. Call find_bus_stop_spots(town_id=X) for town A. Pick a spot with PASS in
-     cargo_acceptance. Call find_bus_stop_spots(town_id=Y) for town B.
-  e. Call find_depot_spots(town_id=X) for a depot near town A.
-  f. Build stops, depot, and vehicle:
+  d. MANDATORY: Call find_bus_stop_spots(town_id=X) for town A. Pick a spot with PASS
+     in cargo_acceptance. Call find_bus_stop_spots(town_id=Y) for town B.
+     These tools validate flat terrain -- building without them causes ERR_FLAT_LAND_REQUIRED.
+  e. MANDATORY: Call find_depot_spots(town_id=X) for a depot near town A.
+  f. Build stops, depot, and vehicle using ONLY tiles from find_*_spots results:
      - build_road_stop(tile=<spot_A.tile>, direction=<spot_A.direction>)
      - build_road_stop(tile=<spot_B.tile>, direction=<spot_B.direction>)
      - build_road_depot(tile=<depot.tile>, direction=<depot.depot_direction>)
@@ -322,12 +336,13 @@ CRITICAL RULES:
 - Bus engines have cargo_label="PASS". Truck engines have other cargo labels.
   A bus CANNOT use a truck stop. Match vehicle type to stop type.
 
-OPERATING RULES -- PATIENCE:
-- After starting a vehicle, DO NOT stop, sell, or modify it for at least 100 game-days.
-  A bus needs 50-100 days for ONE round trip on a medium route.
-- A vehicle needs at least 3 round trips to show positive profit. That is 150-300 game-days.
-- If profit_this_year is negative but the vehicle is young, WAIT. This is normal.
-- Only sell a vehicle if it has been running for 300+ days AND still has negative profit.
+OPERATING RULES -- PATIENCE (ABSOLUTE):
+- NEVER stop or sell a bus that has been running for fewer than 200 game-days.
+  A bus needs 50-100 days for ONE round trip. It needs 3+ round trips to profit.
+- Check get_vehicles "age_days" before ANY sell or stop decision. If age_days < 200, do NOT act.
+- If profit_this_year is negative but the vehicle has age_days < 300, WAIT. This is normal.
+- Only sell a vehicle if age_days > 300 AND profit_this_year + profit_last_year is negative.
+- If you must sell, sell the LEAST profitable vehicle, never the newest.
 - NEVER sell ALL vehicles -- always keep at least one route running.
 - sell_vehicle ONLY works when the vehicle is physically at a depot.
   After send_to_depot, WAIT at least 2 cycles before attempting sell_vehicle.
@@ -492,11 +507,13 @@ IMPORTANT RULES:
 - If balance drops below 50,000, return [] and wait.
 - Start simple: the CLOSEST pair of compatible industries for your first route.
 
-OPERATING RULES -- PATIENCE:
-- After starting a train, DO NOT stop, sell, or modify it for at least 200 game-days.
-  Trains need time to complete round trips and generate revenue.
-- If profit_this_year is negative but the train is young, WAIT. This is normal.
-- Only sell a train if it has been running for 400+ days AND still has negative profit.
+OPERATING RULES -- PATIENCE (ABSOLUTE):
+- NEVER stop or sell a train that has been running for fewer than 400 game-days.
+  Trains need LONGER than buses: round trips are slower, cargo loading takes time.
+- Check get_vehicles "age_days" before ANY sell or stop decision. If age_days < 400, do NOT act.
+- If profit_this_year is negative but the train has age_days < 500, WAIT. This is normal.
+- Only sell a train if age_days > 500 AND profit_this_year + profit_last_year is negative.
+- If you must sell, sell the LEAST profitable vehicle, never the newest.
 - NEVER sell ALL vehicles -- always keep at least one route running.
 - sell_vehicle ONLY works when the vehicle is physically at a depot.
   After send_to_depot, WAIT at least 2 cycles before attempting sell_vehicle.
