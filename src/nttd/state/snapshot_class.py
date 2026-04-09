@@ -40,8 +40,11 @@ _BUILTIN_PRESETS: list[SnapshotClass] = [
     ),
     SnapshotClass(
         name="compact",
-        sections=frozenset({"company", "vehicles_summary", "stations_count", "top_towns"}),
-        description="Lightweight summary for fast cycles",
+        sections=frozenset({
+            "company", "vehicles_summary", "stations_count", "top_towns",
+            "routes", "route_planning",
+        }),
+        description="Lightweight summary with route planning for fast cycles",
     ),
     SnapshotClass(
         name="agent",

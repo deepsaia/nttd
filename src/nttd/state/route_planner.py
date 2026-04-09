@@ -228,11 +228,19 @@ class RoutePlanner:
             })
         return result
 
-    def for_agent(self, company_id: int, agent_type: str = "general") -> dict[str, Any]:
+    def for_agent(
+        self,
+        company_id: int,
+        agent_type: str = "general",
+        compact: bool = False,
+    ) -> dict[str, Any]:
         """Complete route planning observation filtered for an agent type.
 
-        Filters cargo and town routes to only those matching the agent's
-        transport mode. Includes existing routes for the agent's company.
+        Args:
+            company_id: The agent's company.
+            agent_type: Transport mode filter (road/rail/air/water/general).
+            compact: If True, return shorter field names, fewer items, and
+                drop coordinates to minimize token usage.
         """
         allowed_modes = AGENT_MODE_FILTER.get(agent_type, AGENT_MODE_FILTER["general"])
 
@@ -254,6 +262,11 @@ class RoutePlanner:
         unserved_cargo = [r for r in cargo if not r["served"]]
         unserved_towns = [r for r in towns if not r["served"]]
 
+        if compact:
+            return self._compact_output(
+                cargo, towns, unserved_cargo, unserved_towns, existing,
+            )
+
         return {
             "cargo_routes": cargo[:30],
             "town_routes": towns[:20],
@@ -266,5 +279,61 @@ class RoutePlanner:
                 "total_town_routes": len(towns),
                 "served_town_routes": sum(1 for r in towns if r["served"]),
                 "active_routes": len(existing),
+            },
+        }
+
+    def _compact_output(
+        self,
+        cargo: list[dict[str, Any]],
+        towns: list[dict[str, Any]],
+        unserved_cargo: list[dict[str, Any]],
+        unserved_towns: list[dict[str, Any]],
+        existing: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Build a compact route planning dict for token-efficient observations."""
+        return {
+            "cargo": [
+                {
+                    "src": r["source_name"],
+                    "dst": r["dest_name"],
+                    "cargo": r["cargo"],
+                    "dist": r["distance"],
+                    "prod": r["monthly_production"],
+                    "served": r["served"],
+                }
+                for r in cargo[:10]
+            ],
+            "towns": [
+                {
+                    "a": r["town_a_name"],
+                    "b": r["town_b_name"],
+                    "dist": r["distance"],
+                    "demand": r["demand_score"],
+                    "served": r["served"],
+                }
+                for r in towns[:10]
+            ],
+            "unserved": [
+                {
+                    "src": r["source_name"],
+                    "dst": r["dest_name"],
+                    "cargo": r["cargo"],
+                    "dist": r["distance"],
+                    "prod": r["monthly_production"],
+                }
+                for r in unserved_cargo[:8]
+            ],
+            "active": [
+                {
+                    "stations": r["station_names"],
+                    "vehicles": r["vehicle_count"],
+                    "profit": r["profit_this_year"],
+                }
+                for r in existing
+            ],
+            "totals": {
+                "cargo_routes": len(cargo),
+                "town_routes": len(towns),
+                "unserved": len(unserved_cargo) + len(unserved_towns),
             },
         }

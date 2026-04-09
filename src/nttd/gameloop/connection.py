@@ -521,7 +521,10 @@ class AgentConnection:
             ]
 
         if "route_planning" in sections:
-            obs["route_planning"] = planner.for_agent(company_id, self.config.agent_type)
+            use_compact = class_name in ("compact", "minimal")
+            obs["route_planning"] = planner.for_agent(
+                company_id, self.config.agent_type, compact=use_compact,
+            )
 
         # Always include previous cycle's action results so agent can learn
         if self._last_cycle_results:
