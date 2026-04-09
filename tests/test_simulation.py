@@ -138,7 +138,7 @@ async def test_heartbeat_action_submitted_and_tracked(
 
     def submit_action(snap: StateSnapshot) -> None:
         orchestrator.submit_heartbeat_action({
-            "action": "build_road",
+            "action": "connect_road",
             "params": {"company_id": 0, "start_tile": 1000, "end_tile": 1010},
         })
 
@@ -151,7 +151,7 @@ async def test_heartbeat_action_submitted_and_tracked(
     action_types = [action_tracker.get_envelope(r.action_id).action_type for r in recent]  # type: ignore[union-attr]
 
     logger.info("Tracked actions: %s", [(r.action_id, r.status) for r in recent])
-    assert "build_road" in action_types, f"build_road not found in tracked actions: {action_types}"
+    assert "connect_road" in action_types, f"build_road not found in tracked actions: {action_types}"
     assert all(r.status in ("success", "failed") for r in recent), "All actions should be resolved"
 
 

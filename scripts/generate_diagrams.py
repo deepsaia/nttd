@@ -164,7 +164,7 @@ def generate_transport_modes() -> None:
   <text x="35" y="160" font-size="9" fill="#333">2. find_depot_spots</text>
   <text x="35" y="175" font-size="9" fill="#333">3. build_road_stop x2</text>
   <text x="35" y="190" font-size="9" fill="#333">4. build_road_depot</text>
-  <text x="35" y="205" font-size="9" fill="#333">5. road_line</text>
+  <text x="35" y="205" font-size="9" fill="#333">5. connect_road</text>
   <text x="35" y="220" font-size="9" fill="#333">6. buy_vehicle</text>
   <text x="35" y="235" font-size="9" fill="#333">7. add_order x2</text>
   <text x="35" y="250" font-size="9" fill="#333">8. start_vehicle</text>
@@ -183,7 +183,7 @@ def generate_transport_modes() -> None:
   <text x="205" y="160" font-size="9" fill="#333">2. find_flat_spots</text>
   <text x="205" y="175" font-size="9" fill="#333">3. build_rail_depot</text>
   <text x="205" y="190" font-size="9" fill="#333">4. build_rail_station x2</text>
-  <text x="205" y="205" font-size="9" fill="#333">5. build_rail segments</text>
+  <text x="205" y="205" font-size="9" fill="#333">5. connect_rail</text>
   <text x="205" y="220" font-size="9" fill="#333">6. build_rail_signal xN</text>
   <text x="205" y="235" font-size="9" fill="#333">7. buy_vehicle + orders</text>
   <text x="205" y="250" font-size="9" fill="#333">8. start_vehicle</text>

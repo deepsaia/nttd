@@ -536,10 +536,10 @@ def events_timeline(sessions: list[SessionData]) -> go.Figure:
 
 # Action types that cost money (infrastructure builds, vehicle purchases)
 _COSTLY_ACTIONS = {
-    "build_road", "build_road_line", "build_road_depot", "build_road_stop",
-    "build_rail", "build_rail_track", "build_rail_station", "build_rail_depot",
+    "connect_road", "build_road_depot", "build_road_stop",
+    "connect_rail", "build_rail_station", "build_rail_depot",
     "build_rail_signal", "build_rail_waypoint",
-    "build_canal", "build_lock", "build_buoy", "build_water_depot",
+    "build_path", "build_canal", "build_lock", "build_buoy", "build_water_depot",
     "build_airport", "build_dock", "build_bridge", "build_tunnel",
     "buy_vehicle",
 }

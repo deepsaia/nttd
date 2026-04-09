@@ -281,8 +281,6 @@ class NttdGS extends GSController {
         case "find_water_depot_spots": return this.CmdFindWaterDepotSpots(p);
 
         // ---- BUILDING: ROAD ------------------------------------------------
-        case "build_road":        return this.CmdBuildRoad(p);
-        case "build_road_line":   return this.CmdBuildRoadLine(p);
         case "build_road_depot":  return this.CmdBuildRoadDepot(p);
         case "build_road_stop":   return this.CmdBuildRoadStop(p);
         case "remove_road":       return this.CmdRemoveRoad(p);
@@ -291,8 +289,6 @@ class NttdGS extends GSController {
         case "connect_road":      return this.CmdConnectRoad(p);
 
         // ---- BUILDING: RAIL ------------------------------------------------
-        case "build_rail":          return this.CmdBuildRail(p);
-        case "build_rail_track":    return this.CmdBuildRailTrack(p);
         case "build_rail_station":  return this.CmdBuildRailStation(p);
         case "build_rail_depot":    return this.CmdBuildRailDepot(p);
         case "build_rail_signal":   return this.CmdBuildRailSignal(p);
@@ -302,6 +298,7 @@ class NttdGS extends GSController {
         case "remove_signal":       return this.CmdRemoveSignal(p);
         case "remove_rail_station": return this.CmdRemoveRailStation(p);
         case "convert_rail":        return this.CmdConvertRail(p);
+        case "connect_rail":        return this.CmdConnectRail(p);
 
         // ---- BUILDING: MARINE ----------------------------------------------
         case "build_canal":        return this.CmdBuildCanal(p);
@@ -1745,7 +1742,7 @@ class NttdGS extends GSController {
     GSRoad.SetCurrentRoadType(road_type);
     local pair = this._ResolveTilePair(p);
     if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
-    local max_iter = ("max_iterations" in p) ? p.max_iterations : 50000;
+    local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
 
     // Phase 1: Pathfind (runs in GSTestMode internally).
     local pf = this._FindRoadPath(pair.from.tile, pair.to.tile, max_iter);
@@ -1891,6 +1888,313 @@ class NttdGS extends GSController {
     local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
     if (GSRail.ConvertRailType(tile1, tile2, p.rail_type)) return { success = true, result = {} };
     return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  // ===========================================================================
+  // COMPOUND: CONNECT RAIL (direction-aware A* pathfind + build)
+  // Rail requires 3-tile context (prev, cur, next) for track direction.
+  // Cost model matches nttd's Python rail pathfinder: flat=100, slope=+200,
+  // curve_45=+100, curve_90=+600, bridge/tunnel per tile, no U-turns.
+  // ===========================================================================
+
+  // A* rail pathfinder. Direction-aware: state = (tile, entry_direction).
+  // No U-turns allowed. Bridge/tunnel only in straight direction.
+  // Runs inside GSTestMode. Returns path or null.
+  function _FindRailPath(from_tile, to_tile, max_iterations) {
+    local test_mode = GSTestMode();
+    // Cost parameters — matching nttd Python rail pathfinder (rail.py).
+    local C_FLAT = 100;
+    local C_SLOPE = 200;
+    local C_CURVE_45 = 100;
+    local C_CURVE_90 = 600;
+    local C_CROSSING = 300;
+    local C_BRIDGE = 150;
+    local C_TUNNEL = 120;
+    local C_MAX = 10000000;
+    local MAX_BRIDGE = 6;
+    local MAX_TUNNEL = 6;
+
+    local from_x = GSMap.GetTileX(from_tile);
+    local from_y = GSMap.GetTileY(from_tile);
+    local to_x = GSMap.GetTileX(to_tile);
+    local to_y = GSMap.GetTileY(to_tile);
+    local map_sx = GSMap.GetMapSizeX();
+
+    // Direction offsets: 0=NE(+x), 1=SE(+y), 2=SW(-x), 3=NW(-y)
+    local dir_dx = [1, 0, -1, 0];
+    local dir_dy = [0, 1, 0, -1];
+
+    local open = this._HeapCreate();
+    local g_cost = {};
+    local came_from = {};
+    local state_tile = {};
+    local state_dir = {};
+    local state_meta = {};  // bridge/tunnel metadata
+
+    // Seed: enter start from all 4 directions.
+    for (local d = 0; d < 4; d++) {
+      local key = from_tile * 4 + d;
+      g_cost[key] <- 0;
+      came_from[key] <- -1;
+      state_tile[key] <- from_tile;
+      state_dir[key] <- d;
+      state_meta[key] <- null;
+      local h = this._Heuristic(from_x, from_y, to_x, to_y) * C_FLAT;
+      this._HeapPush(open, h, key);
+    }
+
+    local iterations = 0;
+    local found_key = -1;
+    local visited = {};
+
+    while (open.len() > 0 && iterations < max_iterations) {
+      iterations++;
+      local node = this._HeapPop(open);
+      local cur_key = node.v;
+      if (cur_key in visited) continue;
+      visited[cur_key] <- true;
+
+      local cur_tile = state_tile[cur_key];
+      local cur_g = g_cost[cur_key];
+      local entry_dir = state_dir[cur_key];
+
+      if (cur_g >= C_MAX) continue;
+
+      // Goal check.
+      if (cur_tile == to_tile) {
+        found_key = cur_key;
+        break;
+      }
+
+      // Try all 4 exit directions except reverse (no U-turn).
+      local reverse_dir = (entry_dir + 2) % 4;
+      for (local exit_dir = 0; exit_dir < 4; exit_dir++) {
+        if (exit_dir == reverse_dir) continue;
+
+        local nx = GSMap.GetTileX(cur_tile) + dir_dx[exit_dir];
+        local ny = GSMap.GetTileY(cur_tile) + dir_dy[exit_dir];
+        local next_tile = GSMap.GetTileIndex(nx, ny);
+        if (!GSMap.IsValidTile(next_tile)) continue;
+
+        // Determine turn cost.
+        local turn = (exit_dir - entry_dir + 4) % 4;
+        local turn_cost = 0;
+        if (turn == 1 || turn == 3) turn_cost = C_CURVE_45;
+        // turn == 2 is U-turn, already blocked
+
+        // Check if tile is passable.
+        local is_buildable = GSTile.IsBuildable(next_tile);
+        local has_rail = GSRail.IsRailTile(next_tile);
+        local has_road = GSRoad.IsRoadTile(next_tile);
+        local is_water = GSTile.IsWaterTile(next_tile);
+
+        if (is_buildable || has_rail || has_road) {
+          local edge_cost = C_FLAT + turn_cost;
+          // Slope penalty.
+          if (GSTile.GetSlope(next_tile) != GSTile.SLOPE_FLAT) edge_cost += C_SLOPE;
+          // Existing rail is cheaper to traverse.
+          if (has_rail) edge_cost = edge_cost / 2;
+          // Road crossing penalty.
+          else if (has_road) edge_cost += C_CROSSING;
+
+          local next_key = next_tile * 4 + exit_dir;
+          local tentative_g = cur_g + edge_cost;
+          if (tentative_g < C_MAX &&
+              (!(next_key in g_cost) || tentative_g < g_cost[next_key])) {
+            g_cost[next_key] <- tentative_g;
+            came_from[next_key] <- cur_key;
+            state_tile[next_key] <- next_tile;
+            state_dir[next_key] <- exit_dir;
+            state_meta[next_key] <- null;
+            local h = this._Heuristic(nx, ny, to_x, to_y) * C_FLAT;
+            this._HeapPush(open, tentative_g + h, next_key);
+          }
+        }
+
+        // If tile is impassable AND going straight, try bridge/tunnel.
+        if (!is_buildable && !has_rail && exit_dir == entry_dir) {
+          // Try bridge.
+          for (local blen = 2; blen <= MAX_BRIDGE; blen++) {
+            local bx = GSMap.GetTileX(cur_tile) + dir_dx[exit_dir] * blen;
+            local by = GSMap.GetTileY(cur_tile) + dir_dy[exit_dir] * blen;
+            local b_tile = GSMap.GetTileIndex(bx, by);
+            if (!GSMap.IsValidTile(b_tile)) break;
+            local bridge_list = GSBridgeList_Length(blen + 1);
+            if (!bridge_list.IsEmpty() &&
+                GSBridge.BuildBridge(GSVehicle.VT_RAIL, bridge_list.Begin(), cur_tile, b_tile)) {
+              local edge_cost = blen * C_BRIDGE;
+              local next_key = b_tile * 4 + exit_dir;
+              local tentative_g = cur_g + edge_cost;
+              if (tentative_g < C_MAX &&
+                  (!(next_key in g_cost) || tentative_g < g_cost[next_key])) {
+                g_cost[next_key] <- tentative_g;
+                came_from[next_key] <- cur_key;
+                state_tile[next_key] <- b_tile;
+                state_dir[next_key] <- exit_dir;
+                state_meta[next_key] <- { is_bridge = true, bridge_start = cur_tile };
+                local h = this._Heuristic(bx, by, to_x, to_y) * C_FLAT;
+                this._HeapPush(open, tentative_g + h, next_key);
+              }
+              break; // Take shortest viable bridge.
+            }
+          }
+          // Try tunnel.
+          local slope = GSTile.GetSlope(cur_tile);
+          if (slope != GSTile.SLOPE_FLAT) {
+            local other_end = GSTunnel.GetOtherTunnelEnd(cur_tile);
+            if (GSMap.IsValidTile(other_end)) {
+              local tunnel_len = GSMap.DistanceManhattan(cur_tile, other_end);
+              if (tunnel_len >= 2 && tunnel_len <= MAX_TUNNEL &&
+                  GSTunnel.BuildTunnel(GSVehicle.VT_RAIL, cur_tile)) {
+                local edge_cost = tunnel_len * C_TUNNEL;
+                local next_key = other_end * 4 + exit_dir;
+                local tentative_g = cur_g + edge_cost;
+                if (tentative_g < C_MAX &&
+                    (!(next_key in g_cost) || tentative_g < g_cost[next_key])) {
+                  g_cost[next_key] <- tentative_g;
+                  came_from[next_key] <- cur_key;
+                  state_tile[next_key] <- other_end;
+                  state_dir[next_key] <- exit_dir;
+                  state_meta[next_key] <- { is_tunnel = true, tunnel_start = cur_tile };
+                  local ox = GSMap.GetTileX(other_end);
+                  local oy = GSMap.GetTileY(other_end);
+                  local h = this._Heuristic(ox, oy, to_x, to_y) * C_FLAT;
+                  this._HeapPush(open, tentative_g + h, next_key);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (found_key == -1) {
+      return { success = false, iterations = iterations };
+    }
+
+    // Reconstruct path with direction info (needed for 3-tile building).
+    local path = [];
+    local key = found_key;
+    while (key != -1) {
+      local t = state_tile[key];
+      local entry = {
+        tile = t,
+        x = GSMap.GetTileX(t),
+        y = GSMap.GetTileY(t),
+        dir = state_dir[key]
+      };
+      if (state_meta[key] != null) {
+        local m = state_meta[key];
+        if ("is_bridge" in m) entry.rawset("bridge_start", m.bridge_start);
+        if ("is_tunnel" in m) entry.rawset("tunnel_start", m.tunnel_start);
+      }
+      path.insert(0, entry);
+      key = came_from[key];
+    }
+    return { success = true, path = path, iterations = iterations };
+  }
+
+  // Build rail along a path from _FindRailPath.
+  // Rail needs 3-tile context: GSRail.BuildRail(prev, cur, next).
+  function _BuildRailPath(path) {
+    local built = 0;
+    local failed = [];
+
+    for (local i = 0; i < path.len(); i++) {
+      local cur = path[i];
+      local cur_tile = cur.tile;
+
+      // Bridge segment.
+      if ("bridge_start" in cur) {
+        local dist = GSMap.DistanceManhattan(cur.bridge_start, cur_tile);
+        local bridge_list = GSBridgeList_Length(dist + 1);
+        if (!bridge_list.IsEmpty() &&
+            GSBridge.BuildBridge(GSVehicle.VT_RAIL, bridge_list.Begin(), cur.bridge_start, cur_tile)) {
+          built++;
+        } else {
+          local err = GSError.GetLastErrorString();
+          if (err == "ERR_ALREADY_BUILT") { built++; }
+          else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err }); }
+        }
+        continue;
+      }
+      // Tunnel segment.
+      if ("tunnel_start" in cur) {
+        if (GSTunnel.BuildTunnel(GSVehicle.VT_RAIL, cur.tunnel_start)) {
+          built++;
+        } else {
+          local err = GSError.GetLastErrorString();
+          if (err == "ERR_ALREADY_BUILT") { built++; }
+          else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err }); }
+        }
+        continue;
+      }
+
+      // Normal rail: needs prev_tile, cur_tile, next_tile.
+      local prev_tile, next_tile;
+      if (i == 0 && path.len() > 1) {
+        // First tile: virtual prev from opposite of travel direction.
+        local opp = (cur.dir + 2) % 4;
+        prev_tile = GSMap.GetTileIndex(cur.x + this._GetDirDx(opp), cur.y + this._GetDirDy(opp));
+        next_tile = path[1].tile;
+      } else if (i == path.len() - 1 && path.len() > 1) {
+        // Last tile: virtual next continuing travel direction.
+        prev_tile = path[i - 1].tile;
+        next_tile = GSMap.GetTileIndex(cur.x + this._GetDirDx(cur.dir), cur.y + this._GetDirDy(cur.dir));
+      } else if (path.len() == 1) {
+        continue; // Single tile, nothing to build.
+      } else {
+        prev_tile = path[i - 1].tile;
+        next_tile = path[i + 1].tile;
+      }
+
+      // Skip if prev or next is a bridge/tunnel landing (already built).
+      if (i > 0 && ("bridge_start" in path[i - 1] || "tunnel_start" in path[i - 1])) {
+        // Previous was bridge/tunnel end; prev context is the landing tile.
+      }
+
+      if (GSRail.BuildRail(prev_tile, cur_tile, next_tile)) {
+        built++;
+      } else {
+        local err = GSError.GetLastErrorString();
+        if (err == "ERR_ALREADY_BUILT") { built++; }
+        else { failed.append({ x = cur.x, y = cur.y, action = "rail", error = err }); }
+      }
+    }
+    return { built = built, failed = failed };
+  }
+
+  function CmdConnectRail(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    GSRail.SetCurrentRailType(rail_type);
+    local pair = this._ResolveTilePair(p);
+    if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
+    local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
+
+    // Phase 1: Pathfind (runs in GSTestMode internally).
+    local pf = this._FindRailPath(pair.from.tile, pair.to.tile, max_iter);
+    if (!pf.success) {
+      return { success = false, error = "No rail path found after " + pf.iterations + " iterations",
+               result = { iterations = pf.iterations } };
+    }
+
+    // Phase 2: Build the rail.
+    local build = this._BuildRailPath(pf.path);
+
+    // Compact path for response.
+    local path_coords = [];
+    foreach (pt in pf.path) {
+      path_coords.append({ x = pt.x, y = pt.y, dir = pt.dir });
+    }
+
+    return { success = true, result = {
+      path_length = pf.path.len(),
+      built = build.built,
+      failed = build.failed,
+      iterations = pf.iterations,
+      path = path_coords
+    }};
   }
 
   // ===========================================================================

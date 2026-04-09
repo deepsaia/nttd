@@ -4,21 +4,21 @@
 # Used by: action_routes.py, interpreter/validator.py, mcp/tools/validation.py
 ACTION_CATEGORIES: dict[str, list[str]] = {
     "road": [
-        "build_road", "build_road_line", "build_road_depot", "build_road_stop",
+        "connect_road",
+        "build_road_depot", "build_road_stop",
         "remove_road", "remove_road_depot", "remove_road_stop",
     ],
     "rail": [
-        "build_rail", "build_rail_track", "build_rail_station", "build_rail_depot",
+        "connect_rail",
+        "build_rail_station", "build_rail_depot",
         "build_rail_signal", "build_rail_waypoint",
         "remove_rail", "remove_rail_track", "remove_signal", "remove_rail_station",
         "convert_rail",
     ],
     "marine": [
+        "build_path",
         "build_canal", "build_lock", "build_buoy", "build_water_depot",
         "remove_canal", "remove_lock", "remove_buoy", "remove_water_depot",
-    ],
-    "pathfinding": [
-        "build_path", "connect_road", "connect_rail",
     ],
     "air_and_other": [
         "build_airport", "remove_airport", "open_close_airport",

@@ -22,7 +22,7 @@ from nttd.schemas.action_result import ActionResult
 def _make_envelope(
     action_id: str = "test:0:agent1:1:0",
     company_id: int = 0,
-    action_type: str = "build_road",
+    action_type: str = "connect_road",
     game_date: int = 18628,
     participant_id: str = "agent1",
 ) -> ActionEnvelope:
@@ -103,7 +103,7 @@ async def test_record_action_persists(recorder: SessionRecorder, data_dir: Path)
     table = pq.read_table(actions_path)
     assert table.num_rows == 1
     assert table.column("action_id")[0].as_py() == "test:0:agent1:1:0"
-    assert table.column("action_type")[0].as_py() == "build_road"
+    assert table.column("action_type")[0].as_py() == "connect_road"
     assert table.column("status")[0].as_py() == "success"
 
 

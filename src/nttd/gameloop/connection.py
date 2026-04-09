@@ -559,8 +559,11 @@ class AgentConnection:
             error = ""
 
             try:
+                # Pathfinding actions (connect_road, connect_rail) run A* in GS
+                # and need more time than simple single-tile actions.
+                timeout = 120.0 if action.action_type.startswith("connect_") else 10.0
                 gs_result = await self.runtime.admin_client.send_gamescript(
-                    action.action_type, params,
+                    action.action_type, params, timeout=timeout,
                 )
                 if gs_result.get("success"):
                     logger.info(
