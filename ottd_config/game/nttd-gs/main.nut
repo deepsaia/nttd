@@ -288,6 +288,7 @@ class NttdGS extends GSController {
         case "remove_road":       return this.CmdRemoveRoad(p);
         case "remove_road_depot": return this.CmdRemoveRoadDepot(p);
         case "remove_road_stop":  return this.CmdRemoveRoadStop(p);
+        case "connect_road":      return this.CmdConnectRoad(p);
 
         // ---- BUILDING: RAIL ------------------------------------------------
         case "build_rail":          return this.CmdBuildRail(p);
@@ -1350,6 +1351,428 @@ class NttdGS extends GSController {
   }
 
   // ===========================================================================
+  // COMPOUND: CONNECT ROAD (A* pathfind + build)
+  // Modeled after OpenTTD's built-in pathfinder.road library (same cost model,
+  // bridge/tunnel detection, slope handling). Uses GS* API instead of AI*.
+  // ===========================================================================
+
+  // Detect whether the road segment start->middle->end is on a slope.
+  // Ported from pathfinder.road::_IsSlopedRoad.
+  function _IsSlopedRoad(start, middle, end) {
+    local map_sx = GSMap.GetMapSizeX();
+    local NW = 0;
+    local NE = 0;
+    local SW = 0;
+    local SE = 0;
+    if (middle - map_sx == start || middle - map_sx == end) NW = 1;
+    if (middle - 1 == start || middle - 1 == end) NE = 1;
+    if (middle + map_sx == start || middle + map_sx == end) SE = 1;
+    if (middle + 1 == start || middle + 1 == end) SW = 1;
+    // Turn in the tile means it cannot be sloped.
+    if ((NW || SE) && (NE || SW)) return false;
+    local slope = GSTile.GetSlope(middle);
+    if (GSTile.IsSteepSlope(slope)) return true;
+    if (slope == GSTile.SLOPE_N || slope == GSTile.SLOPE_W) return true;
+    if (slope == GSTile.SLOPE_S || slope == GSTile.SLOPE_E) return true;
+    if (NW && (slope == GSTile.SLOPE_NW || slope == GSTile.SLOPE_SE)) return true;
+    if (NE && (slope == GSTile.SLOPE_NE || slope == GSTile.SLOPE_SW)) return true;
+    return false;
+  }
+
+  // Count slopes at bridge endpoints for cost calculation.
+  // Ported from pathfinder.road::_GetBridgeNumSlopes.
+  function _GetBridgeNumSlopes(end_a, end_b) {
+    local slopes = 0;
+    local dist = GSMap.DistanceManhattan(end_a, end_b);
+    if (dist == 0) return 0;
+    local direction = (end_b - end_a) / dist;
+    local map_sx = GSMap.GetMapSizeX();
+    local slope = GSTile.GetSlope(end_a);
+    if (!((slope == GSTile.SLOPE_NE && direction == 1) ||
+          (slope == GSTile.SLOPE_SE && direction == -map_sx) ||
+          (slope == GSTile.SLOPE_SW && direction == -1) ||
+          (slope == GSTile.SLOPE_NW && direction == map_sx) ||
+          slope == GSTile.SLOPE_N || slope == GSTile.SLOPE_E ||
+          slope == GSTile.SLOPE_S || slope == GSTile.SLOPE_W)) {
+      slopes++;
+    }
+    slope = GSTile.GetSlope(end_b);
+    direction = -direction;
+    if (!((slope == GSTile.SLOPE_NE && direction == 1) ||
+          (slope == GSTile.SLOPE_SE && direction == -map_sx) ||
+          (slope == GSTile.SLOPE_SW && direction == -1) ||
+          (slope == GSTile.SLOPE_NW && direction == map_sx) ||
+          slope == GSTile.SLOPE_N || slope == GSTile.SLOPE_E ||
+          slope == GSTile.SLOPE_S || slope == GSTile.SLOPE_W)) {
+      slopes++;
+    }
+    return slopes;
+  }
+
+  // Check if new_tile is a bridge/tunnel entrance reachable from current_tile.
+  // Ported from pathfinder.road::_CheckTunnelBridge.
+  function _CheckTunnelBridge(current_tile, new_tile) {
+    if (!GSBridge.IsBridgeTile(new_tile) && !GSTunnel.IsTunnelTile(new_tile)) return false;
+    local dir = new_tile - current_tile;
+    local other_end = GSBridge.IsBridgeTile(new_tile)
+      ? GSBridge.GetOtherBridgeEnd(new_tile)
+      : GSTunnel.GetOtherTunnelEnd(new_tile);
+    local dir2 = other_end - new_tile;
+    if ((dir < 0 && dir2 > 0) || (dir > 0 && dir2 < 0)) return false;
+    local map_sx = GSMap.GetMapSizeX();
+    local a_dir = dir < 0 ? -dir : dir;
+    local a_dir2 = dir2 < 0 ? -dir2 : dir2;
+    if ((a_dir >= map_sx && a_dir2 < map_sx) ||
+        (a_dir < map_sx && a_dir2 >= map_sx)) return false;
+    return true;
+  }
+
+  // Find buildable bridges and tunnels from cur_node in the direction from last_node.
+  // Ported from pathfinder.road::_GetTunnelsBridges.
+  function _GetTunnelsBridges(last_node, cur_node, max_bridge_len, max_tunnel_len) {
+    local slope = GSTile.GetSlope(cur_node);
+    if (slope == GSTile.SLOPE_FLAT) return [];
+    local tiles = [];
+    local step = cur_node - last_node;
+    // Try bridges of increasing length.
+    for (local i = 2; i < max_bridge_len; i++) {
+      local target = cur_node + i * step;
+      if (!GSMap.IsValidTile(target)) break;
+      local bridge_list = GSBridgeList_Length(i + 1);
+      if (!bridge_list.IsEmpty() &&
+          GSBridge.BuildBridge(GSVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
+        tiles.append({ tile = target, is_bridge = true, bridge_start = cur_node });
+        break; // Take shortest viable bridge.
+      }
+    }
+    // Try tunnel if slope faces the right way.
+    if (slope != GSTile.SLOPE_SW && slope != GSTile.SLOPE_NW &&
+        slope != GSTile.SLOPE_SE && slope != GSTile.SLOPE_NE) return tiles;
+    local other_end = GSTunnel.GetOtherTunnelEnd(cur_node);
+    if (!GSMap.IsValidTile(other_end)) return tiles;
+    local tunnel_length = GSMap.DistanceManhattan(cur_node, other_end);
+    local prev_tile = cur_node + (cur_node - other_end) / tunnel_length;
+    if (GSTunnel.GetOtherTunnelEnd(other_end) == cur_node &&
+        tunnel_length >= 2 && prev_tile == last_node &&
+        tunnel_length < max_tunnel_len &&
+        GSTunnel.BuildTunnel(GSVehicle.VT_ROAD, cur_node)) {
+      tiles.append({ tile = other_end, is_tunnel = true, tunnel_start = cur_node });
+    }
+    return tiles;
+  }
+
+  // A* road pathfinder. Returns path array [{tile, x, y, bridge_start?, tunnel_start?}]
+  // or null if no path found. Runs inside GSTestMode so BuildRoad checks do not spend money.
+  // Cost model matches pathfinder.road defaults.
+  function _FindRoadPath(from_tile, to_tile, max_iterations) {
+    local test_mode = GSTestMode();
+    // Cost parameters — same as pathfinder.road.
+    local C_TILE = 100;
+    local C_NO_ROAD = 40;
+    local C_TURN = 100;
+    local C_SLOPE = 200;
+    local C_BRIDGE = 150;
+    local C_TUNNEL = 120;
+    local C_COAST = 20;
+    local C_MAX = 10000000;
+    local MAX_BRIDGE = 10;
+    local MAX_TUNNEL = 20;
+
+    local from_x = GSMap.GetTileX(from_tile);
+    local from_y = GSMap.GetTileY(from_tile);
+    local to_x = GSMap.GetTileX(to_tile);
+    local to_y = GSMap.GetTileY(to_tile);
+
+    // State key: encode tile + entry direction.
+    // We use tile ID * 4 + dir for unique keys (cheaper than x/y encoding).
+    local open = this._HeapCreate();
+    local g_cost = {};
+    local came_from = {};      // key -> parent_key (-1 for start)
+    local state_tile = {};     // key -> tile
+    local state_parent = {};   // key -> parent tile (for turn detection and building)
+    local state_meta = {};     // key -> {bridge_start, tunnel_start} or null
+
+    // Seed: enter start tile from all 4 directions.
+    local offsets = [1, -1, GSMap.GetMapSizeX(), -GSMap.GetMapSizeX()];
+    for (local d = 0; d < 4; d++) {
+      local key = from_tile * 4 + d;
+      g_cost[key] <- 0;
+      came_from[key] <- -1;
+      state_tile[key] <- from_tile;
+      state_parent[key] <- from_tile - offsets[d]; // Virtual parent behind start.
+      state_meta[key] <- null;
+      local h = this._Heuristic(from_x, from_y, to_x, to_y) * C_TILE;
+      this._HeapPush(open, h, key);
+    }
+
+    local iterations = 0;
+    local found_key = -1;
+    local visited = {};
+
+    while (open.len() > 0 && iterations < max_iterations) {
+      iterations++;
+      local node = this._HeapPop(open);
+      local cur_key = node.v;
+      if (cur_key in visited) continue;
+      visited[cur_key] <- true;
+
+      local cur_tile = state_tile[cur_key];
+      local cur_g = g_cost[cur_key];
+      local prev_tile = state_parent[cur_key];
+
+      if (cur_g >= C_MAX) continue;
+
+      // Goal check.
+      if (cur_tile == to_tile) {
+        found_key = cur_key;
+        break;
+      }
+
+      // --- Enumerate neighbors ---
+      local neighbors = []; // [{tile, cost, parent_tile, meta}]
+
+      // Case 1: Current tile is an existing bridge or tunnel with road.
+      if ((GSBridge.IsBridgeTile(cur_tile) || GSTunnel.IsTunnelTile(cur_tile)) &&
+          GSTile.HasTransportType(cur_tile, GSTile.TRANSPORT_ROAD)) {
+        local other_end = GSBridge.IsBridgeTile(cur_tile)
+          ? GSBridge.GetOtherBridgeEnd(cur_tile) : GSTunnel.GetOtherTunnelEnd(cur_tile);
+        local dist = GSMap.DistanceManhattan(cur_tile, other_end);
+        if (dist > 0) {
+          local next_after = cur_tile + (cur_tile - other_end) / dist;
+          // Can continue past the bridge/tunnel end.
+          if (GSMap.IsValidTile(next_after) &&
+              (GSRoad.AreRoadTilesConnected(cur_tile, next_after) ||
+               GSTile.IsBuildable(next_after) || GSRoad.IsRoadTile(next_after))) {
+            neighbors.append({ tile = next_after, extra_cost = 0, parent_tile = cur_tile, meta = null });
+          }
+          // Traverse the bridge/tunnel itself.
+          local traverse_cost = dist * C_TILE;
+          if (GSBridge.IsBridgeTile(cur_tile)) {
+            traverse_cost += this._GetBridgeNumSlopes(cur_tile, other_end) * C_SLOPE;
+          }
+          neighbors.append({ tile = other_end, extra_cost = traverse_cost - C_TILE,
+                             parent_tile = cur_tile, meta = null });
+        }
+      }
+      // Case 2: We just exited a bridge/tunnel (distance > 1 from parent).
+      else if (prev_tile != null && GSMap.DistanceManhattan(cur_tile, prev_tile) > 1) {
+        local dist = GSMap.DistanceManhattan(cur_tile, prev_tile);
+        if (dist > 0) {
+          local next_tile = cur_tile + (cur_tile - prev_tile) / dist;
+          if (GSMap.IsValidTile(next_tile) &&
+              (GSRoad.AreRoadTilesConnected(cur_tile, next_tile) ||
+               GSRoad.BuildRoad(cur_tile, next_tile))) {
+            neighbors.append({ tile = next_tile, extra_cost = 0, parent_tile = cur_tile, meta = null });
+          }
+        }
+      }
+      // Case 3: Normal tile — check 4 adjacent tiles + bridge/tunnel opportunities.
+      else {
+        foreach (offset in offsets) {
+          local next_tile = cur_tile + offset;
+          if (!GSMap.IsValidTile(next_tile)) continue;
+
+          if (GSRoad.AreRoadTilesConnected(cur_tile, next_tile)) {
+            // Already connected — free to traverse.
+            neighbors.append({ tile = next_tile, extra_cost = 0, parent_tile = cur_tile, meta = null });
+          } else if ((GSTile.IsBuildable(next_tile) || GSRoad.IsRoadTile(next_tile)) &&
+                     (prev_tile == cur_tile || // Start tile, no parent constraint.
+                      GSRoad.CanBuildConnectedRoadPartsHere(cur_tile, prev_tile, next_tile)) &&
+                     GSRoad.BuildRoad(cur_tile, next_tile)) {
+            // Can build road here (tested in GSTestMode).
+            neighbors.append({ tile = next_tile, extra_cost = 0, parent_tile = cur_tile, meta = null });
+          } else if (this._CheckTunnelBridge(cur_tile, next_tile)) {
+            // Existing bridge/tunnel entrance in the right direction.
+            neighbors.append({ tile = next_tile, extra_cost = 0, parent_tile = cur_tile, meta = null });
+          }
+        }
+        // Bridge/tunnel opportunities from current tile (only on slopes).
+        if (prev_tile != cur_tile && GSMap.DistanceManhattan(prev_tile, cur_tile) == 1) {
+          local bt = this._GetTunnelsBridges(prev_tile, cur_tile, MAX_BRIDGE, MAX_TUNNEL);
+          foreach (b in bt) {
+            local dist = GSMap.DistanceManhattan(cur_tile, b.tile);
+            local extra = 0;
+            if ("is_bridge" in b) {
+              extra = dist * C_BRIDGE + this._GetBridgeNumSlopes(cur_tile, b.tile) * C_SLOPE;
+            } else {
+              extra = dist * C_TUNNEL;
+            }
+            neighbors.append({ tile = b.tile, extra_cost = extra, parent_tile = cur_tile, meta = b });
+          }
+        }
+      }
+
+      // --- Evaluate each neighbor ---
+      foreach (nb in neighbors) {
+        local next_tile = nb.tile;
+        local nb_parent = nb.parent_tile;
+        // Compute cost for this edge.
+        local edge_cost = C_TILE + nb.extra_cost;
+        // No existing road penalty.
+        if (!GSRoad.AreRoadTilesConnected(nb_parent, next_tile) &&
+            GSMap.DistanceManhattan(nb_parent, next_tile) == 1) {
+          edge_cost += C_NO_ROAD;
+        }
+        // Turn penalty.
+        if (prev_tile != cur_tile &&
+            GSMap.DistanceManhattan(prev_tile, cur_tile) == 1 &&
+            GSMap.DistanceManhattan(cur_tile, next_tile) == 1 &&
+            (prev_tile - cur_tile) != (cur_tile - next_tile)) {
+          edge_cost += C_TURN;
+        }
+        // Coast penalty.
+        if (GSTile.IsCoastTile(next_tile)) edge_cost += C_COAST;
+        // Slope penalty.
+        if (prev_tile != cur_tile &&
+            GSMap.DistanceManhattan(prev_tile, cur_tile) == 1 &&
+            GSMap.DistanceManhattan(cur_tile, next_tile) == 1 &&
+            !GSBridge.IsBridgeTile(cur_tile) && !GSTunnel.IsTunnelTile(cur_tile) &&
+            this._IsSlopedRoad(prev_tile, cur_tile, next_tile)) {
+          edge_cost += C_SLOPE;
+        }
+
+        // Direction encoding for state key: based on entry direction.
+        local dir_idx;
+        if (nb_parent == next_tile) {
+          dir_idx = 0; // degenerate
+        } else {
+          local diff = next_tile - nb_parent;
+          if (diff == 1) dir_idx = 0;
+          else if (diff == -1) dir_idx = 1;
+          else if (diff > 1) dir_idx = 2; // +MapSizeX or bridge
+          else dir_idx = 3; // -MapSizeX or bridge
+        }
+        local next_key = next_tile * 4 + dir_idx;
+        local tentative_g = cur_g + edge_cost;
+
+        if (tentative_g < C_MAX &&
+            (!(next_key in g_cost) || tentative_g < g_cost[next_key])) {
+          g_cost[next_key] <- tentative_g;
+          came_from[next_key] <- cur_key;
+          state_tile[next_key] <- next_tile;
+          state_parent[next_key] <- nb_parent;
+          state_meta[next_key] <- nb.meta;
+          local nx = GSMap.GetTileX(next_tile);
+          local ny = GSMap.GetTileY(next_tile);
+          local h = this._Heuristic(nx, ny, to_x, to_y) * C_TILE;
+          this._HeapPush(open, tentative_g + h, next_key);
+        }
+      }
+    }
+
+    if (found_key == -1) {
+      return { success = false, iterations = iterations };
+    }
+
+    // Reconstruct path.
+    local path = [];
+    local key = found_key;
+    while (key != -1) {
+      local t = state_tile[key];
+      local entry = {
+        tile = t,
+        x = GSMap.GetTileX(t),
+        y = GSMap.GetTileY(t)
+      };
+      if (state_meta[key] != null) {
+        local m = state_meta[key];
+        if ("is_bridge" in m) entry.rawset("bridge_start", m.bridge_start);
+        if ("is_tunnel" in m) entry.rawset("tunnel_start", m.tunnel_start);
+      }
+      path.insert(0, entry);
+      key = came_from[key];
+    }
+    return { success = true, path = path, iterations = iterations };
+  }
+
+  // Build road along a path returned by _FindRoadPath.
+  function _BuildRoadPath(path) {
+    local built = 0;
+    local failed = [];
+    for (local i = 1; i < path.len(); i++) {
+      local prev = path[i - 1];
+      local cur = path[i];
+      local prev_tile = prev.tile;
+      local cur_tile = cur.tile;
+      local dist = GSMap.DistanceManhattan(prev_tile, cur_tile);
+      // Bridge segment.
+      if ("bridge_start" in cur) {
+        local bridge_list = GSBridgeList_Length(dist + 1);
+        if (!bridge_list.IsEmpty() &&
+            GSBridge.BuildBridge(GSVehicle.VT_ROAD, bridge_list.Begin(), cur.bridge_start, cur_tile)) {
+          built++;
+        } else {
+          local err = GSError.GetLastErrorString();
+          if (err == "ERR_ALREADY_BUILT") { built++; }
+          else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err }); }
+        }
+        continue;
+      }
+      // Tunnel segment.
+      if ("tunnel_start" in cur) {
+        if (GSTunnel.BuildTunnel(GSVehicle.VT_ROAD, cur.tunnel_start)) {
+          built++;
+        } else {
+          local err = GSError.GetLastErrorString();
+          if (err == "ERR_ALREADY_BUILT") { built++; }
+          else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err }); }
+        }
+        continue;
+      }
+      // Normal road segment (adjacent tiles).
+      if (dist == 1) {
+        if (GSRoad.AreRoadTilesConnected(prev_tile, cur_tile)) {
+          built++; // Already connected.
+        } else if (GSRoad.BuildRoad(prev_tile, cur_tile)) {
+          built++;
+        } else {
+          local err = GSError.GetLastErrorString();
+          if (err == "ERR_ALREADY_BUILT") { built++; }
+          else { failed.append({ x = cur.x, y = cur.y, action = "road", error = err }); }
+        }
+      }
+      // Traversal over existing bridge/tunnel (dist > 1, no build needed).
+      else {
+        built++;
+      }
+    }
+    return { built = built, failed = failed };
+  }
+
+  function CmdConnectRoad(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local road_type = ("road_type" in p) ? p.road_type : 0;
+    GSRoad.SetCurrentRoadType(road_type);
+    local pair = this._ResolveTilePair(p);
+    if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
+    local max_iter = ("max_iterations" in p) ? p.max_iterations : 50000;
+
+    // Phase 1: Pathfind (runs in GSTestMode internally).
+    local pf = this._FindRoadPath(pair.from.tile, pair.to.tile, max_iter);
+    if (!pf.success) {
+      return { success = false, error = "No road path found after " + pf.iterations + " iterations",
+               result = { iterations = pf.iterations } };
+    }
+
+    // Phase 2: Build the road.
+    local build = this._BuildRoadPath(pf.path);
+
+    // Compact path for response (just coordinates, skip meta).
+    local path_coords = [];
+    foreach (pt in pf.path) {
+      path_coords.append({ x = pt.x, y = pt.y });
+    }
+
+    return { success = true, result = {
+      path_length = pf.path.len(),
+      built = build.built,
+      failed = build.failed,
+      iterations = pf.iterations,
+      path = path_coords
+    }};
+  }
+
+  // ===========================================================================
   // BUILDING — RAIL
   // ===========================================================================
 
@@ -2267,6 +2690,74 @@ class NttdGS extends GSController {
       if (GSMap.IsValidTile(t) && GSRoad.IsRoadTile(t)) results.append({ nx = nx, ny = ny, dir = o.dir });
     }
     return results;
+  }
+
+  // ===========================================================================
+  // A* PATHFINDING UTILITIES
+  // ===========================================================================
+
+  function _HeapCreate() { return []; }
+
+  function _HeapPush(heap, priority, value) {
+    heap.append({ p = priority, v = value });
+    local i = heap.len() - 1;
+    while (i > 0) {
+      local pi = (i - 1) / 2;
+      if (heap[pi].p <= heap[i].p) break;
+      local tmp = heap[i];
+      heap[i] = heap[pi];
+      heap[pi] = tmp;
+      i = pi;
+    }
+  }
+
+  function _HeapPop(heap) {
+    if (heap.len() == 0) return null;
+    local result = heap[0];
+    local last = heap.pop();
+    if (heap.len() == 0) return result;
+    heap[0] = last;
+    local i = 0;
+    while (true) {
+      local left = 2 * i + 1;
+      local right = 2 * i + 2;
+      local smallest = i;
+      if (left < heap.len() && heap[left].p < heap[smallest].p) smallest = left;
+      if (right < heap.len() && heap[right].p < heap[smallest].p) smallest = right;
+      if (smallest == i) break;
+      local tmp = heap[i];
+      heap[i] = heap[smallest];
+      heap[smallest] = tmp;
+      i = smallest;
+    }
+    return result;
+  }
+
+  // Encode (x, y, dir) into a single integer key. Supports maps up to 4096x4096.
+  function _EncodeState(x, y, dir) {
+    return (x << 14) | (y << 2) | dir;
+  }
+
+  // Direction offsets: 0=NE(+x), 1=SE(+y), 2=SW(-x), 3=NW(-y)
+  function _GetDirDx(dir) {
+    if (dir == 0) return 1;
+    if (dir == 2) return -1;
+    return 0;
+  }
+
+  function _GetDirDy(dir) {
+    if (dir == 1) return 1;
+    if (dir == 3) return -1;
+    return 0;
+  }
+
+  // Manhattan distance heuristic.
+  function _Heuristic(x, y, gx, gy) {
+    local dx = x - gx;
+    local dy = y - gy;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx + dy;
   }
 
   // ===========================================================================

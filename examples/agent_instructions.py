@@ -82,17 +82,20 @@ ROUTE PLANNING (in your observation):
   USE THIS DATA to pick your first route! Choose the SHORTEST UNSERVED route for your
   transport type.
 
-PATHFINDING WORKFLOW (for road and rail agents):
-  Instead of building infrastructure tile-by-tile, use pathfind + build_path:
-  1. Pick a route from route_planning (note source_x/y and dest_x/y coordinates)
-  2. Call pathfind(from_x, from_y, to_x, to_y, transport_type) to get the optimal path
-     The pathfinder handles terrain, bridges over water, and tunnels through hills.
-  3. Output a build_path action with the path steps:
-     {{"action_type": "build_path", "parameters": {{
-       "steps": <pathfind_result.path>, "transport_type": "road",
-       "company_id": <your_company_id>}}}}
-  4. Check previous_actions next cycle -- build_path reports built/failed/skipped counts.
-     Some steps may fail (terrain). That is OK -- partial roads still work if towns connect.
+ROAD BUILDING (REQUIRED -- do NOT build roads manually):
+  connect_road   from_x, from_y, to_x, to_y (or tile_from, tile_to)
+                 Pathfinds and builds a complete road between two points in ONE action.
+                 Handles terrain, bridges over water, tunnels through hills, road crossings.
+                 Returns: {{path_length, built, failed, iterations, path}}
+  WARNING: Do NOT use build_road or build_road_line directly -- these fail >80% on
+  hilly terrain. ALWAYS use connect_road to build roads between any two points.
+
+RAIL BUILDING:
+  For rail, use pathfind + build_path:
+  1. Call pathfind(from_x, from_y, to_x, to_y, transport_type="rail") to get the path.
+  2. Output: build_path(steps=<pathfind_result.path>, transport_type="rail",
+     company_id=<your_company_id>)
+  3. Check previous_actions next cycle for built/failed/skipped counts.
 
 HOW TO USE TOOLS:
 1. Examine the game state provided in each cycle, including previous_actions results.
@@ -126,7 +129,13 @@ VEHICLE ISOLATION (specialized agents only):
   Your observation tools are FILTERED to only show vehicles and stations of YOUR
   transport type. You will NOT see other transport types in get_vehicles or get_stations.
   Other specialized agents manage other transport modes -- do NOT try to control them.
-  If get_vehicles returns an empty list, you have no vehicles yet -- buy one first."""
+  If get_vehicles returns an empty list, you have no vehicles yet -- buy one first.
+
+PATIENCE RULES:
+- Vehicles take time to travel and earn money. Negative profit in the first days is NORMAL.
+- Do NOT stop or sell vehicles that have been running for less than 200 game-days.
+- Check vehicle age and profit trend before making sell decisions.
+- A cycle with zero actions wastes time. If waiting for a vehicle, build another route."""
 
 # -- Action reference -------------------------------------------------------
 # Complete list of action_type values and their parameters.
@@ -164,14 +173,18 @@ MARINE:
   build_water_depot     tile
   remove_canal/lock/buoy/water_depot   tile
 
-PATHFINDING:
+PATHFINDING & CONNECTING:
+  connect_road          from_x, from_y, to_x, to_y (or tile_from, tile_to)
+                        Pathfinds and builds a complete road between two points in ONE action.
+                        Uses A* pathfinding with bridges over water, tunnels through hills.
+                        Returns: {path_length, built, failed, iterations, path}
+                        THIS IS THE PREFERRED WAY TO BUILD ROADS. Do not use build_road manually.
   build_path            steps, transport_type, company_id
-                        Executes a pre-calculated path from pathfind tool.
+                        Executes a pre-calculated path from pathfind tool (for rail).
                         steps = the "path" array from pathfind() result (pass it directly!)
                         transport_type = "road" or "rail"
                         company_id = your company ID
                         Returns: {built, failed, skipped, total_steps, errors}
-                        Some steps may fail (terrain) -- partial success is normal.
 
 AIR & MISC:
   build_airport         tile, airport_type
@@ -186,6 +199,8 @@ AIR & MISC:
 VEHICLES:
   buy_vehicle           depot_tile, engine_id  (<- engine_id from get_engines)
   sell_vehicle          vehicle_id
+                        IMPORTANT: sell_vehicle ONLY works when the vehicle is at a depot.
+                        After send_to_depot, WAIT at least 2 cycles before sell_vehicle.
   start_vehicle         vehicle_id
   stop_vehicle          vehicle_id
   send_to_depot         vehicle_id
@@ -258,17 +273,14 @@ PHASE 2 -- CONNECT ROAD (cycle 2):
   CRITICAL: Towns do NOT have roads between them! You MUST build a connecting road
   or your buses will never reach the other town and earn zero revenue.
   a. Check previous_actions -- did the builds succeed? If not, fix failures first.
-  b. Use pathfind + build_path to connect the two towns:
-     - Call pathfind(from_x=<stop_A.x>, from_y=<stop_A.y>, to_x=<stop_B.x>,
-       to_y=<stop_B.y>, transport_type="road")
-     - The pathfinder automatically routes around obstacles, builds bridges over water,
-       and tunnels through hills.
-     - Output: build_path(steps=<pathfind_result.path>, transport_type="road",
-       company_id={company_id})
-  c. Check previous_actions next cycle. build_path reports built/failed/skipped.
-     Some steps may fail (terrain). Partial roads still work if they reach town borders.
-  d. FALLBACK (if pathfind is unavailable): build_road_line ONLY works for AXIS-ALIGNED
-     tiles (same x OR same y). For diagonal routes, use an L-shaped path with TWO calls.
+  b. Use connect_road to build a road between the two stops:
+     {{"action_type": "connect_road", "parameters": {{
+       "from_x": <stop_A.x>, "from_y": <stop_A.y>,
+       "to_x": <stop_B.x>, "to_y": <stop_B.y>}}}}
+     This automatically pathfinds around hills, builds bridges over water,
+     tunnels through mountains, and handles road crossings. One action, done.
+  c. Check previous_actions next cycle. connect_road reports built/failed counts.
+     Some segments may fail (terrain). Partial roads still work if they reach town borders.
 
 PHASE 3 -- ORDERS AND START (cycle 3):
   a. Call get_vehicles to find your new vehicle's ID.
@@ -303,6 +315,18 @@ CRITICAL RULES:
 - Bus engines have cargo_label="PASS". Truck engines have other cargo labels.
   A bus CANNOT use a truck stop. Match vehicle type to stop type.
 
+OPERATING RULES -- PATIENCE:
+- After starting a vehicle, DO NOT stop, sell, or modify it for at least 100 game-days.
+  A bus needs 50-100 days for ONE round trip on a medium route.
+- A vehicle needs at least 3 round trips to show positive profit. That is 150-300 game-days.
+- If profit_this_year is negative but the vehicle is young, WAIT. This is normal.
+- Only sell a vehicle if it has been running for 300+ days AND still has negative profit.
+- NEVER sell ALL vehicles -- always keep at least one route running.
+- sell_vehicle ONLY works when the vehicle is physically at a depot.
+  After send_to_depot, WAIT at least 2 cycles before attempting sell_vehicle.
+- A cycle with no actions is WASTED time. Always do something productive:
+  if your route is running, start building the NEXT route.
+
 {tile_system}
 
 {multi_turn_guide}
@@ -325,7 +349,7 @@ STRATEGY:
 1. Check route_planning in your observation for pre-computed route opportunities.
    Pick the SHORTEST UNSERVED route for your first route -- short routes = fast revenue.
 2. Start with a bus route between two close towns (simplest, fastest revenue).
-   Use pathfind + build_path to connect them instead of manual road building.
+   Use connect_road to build road between towns (handles pathfinding automatically).
 3. Once that's working, add truck routes connecting industries to towns.
 4. Expand to rail for high-volume cargo. Use pathfind + build_path for track.
 5. Consider aircraft for long-distance passenger routes (100+ tiles apart).

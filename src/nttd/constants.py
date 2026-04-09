@@ -17,6 +17,9 @@ ACTION_CATEGORIES: dict[str, list[str]] = {
         "build_canal", "build_lock", "build_buoy", "build_water_depot",
         "remove_canal", "remove_lock", "remove_buoy", "remove_water_depot",
     ],
+    "pathfinding": [
+        "build_path", "connect_road", "connect_rail",
+    ],
     "air_and_other": [
         "build_airport", "remove_airport", "open_close_airport",
         "build_dock", "build_bridge", "build_tunnel", "demolish_tile",
