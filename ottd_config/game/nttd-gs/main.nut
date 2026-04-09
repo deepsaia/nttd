@@ -543,12 +543,36 @@ class NttdGS extends GSController {
     foreach (id, _ in GSIndustryList()) {
       local loc = GSIndustry.GetLocation(id);
       local itype = GSIndustry.GetIndustryType(id);
+      // Collect production and accepted cargo for each industry
+      local produced = [];
+      foreach (cargo_id, _ in GSCargoList()) {
+        local last = GSIndustry.GetLastMonthProduction(id, cargo_id);
+        if (last > 0) {
+          produced.append({
+            cargo_id = cargo_id,
+            cargo_label = GSCargo.GetCargoLabel(cargo_id),
+            last_month = last,
+            transported = GSIndustry.GetLastMonthTransported(id, cargo_id)
+          });
+        }
+      }
+      local accepted_list = [];
+      foreach (cargo_id, _ in GSCargoList()) {
+        if (GSIndustry.IsCargoAccepted(id, cargo_id)) {
+          accepted_list.append({
+            cargo_id = cargo_id,
+            cargo_label = GSCargo.GetCargoLabel(cargo_id)
+          });
+        }
+      }
       industries.append({
         id = id, name = GSIndustry.GetName(id),
         type_id = itype, type_name = GSIndustryType.GetName(itype),
         x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
         is_raw = GSIndustryType.IsRawIndustry(itype),
         is_processing = GSIndustryType.IsProcessingIndustry(itype),
+        production = produced,
+        accepted = accepted_list,
       });
     }
     return { success = true, result = industries };

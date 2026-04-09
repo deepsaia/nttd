@@ -19,6 +19,7 @@ ALL_SECTIONS: frozenset[str] = frozenset({
     "top_towns",
     "industries",
     "routes",
+    "route_planning",
     "subsidies",
     "game",
 })
@@ -46,8 +47,9 @@ _BUILTIN_PRESETS: list[SnapshotClass] = [
         name="agent",
         sections=frozenset({
             "company", "vehicles_detail", "stations_detail", "top_towns", "industries",
+            "routes", "route_planning",
         }),
-        description="Rich observation for agents: vehicles with orders, stations with cargo, industries",
+        description="Rich observation for agents: vehicles, stations, industries, route planning",
     ),
     SnapshotClass(
         name="standard",

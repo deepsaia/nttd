@@ -8,6 +8,11 @@ class IndustryProduction(BaseModel):
     transported: int = 0
 
 
+class IndustryAcceptance(BaseModel):
+    cargo_id: int = 0
+    cargo_label: str = ""
+
+
 class Industry(BaseModel):
     id: int
     name: str = ""
@@ -18,3 +23,4 @@ class Industry(BaseModel):
     is_raw: bool = False
     is_processing: bool = False
     production: list[IndustryProduction] = []
+    accepted: list[IndustryAcceptance] = []

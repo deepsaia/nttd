@@ -1,14 +1,9 @@
 # nttd
 
+Agent-agnostic OpenTTD as an AI simulation and benchmarking environment.
+
 ## When in doubt,
-Refer to nttd/docs/nttd_architecture_report.md
-
-Agent-agnostic API server wrapping OpenTTD as an AI simulation environment.
-
-- Architecture: `docs/nttd_architecture_report.md`
-- Plan: `plan.md`
-- Run server: `uv run uvicorn nttd.api.app:app --reload`
-- Run tests: `uv run pytest`
+- When in doubt, read `docs/cli_guide.md`
 - Lint: `uv run ruff check src/ tests/`
 
 ---

@@ -5,7 +5,7 @@ from typing import Any
 from nttd.schemas.cargo_flow import CargoFlow
 from nttd.schemas.company import Company
 from nttd.schemas.game import GameState, RuntimeMode
-from nttd.schemas.industry import Industry, IndustryProduction
+from nttd.schemas.industry import Industry, IndustryAcceptance, IndustryProduction
 from nttd.schemas.infrastructure import InfrastructureCosts
 from nttd.schemas.route import Route
 from nttd.schemas.snapshot import StateSnapshot
@@ -107,6 +107,13 @@ class WorldState:
                 )
                 for p in r.get("production", [])
             ]
+            accepted = [
+                IndustryAcceptance(
+                    cargo_id=a.get("cargo_id", 0),
+                    cargo_label=a.get("cargo_label", ""),
+                )
+                for a in r.get("accepted", [])
+            ]
             self.industries[iid] = Industry(
                 id=iid,
                 name=r.get("name", ""),
@@ -117,6 +124,7 @@ class WorldState:
                 is_raw=r.get("is_raw", False),
                 is_processing=r.get("is_processing", False),
                 production=production,
+                accepted=accepted,
             )
         for iid in list(self.industries.keys()):
             if iid not in seen:

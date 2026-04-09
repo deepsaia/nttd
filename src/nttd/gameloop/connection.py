@@ -27,6 +27,7 @@ from nttd.interpreter.parser import parse_action_list
 from nttd.interpreter.validator import validate_actions
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
+from nttd.state.route_planner import RoutePlanner
 
 if TYPE_CHECKING:
     from nttd.runtime.session_runtime import SessionRuntime
@@ -476,6 +477,14 @@ class AgentConnection:
                 {
                     "id": ind.id, "name": ind.name, "type_name": ind.type_name,
                     "x": ind.x, "y": ind.y, "is_raw": ind.is_raw,
+                    "production": [
+                        {"cargo_label": p.cargo_label, "last_month": p.last_month}
+                        for p in ind.production
+                    ],
+                    "accepted": [
+                        {"cargo_label": a.cargo_label}
+                        for a in ind.accepted
+                    ],
                 }
                 for ind in world.industries.values()
             ]
@@ -486,11 +495,33 @@ class AgentConnection:
                     "id": s.id, "cargo_label": s.cargo_label,
                     "src_name": s.src_name, "dst_name": s.dst_name,
                 }
-                for s in world.subsidies.values()
+                for s in world.subsidies
             ]
 
+        if "routes" in sections or "route_planning" in sections:
+            derived_routes = world._derive_routes()
+            planner = RoutePlanner(
+                industries=list(world.industries.values()),
+                towns=list(world.towns.values()),
+                stations=list(world.stations.values()),
+                routes=derived_routes,
+            )
+
         if "routes" in sections:
-            obs["routes"] = []
+            obs["routes"] = [
+                {
+                    "route_id": r.route_id,
+                    "vehicle_type": r.vehicle_type,
+                    "station_ids": r.station_ids,
+                    "vehicle_count": r.vehicle_count,
+                    "profit_this_year": r.total_profit_this_year,
+                }
+                for r in derived_routes
+                if not allowed_vtypes or r.vehicle_type in allowed_vtypes
+            ]
+
+        if "route_planning" in sections:
+            obs["route_planning"] = planner.for_agent(company_id, self.config.agent_type)
 
         # Always include previous cycle's action results so agent can learn
         if self._last_cycle_results:
