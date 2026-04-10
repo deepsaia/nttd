@@ -43,6 +43,5 @@ ottd_config/ai/*
 # nttd runtime output
 runs/
 logs/
-reports/
 *.db
 *.db-*
