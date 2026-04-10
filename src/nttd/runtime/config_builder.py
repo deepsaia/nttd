@@ -146,9 +146,13 @@ def build_session_config(
         if src.exists() and not dst.exists():
             os.symlink(src.resolve(), dst)
 
-    # --- Create session-specific directories ---
-    for dirname in ["save", "scenario", "screenshot"]:
-        (session_dir / dirname).mkdir(exist_ok=True)
+    # --- Create session-specific directories (only as needed) ---
+    (session_dir / "scenario").mkdir(exist_ok=True)
+    effective = settings or {}
+    if int(effective.get("_save_interval_seconds", "0")) > 0:
+        (session_dir / "save").mkdir(exist_ok=True)
+    if int(effective.get("_screenshot_interval_seconds", "0")) > 0:
+        (session_dir / "screenshot").mkdir(exist_ok=True)
 
     logger.info(
         "Built session config: %s (game_port=%d, admin_port=%d)",

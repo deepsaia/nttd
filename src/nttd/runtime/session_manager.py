@@ -211,7 +211,7 @@ class SessionManager:
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:
         """Remove OpenTTD config files and symlinks, keep session data.
 
-        Preserves: session.conf, agents.conf, _fragments/, *.parquet,
+        Preserves: session.parquet, agents.parquet, _fragments/, *.parquet,
                    save/ (game saves), screenshot/ (minimap captures).
         """
         # Files created by config_builder or OpenTTD runtime
@@ -231,7 +231,7 @@ class SessionManager:
             if p.is_symlink():
                 p.unlink()
 
-        # Remove transient OpenTTD dirs (not save/ or screenshot/)
+        # Remove transient OpenTTD dirs
         transient_dirs = [
             "scenario", "baseset", "newgrf", "content_download", "social_integration",
         ]
@@ -239,6 +239,12 @@ class SessionManager:
             p = session_dir / name
             if p.is_dir() and not p.is_symlink():
                 shutil.rmtree(p, ignore_errors=True)
+
+        # Remove save/ and screenshot/ if they are empty (feature was disabled)
+        for name in ["save", "screenshot"]:
+            p = session_dir / name
+            if p.is_dir() and not any(p.iterdir()):
+                p.rmdir()
 
         logger.info("Cleaned up config artifacts in %s", session_dir)
 

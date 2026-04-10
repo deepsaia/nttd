@@ -14,7 +14,6 @@ from typing import Any
 
 import pandas as pd
 import polars as pl
-from pyhocon import ConfigFactory
 
 logger = logging.getLogger(__name__)
 
@@ -135,11 +134,10 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
 
     data = SessionData(session_id=session_id, session_dir=session_dir)
 
-    # Load session.conf
-    conf_path = session_dir / "session.conf"
-    if conf_path.exists():
-        conf = ConfigFactory.parse_file(str(conf_path))
-        sess = conf.get("session", {})
+    # Load session metadata (parquet preferred, .conf fallback)
+    from nttd.db.conf_writer import read_agents_conf, read_session_conf
+    sess = read_session_conf(session_dir)
+    if sess:
         data.name = sess.get("name", session_id)
         data.status = sess.get("status", "")
         data.created_at = sess.get("created_at", "")
@@ -148,15 +146,10 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
         data.end_reason = sess.get("end_reason", "")
         data.game_port = sess.get("game_port", 0)
         data.admin_port = sess.get("admin_port", 0)
-        data.settings = dict(conf.get("settings", {}))
+        data.settings = sess.get("settings", {})
 
-    # Load agents.conf
-    agents_path = session_dir / "agents.conf"
-    if agents_path.exists():
-        agents_conf = ConfigFactory.parse_file(str(agents_path))
-        agents_tree = agents_conf.get("agents", {})
-        for agent_id in agents_tree:
-            data.agents[agent_id] = dict(agents_tree[agent_id])
+    # Load agent data (parquet preferred, .conf fallback)
+    data.agents = read_agents_conf(session_dir)
 
     # Load Parquet files (merged or fragments for in-progress sessions)
     for parquet_type in _PARQUET_TYPES:

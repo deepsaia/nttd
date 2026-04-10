@@ -77,7 +77,7 @@ class Orchestrator:
         # Periodic screenshot/save intervals (wall-clock seconds, 0 = disabled)
         self._screenshot_interval_seconds: float = 60.0
         self._screenshot_type: str = "minimap"  # normal | giant | minimap
-        self._save_interval_seconds: float = 300.0
+        self._save_interval_seconds: float = 0.0
         # Notified when the simulation ends due to an end condition
         self.on_end: list[Any] = []
 
@@ -436,10 +436,12 @@ class Orchestrator:
             end_result = self._end_checker.check(snapshot)
             if end_result.triggered:
                 logger.info("Async real-time simulation ended: %s", end_result.reason)
-                # Final screenshot and save before ending
+                # Final screenshot and save before ending (only if enabled)
                 if self.client.connected:
-                    await self._capture_screenshot()
-                    await self._capture_save(snapshot.game.game_date, suffix="_final")
+                    if self._screenshot_interval_seconds > 0:
+                        await self._capture_screenshot()
+                    if self._save_interval_seconds > 0:
+                        await self._capture_save(snapshot.game.game_date, suffix="_final")
                 for cb in self.on_end:
                     try:
                         result = cb(end_result.reason)

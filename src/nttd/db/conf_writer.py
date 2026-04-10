@@ -1,38 +1,26 @@
-"""HOCON config writer for session metadata and agent connection data.
+"""Session metadata and agent connection writer/reader.
 
-Writes session.conf and agents.conf files under each session's log directory.
-Uses pyhocon for parsing and manual formatting for output (pyhocon's writer
-is limited, so we use a simple key=value approach).
+Writes session.parquet and agents.parquet under each session's log directory.
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
+import polars as pl
+
 logger = logging.getLogger(__name__)
 
 
-def _quote(value: Any) -> str:
-    """Format a value for HOCON output."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int | float):
-        return str(value)
-    if value is None:
-        return "null"
-    return f'"{value}"'
+# ---------------------------------------------------------------------------
+# session.parquet -- single-row DataFrame with session metadata
+# ---------------------------------------------------------------------------
 
-
-def _write_block(lines: list[str], indent: str, key: str, data: dict[str, Any]) -> None:
-    """Write a HOCON block with key = value pairs."""
-    lines.append(f"{indent}{key} {{")
-    inner = indent + "  "
-    for k, v in data.items():
-        if isinstance(v, dict):
-            _write_block(lines, inner, k, v)
-        else:
-            lines.append(f"{inner}{k} = {_quote(v)}")
-    lines.append(f"{indent}}}")
+_SESSION_FIELDS = [
+    "session_id", "name", "status", "created_at", "started_at",
+    "ended_at", "end_reason", "game_port", "admin_port", "pid",
+]
 
 
 def write_session_conf(
@@ -50,112 +38,123 @@ def write_session_conf(
     settings: dict[str, str] | None = None,
     meta: dict[str, Any] | None = None,
 ) -> Path:
-    """Write or overwrite session.conf with current session state."""
+    """Write or overwrite session.parquet with current session state."""
     session_dir.mkdir(parents=True, exist_ok=True)
-    conf_path = session_dir / "session.conf"
+    parquet_path = session_dir / "session.parquet"
 
-    lines: list[str] = []
-
-    session_data: dict[str, Any] = {
-        "id": session_id,
-        "name": name,
+    row: dict[str, Any] = {
+        "session_id": session_id,
+        "name": name or "",
         "status": status,
+        "created_at": created_at or "",
+        "started_at": started_at or "",
+        "ended_at": ended_at or "",
+        "end_reason": end_reason or "",
+        "game_port": game_port or 0,
+        "admin_port": admin_port or 0,
+        "pid": pid or 0,
+        "settings_json": json.dumps(settings) if settings else "{}",
+        "meta_json": json.dumps(meta) if meta else "{}",
     }
-    if created_at:
-        session_data["created_at"] = created_at
-    if started_at:
-        session_data["started_at"] = started_at
-    if ended_at:
-        session_data["ended_at"] = ended_at
-    if end_reason:
-        session_data["end_reason"] = end_reason
-    if game_port is not None:
-        session_data["game_port"] = game_port
-    if admin_port is not None:
-        session_data["admin_port"] = admin_port
-    if pid is not None:
-        session_data["pid"] = pid
 
-    _write_block(lines, "", "session", session_data)
-
-    if settings:
-        lines.append("")
-        settings_block: dict[str, Any] = {}
-        for k, v in settings.items():
-            settings_block[f'"{k}"'] = v
-        lines.append("settings {")
-        for k, v in settings.items():
-            lines.append(f'  "{k}" = {_quote(v)}')
-        lines.append("}")
-
-    if meta:
-        lines.append("")
-        _write_block(lines, "", "meta", meta)
-
-    lines.append("")
-    conf_path.write_text("\n".join(lines))
-    logger.debug("Wrote session.conf: %s", conf_path)
-    return conf_path
+    df = pl.DataFrame([row])
+    df.write_parquet(parquet_path)
+    logger.debug("Wrote session.parquet: %s", parquet_path)
+    return parquet_path
 
 
 def update_session_conf(
     session_dir: Path,
     updates: dict[str, Any],
 ) -> None:
-    """Update specific fields in session.conf by reading, modifying, and rewriting.
+    """Update specific fields in session.parquet.
 
-    For simplicity, reads the existing conf with pyhocon, merges updates,
-    and rewrites. Updates should be flat keys like 'session.status' or
-    'session.ended_at'.
+    Keys use dot-separated paths: 'session.status', 'session.ended_at', etc.
+    The 'session.' prefix is stripped to get the column name.
     """
-    conf_path = session_dir / "session.conf"
-    if not conf_path.exists():
-        logger.warning("Cannot update session.conf -- file not found: %s", conf_path)
+    data = read_session_conf(session_dir)
+    if data is None:
+        logger.warning("Cannot update session -- no data found: %s", session_dir)
         return
 
+    for key, value in updates.items():
+        field = key.removeprefix("session.")
+        data[field] = value
+
+    settings = data.pop("settings", None)
+    meta = data.pop("meta", None)
+
+    write_session_conf(
+        session_dir=session_dir,
+        session_id=data.get("session_id", ""),
+        name=data.get("name", ""),
+        status=data.get("status", ""),
+        created_at=data.get("created_at"),
+        started_at=data.get("started_at"),
+        ended_at=data.get("ended_at"),
+        end_reason=data.get("end_reason"),
+        game_port=data.get("game_port"),
+        admin_port=data.get("admin_port"),
+        pid=data.get("pid"),
+        settings=settings,
+        meta=meta,
+    )
+
+
+def read_session_conf(session_dir: Path) -> dict[str, Any] | None:
+    """Read session metadata from session.parquet."""
+    parquet_path = session_dir / "session.parquet"
+    if not parquet_path.exists():
+        return None
+
     try:
-        from pyhocon import ConfigFactory
-        config = ConfigFactory.parse_file(str(conf_path))
-
-        # Apply updates (dot-separated paths)
-        for key, value in updates.items():
-            parts = key.split(".")
-            node = config
-            for part in parts[:-1]:
-                if part not in node:
-                    node[part] = {}
-                node = node[part]
-            node[parts[-1]] = value
-
-        # Rewrite the file
-        _rewrite_conf_from_tree(conf_path, config)
-        logger.debug("Updated session.conf: %s (keys: %s)", conf_path, list(updates.keys()))
-    except ImportError:
-        logger.warning("pyhocon not installed -- cannot update session.conf")
+        df = pl.read_parquet(parquet_path)
+        if df.is_empty():
+            return None
+        row = df.row(0, named=True)
+        result: dict[str, Any] = {}
+        for field in _SESSION_FIELDS:
+            if field in row:
+                result[field] = row[field]
+        settings_raw = row.get("settings_json", "{}")
+        result["settings"] = json.loads(settings_raw) if settings_raw else {}
+        meta_raw = row.get("meta_json", "{}")
+        meta = json.loads(meta_raw) if meta_raw else {}
+        if meta:
+            result["meta"] = meta
+        return result
     except Exception:
-        logger.exception("Failed to update session.conf at %s", conf_path)
+        logger.exception("Failed to read session.parquet at %s", parquet_path)
+        return None
 
+
+# ---------------------------------------------------------------------------
+# agents.parquet -- one row per agent
+# ---------------------------------------------------------------------------
 
 def write_agents_conf(
     session_dir: Path,
     agents: dict[str, dict[str, Any]],
 ) -> Path:
-    """Write or overwrite agents.conf with current agent connection data."""
+    """Write or overwrite agents.parquet with current agent data."""
     session_dir.mkdir(parents=True, exist_ok=True)
-    conf_path = session_dir / "agents.conf"
+    parquet_path = session_dir / "agents.parquet"
 
-    lines: list[str] = ["agents {"]
+    rows: list[dict[str, Any]] = []
     for agent_id, agent_data in agents.items():
-        lines.append(f'  "{agent_id}" {{')
+        row = {"agent_id": agent_id}
         for k, v in agent_data.items():
-            lines.append(f"    {k} = {_quote(v)}")
-        lines.append("  }")
-    lines.append("}")
-    lines.append("")
+            row[k] = v
+        rows.append(row)
 
-    conf_path.write_text("\n".join(lines))
-    logger.debug("Wrote agents.conf: %s", conf_path)
-    return conf_path
+    if rows:
+        df = pl.DataFrame(rows)
+    else:
+        df = pl.DataFrame({"agent_id": []})
+
+    df.write_parquet(parquet_path)
+    logger.debug("Wrote agents.parquet: %s", parquet_path)
+    return parquet_path
 
 
 def update_agent_in_conf(
@@ -163,106 +162,30 @@ def update_agent_in_conf(
     agent_id: str,
     agent_data: dict[str, Any],
 ) -> None:
-    """Add or update a single agent entry in agents.conf."""
-    conf_path = session_dir / "agents.conf"
-
-    # Read existing agents
-    existing: dict[str, dict[str, Any]] = {}
-    if conf_path.exists():
-        try:
-            from pyhocon import ConfigFactory
-            config = ConfigFactory.parse_file(str(conf_path))
-            agents_tree = config.get("agents", {})
-            for aid in agents_tree:
-                existing[aid] = dict(agents_tree[aid])
-        except Exception:
-            logger.warning("Failed to parse existing agents.conf, overwriting")
-
-    # Merge update
+    """Add or update a single agent entry in agents.parquet."""
+    existing = read_agents_conf(session_dir)
     if agent_id in existing:
         existing[agent_id].update(agent_data)
     else:
         existing[agent_id] = agent_data
-
     write_agents_conf(session_dir, existing)
 
 
-def read_session_conf(session_dir: Path) -> dict[str, Any] | None:
-    """Read session.conf and return parsed data, or None if not found."""
-    conf_path = session_dir / "session.conf"
-    if not conf_path.exists():
-        return None
-
-    try:
-        from pyhocon import ConfigFactory
-        config = ConfigFactory.parse_file(str(conf_path))
-        result: dict[str, Any] = {}
-
-        # Session block
-        session = config.get("session", {})
-        for key in session:
-            result[key] = session[key]
-        # Rename 'id' to 'session_id' for API consistency
-        if "id" in result and "session_id" not in result:
-            result["session_id"] = result.pop("id")
-
-        # Settings block (keys are stored quoted, strip surrounding quotes)
-        settings = config.get("settings", {})
-        if settings:
-            result["settings"] = {k.strip('"'): v for k, v in dict(settings).items()}
-
-        # Meta block
-        meta = config.get("meta", {})
-        if meta:
-            result["meta"] = dict(meta)
-
-        return result
-    except ImportError:
-        logger.warning("pyhocon not installed -- cannot read session.conf")
-        return None
-    except Exception:
-        logger.exception("Failed to read session.conf at %s", conf_path)
-        return None
-
-
 def read_agents_conf(session_dir: Path) -> dict[str, dict[str, Any]]:
-    """Read agents.conf and return dict of agent_id -> agent_data."""
-    conf_path = session_dir / "agents.conf"
-    if not conf_path.exists():
+    """Read agent data from agents.parquet."""
+    parquet_path = session_dir / "agents.parquet"
+    if not parquet_path.exists():
         return {}
 
     try:
-        from pyhocon import ConfigFactory
-        config = ConfigFactory.parse_file(str(conf_path))
-        agents_tree = config.get("agents", {})
+        df = pl.read_parquet(parquet_path)
         result: dict[str, dict[str, Any]] = {}
-        for aid in agents_tree:
-            result[aid] = dict(agents_tree[aid])
+        for row in df.iter_rows(named=True):
+            agent_id = row.pop("agent_id", None)
+            if agent_id is None:
+                continue
+            result[agent_id] = {k: v for k, v in row.items() if v is not None}
         return result
-    except ImportError:
-        logger.warning("pyhocon not installed -- cannot read agents.conf")
-        return {}
     except Exception:
-        logger.exception("Failed to read agents.conf at %s", conf_path)
+        logger.exception("Failed to read agents.parquet at %s", parquet_path)
         return {}
-
-
-def _rewrite_conf_from_tree(conf_path: Path, config: Any) -> None:
-    """Rewrite a conf file from a pyhocon ConfigTree."""
-    lines: list[str] = []
-    _tree_to_lines(lines, "", config)
-    lines.append("")
-    conf_path.write_text("\n".join(lines))
-
-
-def _tree_to_lines(lines: list[str], indent: str, node: Any) -> None:
-    """Recursively convert a pyhocon ConfigTree to HOCON lines."""
-    for key in node:
-        value = node[key]
-        # Check if value is a config tree (dict-like)
-        if hasattr(value, "__iter__") and hasattr(value, "get") and not isinstance(value, str):
-            lines.append(f"{indent}{key} {{")
-            _tree_to_lines(lines, indent + "  ", value)
-            lines.append(f"{indent}}}")
-        else:
-            lines.append(f"{indent}{key} = {_quote(value)}")

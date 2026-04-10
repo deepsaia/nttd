@@ -77,7 +77,10 @@ def generate(sessions: list[SessionData]) -> ReportResult:
 
         md_lines.append(f"## {summary['session_id']} ({summary['model']})")
         md_lines.append(f"- **Game days elapsed**: {summary['game_days_elapsed']}")
-        md_lines.append(f"- **Balance**: {summary['initial_balance']:,} -> {summary['final_balance']:,} (cumulative delta: {summary['balance_delta']:+,})")
+        init = summary["initial_balance"]
+        final = summary["final_balance"]
+        delta = summary["balance_delta"]
+        md_lines.append(f"- **Balance**: {init:,} -> {final:,} (cumulative delta: {delta:+,})")
         md_lines.append(f"- **Peak balance**: {summary['peak_balance']:,}")
         md_lines.append(f"- **Min balance**: {summary['min_balance']:,}")
         md_lines.append(f"- **Income (this year)**: {summary['income_this_year']:,}")

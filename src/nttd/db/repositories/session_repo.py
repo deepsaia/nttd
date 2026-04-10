@@ -1,7 +1,7 @@
-"""Repository for session CRUD -- reads/writes HOCON .conf files.
+"""Repository for session CRUD -- reads/writes parquet files.
 
-Session data is stored in logs/sessions/<session_id>/session.conf.
-Listing sessions scans the directory for all session.conf files.
+Session data is stored in logs/sessions/<session_id>/session.parquet.
+Listing sessions scans the directory for all session.parquet files.
 """
 
 import logging
@@ -148,12 +148,9 @@ async def list_sessions(
 
 
 async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
-    """Store effective settings in session.conf under the settings block.
+    """Store effective settings in session.parquet.
 
-    Reads the existing conf, merges settings, and rewrites the file.
-    Settings keys contain dots (e.g. "game_creation.map_x") which must be
-    quoted in HOCON to prevent pyhocon from treating them as nested paths.
-    We rebuild the settings block manually to preserve dotted keys as literals.
+    Reads the existing data, merges settings, and rewrites the file.
     """
     session_dir = _SESSIONS_DIR / session_id
     conf_path = session_dir / "session.conf"
