@@ -166,7 +166,7 @@ Use `--agent-companies` to pre-create company slots that your agents will contro
 
 #### `nttd session stop`
 
-Stop the OpenTTD server and finalize session data (merges Parquet fragments, updates session.conf).
+Stop the OpenTTD server and finalize session data (merges Parquet fragments, updates session.parquet).
 
 ```bash
 nttd session stop -s <session_id>
@@ -391,7 +391,7 @@ scenario {
     screenshot_type = "minimap"        # normal | giant | minimap
 
     # Periodic .sav game save
-    save_interval_seconds = 300        # 0 = disabled
+    save_interval_seconds = 0          # 0 = disabled (default)
   }
 
   end_conditions {
@@ -488,7 +488,7 @@ This is an important distinction: the HOCON config file uses hierarchical paths 
 | `_snapshot_interval_days`       | `runtime.snapshot_interval_days`         | int    | `1`              | Game-days between snapshots       |
 | `_screenshot_interval_seconds`  | `runtime.screenshot_interval_seconds`    | int    | `60`             | Seconds between screenshots (0=off) |
 | `_screenshot_type`              | `runtime.screenshot_type`                | string | `minimap`        | `normal`, `giant`, or `minimap`   |
-| `_save_interval_seconds`        | `runtime.save_interval_seconds`          | int    | `300`            | Seconds between saves (0=off)     |
+| `_save_interval_seconds`        | `runtime.save_interval_seconds`          | int    | `0`              | Seconds between saves (0=off)     |
 
 ### End Condition Settings
 
@@ -528,16 +528,18 @@ Each session stores all data under `logs/sessions/<session_id>/`:
 
 ```
 logs/sessions/<session_id>/
-  session.conf            # Session metadata and settings (HOCON)
-  agents.conf             # Agent configs and final stats (HOCON)
+  session.parquet         # Session metadata and settings (single-row Parquet)
+  agents.parquet          # Agent configs (one row per agent)
   snapshots.parquet       # Game state time-series (companies, towns, vehicles)
   tiles.parquet           # Terrain data
   actions.parquet         # All agent actions with parameters
   agent_cycles.parquet    # Per-cycle telemetry (timing, action counts)
   events.parquet          # Lifecycle and game events
-  screenshot/             # Periodic minimap screenshots (.png)
-  save/                   # Periodic game saves (.sav)
+  screenshot/             # Periodic minimap screenshots (.png) -- only when enabled
+  save/                   # Periodic game saves (.sav) -- only when enabled
 ```
+
+The `screenshot/` and `save/` directories are only created when their respective intervals are non-zero in the scenario config. By default, saves are disabled (`save_interval_seconds = 0`) and screenshots are disabled (`screenshot_interval_seconds = 0`).
 
 Screenshots and saves use timestamped filenames like `d712283-06apr2026-182323pdt.png` where `d712283` is the in-game date. The final save gets a `_final` suffix.
 
@@ -682,7 +684,7 @@ Set your API key: `export OPENAI_API_KEY=sk-...` (required for `openai` and `lan
 Check that `NTTD_OPENTTD_BINARY` points to a valid OpenTTD binary and that `ottd_config/` exists with a valid configuration. Run OpenTTD manually once to download base graphics.
 
 **No screenshots or saves appearing**
-Screenshots and saves require the orchestrator to be running (auto-started with `session start`). Check that `screenshot_interval_seconds` and `save_interval_seconds` are non-zero in your scenario config.
+Screenshots and saves are disabled by default. Enable them in your scenario config by setting `screenshot_interval_seconds` and `save_interval_seconds` to non-zero values. The orchestrator (auto-started with `session start`) handles periodic capture.
 
 **Session data missing after stop**
-Session data (Parquet files, screenshots, saves, conf files) is preserved in `logs/sessions/<session_id>/`. Only OpenTTD config artifacts are cleaned up on stop.
+Session data (Parquet files, screenshots, saves) is preserved in `logs/sessions/<session_id>/`. Only OpenTTD config artifacts (openttd.cfg, symlinks, etc.) are cleaned up on stop.

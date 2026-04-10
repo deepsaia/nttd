@@ -33,14 +33,15 @@ All data lives in `logs/sessions/<session_id>/`:
 
 | File | Content |
 |------|---------|
-| `session.conf` | Session metadata, settings, timestamps |
-| `agents.conf` | Per-agent config and aggregate stats |
+| `session.parquet` | Session metadata, settings, timestamps (single-row) |
+| `agents.parquet` | Per-agent config (one row per agent) |
 | `actions.parquet` | Action history (type, status, agent, error) |
 | `agent_cycles.parquet` | Per-cycle telemetry (decide_ms, execute_ms) |
 | `events.parquet` | Game events (session_start, agent_start/stop) |
 | `snapshots.parquet` | Full game state snapshots (companies, vehicles, towns, etc.) |
 | `tiles.parquet` | Terrain data (height, slope, water/coast/buildable flags) |
-| `screenshot/` | PNG screenshots for timelapse video |
+| `screenshot/` | PNG screenshots for timelapse video (only created when enabled) |
+| `save/` | Periodic game saves (only created when enabled) |
 | `_fragments/` | In-progress session data (auto-merged on stop) |
 
 The loader uses polars for fast parquet I/O and supports reading from
@@ -51,17 +52,26 @@ The loader uses polars for fast parquet I/O and supports reading from
 Each report module exposes a `generate(sessions)` function that returns a
 `ReportResult` with structured data, Plotly figures, and markdown text.
 
+All reports include a **period header** showing the game date range (date_from,
+date_to, total_days). This is injected automatically by `run_reports()` into the
+markdown (blockquote after the title), JSON (`data["period"]` dict), and plot
+subtitles. Year-boundary metrics (last_year, total) only appear after a full
+game year has elapsed.
+
 | Report | Key Metrics | Figures |
 |--------|-------------|---------|
 | `session_summary` | Config, duration, agent list | Overview table |
 | `agent_performance` | Actions, success rate, latency | 4 charts |
-| `financial` | Balance, income, loan, infra costs | 2 timeseries |
-| `cargo_delivery` | Vehicle profits by transport mode | Transport finances |
-| `vehicle_fleet` | Vehicle roster, profit ranking | Entity growth |
+| `financial` | Balance, income (this_year/last_year/total), loan, infra costs | 2 timeseries |
+| `cargo_delivery` | Vehicle profits by transport mode (this_year/last_year/total) | Transport finances |
+| `vehicle_fleet` | Vehicle roster, profit ranking (this_year/last_year/total) | Entity growth |
 | `infrastructure` | Build counts by type/agent | 2 charts |
 | `events_timeline` | Chronological events | Timeline scatter |
 | `action_analysis` | Action types, top errors | 3 charts |
-| `orders` | Order chains, routes, per-vehicle orders | -- |
+| `orders` | Order chains, routes, per-vehicle profits (this_year/last_year/total) | -- |
+| `route_completion` | Route build success/failure, profitability | -- |
+| `cargo_routes` | Cargo flow per route, delivery counts | -- |
+| `cargo_distances` | Delivery distances by cargo type | -- |
 | `world_state` | Towns, industries, subsidies, cargo | -- |
 | `tile_map` | Terrain height, water %, town/station overlay | Heatmap |
 
