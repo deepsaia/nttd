@@ -20,15 +20,18 @@ def _compute_finance_summary(s: SessionData) -> dict:
     first = df.iloc[0]
     last = df.iloc[-1]
 
-    # Infrastructure maintenance costs (from pre-extracted columns)
+    # Infrastructure piece counts and maintenance costs (from pre-extracted columns)
+    infra_pieces = {}
     infra_costs = {}
-    for cost_col, label in [
-        ("c0_rail_cost", "rail"),
-        ("c0_road_cost", "road"),
-        ("c0_water_cost", "water"),
-        ("c0_station_cost", "station"),
-        ("c0_airport_cost", "airport"),
+    for label, pieces_col, cost_col in [
+        ("rail", "c0_rail_pieces", "c0_rail_cost"),
+        ("road", "c0_road_pieces", "c0_road_cost"),
+        ("water", "c0_water_pieces", "c0_water_cost"),
+        ("station", "c0_station_pieces", "c0_station_cost"),
+        ("airport", "c0_airport_pieces", "c0_airport_cost"),
     ]:
+        if pieces_col in last.index:
+            infra_pieces[label] = int(last.get(pieces_col, 0))
         if cost_col in last.index:
             infra_costs[label] = int(last.get(cost_col, 0))
 
@@ -58,6 +61,7 @@ def _compute_finance_summary(s: SessionData) -> dict:
         "peak_balance": int(df["c0_balance"].max()),
         "min_balance": int(df["c0_balance"].min()),
         "game_days_elapsed": game_days_elapsed,
+        "infrastructure_pieces": infra_pieces,
         "infrastructure_costs": infra_costs,
     }
 
@@ -88,11 +92,17 @@ def generate(sessions: list[SessionData]) -> ReportResult:
             md_lines.append(f"- **Peak income (best year)**: {summary['peak_income']:,}")
         md_lines.append(f"- **Company value**: {summary['final_company_value']:,}")
         md_lines.append(f"- **Loan outstanding**: {summary['final_loan']:,}")
-        if summary.get("infrastructure_costs"):
-            md_lines.append("- **Infrastructure costs**:")
-            for label, cost in summary["infrastructure_costs"].items():
-                if cost > 0:
-                    md_lines.append(f"  - {label}: {cost:,}")
+        pieces = summary.get("infrastructure_pieces", {})
+        costs = summary.get("infrastructure_costs", {})
+        nonzero_pieces = {k: v for k, v in pieces.items() if v > 0}
+        if nonzero_pieces:
+            md_lines.append("- **Infrastructure**:")
+            for label, count in nonzero_pieces.items():
+                cost = costs.get(label, 0)
+                cost_str = f", maintenance: {cost:,}/mo" if cost > 0 else ""
+                md_lines.append(f"  - {label}: {count:,} pieces{cost_str}")
+        else:
+            md_lines.append("- **Infrastructure**: none")
         md_lines.append("")
 
     figures = [

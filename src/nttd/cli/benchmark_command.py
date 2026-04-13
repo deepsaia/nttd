@@ -133,7 +133,7 @@ def benchmark(
                 "ai_opponents": ai_count,
                 "agent_companies": len({a["company_id"] for a in agents_list}),
             },
-            timeout=30,
+            timeout=120,
         )
     resp.raise_for_status()
     start_data = resp.json()

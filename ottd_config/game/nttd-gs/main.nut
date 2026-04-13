@@ -10,6 +10,7 @@
 
 class NttdGS extends GSController {
   CHUNK_SIZE = 10;
+  _pathfind_queue = null;
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");

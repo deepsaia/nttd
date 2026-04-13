@@ -136,6 +136,10 @@ def agent_performance_bars(sessions: list[SessionData]) -> go.Figure:
             })
 
     df = pd.DataFrame(rows)
+    if df.empty:
+        fig = go.Figure()
+        fig.update_layout(title="Agent Performance: Model Comparison (no data yet)", template=_TEMPLATE)
+        return fig
 
     fig = make_subplots(
         rows=2, cols=2,
@@ -177,6 +181,10 @@ def agent_success_rate_heatmap(sessions: list[SessionData]) -> go.Figure:
             })
 
     df = pd.DataFrame(rows)
+    if df.empty:
+        fig = go.Figure()
+        fig.update_layout(title="Action Success Rate by Agent and Model (no data yet)", template=_TEMPLATE)
+        return fig
     pivot = df.pivot(index="agent", columns="model", values="success_rate")
 
     fig = px.imshow(
@@ -348,10 +356,12 @@ def action_type_distribution(sessions: list[SessionData]) -> go.Figure:
 
 def action_success_by_type(sessions: list[SessionData]) -> go.Figure:
     """Heatmap: success rate per action_type per model (top 15 types)."""
-    combined = pd.concat(
-        [s.actions.assign(_model=s.model) for s in sessions if not s.actions.empty],
-        ignore_index=True,
-    )
+    frames = [s.actions.assign(_model=s.model) for s in sessions if not s.actions.empty]
+    if not frames:
+        fig = go.Figure()
+        fig.update_layout(title="Action Success by Type (no data yet)", template=_TEMPLATE)
+        return fig
+    combined = pd.concat(frames, ignore_index=True)
     total = combined.groupby(["_model", "action_type"]).size().reset_index(name="total")
     ok = combined[combined["status"] == "success"].groupby(
         ["_model", "action_type"],
@@ -416,10 +426,12 @@ def actions_per_agent_bar(sessions: list[SessionData]) -> go.Figure:
 
 def cycle_timing_boxplots(sessions: list[SessionData]) -> go.Figure:
     """Box plots of decide and execute timing per agent and model."""
-    combined = pd.concat(
-        [s.agent_cycles.assign(_model=s.model) for s in sessions if not s.agent_cycles.empty],
-        ignore_index=True,
-    )
+    frames = [s.agent_cycles.assign(_model=s.model) for s in sessions if not s.agent_cycles.empty]
+    if not frames:
+        fig = go.Figure()
+        fig.update_layout(title="Cycle Timing Distribution (no data yet)", template=_TEMPLATE)
+        return fig
+    combined = pd.concat(frames, ignore_index=True)
     combined["agent"] = combined["connection_id"].str.split(":").str[2]
 
     fig = make_subplots(
@@ -477,11 +489,13 @@ def cycle_decide_over_time(sessions: list[SessionData]) -> go.Figure:
 
 def actions_per_cycle_scatter(sessions: list[SessionData]) -> go.Figure:
     """Scatter: actions proposed vs succeeded per cycle."""
-    combined = pd.concat(
-        [s.agent_cycles.assign(_model=s.model)
-         for s in sessions if not s.agent_cycles.empty],
-        ignore_index=True,
-    )
+    frames = [s.agent_cycles.assign(_model=s.model)
+              for s in sessions if not s.agent_cycles.empty]
+    if not frames:
+        fig = go.Figure()
+        fig.update_layout(title="Actions Proposed vs Succeeded (no data yet)", template=_TEMPLATE)
+        return fig
+    combined = pd.concat(frames, ignore_index=True)
     combined["agent"] = combined["connection_id"].str.split(":").str[2]
 
     fig = px.scatter(
