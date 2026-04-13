@@ -15,6 +15,22 @@ class NttdGS extends GSController {
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
     this._pathfind_queue = [];
+    this._event_names = {};
+    this._event_names[GSEvent.ET_VEHICLE_CRASHED]     <- "vehicle_crashed";
+    this._event_names[GSEvent.ET_VEHICLE_LOST]        <- "vehicle_lost";
+    this._event_names[GSEvent.ET_VEHICLE_UNPROFITABLE] <- "vehicle_unprofitable";
+    this._event_names[GSEvent.ET_SUBSIDY_OFFERED]     <- "subsidy_offered";
+    this._event_names[GSEvent.ET_SUBSIDY_OFFER_EXPIRED] <- "subsidy_offer_expired";
+    this._event_names[GSEvent.ET_SUBSIDY_AWARDED]     <- "subsidy_awarded";
+    this._event_names[GSEvent.ET_SUBSIDY_EXPIRED]     <- "subsidy_expired";
+    this._event_names[GSEvent.ET_INDUSTRY_OPEN]       <- "industry_open";
+    this._event_names[GSEvent.ET_INDUSTRY_CLOSE]      <- "industry_close";
+    this._event_names[GSEvent.ET_TOWN_FOUNDED]        <- "town_founded";
+    this._event_names[GSEvent.ET_COMPANY_NEW]         <- "company_new";
+    this._event_names[GSEvent.ET_COMPANY_IN_TROUBLE]  <- "company_in_trouble";
+    this._event_names[GSEvent.ET_COMPANY_BANKRUPT]    <- "company_bankrupt";
+    this._event_names[GSEvent.ET_COMPANY_MERGER]      <- "company_merger";
+    this._event_names[GSEvent.ET_STATION_FIRST_VEHICLE] <- "station_first_vehicle";
     while (true) {
       this._HandleEvents();
       // Process pathfinding commands that were queued during a prior pathfind yield.
@@ -117,8 +133,12 @@ class NttdGS extends GSController {
     }
   }
 
+  _event_names = null;
+
   function _ForwardGameEvent(event, et) {
-    local payload = { _event = true, event_type = et };
+    local name = (et in this._event_names) ? this._event_names[et] : ("event_" + et);
+    local payload = { _event = true, event_type = name };
+    GSLog.Info("nttd: game event " + name + " (type=" + et + ")");
 
     try {
       switch (et) {
@@ -201,11 +221,9 @@ class NttdGS extends GSController {
           break;
         }
         default:
-          // For unhandled event types, just send the type number
           break;
       }
     } catch (e) {
-      // Some event types may not be available in the GS API
       GSLog.Warning("nttd: could not process event type " + et + ": " + e);
     }
 
@@ -1055,10 +1073,13 @@ class NttdGS extends GSController {
 
   function CmdFindBusStopSpots(p) {
     if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    local company_id = ("company_id" in p) ? p.company_id : 0;
     local radius = ("radius" in p) ? p.radius : 15;
     local max_results = ("max_results" in p) ? p.max_results : 10;
+    local is_truck = ("is_truck_stop" in p) ? p.is_truck_stop : false;
     local loc = GSTown.GetLocation(p.town_id);
     local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
+    local stop_type = is_truck ? GSRoad.ROADVEHTYPE_TRUCK : GSRoad.ROADVEHTYPE_BUS;
     local spots = [];
     for (local dy = -radius; dy <= radius; dy++) {
       for (local dx = -radius; dx <= radius; dx++) {
@@ -1067,6 +1088,13 @@ class NttdGS extends GSController {
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
+        // Dry-run: test if BuildRoadStation would actually succeed here
+        {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          local front = this._GetAdjacentTile(tile, adj[0].dir);
+          if (!GSRoad.BuildRoadStation(tile, front, stop_type, GSStation.STATION_NEW)) continue;
+        }
         local cargo_info = this._GetTileCargoInfo(tile, 1, 1, 3);
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
@@ -1091,6 +1119,7 @@ class NttdGS extends GSController {
 
   function CmdFindDepotSpots(p) {
     if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    local company_id = ("company_id" in p) ? p.company_id : 0;
     local radius = ("radius" in p) ? p.radius : 15;
     local max_results = ("max_results" in p) ? p.max_results : 5;
     local loc = GSTown.GetLocation(p.town_id);
@@ -1103,6 +1132,12 @@ class NttdGS extends GSController {
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
+        // Dry-run: test if BuildRoadDepot would actually succeed here
+        {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          if (!GSRoad.BuildRoadDepot(tile, this._GetAdjacentTile(tile, adj[0].dir))) continue;
+        }
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
           depot_direction = adj[0].dir });

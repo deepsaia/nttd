@@ -30,7 +30,7 @@ def _extract_vehicle_roster(s: SessionData) -> dict:
             "profit_this_year": v.get("profit_this_year", 0),
             "profit_last_year": v.get("profit_last_year", 0),
             "age": v.get("age", 0),
-            "num_orders": v.get("num_orders", 0),
+            "order_count": v.get("order_count", 0),
         })
 
     has_year_passed = any(v["profit_last_year"] != 0 for v in roster)
@@ -70,7 +70,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
                     md_lines.append(
                         f"| {v['id']} | {v['name']} | {v['type']} "
                         f"| {v['profit_this_year']:,} | {v['profit_last_year']:,} "
-                        f"| {total:,} | {v['num_orders']} |"
+                        f"| {total:,} | {v['order_count']} |"
                     )
             else:
                 md_lines.append("| ID | Name | Type | Profit | Orders |")
@@ -78,7 +78,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
                 for v in r["vehicles"]:
                     md_lines.append(
                         f"| {v['id']} | {v['name']} | {v['type']} "
-                        f"| {v['profit_this_year']:,} | {v['num_orders']} |"
+                        f"| {v['profit_this_year']:,} | {v['order_count']} |"
                     )
         md_lines.append("")
 

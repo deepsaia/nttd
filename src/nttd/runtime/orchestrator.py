@@ -109,7 +109,7 @@ class Orchestrator:
             company_id=company_id,
             detail=detail,
         )
-        logger.debug("GS game event: %s %s", event_type, detail)
+        logger.info("GS game event: %s %s", event_type, detail)
 
     @property
     def mode(self) -> RuntimeMode:
@@ -290,7 +290,10 @@ class Orchestrator:
             lock = self.company_locks.get_lock(company_id)
             try:
                 async with lock:
-                    result = await self.client.send_gamescript(gs_action, gs_params)
+                    # Pathfinding commands (connect_road, connect_rail) run A*
+                    # in the GS and need more time than single-tile actions.
+                    timeout = 120.0 if gs_action.startswith("connect_") else 10.0
+                    result = await self.client.send_gamescript(gs_action, gs_params, timeout=timeout)
                     if result.get("success"):
                         if self.action_tracker:
                             self.action_tracker.update_result(
@@ -516,7 +519,8 @@ class Orchestrator:
             gs_action = action.get("action")
             gs_params = action.get("params", {})
             if gs_action and self.client.connected:
-                result = await self.client.send_gamescript(gs_action, gs_params)
+                timeout = 120.0 if gs_action.startswith("connect_") else 10.0
+                result = await self.client.send_gamescript(gs_action, gs_params, timeout=timeout)
                 results.append({"action": gs_action, "result": result})
 
         if self.client.connected:

@@ -35,15 +35,25 @@ def generate(sessions: list[SessionData]) -> ReportResult:
         data["sessions"].append(info)
 
         status_label = "IN PROGRESS" if s.is_in_progress else s.status.upper()
+        dur_total_sec = int(info["duration_minutes"] * 60)
+        dur_h, dur_rem = divmod(dur_total_sec, 3600)
+        dur_m, dur_s = divmod(dur_rem, 60)
+        dur_str = f"{dur_h:02d}:{dur_m:02d}:{dur_s:02d}"
+
         md_lines.append(f"## {s.name} ({s.model})")
-        md_lines.append(f"- **Status**: {status_label}")
-        md_lines.append(f"- **Duration**: {info['duration_minutes']} min")
-        md_lines.append(f"- **End reason**: {info['end_reason']}")
-        md_lines.append(f"- **Actions**: {info['total_actions']}")
-        md_lines.append(f"- **Cycles**: {info['total_cycles']}")
-        md_lines.append(f"- **Snapshots**: {info['total_snapshots']}")
-        md_lines.append(f"- **Events**: {info['total_events']}")
-        md_lines.append(f"- **Agents**: {', '.join(info['agents'])}")
+        rows = [
+            ("Status", status_label),
+            ("Duration (hh:mm:ss)", dur_str),
+            ("End reason", info["end_reason"]),
+            ("Actions", str(info["total_actions"])),
+            ("Cycles", str(info["total_cycles"])),
+            ("Snapshots", str(info["total_snapshots"])),
+            ("Events", str(info["total_events"])),
+            ("Agents", ", ".join(info["agents"])),
+        ]
+        key_width = max(len(k) for k, _ in rows)
+        for key, val in rows:
+            md_lines.append(f"- **{key}**:{' ' * (key_width - len(key) + 1)}{val}")
         md_lines.append("")
 
     figures = [("session_overview", session_overview_table(sessions))]

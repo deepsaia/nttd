@@ -43,7 +43,10 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
 
     runtime.action_tracker.update_result(envelope.action_id, ActionStatus.EXECUTING)
     try:
-        gs_result = await runtime.admin_client.send_gamescript(envelope.action_type, params)
+        # Pathfinding commands (connect_road, connect_rail) run A* in the GS
+        # and need more time than single-tile actions.
+        timeout = 120.0 if envelope.action_type.startswith("connect_") else 10.0
+        gs_result = await runtime.admin_client.send_gamescript(envelope.action_type, params, timeout=timeout)
         if gs_result.get("success"):
             runtime.action_tracker.update_result(
                 envelope.action_id, ActionStatus.SUCCESS,

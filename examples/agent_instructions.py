@@ -278,8 +278,10 @@ PHASE 1 -- SCOUT AND BUILD INFRASTRUCTURE (cycle 1):
   b. Call get_engines(vehicle_type=1) to find buses (cargo_label="PASS").
   c. Look at route_planning.top_unserved_towns in your observation. Pick the route
      with the SHORTEST distance and highest demand_score. Note the town IDs and x,y coords.
+     DISTANCE IS KING: Routes under 30 tiles are ideal. Routes 30-50 tiles are OK.
+     Routes over 50 tiles with buses are RARELY profitable -- buses are too slow.
      If route_planning is not available, pick TWO DIFFERENT towns with population > 300.
-     PREFER towns that are CLOSE together (20-50 tiles apart).
+     PREFER towns that are CLOSE together (20-40 tiles apart).
   d. MANDATORY: Call find_bus_stop_spots(town_id=X) for town A. Pick a spot with PASS
      in cargo_acceptance. Call find_bus_stop_spots(town_id=Y) for town B.
      These tools validate flat terrain -- building without them causes ERR_FLAT_LAND_REQUIRED.
@@ -495,6 +497,10 @@ PHASE 5 -- VERIFY (cycles 5-7):
   Return [] and observe. Is the train moving (current_speed > 0)? Does it have orders?
   If the train has speed=0, it is STUCK -- the track is not connected to the station.
   If any vehicle has 0 orders for 2+ cycles, sell it: send_to_depot then sell_vehicle.
+  BROKEN ORDER CHECK: Call get_vehicles. If any train has destination=-1 in its orders
+  or order_count=0, the station it was pointing to was demolished. Fix immediately:
+    1. Call get_stations to get current station IDs.
+    2. remove_order all stale orders, then add_order for valid stations.
   Do NOT build a second route until the first works.
 
 PHASE 6 -- EXPAND (cycle 8+):
@@ -516,6 +522,10 @@ IMPORTANT RULES:
 - Use station_id for orders, NOT tile coordinates.
 - If balance drops below 50,000, return [] and wait.
 - Start simple: the CLOSEST pair of compatible industries for your first route.
+- NEVER demolish a station that has vehicles with orders pointing to it.
+  OpenTTD invalidates ALL orders referencing a demolished station (destination becomes -1).
+  If you must relocate a station: build the NEW station first, update ALL vehicle orders
+  to point to the new station, THEN demolish the old one.
 
 OPERATING RULES -- PATIENCE (ABSOLUTE):
 - NEVER stop or sell a train that has been running for fewer than 400 game-days.
