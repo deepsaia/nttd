@@ -36,6 +36,9 @@ ReportGenerator = Callable[[list[SessionData]], ReportResult]
 
 _REGISTRY: dict[str, ReportGenerator] = {}
 
+# Reports excluded from the default "all" run (must be requested explicitly)
+_EXPENSIVE_REPORTS: set[str] = {"video"}
+
 
 def register(name: str) -> Callable[[ReportGenerator], ReportGenerator]:
     """Decorator to register a report generator under *name*."""
@@ -152,7 +155,10 @@ def run_reports(
     """
     ensure_reports_loaded()
     period = _period_context(sessions)
-    names = report_names or list(_REGISTRY.keys())
+    if report_names is not None:
+        names = report_names
+    else:
+        names = [n for n in _REGISTRY if n not in _EXPENSIVE_REPORTS]
     results: list[ReportResult] = []
     for name in names:
         gen = _REGISTRY.get(name)
