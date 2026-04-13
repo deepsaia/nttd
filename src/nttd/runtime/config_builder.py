@@ -146,9 +146,23 @@ def build_session_config(
         if src.exists() and not dst.exists():
             os.symlink(src.resolve(), dst)
 
+    # --- Disable OpenTTD autosave when nttd save is off ---
+    effective = settings or {}
+    if int(effective.get("_save_interval_seconds", "0")) <= 0:
+        cfg_content = dst_cfg.read_text()
+        cfg_content = _patch_ini_value_in_section(
+            cfg_content, "gui", "autosave_interval", "0",
+        )
+        cfg_content = _patch_ini_value_in_section(
+            cfg_content, "gui", "autosave_on_exit", "false",
+        )
+        cfg_content = _patch_ini_value_in_section(
+            cfg_content, "gui", "autosave_on_network_disconnect", "false",
+        )
+        dst_cfg.write_text(cfg_content)
+
     # --- Create session-specific directories (only as needed) ---
     (session_dir / "scenario").mkdir(exist_ok=True)
-    effective = settings or {}
     if int(effective.get("_save_interval_seconds", "0")) > 0:
         (session_dir / "save").mkdir(exist_ok=True)
     if int(effective.get("_screenshot_interval_seconds", "0")) > 0:
