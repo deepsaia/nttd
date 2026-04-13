@@ -169,7 +169,19 @@ PATIENCE RULES (ABSOLUTE):
 - Check get_vehicles "age_days" BEFORE any sell or stop decision. If too young, do NOT act.
 - Only sell after the minimum age AND profit_this_year + profit_last_year is still negative.
 - If you must sell, sell the LEAST profitable vehicle, never the newest.
-- A cycle with zero actions wastes time. If waiting for a vehicle, build another route."""
+- A cycle with zero actions wastes time. If waiting for a vehicle, build another route.
+
+LEAVE RUNNING VEHICLES ALONE:
+- Once a vehicle has orders and is running (running=true, order_count>=2), DO NOT touch it.
+  No start_vehicle, reverse_vehicle, send_to_depot, or stop_vehicle.
+- Vehicles travel SLOWLY. A train takes many game-days to reach a distant station. This is
+  normal. Reversing or sending to depot RESETS its progress and wastes time.
+- If profit is negative, WAIT. The vehicle has not completed a round trip yet.
+- The ONLY reasons to intervene with a running vehicle:
+  (a) It has 0 orders (order_count=0) -- add orders.
+  (b) It has been running for 400+ days with zero income -- the route may be broken.
+  (c) You are deliberately selling it after the patience period.
+- NEVER call start_vehicle on an already-running vehicle. Check "running" field first."""
 
 # -- Action reference -------------------------------------------------------
 # Complete list of action_type values and their parameters.
