@@ -272,7 +272,7 @@ COMPLETE-ROUTE-FIRST STRATEGY:
 You must complete ONE working route before building anything else. A working route
 means: two stops in DIFFERENT towns, a vehicle with orders to both stops, running.
 
-PHASE 1 -- SCOUT AND BUILD (cycle 1):
+PHASE 1 -- SCOUT AND BUILD INFRASTRUCTURE (cycle 1):
   a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
      Do NOT max out the loan -- take only what you need. You can increase it later.
   b. Call get_engines(vehicle_type=1) to find buses (cargo_label="PASS").
@@ -284,11 +284,11 @@ PHASE 1 -- SCOUT AND BUILD (cycle 1):
      in cargo_acceptance. Call find_bus_stop_spots(town_id=Y) for town B.
      These tools validate flat terrain -- building without them causes ERR_FLAT_LAND_REQUIRED.
   e. MANDATORY: Call find_depot_spots(town_id=X) for a depot near town A.
-  f. Build stops, depot, and vehicle using ONLY tiles from find_*_spots results:
+  f. Build stops and depot using ONLY tiles from find_*_spots results:
      - build_road_stop(tile=<spot_A.tile>, direction=<spot_A.direction>)
      - build_road_stop(tile=<spot_B.tile>, direction=<spot_B.direction>)
      - build_road_depot(tile=<depot.tile>, direction=<depot.depot_direction>)
-     - buy_vehicle(depot_tile=<depot.tile>, engine_id=<bus_engine_id>)
+     Do NOT buy a vehicle yet -- infrastructure must be confirmed first.
 
 PHASE 2 -- CONNECT ROAD (cycle 2):
   CRITICAL: Towns do NOT have roads between them! You MUST build a connecting road
@@ -300,15 +300,17 @@ PHASE 2 -- CONNECT ROAD (cycle 2):
        "to_x": <stop_B.x>, "to_y": <stop_B.y>}}}}
      This automatically pathfinds around hills, builds bridges over water,
      tunnels through mountains, and handles road crossings. One action, done.
-  c. Check previous_actions next cycle. connect_road reports built/failed counts.
-     Some segments may fail (terrain). Partial roads still work if they reach town borders.
 
-PHASE 3 -- ORDERS AND START (cycle 3):
-  a. Call get_vehicles to find your new vehicle's ID.
-  b. Call get_stations to get station IDs for your two stops.
-  c. Add orders and start:
-     - add_order(vehicle_id=X, station_id=<stop_A_id>, order_flags=0)
-     - add_order(vehicle_id=X, station_id=<stop_B_id>, order_flags=0)
+PHASE 3 -- BUY VEHICLE, ORDERS AND START (cycle 3):
+  a. Check previous_actions -- did connect_road succeed?
+     If connect_road FAILED (timeout or pathfinding failure), do NOT buy a vehicle.
+     Instead: try connect_road again with different endpoints, or pick a new route entirely.
+     NEVER buy a vehicle without a confirmed road connection.
+  b. If connect_road succeeded:
+     - buy_vehicle(depot_tile=<depot.tile>, engine_id=<bus_engine_id>)
+     - Call get_stations to get station IDs for your two stops.
+     - add_order(vehicle_id=<from buy result>, station_id=<stop_A_id>, order_flags=0)
+     - add_order(vehicle_id=<from buy result>, station_id=<stop_B_id>, order_flags=0)
      - start_vehicle(vehicle_id=X)
 
 PHASE 4 -- VERIFY (cycles 4-6):
@@ -317,7 +319,8 @@ PHASE 4 -- VERIFY (cycles 4-6):
   b. Check get_stations -- are BOTH stations getting cargo ratings (rated=true)?
      If only one station is rated, the bus cannot reach the other -- you need more road.
   c. If the vehicle has 0 orders or is stuck, FIX IT (add orders, restart).
-  d. Do NOT build anything new until your first route is confirmed working.
+  d. If any vehicle has 0 orders for 2+ cycles, sell it: send_to_depot then sell_vehicle.
+  e. Do NOT build anything new until your first route is confirmed working.
 
 PHASE 5 -- EXPAND (cycle 7+):
   Only after your first route is verified working:
@@ -451,52 +454,59 @@ PHASE 1 -- SCOUT (cycle 1):
   e. Call get_engines(vehicle_type=0) to find available train engines.
   f. Call get_rail_types to check available track types.
 
-PHASE 2 -- BUILD TRACK (cycle 2):
-  Use connect_rail to build a rail line between the two industry sites. This handles
-  terrain, curves, slopes, bridges, and tunnels automatically in one action.
-  a. Check previous_actions for any failures.
-  b. Output a connect_rail action:
-     {{"action_type": "connect_rail", "parameters": {{
-       "from_x": <source_x>, "from_y": <source_y>,
-       "to_x": <dest_x>, "to_y": <dest_y>, "rail_type": 0}}}}
-     This automatically pathfinds the optimal route and builds the track.
-  c. Check previous_actions next cycle. connect_rail reports built/failed counts.
-     Some segments may fail -- that is OK. Proceed to stations/vehicle.
-
-PHASE 3 -- BUILD STATIONS AND VEHICLE (cycle 3-4):
-  DO NOT delay this phase! Even if some track segments failed, build stations and
-  buy a vehicle now. You can fix track gaps later, but a vehicle earning some revenue
-  is better than perfect track with no vehicle.
-  a. Check previous_actions -- fix critical track gaps (try adjacent tiles).
-  b. Build in this order at each end of the track:
-     - build_rail_depot(tile=<flat_tile_near_source>, rail_type=0)
+PHASE 2 -- BUILD STATIONS AND DEPOT (cycle 2):
+  Build stations FIRST so you know the exact tiles to connect with track.
+  a. Use find_flat_spots results from PHASE 1. Pick tiles near source and dest industries.
+  b. Build in this order:
      - build_rail_station(tile=<flat_tile_near_source>, num_platforms=1, platform_length=3, rail_type=0)
      - build_rail_station(tile=<flat_tile_near_dest>, num_platforms=1, platform_length=3, rail_type=0)
-  c. buy_vehicle(depot_tile=<depot_tile>, engine_id=<engine_id>)
+     - build_rail_depot(tile=<flat_tile_near_source>, rail_type=0)
+  c. RECORD the station tiles -- you will use them as connect_rail endpoints in PHASE 3.
+     Do NOT buy a vehicle yet -- track must be built and confirmed first.
 
-PHASE 4 -- ORDERS AND START (cycle 4):
-  a. Check previous_actions -- did the build and buy succeed?
-  b. Call get_vehicles to find the train's vehicle_id.
-  c. Call get_stations to get station IDs.
-  d. add_order(vehicle_id=X, station_id=<source_station_id>, order_flags=0)
-  e. add_order(vehicle_id=X, station_id=<dest_station_id>, order_flags=0)
-  f. start_vehicle(vehicle_id=X)
+PHASE 3 -- CONNECT TRACK (cycle 3):
+  Build track BETWEEN THE STATION TILES so the track physically connects to stations.
+  a. Check previous_actions -- did the station builds succeed? If a station failed,
+     call find_flat_spots again and rebuild at a different tile. Do NOT proceed without
+     two successfully built stations.
+  b. Use connect_rail with the STATION TILE coordinates (not industry coordinates!):
+     {{"action_type": "connect_rail", "parameters": {{
+       "from_x": <source_station_x>, "from_y": <source_station_y>,
+       "to_x": <dest_station_x>, "to_y": <dest_station_y>, "rail_type": 0}}}}
+     This automatically pathfinds the optimal route and builds the track.
+     CRITICAL: The from/to coordinates MUST be the station tiles so the track
+     connects directly to the stations. Using industry tiles instead will leave
+     stations disconnected from the track!
+
+PHASE 4 -- BUY VEHICLE, ORDERS AND START (cycle 4):
+  a. Check previous_actions -- did connect_rail succeed?
+     If connect_rail FAILED (timeout or pathfinding failure), do NOT buy a vehicle.
+     Instead: try connect_rail again, or pick a closer industry pair.
+     NEVER buy a vehicle without confirmed track connecting both stations.
+  b. If connect_rail succeeded:
+     - buy_vehicle(depot_tile=<depot_tile>, engine_id=<engine_id>)
+     - Call get_vehicles to find the train's vehicle_id.
+     - Call get_stations to get station IDs.
+     - add_order(vehicle_id=X, station_id=<source_station_id>, order_flags=0)
+     - add_order(vehicle_id=X, station_id=<dest_station_id>, order_flags=0)
+     - start_vehicle(vehicle_id=X)
 
 PHASE 5 -- VERIFY (cycles 5-7):
   Return [] and observe. Is the train moving (current_speed > 0)? Does it have orders?
-  If the train has speed=0, it is STUCK -- the track is not connected. Fix the track.
+  If the train has speed=0, it is STUCK -- the track is not connected to the station.
+  If any vehicle has 0 orders for 2+ cycles, sell it: send_to_depot then sell_vehicle.
   Do NOT build a second route until the first works.
 
 PHASE 6 -- EXPAND (cycle 8+):
   Clone profitable trains. Build new routes to different industry pairs.
 
 RAIL CONSTRUCTION:
-  PREFERRED METHOD: Use connect_rail (see PHASE 2 above). It pathfinds and builds
-  the entire track in one action, handling terrain, bridges, and tunnels automatically.
+  PREFERRED METHOD: Build stations FIRST, then use connect_rail between the station
+  tiles (see PHASE 2-3 above). This ensures track physically connects to stations.
   Do NOT use build_rail or build_rail_track tile-by-tile -- these are error-prone.
   - Keep routes SHORT: pick industries within 10-20 tiles of each other.
   - For a first route, prioritize CLOSENESS over cargo value.
-  - NEVER spend more than 2 cycles building track. Move to stations/vehicles immediately.
+  - ALWAYS build stations before track. ALWAYS use station tile coordinates for connect_rail.
 
 IMPORTANT RULES:
 - You ONLY see trains and rail stations. Other transport types are invisible to you.
@@ -585,6 +595,7 @@ PHASE 3 -- ORDERS AND START (cycle 3):
 PHASE 4 -- VERIFY (cycles 4-6):
   Return [] and observe. Check get_vehicles -- is the aircraft moving? Does it have
   2 orders? Check get_stations -- are airports getting cargo ratings?
+  If any vehicle has 0 orders for 2+ cycles, sell it: send_to_depot then sell_vehicle.
   Fix any issues before expanding. Do NOT build more airports.
 
 PHASE 5 -- EXPAND (cycle 7+):
@@ -681,6 +692,7 @@ PHASE 3 -- ORDERS AND START (cycle 3):
 PHASE 4 -- VERIFY (cycles 4-8):
   Return [] and observe. Ships are SLOW -- give them time. Check get_vehicles:
   is the ship moving? Does it have 2 orders? Ships may take many game-days to travel.
+  If any vehicle has 0 orders for 2+ cycles, sell it: send_to_depot then sell_vehicle.
   Do NOT build anything new until the ship completes at least one trip.
 
 PHASE 5 -- EXPAND (cycle 9+):

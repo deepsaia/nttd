@@ -13,8 +13,21 @@ class NttdGS extends GSController {
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
+    this._pathfind_queue = [];
     while (true) {
       this._HandleEvents();
+      // Process pathfinding commands that were queued during a prior pathfind yield.
+      while (this._pathfind_queue.len() > 0) {
+        local cmd = this._pathfind_queue.remove(0);
+        local result = null;
+        try {
+          result = this._Dispatch(cmd);
+        } catch (e) {
+          GSLog.Error("nttd: command " + cmd.action + " threw: " + e);
+          result = { success = false, error = "internal error: " + e };
+        }
+        this._SendResponse(cmd.id, result);
+      }
       this.Sleep(1);
     }
   }
@@ -56,6 +69,50 @@ class NttdGS extends GSController {
 
       // Forward all other game events to nttd
       this._ForwardGameEvent(event, et);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Yield point for pathfinding — process pending events between A* chunks.
+  // Called from _FindRoadPath / _FindRailPath every 500 iterations instead of
+  // plain Sleep(1). Non-pathfinding commands execute immediately so other agents
+  // aren't blocked. New pathfinding commands are queued for sequential execution.
+  // ---------------------------------------------------------------------------
+
+  function _YieldAndProcessEvents() {
+    this.Sleep(1);
+    // GSExecMode overrides the GSTestMode from the calling pathfinder so that
+    // dispatched commands (buy_vehicle, add_order, etc.) execute for real.
+    local exec_mode = GSExecMode();
+    while (GSEventController.IsEventWaiting()) {
+      local event = GSEventController.GetNextEvent();
+      if (event == null) continue;
+      local et = event.GetEventType();
+
+      if (et == GSEvent.ET_ADMIN_PORT) {
+        local admin_event = GSEventAdminPort.Convert(event);
+        local data = admin_event.GetObject();
+        if (data == null || !("id" in data) || !("action" in data)) {
+          GSLog.Warning("nttd: invalid command (missing id or action)");
+          continue;
+        }
+        // Queue pathfinding commands — they run after the current pathfind completes.
+        if (data.action == "connect_road" || data.action == "connect_rail") {
+          this._pathfind_queue.append(data);
+          continue;
+        }
+        // Execute all other commands immediately.
+        local result = null;
+        try {
+          result = this._Dispatch(data);
+        } catch (e) {
+          GSLog.Error("nttd: command " + data.action + " threw: " + e);
+          result = { success = false, error = "internal error: " + e };
+        }
+        this._SendResponse(data.id, result);
+      } else {
+        this._ForwardGameEvent(event, et);
+      }
     }
   }
 
@@ -1508,8 +1565,9 @@ class NttdGS extends GSController {
 
     while (open.len() > 0 && iterations < max_iterations) {
       iterations++;
-      // Yield every 500 iterations so the GS doesn't block other commands
-      if (iterations % 500 == 0) this.Sleep(1);
+      // Yield every 500 iterations and process pending events so other agents
+      // aren't blocked by pathfinding. Pathfind commands are queued for later.
+      if (iterations % 500 == 0) this._YieldAndProcessEvents();
       local node = this._HeapPop(open);
       local cur_key = node.v;
       if (cur_key in visited) continue;
@@ -1689,6 +1747,7 @@ class NttdGS extends GSController {
     local built = 0;
     local failed = [];
     for (local i = 1; i < path.len(); i++) {
+      if (i % 50 == 0) this.Sleep(1); // Yield on long paths to avoid blocking
       local prev = path[i - 1];
       local cur = path[i];
       local prev_tile = prev.tile;
@@ -1994,8 +2053,9 @@ class NttdGS extends GSController {
 
     while (open.len() > 0 && iterations < max_iterations) {
       iterations++;
-      // Yield every 500 iterations so the GS doesn't block other commands
-      if (iterations % 500 == 0) this.Sleep(1);
+      // Yield every 500 iterations and process pending events so other agents
+      // aren't blocked by pathfinding. Pathfind commands are queued for later.
+      if (iterations % 500 == 0) this._YieldAndProcessEvents();
       local node = this._HeapPop(open);
       local cur_key = node.v;
       if (cur_key in visited) continue;
@@ -2152,6 +2212,7 @@ class NttdGS extends GSController {
     local failed = [];
 
     for (local i = 0; i < path.len(); i++) {
+      if (i > 0 && i % 50 == 0) this.Sleep(1); // Yield on long paths to avoid blocking
       local cur = path[i];
       local cur_tile = cur.tile;
 
