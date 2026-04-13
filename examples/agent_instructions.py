@@ -146,6 +146,12 @@ PREVIOUS ACTIONS FEEDBACK:
   - If build succeeded, move to the next step (buy vehicle, add orders).
   - If you see vehicles with order_count=0 in get_vehicles, they need orders urgently.
 
+LOANS:
+  Do NOT take a loan as your first action. Only call set_loan when your balance is too
+  low to afford what you are about to build. Call get_company_finance to check your
+  balance before expensive actions (stations, vehicles). If balance is sufficient,
+  skip the loan. If you need more funds, take only enough to cover the shortfall.
+
 CRITICAL: add_order requires station_id (a small integer like 0, 1, 2) NOT a tile coordinate.
   Get station_id from: (a) build command results, or (b) get_stations "id" field.
   Do NOT pass tile coordinates as station_id -- they are different things.
@@ -279,10 +285,8 @@ You must complete ONE working route before building anything else. A working rou
 means: two stops in DIFFERENT towns, a vehicle with orders to both stops, running.
 
 PHASE 1 -- SCOUT AND BUILD INFRASTRUCTURE (cycle 1):
-  a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
-     Do NOT max out the loan -- take only what you need. You can increase it later.
-  b. Call get_engines(vehicle_type=1) to find buses (cargo_label="PASS").
-  c. Look at route_planning.top_unserved_towns in your observation. Pick the route
+  a. Call get_engines(vehicle_type=1) to find buses (cargo_label="PASS").
+  b. Look at route_planning.top_unserved_towns in your observation. Pick the route
      with the SHORTEST distance and highest demand_score. Note the town IDs and x,y coords.
      DISTANCE IS KING: Routes under 30 tiles are ideal. Routes 30-50 tiles are OK.
      Routes over 50 tiles with buses are RARELY profitable -- buses are too slow.
@@ -388,7 +392,8 @@ STRATEGY:
 5. Consider aircraft for long-distance passenger routes (100+ tiles apart).
 
 FINANCIAL RULES:
-- FIRST ACTION: Take the maximum loan with set_loan.
+- Do NOT take a loan preemptively. Only call set_loan when your balance is too low
+  to afford your next planned action. Take only what you need, not the maximum.
 - Never let balance drop below 20,000 -- return [].
 - Check previous_actions each cycle to see what worked and what failed.
 - Sell vehicles that have been unprofitable for multiple cycles.
@@ -458,9 +463,7 @@ EVERY CYCLE -- CHECK FIRST:
     Building more stations when existing ones have no vehicles is WASTING MONEY.
 
 PHASE 1 -- SCOUT (cycle 1):
-  a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
-     Do NOT max out the loan -- take only what you need. You can increase it later.
-  b. Look at route_planning.top_unserved_cargo in your observation. These are the best
+  a. Look at route_planning.top_unserved_cargo in your observation. These are the best
      unserved industry pairs (sorted by distance). Pick the SHORTEST route (under 15 tiles!)
      with high monthly_production. Note source_x/y and dest_x/y coordinates.
      DISTANCE IS CRITICAL: Routes under 15 tiles almost always succeed. Routes 15-30
@@ -605,9 +608,7 @@ You must complete ONE working air route before building anything else. A working
 route means: two airports in DIFFERENT towns, an aircraft with orders to both, running.
 
 PHASE 1 -- SCOUT AND BUILD AIRPORTS (cycle 1):
-  a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
-     Do NOT max out the loan -- take only what you need. You can increase it later.
-  b. Call get_engines(vehicle_type=3). If empty list, aircraft not available yet -- return [].
+  a. Call get_engines(vehicle_type=3). If empty list, aircraft not available yet -- return [].
   c. Look at route_planning.top_unserved_towns in your observation. Pick the route with
      the highest demand_score. These routes are pre-filtered for air transport (100+ tiles).
      Aircraft are FAST -- they excel at LONG-DISTANCE routes where other modes are slow.
@@ -700,9 +701,7 @@ route means: two docks in DIFFERENT towns, a ship depot, a ship with orders to b
 docks, running.
 
 PHASE 1 -- SCOUT AND BUILD (cycle 1):
-  a. Call get_company_finance. If balance < 150000, take a loan: set_loan(amount=200000).
-     Do NOT max out the loan -- take only what you need. You can increase it later.
-  b. Call get_engines(vehicle_type=2) for available ships.
+  a. Call get_engines(vehicle_type=2) for available ships.
   c. Look at route_planning.top_unserved_towns in your observation. Pick a route where
      distance is SHORT (under 60 tiles). These routes are pre-filtered for water transport.
      Ships are VERY SLOW (20-30 km/h) -- long routes take hundreds of game-days with
