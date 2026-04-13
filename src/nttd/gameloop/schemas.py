@@ -21,6 +21,7 @@ class AgentConfig(BaseModel):
     poll_interval: float = Field(default=5.0, ge=0.5)
     observation_tools: bool = True
     max_actions_per_cycle: int = Field(default=10, ge=1)
+    max_history_cycles: int = Field(default=10, ge=1)
     api_key_env: str = "OPENAI_API_KEY"
 
     @property

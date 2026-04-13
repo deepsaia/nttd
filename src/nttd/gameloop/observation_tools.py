@@ -243,6 +243,9 @@ _TOOL_DEFS: list[dict[str, Any]] = [
         "description": (
             "Find flat buildable tiles near a given tile."
             " Useful for rail depots/stations near industries."
+            " For rail stations, pass station_test=true and platform_length"
+            " to dry-run validate that a station can actually be built there."
+            " Use required_cargo to filter for tiles that produce a specific cargo."
         ),
         "parameters": {
             "type": "object",
@@ -251,14 +254,34 @@ _TOOL_DEFS: list[dict[str, Any]] = [
                 "radius": {"type": "integer", "description": "Search radius. Default 10.", "default": 10},
                 "min_size": {
                     "type": "integer",
-                    "description": "Minimum flat square size (e.g. 2 for 2x2). Default 1.",
+                    "description": "Minimum flat square size (e.g. 3 for a 3-tile station). Default 1.",
                     "default": 1,
                 },
                 "max_results": {"type": "integer", "description": "Max spots to return.", "default": 10},
+                "station_test": {
+                    "type": "boolean",
+                    "description": "Dry-run test BuildRailStation at each spot. Default false.",
+                    "default": False,
+                },
+                "platform_length": {
+                    "type": "integer",
+                    "description": "Station platform length for dry-run test. Default 3.",
+                    "default": 3,
+                },
+                "rail_type": {
+                    "type": "integer",
+                    "description": "Rail type ID for dry-run test. Default 0.",
+                    "default": 0,
+                },
+                "required_cargo": {
+                    "type": "string",
+                    "description": "Only return spots where this cargo is produced (e.g. 'COAL', 'IORE').",
+                },
             },
             "required": ["tile"],
         },
         "gs_action": "find_flat_spots",
+        "inject_company_id": True,
     },
     {
         "name": "find_water_depot_spots",

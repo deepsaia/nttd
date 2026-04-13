@@ -1,13 +1,16 @@
-"""LangChain adapter — multi-turn tool calling with conversation memory.
+"""LangChain adapter — multi-turn tool calling (stateless).
 
 Supports multiple LLM providers via LangChain's chat model interface:
 - OpenAI: gpt-4o, gpt-5.2, gpt-5.4, etc. (api_key_env=OPENAI_API_KEY)
 - Anthropic: claude-sonnet-4-6, claude-haiku-4-5, etc. (api_key_env=ANTHROPIC_API_KEY)
+
+Memory is handled externally: connection.py injects a rolling action_history
+into the observation so the agent knows what it successfully built in prior
+cycles. The adapter itself is stateless -- no conversation history.
 """
 
 from __future__ import annotations
 
-import collections
 import json
 import logging
 import os
@@ -16,8 +19,6 @@ from typing import Any
 from nttd.gameloop.adapters.base import BaseAdapter, ToolExecutor
 
 logger = logging.getLogger(__name__)
-
-_MAX_HISTORY_CYCLES = 2
 
 # Model prefix → (package, class name, env var default)
 _PROVIDER_MAP: dict[str, tuple[str, str, str]] = {
@@ -41,9 +42,10 @@ class LangChainAdapter(BaseAdapter):
     Supports:
     - Multi-turn tool calling: the LLM can call observation tools to
       gather data before producing its final action list.
-    - Conversation memory: retains the last N cycle exchanges so the
-      agent can learn from its previous actions and observations.
     - Multiple providers: OpenAI, Anthropic (auto-detected from model name).
+
+    Stateless: no conversation history. Memory is provided externally via
+    action_history in the observation dict.
     """
 
     def __init__(
@@ -52,17 +54,12 @@ class LangChainAdapter(BaseAdapter):
         api_key_env: str = "",
         temperature: float = 0.2,
         max_tool_rounds: int = 8,
-        max_history_cycles: int = _MAX_HISTORY_CYCLES,
     ) -> None:
         self._model = model
         self._api_key_env = api_key_env
         self._temperature = temperature
         self._max_tool_rounds = max_tool_rounds
-        self._max_history_cycles = max_history_cycles
         self._llm: Any = None
-        self._history: collections.deque[dict[str, str]] = collections.deque(
-            maxlen=max_history_cycles * 2,
-        )
 
     def _get_llm(self) -> Any:
         if self._llm is not None:
@@ -100,7 +97,6 @@ class LangChainAdapter(BaseAdapter):
         tool_executor: ToolExecutor | None = None,
     ) -> str:
         from langchain_core.messages import (
-            AIMessage,
             HumanMessage,
             SystemMessage,
             ToolMessage,
@@ -114,17 +110,10 @@ class LangChainAdapter(BaseAdapter):
         else:
             bound_llm = llm
 
-        # Build message list: system + history + current observation
+        # Build message list: system + current observation
         messages: list[Any] = [SystemMessage(content=instructions)]
 
-        # Add conversation history (previous cycles' observations and responses)
-        for entry in self._history:
-            if entry["role"] == "user":
-                messages.append(HumanMessage(content=entry["content"]))
-            else:
-                messages.append(AIMessage(content=entry["content"]))
-
-        # Current observation
+        # Current observation (includes action_history from prior cycles)
         obs_text = (
             f"Current game state:\n{json.dumps(observation, indent=2)}\n\n"
             "Analyze the state. Use observation tools to gather any info you need "
@@ -141,16 +130,12 @@ class LangChainAdapter(BaseAdapter):
 
             # No tool calls → final response
             if not response.tool_calls:
-                final_content = response.content or "[]"
-                self._record_history(obs_text, final_content)
-                return final_content
+                return response.content or "[]"
 
             # Execute tool calls
             if tool_executor is None:
                 logger.warning("LLM requested tools but no executor provided")
-                final_content = response.content or "[]"
-                self._record_history(obs_text, final_content)
-                return final_content
+                return response.content or "[]"
 
             for tool_call in response.tool_calls:
                 tool_name = tool_call["name"]
@@ -166,15 +151,7 @@ class LangChainAdapter(BaseAdapter):
 
         # Exhausted tool rounds — take whatever we have
         logger.warning("Max tool rounds (%d) exceeded", self._max_tool_rounds)
-        final_content = response.content or "[]" if response else "[]"
-        self._record_history(obs_text, final_content)
-        return final_content
-
-    def _record_history(self, user_content: str, assistant_content: str) -> None:
-        """Record one cycle's exchange into conversation memory."""
-        self._history.append({"role": "user", "content": user_content})
-        self._history.append({"role": "assistant", "content": assistant_content})
+        return response.content or "[]" if response else "[]"
 
     async def close(self) -> None:
-        self._history.clear()
         self._llm = None

@@ -51,6 +51,7 @@ def _parse_agents(raw: Any) -> list[dict[str, Any]]:
             "poll_interval": float(a.get("poll_interval", 5.0)),
             "observation_tools": bool(a.get("observation_tools", True)),
             "max_actions_per_cycle": int(a.get("max_actions_per_cycle", 10)),
+            "max_history_cycles": int(a.get("max_history_cycles", 10)),
             "api_key_env": a.get("api_key_env", "OPENAI_API_KEY"),
         })
     return agents
@@ -174,6 +175,7 @@ def benchmark(
             "poll_interval": agent_cfg["poll_interval"],
             "observation_tools": agent_cfg["observation_tools"],
             "max_actions_per_cycle": agent_cfg["max_actions_per_cycle"],
+            "max_history_cycles": agent_cfg["max_history_cycles"],
             "api_key_env": agent_cfg["api_key_env"],
         }
         resp = requests.post(

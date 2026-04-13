@@ -1,8 +1,12 @@
-"""OpenAI SDK adapter — multi-turn tool calling with conversation memory."""
+"""OpenAI SDK adapter — multi-turn tool calling (stateless).
+
+Memory is handled externally: connection.py injects a rolling action_history
+into the observation so the agent knows what it successfully built in prior
+cycles. The adapter itself is stateless -- no conversation history.
+"""
 
 from __future__ import annotations
 
-import collections
 import json
 import logging
 import os
@@ -12,14 +16,12 @@ from nttd.gameloop.adapters.base import BaseAdapter, ToolExecutor
 
 logger = logging.getLogger(__name__)
 
-_MAX_HISTORY_CYCLES = 10
-
 
 class OpenAIAdapter(BaseAdapter):
     """Adapter that uses the OpenAI Python SDK for LLM calls.
 
-    Supports multi-turn tool calling and conversation memory,
-    matching the LangChain adapter's capabilities.
+    Supports multi-turn tool calling within a single cycle.
+    Stateless: no conversation history across cycles.
     """
 
     def __init__(
@@ -27,15 +29,11 @@ class OpenAIAdapter(BaseAdapter):
         model: str = "gpt-4o",
         api_key_env: str = "OPENAI_API_KEY",
         max_tool_rounds: int = 8,
-        max_history_cycles: int = _MAX_HISTORY_CYCLES,
     ) -> None:
         self._model = model
         self._api_key_env = api_key_env
         self._max_tool_rounds = max_tool_rounds
         self._client: Any = None
-        self._history: collections.deque[dict[str, str]] = collections.deque(
-            maxlen=max_history_cycles * 2,
-        )
 
     def _get_client(self) -> Any:
         if self._client is None:
@@ -67,11 +65,7 @@ class OpenAIAdapter(BaseAdapter):
             {"role": "system", "content": instructions},
         ]
 
-        # Add conversation history
-        for entry in self._history:
-            messages.append({"role": entry["role"], "content": entry["content"]})
-
-        # Current observation
+        # Current observation (includes action_history from prior cycles)
         obs_text = (
             f"Current game state:\n{json.dumps(observation, indent=2)}\n\n"
             "Analyze the state. Use observation tools to gather any info you need. "
@@ -91,16 +85,12 @@ class OpenAIAdapter(BaseAdapter):
             messages.append(msg.model_dump())
 
             if not msg.tool_calls:
-                final_content = msg.content or "[]"
-                self._record_history(obs_text, final_content)
-                return final_content
+                return msg.content or "[]"
 
             # Execute tool calls
             if tool_executor is None:
                 logger.warning("LLM requested tools but no executor provided")
-                final_content = msg.content or "[]"
-                self._record_history(obs_text, final_content)
-                return final_content
+                return msg.content or "[]"
 
             for tc in msg.tool_calls:
                 tool_name = tc.function.name
@@ -121,17 +111,9 @@ class OpenAIAdapter(BaseAdapter):
             kwargs["messages"] = messages
 
         logger.warning("Max tool rounds (%d) exceeded", self._max_tool_rounds)
-        final_content = msg.content or "[]" if msg else "[]"
-        self._record_history(obs_text, final_content)
-        return final_content
-
-    def _record_history(self, user_content: str, assistant_content: str) -> None:
-        """Record one cycle's exchange into conversation memory."""
-        self._history.append({"role": "user", "content": user_content})
-        self._history.append({"role": "assistant", "content": assistant_content})
+        return msg.content or "[]" if msg else "[]"
 
     async def close(self) -> None:
-        self._history.clear()
         if self._client is not None:
             await self._client.close()
             self._client = None

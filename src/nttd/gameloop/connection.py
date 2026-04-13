@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import logging
 from datetime import datetime, timezone
@@ -78,6 +79,11 @@ class AgentConnection:
 
         # Last cycle's action results for inclusion in next observation
         self._last_cycle_results: list[dict[str, Any]] = []
+
+        # Rolling history of successful actions (agent output format) for context
+        self._action_history: collections.deque[list[dict[str, Any]]] = collections.deque(
+            maxlen=config.max_history_cycles,
+        )
 
         # Build observation toolkit if tools are enabled
         self._toolkit: ObservationToolkit | None = None
@@ -218,11 +224,19 @@ class AgentConnection:
         tool_schemas = self._toolkit.get_openai_schemas() if self._toolkit else None
         tool_executor = self._toolkit.execute if self._toolkit else None
 
+        # Inject max_actions_per_cycle into instructions so the LLM self-limits
+        instructions = self.config.instructions
+        max_actions = self.config.max_actions_per_cycle
+        instructions += (
+            f"\n\nIMPORTANT: You may output at most {max_actions} actions per cycle."
+            f" Any actions beyond {max_actions} will be discarded."
+        )
+
         self.tracker.start_decide()
         try:
             raw_output = await asyncio.wait_for(
                 self.adapter.decide(
-                    observation, self.config.instructions,
+                    observation, instructions,
                     observation_tools=tool_schemas,
                     tool_executor=tool_executor,
                 ),
@@ -284,6 +298,16 @@ class AgentConnection:
                         "error": r.get("error", "unknown"),
                     })
         self._last_cycle_results = cycle_results
+
+        # Record successful actions in agent output format for rolling history
+        successful_actions = [
+            {"action_type": a.action_type, "parameters": a.parameters}
+            for a, r in zip(valid_actions, results)
+            if r.get("status") == "success"
+        ] if valid_actions else []
+        if successful_actions:
+            self._action_history.append(successful_actions)
+
         self.tracker.end_execute()
 
         # 5. Record (extract financial metrics from observation)
@@ -534,9 +558,34 @@ class AgentConnection:
                 company_id, self.config.agent_type, compact=use_compact,
             )
 
+        # Route completion status: flag orphan stations (no vehicle visiting)
+        if "stations_detail" in sections or "stations" in sections:
+            station_ids_in_obs = {s["id"] for s in obs.get("stations", [])}
+            stations_with_vehicles: set[int] = set()
+            for v in world.vehicles.values():
+                if v.company_id != company_id:
+                    continue
+                if allowed_vtypes and v.type not in allowed_vtypes:
+                    continue
+                for o in v.orders:
+                    if o.is_goto_station and o.destination in station_ids_in_obs:
+                        stations_with_vehicles.add(o.destination)
+            orphan_ids = sorted(station_ids_in_obs - stations_with_vehicles)
+            if station_ids_in_obs:
+                obs["route_status"] = {
+                    "total_stations": len(station_ids_in_obs),
+                    "stations_with_vehicles": len(stations_with_vehicles),
+                    "orphan_stations": len(orphan_ids),
+                    "orphan_station_ids": orphan_ids,
+                }
+
         # Always include previous cycle's action results so agent can learn
         if self._last_cycle_results:
             obs["previous_actions"] = self._last_cycle_results
+
+        # Rolling history of successful actions (agent output format)
+        if self._action_history:
+            obs["action_history"] = list(self._action_history)
 
         if "game" in sections:
             obs["game"] = {

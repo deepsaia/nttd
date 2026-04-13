@@ -11,26 +11,39 @@
 class NttdGS extends GSController {
   CHUNK_SIZE = 10;
   _pathfind_queue = null;
+  _event_names = null;
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
     this._pathfind_queue = [];
     this._event_names = {};
-    this._event_names[GSEvent.ET_VEHICLE_CRASHED]     <- "vehicle_crashed";
-    this._event_names[GSEvent.ET_VEHICLE_LOST]        <- "vehicle_lost";
-    this._event_names[GSEvent.ET_VEHICLE_UNPROFITABLE] <- "vehicle_unprofitable";
-    this._event_names[GSEvent.ET_SUBSIDY_OFFERED]     <- "subsidy_offered";
+    this._event_names[GSEvent.ET_VEHICLE_CRASHED]       <- "vehicle_crashed";
+    this._event_names[GSEvent.ET_VEHICLE_LOST]          <- "vehicle_lost";
+    this._event_names[GSEvent.ET_VEHICLE_UNPROFITABLE]  <- "vehicle_unprofitable";
+    this._event_names[GSEvent.ET_VEHICLE_WAITING_IN_DEPOT] <- "vehicle_waiting_in_depot";
+    this._event_names[GSEvent.ET_VEHICLE_AUTOREPLACED]  <- "vehicle_autoreplaced";
+    this._event_names[GSEvent.ET_AIRCRAFT_DEST_TOO_FAR] <- "aircraft_dest_too_far";
+    this._event_names[GSEvent.ET_SUBSIDY_OFFER]         <- "subsidy_offered";
     this._event_names[GSEvent.ET_SUBSIDY_OFFER_EXPIRED] <- "subsidy_offer_expired";
-    this._event_names[GSEvent.ET_SUBSIDY_AWARDED]     <- "subsidy_awarded";
-    this._event_names[GSEvent.ET_SUBSIDY_EXPIRED]     <- "subsidy_expired";
-    this._event_names[GSEvent.ET_INDUSTRY_OPEN]       <- "industry_open";
-    this._event_names[GSEvent.ET_INDUSTRY_CLOSE]      <- "industry_close";
-    this._event_names[GSEvent.ET_TOWN_FOUNDED]        <- "town_founded";
-    this._event_names[GSEvent.ET_COMPANY_NEW]         <- "company_new";
-    this._event_names[GSEvent.ET_COMPANY_IN_TROUBLE]  <- "company_in_trouble";
-    this._event_names[GSEvent.ET_COMPANY_BANKRUPT]    <- "company_bankrupt";
-    this._event_names[GSEvent.ET_COMPANY_MERGER]      <- "company_merger";
+    this._event_names[GSEvent.ET_SUBSIDY_AWARDED]       <- "subsidy_awarded";
+    this._event_names[GSEvent.ET_SUBSIDY_EXPIRED]       <- "subsidy_expired";
+    this._event_names[GSEvent.ET_INDUSTRY_OPEN]         <- "industry_open";
+    this._event_names[GSEvent.ET_INDUSTRY_CLOSE]        <- "industry_close";
+    this._event_names[GSEvent.ET_TOWN_FOUNDED]          <- "town_founded";
+    this._event_names[GSEvent.ET_ENGINE_PREVIEW]        <- "engine_preview";
+    this._event_names[GSEvent.ET_ENGINE_AVAILABLE]      <- "engine_available";
+    this._event_names[GSEvent.ET_COMPANY_NEW]           <- "company_new";
+    this._event_names[GSEvent.ET_COMPANY_IN_TROUBLE]    <- "company_in_trouble";
+    this._event_names[GSEvent.ET_COMPANY_ASK_MERGER]    <- "company_ask_merger";
+    this._event_names[GSEvent.ET_COMPANY_MERGER]        <- "company_merger";
+    this._event_names[GSEvent.ET_COMPANY_BANKRUPT]      <- "company_bankrupt";
     this._event_names[GSEvent.ET_STATION_FIRST_VEHICLE] <- "station_first_vehicle";
+    this._event_names[GSEvent.ET_EXCLUSIVE_TRANSPORT_RIGHTS] <- "exclusive_transport_rights";
+    this._event_names[GSEvent.ET_ROAD_RECONSTRUCTION]   <- "road_reconstruction";
+    this._event_names[GSEvent.ET_DISASTER_ZEPPELINER_CRASHED] <- "disaster_zeppeliner_crashed";
+    this._event_names[GSEvent.ET_DISASTER_ZEPPELINER_CLEARED] <- "disaster_zeppeliner_cleared";
+    this._event_names[GSEvent.ET_COMPANY_RENAMED]      <- "company_renamed";
+    this._event_names[GSEvent.ET_PRESIDENT_RENAMED]    <- "president_renamed";
     while (true) {
       this._HandleEvents();
       // Process pathfinding commands that were queued during a prior pathfind yield.
@@ -133,8 +146,6 @@ class NttdGS extends GSController {
     }
   }
 
-  _event_names = null;
-
   function _ForwardGameEvent(event, et) {
     local name = (et in this._event_names) ? this._event_names[et] : ("event_" + et);
     local payload = { _event = true, event_type = name };
@@ -158,7 +169,7 @@ class NttdGS extends GSController {
           payload.rawset("vehicle_id", e.GetVehicleID());
           break;
         }
-        case GSEvent.ET_SUBSIDY_OFFERED: {
+        case GSEvent.ET_SUBSIDY_OFFER: {
           local e = GSEventSubsidyOffer.Convert(event);
           payload.rawset("subsidy_id", e.GetSubsidyID());
           break;
@@ -218,6 +229,70 @@ class NttdGS extends GSController {
           local e = GSEventStationFirstVehicle.Convert(event);
           payload.rawset("station_id", e.GetStationID());
           payload.rawset("vehicle_id", e.GetVehicleID());
+          break;
+        }
+        case GSEvent.ET_VEHICLE_WAITING_IN_DEPOT: {
+          local e = GSEventVehicleWaitingInDepot.Convert(event);
+          payload.rawset("vehicle_id", e.GetVehicleID());
+          break;
+        }
+        case GSEvent.ET_VEHICLE_AUTOREPLACED: {
+          local e = GSEventVehicleAutoReplaced.Convert(event);
+          payload.rawset("old_vehicle_id", e.GetOldVehicleID());
+          payload.rawset("new_vehicle_id", e.GetNewVehicleID());
+          break;
+        }
+        case GSEvent.ET_AIRCRAFT_DEST_TOO_FAR: {
+          local e = GSEventAircraftDestTooFar.Convert(event);
+          payload.rawset("vehicle_id", e.GetVehicleID());
+          break;
+        }
+        case GSEvent.ET_ENGINE_AVAILABLE: {
+          local e = GSEventEngineAvailable.Convert(event);
+          payload.rawset("engine_id", e.GetEngineID());
+          break;
+        }
+        case GSEvent.ET_COMPANY_ASK_MERGER: {
+          local e = GSEventCompanyAskMerger.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
+          payload.rawset("value", e.GetValue());
+          break;
+        }
+        case GSEvent.ET_ENGINE_PREVIEW: {
+          local e = GSEventEnginePreview.Convert(event);
+          payload.rawset("engine_name", e.GetName());
+          break;
+        }
+        case GSEvent.ET_EXCLUSIVE_TRANSPORT_RIGHTS: {
+          local e = GSEventExclusiveTransportRights.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
+          payload.rawset("town_id", e.GetTownID());
+          break;
+        }
+        case GSEvent.ET_ROAD_RECONSTRUCTION: {
+          local e = GSEventRoadReconstruction.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
+          payload.rawset("town_id", e.GetTownID());
+          break;
+        }
+        case GSEvent.ET_DISASTER_ZEPPELINER_CRASHED: {
+          local e = GSEventDisasterZeppelinerCrashed.Convert(event);
+          payload.rawset("station_id", e.GetStationID());
+          break;
+        }
+        case GSEvent.ET_DISASTER_ZEPPELINER_CLEARED: {
+          local e = GSEventDisasterZeppelinerCleared.Convert(event);
+          payload.rawset("station_id", e.GetStationID());
+          break;
+        }
+        case GSEvent.ET_COMPANY_RENAMED: {
+          local e = GSEventCompanyRenamed.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
+          break;
+        }
+        case GSEvent.ET_PRESIDENT_RENAMED: {
+          local e = GSEventPresidentRenamed.Convert(event);
+          payload.rawset("company_id", e.GetCompanyID());
           break;
         }
         default:
@@ -1236,6 +1311,11 @@ class NttdGS extends GSController {
     local radius = ("radius" in p) ? p.radius : 10;
     local max_results = ("max_results" in p) ? p.max_results : 10;
     local min_size = ("min_size" in p) ? p.min_size : 1;
+    local do_station_test = ("station_test" in p) ? p.station_test : false;
+    local station_length = ("platform_length" in p) ? p.platform_length : 3;
+    local station_rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    local company_id = ("company_id" in p) ? p.company_id : 0;
+    local required_cargo = ("required_cargo" in p) ? p.required_cargo : null;
     local cx = resolved.x, cy = resolved.y;
     local spots = [];
     for (local dy = -radius; dy <= radius; dy++) {
@@ -1258,7 +1338,23 @@ class NttdGS extends GSController {
           }
           if (!ok) continue;
         }
+        // Dry-run: test if BuildRailStation would succeed here
+        if (do_station_test) {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          GSRail.SetCurrentRailType(station_rail_type);
+          if (!GSRail.BuildRailStation(tile, GSRail.RAILTRACK_NE_SW, 1, station_length,
+                GSStation.STATION_NEW)) continue;
+        }
         local cargo_info = this._GetTileCargoInfo(tile, min_size, min_size, 4);
+        // Filter by required cargo if specified
+        if (required_cargo != null) {
+          local found = false;
+          foreach (ci in cargo_info) {
+            if (ci.cargo_name == required_cargo && ci.production > 0) { found = true; break; }
+          }
+          if (!found) continue;
+        }
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           max_height = GSTile.GetMaxHeight(tile), cargo_acceptance = cargo_info });
       }
