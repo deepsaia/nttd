@@ -15,12 +15,12 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     md_lines: list[str] = ["# Events Timeline\n"]
 
     for s in sessions:
-        if s.events.empty:
+        if s.events.is_empty():
             md_lines.append(f"## {s.session_id} ({s.model})")
             md_lines.append("- No events recorded\n")
             continue
 
-        events_sorted = s.events.sort_values("game_date")
+        events_sorted = s.events.sort("game_date")
         session_events: list[dict] = []
 
         md_lines.append(f"## {s.session_id} ({s.model})")
@@ -28,7 +28,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
         md_lines.append("| Date | Type | Company | Detail |")
         md_lines.append("|------|------|--------:|--------|")
 
-        for _, row in events_sorted.iterrows():
+        for row in events_sorted.iter_rows(named=True):
             event = {
                 "session_id": s.session_id,
                 "game_date": int(row["game_date"]),

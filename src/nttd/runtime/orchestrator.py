@@ -67,6 +67,10 @@ class Orchestrator:
         self._assist_approved: asyncio.Event = asyncio.Event()
         self._assist_actions: list[dict[str, Any]] = []
 
+        # Forward GS game events (vehicle crash, subsidy, industry open/close, etc.)
+        # to the session recorder so they appear in events.parquet and analysis.
+        self.client.on_game_event(self._on_game_event)
+
         # Optional action tracker (set from app.py)
         self.action_tracker: ActionTracker | None = None
         self._secs_per_game_day: float = _SECS_PER_GAME_DAY
@@ -86,6 +90,26 @@ class Orchestrator:
 
         # Staggered refresh counter (2.5.6)
         self._refresh_cycle: int = 0
+
+    def _on_game_event(self, data: dict[str, Any]) -> None:
+        """Handle unsolicited GS game events and record them."""
+        if not self.recorder:
+            return
+        event_type = str(data.get("event_type", "unknown"))
+        company_id = data.get("company_id", data.get("old_company_id"))
+        detail_parts: list[str] = []
+        for key, val in data.items():
+            if key in ("_event", "event_type"):
+                continue
+            detail_parts.append(f"{key}={val}")
+        detail = ", ".join(detail_parts) if detail_parts else ""
+        self.recorder.record_event(
+            game_date=self.world.game.game_date,
+            event_type=event_type,
+            company_id=company_id,
+            detail=detail,
+        )
+        logger.debug("GS game event: %s %s", event_type, detail)
 
     @property
     def mode(self) -> RuntimeMode:

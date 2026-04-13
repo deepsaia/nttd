@@ -9,16 +9,16 @@ from nttd.analysis.reports.registry import ReportResult, register
 
 def _compute_finance_summary(s: SessionData) -> dict:
     """Extract financial summary from snapshots for a single session."""
-    if s.snapshots.empty:
+    if s.snapshots.is_empty():
         return {
             "session_id": s.session_id,
             "model": s.model,
             "has_data": False,
         }
 
-    df = s.snapshots.sort_values("game_date")
-    first = df.iloc[0]
-    last = df.iloc[-1]
+    df = s.snapshots.sort("game_date")
+    first = df.row(0, named=True)
+    last = df.row(-1, named=True)
 
     # Infrastructure piece counts and maintenance costs (from pre-extracted columns)
     infra_pieces = {}
@@ -30,9 +30,9 @@ def _compute_finance_summary(s: SessionData) -> dict:
         ("station", "c0_station_pieces", "c0_station_cost"),
         ("airport", "c0_airport_pieces", "c0_airport_cost"),
     ]:
-        if pieces_col in last.index:
+        if pieces_col in last:
             infra_pieces[label] = int(last.get(pieces_col, 0))
-        if cost_col in last.index:
+        if cost_col in last:
             infra_costs[label] = int(last.get(cost_col, 0))
 
     # Game-day span gives temporal context independent of wall-clock time.

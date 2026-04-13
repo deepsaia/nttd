@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pandas as pd
+import polars as pl
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.reports.registry import ReportResult, register
@@ -53,25 +53,25 @@ _FUNNEL_STAGES = [
 
 
 def _compute_agent_funnel(
-    actions: pd.DataFrame,
+    actions: pl.DataFrame,
     agent_id: str,
 ) -> dict[str, Any]:
     """Compute route completion funnel for a single agent."""
-    agent_actions = actions[actions["agent_id"] == agent_id]
-    ok = agent_actions[agent_actions["status"] == "success"]
-    failed = agent_actions[agent_actions["status"] != "success"]
+    agent_actions = actions.filter(pl.col("agent_id") == agent_id)
+    ok = agent_actions.filter(pl.col("status") == "success")
+    failed = agent_actions.filter(pl.col("status") != "success")
 
     total = len(agent_actions)
-    infra_count = len(agent_actions[agent_actions["action_type"].isin(
-        _INFRA_ACTIONS | _STATION_ACTIONS | _DEPOT_ACTIONS
-    )])
-    ops_count = len(agent_actions[agent_actions["action_type"].isin(_ALL_OPERATION_ACTIONS)])
+    infra_count = len(agent_actions.filter(
+        pl.col("action_type").is_in(_INFRA_ACTIONS | _STATION_ACTIONS | _DEPOT_ACTIONS)
+    ))
+    ops_count = len(agent_actions.filter(pl.col("action_type").is_in(_ALL_OPERATION_ACTIONS)))
 
     # Funnel: did the agent successfully reach each stage?
     funnel: list[dict[str, Any]] = []
     for stage_name, stage_actions in _FUNNEL_STAGES:
-        stage_all = agent_actions[agent_actions["action_type"].isin(stage_actions)]
-        stage_ok = stage_all[stage_all["status"] == "success"]
+        stage_all = agent_actions.filter(pl.col("action_type").is_in(stage_actions))
+        stage_ok = stage_all.filter(pl.col("status") == "success")
         funnel.append({
             "stage": stage_name,
             "attempted": len(stage_all),
@@ -82,8 +82,8 @@ def _compute_agent_funnel(
     # Time-to-first for key milestones
     milestones: dict[str, int | None] = {}
     for stage_name, stage_actions in _FUNNEL_STAGES:
-        stage_ok = ok[ok["action_type"].isin(stage_actions)]
-        if not stage_ok.empty and "game_date" in stage_ok.columns:
+        stage_ok = ok.filter(pl.col("action_type").is_in(stage_actions))
+        if not stage_ok.is_empty() and "game_date" in stage_ok.columns:
             milestones[stage_name] = int(stage_ok["game_date"].min())
         else:
             milestones[stage_name] = None
@@ -92,16 +92,16 @@ def _compute_agent_funnel(
     agent_errors: list[dict[str, Any]] = []
     if "error" in failed.columns:
         err_counts: dict[str, int] = {}
-        for err in failed["error"].dropna():
+        for err in failed["error"].drop_nulls():
             err_short = str(err)[:100]
             err_counts[err_short] = err_counts.get(err_short, 0) + 1
         for err, count in sorted(err_counts.items(), key=lambda x: -x[1])[:5]:
             agent_errors.append({"error": err, "count": count})
 
     # Chronological action sequence (last 30 actions)
-    recent = agent_actions.sort_values("game_date").tail(30)
+    recent = agent_actions.sort("game_date").tail(30)
     action_log: list[dict[str, str]] = []
-    for _, row in recent.iterrows():
+    for row in recent.iter_rows(named=True):
         action_log.append({
             "action_type": row["action_type"],
             "status": row["status"],
@@ -124,17 +124,17 @@ def _compute_agent_funnel(
 
 def _compute_session_data(s: SessionData) -> dict[str, Any]:
     """Compute route completion stats for all agents in a session."""
-    if s.actions.empty:
+    if s.actions.is_empty():
         return {"session_id": s.session_id, "model": s.model, "has_data": False}
 
-    agent_ids = sorted(s.actions["agent_id"].unique())
+    agent_ids = sorted(s.actions["agent_id"].unique().to_list())
     agent_funnels = [_compute_agent_funnel(s.actions, aid) for aid in agent_ids]
 
     # Vehicle profitability from latest snapshot (use total of both years)
     profitable_vehicles = 0
     total_vehicles = 0
     try:
-        last = s.snapshots.sort_values("game_date").iloc[-1]
+        last = s.snapshots.sort("game_date").row(-1, named=True)
         snap = json.loads(last["snapshot_json"])
         vehicles = snap.get("vehicles", [])
         total_vehicles = len(vehicles)

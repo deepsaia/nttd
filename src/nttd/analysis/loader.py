@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import polars as pl
 
 logger = logging.getLogger(__name__)
@@ -43,12 +43,12 @@ class SessionData:
     # From agents.conf
     agents: dict[str, dict[str, Any]] = field(default_factory=dict)
 
-    # Parquet DataFrames
-    actions: pd.DataFrame = field(default_factory=pd.DataFrame)
-    agent_cycles: pd.DataFrame = field(default_factory=pd.DataFrame)
-    events: pd.DataFrame = field(default_factory=pd.DataFrame)
-    snapshots: pd.DataFrame = field(default_factory=pd.DataFrame)
-    tiles: pd.DataFrame = field(default_factory=pd.DataFrame)
+    # Polars DataFrames
+    actions: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
+    agent_cycles: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
+    events: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
+    snapshots: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
+    tiles: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
 
     @property
     def model(self) -> str:
@@ -64,8 +64,11 @@ class SessionData:
         For in-progress sessions (no ended_at), uses current UTC time.
         """
         if self.started_at:
-            start = pd.Timestamp(self.started_at)
-            end = pd.Timestamp(self.ended_at) if self.ended_at else pd.Timestamp.now(tz="UTC")
+            start = datetime.fromisoformat(self.started_at)
+            if self.ended_at:
+                end = datetime.fromisoformat(self.ended_at)
+            else:
+                end = datetime.now(tz=timezone.utc)
             return (end - start).total_seconds() / 60
         return 0.0
 
@@ -81,20 +84,19 @@ class SessionData:
         return f"{self.name} ({self.model})"
 
 
-def load_fragments(session_dir: Path, parquet_type: str) -> pd.DataFrame:
+def load_fragments(session_dir: Path, parquet_type: str) -> pl.DataFrame:
     """Read all fragment files for a parquet type and concatenate into one DataFrame.
 
-    Uses polars for fast parquet I/O, converts to pandas for compatibility
-    with existing plot functions. Returns an empty DataFrame if no fragments exist.
+    Returns an empty DataFrame if no fragments exist.
     """
     fragments_dir = session_dir / "_fragments"
     if not fragments_dir.exists():
-        return pd.DataFrame()
+        return pl.DataFrame()
 
     pattern = f"{parquet_type}_*.parquet"
     fragment_paths = sorted(fragments_dir.glob(pattern))
     if not fragment_paths:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
     frames: list[pl.DataFrame] = []
     for frag_path in fragment_paths:
@@ -104,22 +106,17 @@ def load_fragments(session_dir: Path, parquet_type: str) -> pd.DataFrame:
             logger.warning("Failed to read fragment %s, skipping", frag_path)
 
     if not frames:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
-    return pl.concat(frames).to_pandas()
+    return pl.concat(frames)
 
 
-def _load_parquet_with_fragments(session_dir: Path, parquet_type: str) -> pd.DataFrame:
-    """Load a parquet type, preferring merged file but falling back to fragments.
-
-    Uses polars for fast parquet I/O. If the merged file exists, returns it.
-    Otherwise reads fragments. Converts to pandas for compatibility with
-    existing plot functions.
-    """
+def _load_parquet_with_fragments(session_dir: Path, parquet_type: str) -> pl.DataFrame:
+    """Load a parquet type, preferring merged file but falling back to fragments."""
     merged_path = session_dir / f"{parquet_type}.parquet"
     if merged_path.exists():
         try:
-            return pl.read_parquet(merged_path).to_pandas()
+            return pl.read_parquet(merged_path)
         except Exception:
             logger.warning("Failed to read %s", merged_path)
 
@@ -154,15 +151,18 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
     # Load Parquet files (merged or fragments for in-progress sessions)
     for parquet_type in _PARQUET_TYPES:
         df = _load_parquet_with_fragments(session_dir, parquet_type)
-        if not df.empty:
+        if not df.is_empty():
             setattr(data, parquet_type, df)
 
     # Tag DataFrames with session info for multi-session analysis
     for attr in ("actions", "agent_cycles", "events", "snapshots"):
         df = getattr(data, attr)
-        if not df.empty:
-            df["_session_id"] = session_id
-            df["_model"] = data.model
+        if not df.is_empty():
+            tagged = df.with_columns(
+                pl.lit(session_id).alias("_session_id"),
+                pl.lit(data.model).alias("_model"),
+            )
+            setattr(data, attr, tagged)
 
     logger.info(
         "Loaded session %s: %d actions, %d cycles, %d events, %d snapshots",
@@ -183,12 +183,12 @@ def load_sessions(
 def combine_dataframes(
     sessions: list[SessionData],
     attr: str,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Concatenate a DataFrame attribute across multiple sessions."""
-    frames = [getattr(s, attr) for s in sessions if not getattr(s, attr).empty]
+    frames = [getattr(s, attr) for s in sessions if not getattr(s, attr).is_empty()]
     if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+        return pl.DataFrame()
+    return pl.concat(frames)
 
 
 def _extract_json_field(json_str: str, field_path: str) -> Any:
@@ -202,11 +202,12 @@ def _extract_json_field(json_str: str, field_path: str) -> Any:
         return None
 
 
-def extract_snapshot_json(snapshots_df: pd.DataFrame, field_path: str) -> pd.Series:
+def extract_snapshot_json(snapshots_df: pl.DataFrame, field_path: str) -> pl.Series:
     """Extract a nested field from snapshot_json column.
 
-    Example: extract_snapshot_json(df, "companies") returns a Series of company lists.
+    Example: extract_snapshot_json(df, "companies") returns a Series of extracted values.
     """
-    return snapshots_df["snapshot_json"].apply(
-        lambda s: _extract_json_field(s, field_path)
+    return snapshots_df["snapshot_json"].map_elements(
+        lambda s: _extract_json_field(s, field_path),
+        return_dtype=pl.Object,
     )

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import polars as pl
 from plotly.subplots import make_subplots
 
 from nttd.analysis.date_utils import game_date_to_str
@@ -61,7 +62,7 @@ def _short_label(s: SessionData) -> str:
 
 def _date_tickvals(game_dates: pd.Series, n_ticks: int = 8) -> tuple[list, list]:
     """Generate evenly spaced tick values and human-readable tick labels."""
-    mn, mx = game_dates.min(), game_dates.max()
+    mn, mx = int(game_dates.min()), int(game_dates.max())
     step = max(1, (mx - mn) // (n_ticks - 1))
     vals = list(range(mn, mx + 1, step))
     labels = [game_date_to_str(v) for v in vals]
@@ -80,7 +81,7 @@ def _apply_date_xaxis(fig: go.Figure, game_dates: pd.Series, row: int | None = N
 
 def _all_game_dates(sessions: list[SessionData]) -> pd.Series:
     """Concatenate game_date columns from all sessions."""
-    parts = [s.snapshots["game_date"] for s in sessions if not s.snapshots.empty]
+    parts = [s.snapshots["game_date"].to_pandas() for s in sessions if not s.snapshots.is_empty()]
     if not parts:
         return pd.Series(dtype=int)
     return pd.concat(parts, ignore_index=True)
@@ -211,9 +212,9 @@ def company_finances_timeseries(sessions: list[SessionData]) -> go.Figure:
 
     all_dates = _all_game_dates(sessions)
     for s in sessions:
-        if s.snapshots.empty:
+        if s.snapshots.is_empty():
             continue
-        df = s.snapshots.sort_values("game_date")
+        df = s.snapshots.to_pandas().sort_values("game_date")
         color = MODEL_COLORS.get(s.model, "#999")
         label = _short_label(s)
 
@@ -244,9 +245,9 @@ def company_loan_balance(sessions: list[SessionData]) -> go.Figure:
     all_dates = _all_game_dates(sessions)
 
     for s in sessions:
-        if s.snapshots.empty:
+        if s.snapshots.is_empty():
             continue
-        df = s.snapshots.sort_values("game_date")
+        df = s.snapshots.to_pandas().sort_values("game_date")
         color = MODEL_COLORS.get(s.model, "#999")
         date_labels = df["game_date"].apply(game_date_to_str)
 
@@ -289,9 +290,9 @@ def entity_growth_timeseries(sessions: list[SessionData]) -> go.Figure:
 
     all_dates = _all_game_dates(sessions)
     for s in sessions:
-        if s.snapshots.empty:
+        if s.snapshots.is_empty():
             continue
-        df = s.snapshots.sort_values("game_date")
+        df = s.snapshots.to_pandas().sort_values("game_date")
         color = MODEL_COLORS.get(s.model, "#999")
         label = _short_label(s)
         date_labels = df["game_date"].apply(game_date_to_str)
@@ -331,9 +332,10 @@ def action_type_distribution(sessions: list[SessionData]) -> go.Figure:
     )
 
     for i, s in enumerate(sessions):
-        if s.actions.empty:
+        if s.actions.is_empty():
             continue
-        counts = s.actions.groupby(["action_type", "status"]).size().reset_index(name="count")
+        actions_pd = s.actions.to_pandas()
+        counts = actions_pd.groupby(["action_type", "status"]).size().reset_index(name="count")
         for status, color in [("success", "#2CA02C"), ("failed", "#D62728")]:
             subset = counts[counts["status"] == status]
             fig.add_trace(go.Bar(
@@ -343,7 +345,7 @@ def action_type_distribution(sessions: list[SessionData]) -> go.Figure:
                 showlegend=(i == 0),
             ), row=1, col=i + 1)
 
-    n_types = max((s.actions["action_type"].nunique() for s in sessions if not s.actions.empty), default=10)
+    n_types = max((s.actions["action_type"].n_unique() for s in sessions if not s.actions.is_empty()), default=10)
     fig.update_layout(
         title="Action Types: Success vs Failure",
         barmode="stack", template=_TEMPLATE,
@@ -356,7 +358,10 @@ def action_type_distribution(sessions: list[SessionData]) -> go.Figure:
 
 def action_success_by_type(sessions: list[SessionData]) -> go.Figure:
     """Heatmap: success rate per action_type per model (top 15 types)."""
-    frames = [s.actions.assign(_model=s.model) for s in sessions if not s.actions.empty]
+    frames = [
+        s.actions.with_columns(pl.lit(s.model).alias("_model")).to_pandas()
+        for s in sessions if not s.actions.is_empty()
+    ]
     if not frames:
         fig = go.Figure()
         fig.update_layout(title="Action Success by Type (no data yet)", template=_TEMPLATE)
@@ -387,10 +392,10 @@ def actions_per_agent_bar(sessions: list[SessionData]) -> go.Figure:
     """Grouped bar: successful vs failed actions per agent per model."""
     rows = []
     for s in sessions:
-        if s.actions.empty:
+        if s.actions.is_empty():
             continue
-        for agent_id in s.actions["agent_id"].unique():
-            adf = s.actions[s.actions["agent_id"] == agent_id]
+        for agent_id in s.actions["agent_id"].unique().to_list():
+            adf = s.actions.filter(pl.col("agent_id") == agent_id)
             rows.append({
                 "agent": agent_id,
                 "model": s.model,
@@ -426,7 +431,10 @@ def actions_per_agent_bar(sessions: list[SessionData]) -> go.Figure:
 
 def cycle_timing_boxplots(sessions: list[SessionData]) -> go.Figure:
     """Box plots of decide and execute timing per agent and model."""
-    frames = [s.agent_cycles.assign(_model=s.model) for s in sessions if not s.agent_cycles.empty]
+    frames = [
+        s.agent_cycles.with_columns(pl.lit(s.model).alias("_model")).to_pandas()
+        for s in sessions if not s.agent_cycles.is_empty()
+    ]
     if not frames:
         fig = go.Figure()
         fig.update_layout(title="Cycle Timing Distribution (no data yet)", template=_TEMPLATE)
@@ -463,9 +471,9 @@ def cycle_decide_over_time(sessions: list[SessionData]) -> go.Figure:
     """Line chart: decide_ms per cycle number, per agent, per model."""
     fig = go.Figure()
     for s in sessions:
-        if s.agent_cycles.empty:
+        if s.agent_cycles.is_empty():
             continue
-        df = s.agent_cycles.copy()
+        df = s.agent_cycles.to_pandas()
         df["agent"] = df["connection_id"].str.split(":").str[2]
         for agent in sorted(df["agent"].unique()):
             adf = df[df["agent"] == agent].sort_values("cycle_number")
@@ -489,8 +497,8 @@ def cycle_decide_over_time(sessions: list[SessionData]) -> go.Figure:
 
 def actions_per_cycle_scatter(sessions: list[SessionData]) -> go.Figure:
     """Scatter: actions proposed vs succeeded per cycle."""
-    frames = [s.agent_cycles.assign(_model=s.model)
-              for s in sessions if not s.agent_cycles.empty]
+    frames = [s.agent_cycles.with_columns(pl.lit(s.model).alias("_model")).to_pandas()
+              for s in sessions if not s.agent_cycles.is_empty()]
     if not frames:
         fig = go.Figure()
         fig.update_layout(title="Actions Proposed vs Succeeded (no data yet)", template=_TEMPLATE)
@@ -520,10 +528,13 @@ def actions_per_cycle_scatter(sessions: list[SessionData]) -> go.Figure:
 
 def events_timeline(sessions: list[SessionData]) -> go.Figure:
     """Timeline of game events with readable dates."""
-    combined = pd.concat(
-        [s.events.assign(_model=s.model) for s in sessions if not s.events.empty],
-        ignore_index=True,
-    )
+    evt_frames = [
+        s.events.with_columns(pl.lit(s.model).alias("_model")).to_pandas()
+        for s in sessions if not s.events.is_empty()
+    ]
+    if not evt_frames:
+        return go.Figure().update_layout(title="No events data")
+    combined = pd.concat(evt_frames, ignore_index=True)
     if combined.empty:
         return go.Figure().update_layout(title="No events data")
 
@@ -574,11 +585,12 @@ def agent_spending_proxy(sessions: list[SessionData]) -> go.Figure:
 
     all_dates = _all_game_dates(sessions)
     for i, s in enumerate(sessions):
-        if s.actions.empty:
+        if s.actions.is_empty():
             continue
         col = i + 1
-        costly = s.actions[
-            (s.actions["status"] == "success") & (s.actions["action_type"].isin(_COSTLY_ACTIONS))
+        actions_pd = s.actions.to_pandas()
+        costly = actions_pd[
+            (actions_pd["status"] == "success") & (actions_pd["action_type"].isin(_COSTLY_ACTIONS))
         ].copy()
 
         for agent_id in sorted(costly["agent_id"].unique()):
@@ -595,8 +607,8 @@ def agent_spending_proxy(sessions: list[SessionData]) -> go.Figure:
                 customdata=adf["game_date"].apply(game_date_to_str),
             ), row=1, col=col, secondary_y=False)
 
-        if not s.snapshots.empty:
-            df = s.snapshots.sort_values("game_date")
+        if not s.snapshots.is_empty():
+            df = s.snapshots.to_pandas().sort_values("game_date")
             fig.add_trace(go.Scatter(
                 x=df["game_date"], y=df["c0_balance"],
                 name="Balance" if i == 0 else None,
@@ -645,10 +657,10 @@ def transport_mode_finances(sessions: list[SessionData]) -> go.Figure:
     has_data = False
 
     for i, s in enumerate(sessions):
-        if s.snapshots.empty:
+        if s.snapshots.is_empty():
             continue
         col = i + 1
-        df = s.snapshots.sort_values("game_date")
+        df = s.snapshots.to_pandas().sort_values("game_date")
 
         # Extract per-vehicle-type profit from snapshot_json
         type_profits: dict[str, list[tuple[int, int]]] = {}

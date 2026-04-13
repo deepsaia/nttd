@@ -87,7 +87,7 @@ def _period_context(sessions: list[SessionData]) -> dict[str, Any]:
     date_from: int | None = None
     date_to: int | None = None
     for s in sessions:
-        if s.snapshots.empty or "game_date" not in s.snapshots.columns:
+        if s.snapshots.is_empty() or "game_date" not in s.snapshots.columns:
             continue
         mn = int(s.snapshots["game_date"].min())
         mx = int(s.snapshots["game_date"].max())

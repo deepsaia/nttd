@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 
+import polars as pl
+
 from nttd.analysis.loader import SessionData
 from nttd.analysis.reports.registry import ReportResult, register
 
 
 def _extract_orders_data(s: SessionData) -> dict:
     """Extract vehicle orders and routes from the latest snapshot."""
-    if s.snapshots.empty:
+    if s.snapshots.is_empty():
         return {"session_id": s.session_id, "model": s.model, "has_data": False}
 
-    last_row = s.snapshots.sort_values("game_date").iloc[-1]
+    last_row = s.snapshots.sort("game_date").row(-1, named=True)
     try:
         snap = json.loads(last_row["snapshot_json"])
     except (json.JSONDecodeError, TypeError, KeyError):
@@ -56,17 +58,18 @@ def _extract_orders_data(s: SessionData) -> dict:
 
     # Order action stats from actions.parquet
     order_actions = {}
-    if not s.actions.empty:
-        order_types = s.actions[s.actions["action_type"].str.startswith("add_order") |
-                                s.actions["action_type"].str.startswith("insert_order") |
-                                s.actions["action_type"].str.startswith("remove_order") |
-                                s.actions["action_type"].str.startswith("set_order") |
-                                s.actions["action_type"].str.startswith("share_order") |
-                                s.actions["action_type"].str.startswith("copy_order") |
-                                s.actions["action_type"].str.startswith("move_order") |
-                                s.actions["action_type"].str.startswith("skip_to_order")]
-        if not order_types.empty:
-            for atype, group in order_types.groupby("action_type"):
+    if not s.actions.is_empty():
+        order_prefixes = [
+            "add_order", "insert_order", "remove_order", "set_order",
+            "share_order", "copy_order", "move_order", "skip_to_order",
+        ]
+        mask = pl.lit(False)
+        for prefix in order_prefixes:
+            mask = mask | pl.col("action_type").str.starts_with(prefix)
+        order_types = s.actions.filter(mask)
+        if not order_types.is_empty():
+            for group in order_types.partition_by("action_type"):
+                atype = group["action_type"][0]
                 ok = int((group["status"] == "success").sum())
                 order_actions[atype] = {
                     "total": len(group),

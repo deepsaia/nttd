@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import polars as pl
+
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import actions_per_agent_bar, agent_spending_proxy
 from nttd.analysis.reports.registry import ReportResult, register
@@ -19,19 +21,21 @@ _BUILD_ACTIONS = {
 
 def _compute_build_stats(s: SessionData) -> dict:
     """Count build actions by type and agent."""
-    if s.actions.empty:
+    if s.actions.is_empty():
         return {"session_id": s.session_id, "model": s.model, "has_data": False}
 
-    builds = s.actions[s.actions["action_type"].isin(_BUILD_ACTIONS)]
-    ok = builds[builds["status"] == "success"]
+    builds = s.actions.filter(pl.col("action_type").is_in(_BUILD_ACTIONS))
+    ok = builds.filter(pl.col("status") == "success")
 
-    by_type: dict[str, int] = ok["action_type"].value_counts().to_dict()
-    by_agent: dict[str, int] = ok["agent_id"].value_counts().to_dict()
+    vc_type = ok["action_type"].value_counts()
+    by_type: dict[str, int] = dict(zip(vc_type["action_type"].to_list(), vc_type["count"].to_list()))
+    vc_agent = ok["agent_id"].value_counts()
+    by_agent: dict[str, int] = dict(zip(vc_agent["agent_id"].to_list(), vc_agent["count"].to_list()))
 
     # Extract station/depot counts from latest snapshot
     stations = 0
     try:
-        last = s.snapshots.sort_values("game_date").iloc[-1]
+        last = s.snapshots.sort("game_date").row(-1, named=True)
         snap = json.loads(last["snapshot_json"])
         stations = len(snap.get("stations", []))
     except Exception:

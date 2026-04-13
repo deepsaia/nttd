@@ -10,10 +10,10 @@ from nttd.analysis.reports.registry import ReportResult, register
 
 def _extract_world_state(s: SessionData) -> dict:
     """Extract town, industry, and subsidy data from the latest snapshot."""
-    if s.snapshots.empty:
+    if s.snapshots.is_empty():
         return {"session_id": s.session_id, "model": s.model, "has_data": False}
 
-    last_row = s.snapshots.sort_values("game_date").iloc[-1]
+    last_row = s.snapshots.sort("game_date").row(-1, named=True)
     try:
         snap = json.loads(last_row["snapshot_json"])
     except (json.JSONDecodeError, TypeError, KeyError):
@@ -72,8 +72,8 @@ def _extract_world_state(s: SessionData) -> dict:
         ],
         "num_cargo_flows": len(cargo_flows),
         "total_cargo_amount": sum(cf.get("amount", 0) for cf in cargo_flows),
-        "has_tiles": not s.tiles.empty,
-        "tile_count": len(s.tiles) if not s.tiles.empty else 0,
+        "has_tiles": not s.tiles.is_empty(),
+        "tile_count": len(s.tiles) if not s.tiles.is_empty() else 0,
     }
 
 

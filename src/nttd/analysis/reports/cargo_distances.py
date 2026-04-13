@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 import plotly.graph_objects as go
+import polars as pl
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.reports.registry import ReportResult, register
@@ -30,10 +31,10 @@ logger = logging.getLogger(__name__)
 def _water_tiles_from_parquet(s: SessionData) -> set[tuple[int, int]]:
     """Extract water tile coordinates from tiles.parquet for water proximity."""
     water: set[tuple[int, int]] = set()
-    if s.tiles.empty or "flags" not in s.tiles.columns:
+    if s.tiles.is_empty() or "flags" not in s.tiles.columns:
         return water
-    water_rows = s.tiles[s.tiles["flags"].astype(int) & 1 == 1]
-    for _, row in water_rows.iterrows():
+    water_rows = s.tiles.filter((pl.col("flags").cast(pl.Int64) & 1) == 1)
+    for row in water_rows.iter_rows(named=True):
         water.add((int(row["x"]), int(row["y"])))
     return water
 
@@ -158,10 +159,10 @@ def _parse_snapshot_entities(
 
 def _compute_distances(s: SessionData) -> dict[str, Any]:
     """Compute cargo chain distances and town pair distances."""
-    if s.snapshots.empty:
+    if s.snapshots.is_empty():
         return {"session_id": s.session_id, "model": s.model, "has_data": False}
 
-    last_row = s.snapshots.sort_values("game_date").iloc[-1]
+    last_row = s.snapshots.sort("game_date").row(-1, named=True)
     try:
         snap = json.loads(last_row["snapshot_json"])
     except (json.JSONDecodeError, TypeError, KeyError):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import polars as pl
+
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import (
     action_success_by_type,
@@ -13,7 +15,7 @@ from nttd.analysis.reports.registry import ReportResult, register
 
 def _compute_action_stats(s: SessionData) -> dict:
     """Compute per-action-type stats for a session."""
-    if s.actions.empty:
+    if s.actions.is_empty():
         return {"session_id": s.session_id, "model": s.model, "has_data": False}
 
     total = len(s.actions)
@@ -22,7 +24,8 @@ def _compute_action_stats(s: SessionData) -> dict:
     rate = round(ok / total * 100, 1) if total > 0 else 0.0
 
     type_stats: list[dict] = []
-    for action_type, group in s.actions.groupby("action_type"):
+    for group in s.actions.partition_by("action_type"):
+        action_type = group["action_type"][0]
         t = len(group)
         s_ok = int((group["status"] == "success").sum())
         type_stats.append({
@@ -36,10 +39,10 @@ def _compute_action_stats(s: SessionData) -> dict:
     type_stats.sort(key=lambda x: x["total"], reverse=True)
 
     # Top failure reasons
-    failures = s.actions[s.actions["status"] != "success"]
+    failures = s.actions.filter(pl.col("status") != "success")
     error_counts: dict[str, int] = {}
     if "error" in failures.columns:
-        for err in failures["error"].dropna():
+        for err in failures["error"].drop_nulls():
             err_short = str(err)[:80]
             error_counts[err_short] = error_counts.get(err_short, 0) + 1
 

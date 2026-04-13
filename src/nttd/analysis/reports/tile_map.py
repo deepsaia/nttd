@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 import plotly.graph_objects as go
+import polars as pl
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.reports.registry import ReportResult, register
@@ -50,9 +51,9 @@ def _build_terrain_figure(s: SessionData) -> go.Figure | None:
     ))
 
     # Overlay entities from the last snapshot
-    if not s.snapshots.empty:
+    if not s.snapshots.is_empty():
         try:
-            last = s.snapshots.sort_values("game_date").iloc[-1]
+            last = s.snapshots.sort("game_date").row(-1, named=True)
             snap = json.loads(last["snapshot_json"])
             _add_entity_traces(fig, snap)
         except (json.JSONDecodeError, TypeError, KeyError):
@@ -151,7 +152,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     figures: list[tuple[str, go.Figure]] = []
 
     for s in sessions:
-        if s.tiles.empty:
+        if s.tiles.is_empty():
             md_lines.append(f"## {s.session_id} ({s.model})")
             md_lines.append("- No tile data available\n")
             data["maps"].append({
@@ -164,8 +165,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
         max_x = int(tiles["x"].max())
         max_y = int(tiles["y"].max())
         total_tiles = len(tiles)
-        water_count = int((tiles["flags"].astype(int) & _FLAG_WATER).astype(bool).sum())
-        buildable_count = int((tiles["flags"].astype(int) & _FLAG_BUILDABLE).astype(bool).sum())
+        water_count = int(tiles.filter((pl.col("flags").cast(pl.Int64) & _FLAG_WATER) > 0).height)
+        buildable_count = int(tiles.filter((pl.col("flags").cast(pl.Int64) & _FLAG_BUILDABLE) > 0).height)
 
         map_data = {
             "session_id": s.session_id,

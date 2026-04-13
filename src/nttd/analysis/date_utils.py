@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pandas as pd
+import polars as pl
 
 _MONTH_NAMES = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -54,10 +54,10 @@ def game_date_to_short(game_date: int) -> str:
     return f"{_MONTH_NAMES[month - 1]} {year}"
 
 
-def add_readable_dates(df: pd.DataFrame, col: str = "game_date") -> pd.DataFrame:
+def add_readable_dates(df: pl.DataFrame, col: str = "game_date") -> pl.DataFrame:
     """Add a 'date_str' column with human-readable dates derived from game_date."""
     if col not in df.columns:
         return df
-    df = df.copy()
-    df["date_str"] = df[col].apply(game_date_to_str)
-    return df
+    return df.with_columns(
+        pl.col(col).map_elements(game_date_to_str, return_dtype=pl.Utf8).alias("date_str"),
+    )

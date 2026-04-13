@@ -19,11 +19,12 @@ def _stats_from_cycles(session: SessionData) -> dict[str, dict]:
     Works for in-progress sessions where agents.conf has no stats yet.
     """
     df = session.agent_cycles
-    if df.empty:
+    if df.is_empty():
         return {}
 
     stats: dict[str, dict] = {}
-    for conn_id, group in df.groupby("connection_id"):
+    for group in df.partition_by("connection_id"):
+        conn_id = group["connection_id"][0]
         # connection_id format: "session_id:company_id:agent_id"
         parts = str(conn_id).split(":")
         agent_id = parts[-1] if len(parts) >= 3 else str(conn_id)

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from PIL import Image, ImageDraw, ImageFont
 
 from nttd.analysis.date_utils import game_date_to_str
@@ -195,25 +195,24 @@ def _next_power_of_2(n: int) -> int:
 
 
 def _extract_infrastructure(
-    actions_df: pd.DataFrame,
+    actions_df: pl.DataFrame,
     map_width: int,
 ) -> list[InfraSegment]:
     """Extract infrastructure line segments from build actions."""
     segments: list[InfraSegment] = []
-    if actions_df.empty:
+    if actions_df.is_empty():
         return segments
 
     infra_types = {
         "connect_rail": "rail",
         "connect_road": "road",
     }
-    mask = (
-        actions_df["action_type"].isin(infra_types.keys())
-        & (actions_df["status"] == "success")
-    )
-    builds = actions_df[mask].sort_values("game_date")
+    builds = actions_df.filter(
+        pl.col("action_type").is_in(list(infra_types.keys()))
+        & (pl.col("status") == "success")
+    ).sort("game_date")
 
-    for _, row in builds.iterrows():
+    for row in builds.iter_rows(named=True):
         try:
             params = json.loads(row["parameters_json"])
         except (json.JSONDecodeError, TypeError):
@@ -534,7 +533,7 @@ def generate_video(
 
     # Try terrain-based video
     result = _build_base_terrain(session.tiles, q.scale)
-    if result is None or session.snapshots.empty:
+    if result is None or session.snapshots.is_empty():
         return _generate_screenshot_video(session.session_dir, output_path, fps)
 
     base_terrain, max_x, max_y = result
@@ -544,13 +543,13 @@ def generate_video(
     infra_segments = _extract_infrastructure(session.actions, map_width)
     logger.info("Extracted %d infrastructure segments from actions", len(infra_segments))
 
-    snapshots = session.snapshots.sort_values("game_date")
+    snapshots = session.snapshots.sort("game_date")
     total = len(snapshots)
 
     # Sample frames evenly if max_frames is set
     if max_frames > 0 and total > max_frames:
-        indices = np.linspace(0, total - 1, max_frames, dtype=int)
-        snapshots = snapshots.iloc[indices]
+        indices = np.linspace(0, total - 1, max_frames, dtype=int).tolist()
+        snapshots = snapshots[indices]
 
     num_frames = len(snapshots)
     terrain_h, terrain_w = base_terrain.shape[:2]
@@ -567,7 +566,7 @@ def generate_video(
     )
 
     def frame_generator() -> np.ndarray:
-        for idx, (_, row) in enumerate(snapshots.iterrows()):
+        for idx, row in enumerate(snapshots.iter_rows(named=True)):
             snap_data = json.loads(row["snapshot_json"])
             frame = _render_frame(
                 base_terrain, snap_data, int(row["game_date"]),

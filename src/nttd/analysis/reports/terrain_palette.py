@@ -61,7 +61,7 @@ def prepare_terrain_grid(
 
     Returns (terrain_z, max_x, max_y) or None if tiles are empty.
     """
-    if hasattr(tiles_df, "empty") and tiles_df.empty:
+    if hasattr(tiles_df, "is_empty") and tiles_df.is_empty():
         return None
 
     max_x = int(tiles_df["x"].max())
@@ -70,10 +70,10 @@ def prepare_terrain_grid(
     height_grid = np.full((max_y, max_x), np.nan)
     water_mask = np.zeros((max_y, max_x), dtype=bool)
 
-    xs = tiles_df["x"].values.astype(int) - 1
-    ys = tiles_df["y"].values.astype(int) - 1
-    heights = tiles_df["height"].values.astype(float)
-    flags = tiles_df["flags"].values.astype(int)
+    xs = tiles_df["x"].to_numpy().astype(int) - 1
+    ys = tiles_df["y"].to_numpy().astype(int) - 1
+    heights = tiles_df["height"].to_numpy().astype(float)
+    flags = tiles_df["flags"].to_numpy().astype(int)
 
     valid = (xs >= 0) & (xs < max_x) & (ys >= 0) & (ys < max_y)
     height_grid[ys[valid], xs[valid]] = heights[valid]

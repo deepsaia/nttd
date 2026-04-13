@@ -11,10 +11,10 @@ from nttd.analysis.reports.registry import ReportResult, register
 
 def _extract_vehicle_roster(s: SessionData) -> dict:
     """Build a vehicle roster from the latest snapshot."""
-    if s.snapshots.empty:
+    if s.snapshots.is_empty():
         return {"session_id": s.session_id, "model": s.model, "has_data": False}
 
-    last_row = s.snapshots.sort_values("game_date").iloc[-1]
+    last_row = s.snapshots.sort("game_date").row(-1, named=True)
     try:
         snap = json.loads(last_row["snapshot_json"])
     except (json.JSONDecodeError, TypeError, KeyError):
