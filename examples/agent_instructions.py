@@ -58,7 +58,8 @@ OBSERVATION TOOLS (call these to gather info before acting):
   find_dock_spots        -> coast tiles near a town for dock construction (returns tile IDs!)
   find_water_depot_spots -> water tiles near a town for ship depot placement (returns tile IDs!)
   get_hangars            -> airport hangar/depot tiles for buying aircraft (returns hangar_tile!)
-  find_flat_spots        -> flat buildable tiles near a given tile (for rail depots/stations)
+  find_station_spot      -> validated rail station spot near an industry or town (catchment + dry-run)
+  find_flat_spots        -> flat buildable tiles near a given tile (for rail depots)
   scan_town_area         -> scan area around a town for buildable tiles
   get_tile_info          -> terrain details for a specific tile
   get_orders             -> order list for a vehicle
@@ -116,7 +117,8 @@ HOW TO USE TOOLS:
    - find_dock_spots -> extract "tile" field for build_dock (verified coast with water access!)
    - find_water_depot_spots -> extract "tile" field for build_water_depot (verified open water!)
    - get_hangars -> extract "hangar_tile" for buy_vehicle depot_tile when buying aircraft
-   - find_flat_spots -> extract "tile" field for rail depots/stations near industries
+   - find_station_spot -> extract "tile" field for rail stations near industries/towns
+   - find_flat_spots -> extract "tile" field for rail depots
    - get_engines -> extract "engine_id" for buy_vehicle
    - get_stations -> extract "id" (station_id) for add_order station_id parameter
    - get_vehicles -> extract "id" (vehicle_id) for orders and commands
@@ -131,7 +133,10 @@ MANDATORY: ALWAYS use find_*_spots tools BEFORE building any structure.
   - NEVER call build_airport without first calling find_airport_spots.
   - NEVER call build_dock without first calling find_dock_spots.
   - NEVER call build_water_depot without first calling find_water_depot_spots.
-  - For rail depots/stations, use find_flat_spots to get valid flat tiles.
+  - For rail stations near INDUSTRIES, use find_station_spot(industry_id=X).
+  - For rail stations near TOWNS (passengers/mail), use find_station_spot(town_id=X).
+    This validates cargo catchment -- stations built without this check earn ZERO income.
+  - For rail depots, use find_flat_spots.
 
 ACTION HISTORY:
   Your observation includes "action_history" -- a list of your successful actions from
@@ -235,7 +240,7 @@ AIR & MISC:
   remove_airport        tile
   build_dock            tile
   build_bridge          start_x, start_y, end_x, end_y, bridge_type, transport_type
-                        NOTE: uses x,y coordinates NOT tile IDs! Get x,y from find_flat_spots or get_tile_info.
+                        NOTE: uses x,y coordinates NOT tile IDs! Get x,y from find_station_spot, find_flat_spots, or get_tile_info.
                         transport_type: 0=rail, 1=road. bridge_type: integer from get_bridge_types.
   build_tunnel          tile, transport_type
   demolish_tile         tile
@@ -477,25 +482,23 @@ EVERY CYCLE -- CHECK FIRST:
 PHASE 1 -- SCOUT (cycle 1):
   a. Look at route_planning.top_unserved_cargo in your observation. These are the best
      unserved industry pairs (sorted by distance). Pick the SHORTEST route (under 15 tiles!)
-     with high monthly_production. Note source_x/y and dest_x/y coordinates.
+     with high monthly_production. Note source_id and dest_id (industry IDs).
      DISTANCE IS CRITICAL: Routes under 15 tiles almost always succeed. Routes 15-30
      tiles are OK. Routes over 30 tiles FREQUENTLY FAIL with connect_rail.
      If route_planning is not available, call get_industries and pick TWO VERY CLOSE
      industries (within 15 tiles) that form a supply chain (coal -> power, farm -> factory).
-  c. Call find_flat_spots(tile=<source_industry_tile>, radius=10, min_size=3) to find
-     station sites near the source industry.
-     CRITICAL: Check the cargo_acceptance field in results! Pick a spot that shows the
-     cargo you want to transport (e.g. "COAL" for a coal mine). If NO spot has your
-     target cargo in cargo_acceptance, the station will be TOO FAR from the industry
-     and your train will pick up ZERO cargo. Try a larger radius or a different industry.
-  d. Call find_flat_spots(tile=<dest_industry_tile>, radius=10, min_size=3) for the
-     destination. Check cargo_acceptance shows the cargo is ACCEPTED here.
-  e. Call get_engines(vehicle_type=0) to find available train engines.
-  f. Call get_rail_types to check available track types.
+  b. Call find_station_spot(industry_id=<source_id>) to find station sites near
+     the source industry. This tool validates that the spot is within cargo catchment AND
+     that a station can be built there. If it returns empty, try radius=20 or pick a
+     different industry -- do NOT use find_flat_spots and guess, you will build outside
+     catchment and earn ZERO income.
+  c. Call find_station_spot(industry_id=<dest_id>) for the destination.
+  d. Call get_engines(vehicle_type=0) to find available train engines.
+  e. Call get_rail_types to check available track types.
 
 PHASE 2 -- BUILD STATIONS AND DEPOT (cycle 2):
   Build stations FIRST so you know the exact tiles to connect with track.
-  a. Use find_flat_spots results from PHASE 1. Pick tiles with CONFIRMED cargo_acceptance.
+  a. Use find_station_spot results from PHASE 1. All returned spots are validated.
   b. Build in this order:
      - build_rail_station(tile=<flat_tile_near_source>, num_platforms=1, platform_length=3, rail_type=0)
      - build_rail_station(tile=<flat_tile_near_dest>, num_platforms=1, platform_length=3, rail_type=0)
@@ -506,7 +509,7 @@ PHASE 2 -- BUILD STATIONS AND DEPOT (cycle 2):
 PHASE 3 -- CONNECT TRACK (cycle 3):
   Build track BETWEEN THE STATION TILES so the track physically connects to stations.
   a. Check previous_actions -- did the station builds succeed? If a station failed,
-     call find_flat_spots again with a DIFFERENT tile and rebuild. Do NOT proceed without
+     call find_station_spot again with a DIFFERENT industry and rebuild. Do NOT proceed without
      two successfully built stations.
   b. Use connect_rail with the STATION TILE coordinates (not industry coordinates!):
      {{"action_type": "connect_rail", "parameters": {{
@@ -558,14 +561,16 @@ RAIL CONSTRUCTION:
   - Keep routes SHORT: pick industries within 15 tiles of each other.
   - For a first route, prioritize CLOSENESS over cargo value.
   - ALWAYS build stations before track. ALWAYS use station tile coordinates for connect_rail.
-  - find_flat_spots with min_size=3 ensures space for a 3-platform station.
-    If it returns empty, try radius=15 or a different industry.
+  - Use find_station_spot(industry_id=X) to find validated station sites near industries.
+    It checks both cargo catchment AND buildability. If it returns empty, try radius=20
+    or pick a different industry.
+  - For depots, use find_flat_spots(radius=10, min_size=1) near one of your stations.
 
 IMPORTANT RULES:
 - You ONLY see trains and rail stations. Other transport types are invisible to you.
-- Stations need FLAT land. Use find_flat_spots(radius=10, min_size=3) to get tiles.
-- ALWAYS check cargo_acceptance in find_flat_spots results before building a station.
-  A station outside industry catchment will collect ZERO cargo.
+- ALWAYS use find_station_spot for station placement. It validates cargo catchment and
+  buildability in one call. Building a station outside catchment earns ZERO income.
+- Only use find_flat_spots for depot placement (depots don't need catchment validation).
 - Always use rail_type=0 (default rail) unless get_rail_types shows a better option.
 - After buying a vehicle, wait one cycle then call get_vehicles to get the ID.
 - Use station_id for orders, NOT tile coordinates.

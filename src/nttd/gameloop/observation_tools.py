@@ -284,6 +284,52 @@ _TOOL_DEFS: list[dict[str, Any]] = [
         "inject_company_id": True,
     },
     {
+        "name": "find_station_spot",
+        "description": (
+            "Find validated rail station spots near an industry or town."
+            " Combines flat-land check, station dry-run, and cargo catchment validation."
+            " For industries: returns spots where the industry's cargo is produced/accepted."
+            " For towns: returns spots where passengers or mail are available."
+            " Provide either industry_id OR town_id (not both)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "industry_id": {
+                    "type": "integer",
+                    "description": "Industry ID (for cargo routes). From get_industries or route_planning.",
+                },
+                "town_id": {
+                    "type": "integer",
+                    "description": "Town ID (for passenger/mail routes). From get_towns or route_planning.",
+                },
+                "platform_length": {
+                    "type": "integer",
+                    "description": "Station platform length. Default 3.",
+                    "default": 3,
+                },
+                "rail_type": {
+                    "type": "integer",
+                    "description": "Rail type ID. Default 0.",
+                    "default": 0,
+                },
+                "radius": {
+                    "type": "integer",
+                    "description": "Search radius. Default 15.",
+                    "default": 15,
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max spots to return. Default 5.",
+                    "default": 5,
+                },
+            },
+            "required": [],
+        },
+        "gs_action": "find_station_spot",
+        "inject_company_id": True,
+    },
+    {
         "name": "find_water_depot_spots",
         "description": (
             "Find water tiles where a ship depot can be built (dry-run validated)."

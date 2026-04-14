@@ -428,6 +428,7 @@ class NttdGS extends GSController {
         case "find_airport_spots":  return this.CmdFindAirportSpots(p);
         case "find_dock_spots":     return this.CmdFindDockSpots(p);
         case "find_flat_spots":     return this.CmdFindFlatSpots(p);
+        case "find_station_spot": return this.CmdFindStationSpot(p);
         case "get_hangars":         return this.CmdGetHangars(p);
         case "find_water_depot_spots": return this.CmdFindWaterDepotSpots(p);
 
@@ -1362,6 +1363,94 @@ class NttdGS extends GSController {
     this._SortByDistance(spots);
     if (spots.len() > max_results) spots = spots.slice(0, max_results);
     return { success = true, result = spots };
+  }
+
+  function CmdFindStationSpot(p) {
+    local has_industry = ("industry_id" in p) && GSIndustry.IsValidIndustry(p.industry_id);
+    local has_town = ("town_id" in p) && GSTown.IsValidTown(p.town_id);
+    if (!has_industry && !has_town)
+      return { success = false, error = "Provide industry_id or town_id" };
+
+    local company_id = ("company_id" in p) ? p.company_id : 0;
+    local platform_length = ("platform_length" in p) ? p.platform_length : 3;
+    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    local radius = ("radius" in p) ? p.radius : 15;
+    local max_results = ("max_results" in p) ? p.max_results : 5;
+
+    local cx, cy, target_name;
+    local cargo_labels = [];
+
+    if (has_industry) {
+      local loc = GSIndustry.GetLocation(p.industry_id);
+      cx = GSMap.GetTileX(loc); cy = GSMap.GetTileY(loc);
+      target_name = GSIndustry.GetName(p.industry_id);
+      local cargo_list = GSCargoList();
+      foreach (cargo_id, _ in cargo_list) {
+        local last = GSIndustry.GetLastMonthProduction(p.industry_id, cargo_id);
+        if (last > 0) cargo_labels.append(GSCargo.GetCargoLabel(cargo_id));
+        if (GSIndustry.IsCargoAccepted(p.industry_id, cargo_id))
+          cargo_labels.append(GSCargo.GetCargoLabel(cargo_id));
+      }
+    } else {
+      local loc = GSTown.GetLocation(p.town_id);
+      cx = GSMap.GetTileX(loc); cy = GSMap.GetTileY(loc);
+      target_name = GSTown.GetName(p.town_id);
+      cargo_labels = ["PASS", "MAIL"];
+    }
+
+    if (cargo_labels.len() == 0)
+      return { success = false, error = "No cargo found for this target" };
+
+    local spots = [];
+    for (local dy = -radius; dy <= radius; dy++) {
+      for (local dx = -radius; dx <= radius; dx++) {
+        local x = cx + dx, y = cy + dy;
+        local tile = GSMap.GetTileIndex(x, y);
+        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+        if (GSTile.GetSlope(tile) != 0) continue;
+        // Check area for platform_length
+        local base_h = GSTile.GetMaxHeight(tile);
+        local ok = true;
+        for (local rx = 1; rx < platform_length && ok; rx++) {
+          local ct = GSMap.GetTileIndex(x + rx, y);
+          if (!GSMap.IsValidTile(ct) || !GSTile.IsBuildable(ct)) { ok = false; break; }
+          if (GSTile.GetMaxHeight(ct) != base_h || GSTile.GetSlope(ct) != 0) { ok = false; break; }
+        }
+        if (!ok) continue;
+        // Dry-run: test station placement
+        {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          GSRail.SetCurrentRailType(rail_type);
+          if (!GSRail.BuildRailStation(tile, GSRail.RAILTRACK_NE_SW, 1, platform_length,
+                GSStation.STATION_NEW)) continue;
+        }
+        // Check cargo at this tile
+        local cargo_info = this._GetTileCargoInfo(tile, platform_length, 1, 4);
+        local has_target_cargo = false;
+        foreach (ci in cargo_info) {
+          foreach (lbl in cargo_labels) {
+            if (ci.cargo_name == lbl && (ci.production > 0 || ci.acceptance)) {
+              has_target_cargo = true; break;
+            }
+          }
+          if (has_target_cargo) break;
+        }
+        if (!has_target_cargo) continue;
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+          max_height = base_h, cargo_acceptance = cargo_info });
+      }
+    }
+    this._SortByDistance(spots);
+    if (spots.len() > max_results) spots = spots.slice(0, max_results);
+
+    local result_info = {
+      target_name = target_name, target_x = cx, target_y = cy,
+      cargo_labels = cargo_labels, spots = spots
+    };
+    if (has_industry) result_info.industry_id <- p.industry_id;
+    else result_info.town_id <- p.town_id;
+    return { success = true, result = result_info };
   }
 
   function CmdFindWaterDepotSpots(p) {
