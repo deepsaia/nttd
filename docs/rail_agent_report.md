@@ -99,8 +99,8 @@ api_key_env       = "OPENAI_API_KEY"
 AgentConnection.start()
   |-- Sets _running = True
   |-- Spawns asyncio.Task: _run() loop
-  |-- Records event "agent_start" to database
-  |-- Records agent connection metadata to database
+  |-- Records event "agent_start" to parquet database
+  |-- Records agent connection metadata to parquet database
 ```
 
 ---
@@ -128,7 +128,7 @@ _run_one_cycle()
   |-- [4] EXECUTE   (~50ms per action)
   |     _execute(valid_actions, game_date)
   |     -> Sends each action to GS via admin port TCP
-  |     -> Records each action + result to database
+  |     -> Records each action + result to parquet database
   |
   |-- [5] POST-EXECUTE
   |     Record successful actions to _action_history
@@ -414,7 +414,7 @@ _execute(valid_actions, game_date)
   |     |
   |     returns: {"id":"gs_42", "success":true, "result":{"tile":[155,124], "station_id":0}}
   |
-  |-- Record to database:
+  |-- Record to parquet database:
   |     ActionEnvelope(action_id, action_type, parameters, company_id, metadata)
   |     ActionResult(action_id, status=SUCCESS|FAILED, error="")
   |
