@@ -190,6 +190,42 @@ _TOOL_DEFS: list[dict[str, Any]] = [
         "inject_company_id": True,
     },
     {
+        "name": "find_rail_depot_spot",
+        "description": (
+            "Find tiles near existing rail track suitable for a rail depot."
+            " Only returns tiles adjacent to track, with dry-run validation."
+            " Returns tile, x, y, depot_direction, adjacent_track_x/y."
+            " Call AFTER connect_rail so track exists to attach to."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tile": {
+                    "type": "integer",
+                    "description": "Center tile ID to search near (e.g. a station tile).",
+                },
+                "radius": {
+                    "type": "integer",
+                    "description": "Search radius. Default 10.",
+                    "default": 10,
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max spots to return. Default 5.",
+                    "default": 5,
+                },
+                "rail_type": {
+                    "type": "integer",
+                    "description": "Rail type ID. Default 0.",
+                    "default": 0,
+                },
+            },
+            "required": ["tile"],
+        },
+        "gs_action": "find_rail_depot_spot",
+        "inject_company_id": True,
+    },
+    {
         "name": "scan_town_area",
         "description": "Scan the area around a town for buildable tiles.",
         "parameters": {

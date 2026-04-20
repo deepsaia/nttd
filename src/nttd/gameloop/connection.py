@@ -37,6 +37,16 @@ logger = logging.getLogger(__name__)
 
 _LLM_TIMEOUT_SECONDS = 120.0  # Multi-turn tool calling can take several rounds
 
+
+def _nearest_town(sx: int, sy: int, towns: dict[int, Any]) -> tuple[int, str]:
+    """Return (town_id, town_name) of the nearest town to station coords."""
+    best_id, best_name, best_dist = -1, "", 999999
+    for t in towns.values():
+        d = abs(t.x - sx) + abs(t.y - sy)
+        if d < best_dist:
+            best_id, best_name, best_dist = t.id, t.name, d
+    return best_id, best_name
+
 _PROMPT_MAP: dict[str, Any] = {
     "road": get_road_agent_prompt,
     "rail": get_rail_agent_prompt,
@@ -450,9 +460,12 @@ class AgentConnection:
                     "has_rail": s.has_rail, "has_bus": s.has_bus, "has_truck": s.has_truck,
                     "has_airport": s.has_airport, "has_dock": s.has_dock,
                 })]
-            obs["stations"] = [
-                {
+            obs["stations"] = []
+            for s in company_stations:
+                tid, tname = _nearest_town(s.x, s.y, world.towns)
+                obs["stations"].append({
                     "id": s.id, "name": s.name, "x": s.x, "y": s.y,
+                    "nearest_town_id": tid, "nearest_town": tname,
                     "has_rail": s.has_rail, "has_bus": s.has_bus,
                     "has_truck": s.has_truck, "has_airport": s.has_airport,
                     "has_dock": s.has_dock,
@@ -468,9 +481,7 @@ class AgentConnection:
                         }
                         for ca in s.cargo_acceptance
                     ],
-                }
-                for s in company_stations
-            ]
+                })
         elif "stations" in sections:
             company_stations = [s for s in world.stations.values() if s.company_id == company_id]
             if station_filter:
@@ -478,10 +489,13 @@ class AgentConnection:
                     "has_rail": s.has_rail, "has_bus": s.has_bus, "has_truck": s.has_truck,
                     "has_airport": s.has_airport, "has_dock": s.has_dock,
                 })]
-            obs["stations"] = [
-                {"id": s.id, "name": s.name, "x": s.x, "y": s.y}
-                for s in company_stations
-            ]
+            obs["stations"] = []
+            for s in company_stations:
+                tid, tname = _nearest_town(s.x, s.y, world.towns)
+                obs["stations"].append({
+                    "id": s.id, "name": s.name, "x": s.x, "y": s.y,
+                    "nearest_town_id": tid, "nearest_town": tname,
+                })
         elif "stations_count" in sections:
             company_stations = [s for s in world.stations.values() if s.company_id == company_id]
             if station_filter:

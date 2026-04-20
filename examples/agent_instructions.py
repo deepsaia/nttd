@@ -301,48 +301,73 @@ COMPLETE-ROUTE-FIRST STRATEGY:
 You must complete ONE working route before building anything else. A working route
 means: two stops in DIFFERENT towns, a vehicle with orders to both stops, running.
 
-PHASE 1 -- SCOUT AND BUILD INFRASTRUCTURE (cycle 1):
+EVERY CYCLE -- CHECK FIRST:
+  Before doing ANYTHING each cycle, check your observation:
+  - "action_history" shows your successful actions from previous cycles. Use it to
+    remember what you have already built.
+  - "previous_actions" shows what happened last cycle (success/failure).
+  - Check route_status in your observation. If orphan_stations > 0, do NOT build more
+    stops. Instead: connect roads to orphan stops, build depots, buy vehicles, or
+    abandon them. Orphan stations waste money with no vehicles serving them.
+  - Do you have stations WITHOUT vehicles? If yes, SKIP to PHASE 5 immediately.
+    Building more stops when existing ones have no vehicles is WASTING MONEY.
+
+PHASE 1 -- SCOUT AND BUILD STOPS (cycle 1):
   a. Call get_engines(vehicle_type=1) to find buses (cargo_label="PASS").
-  b. Look at route_planning.top_unserved_towns in your observation. Pick the route
-     with the SHORTEST distance and highest demand_score. Note the town IDs and x,y coords.
-     DISTANCE IS KING: Routes under 30 tiles are ideal. Routes 30-50 tiles are OK.
-     Routes over 50 tiles with buses are RARELY profitable -- buses are too slow.
+  b. Look at route_planning.top_unserved_towns in your observation. These are the closest
+     unserved pairs of DIFFERENT towns (sorted by distance, shortest first). Pick the FIRST
+     route in the list -- it is the closest pair. Short inter-town routes succeed reliably;
+     long routes time out. Only consider longer routes after you have 3+ working ones.
      If route_planning is not available, pick TWO DIFFERENT towns with population > 300.
-     PREFER towns that are CLOSE together (20-40 tiles apart).
-  d. MANDATORY: Call find_bus_stop_spots(town_id=X) for town A. Pick a spot with PASS
+     PREFER towns that are CLOSE together but NOT the same town.
+  c. MANDATORY: Call find_bus_stop_spots(town_id=X) for town A. Pick a spot with PASS
      in cargo_acceptance. Call find_bus_stop_spots(town_id=Y) for town B.
      These tools validate flat terrain -- building without them causes ERR_FLAT_LAND_REQUIRED.
-  e. MANDATORY: Call find_depot_spots(town_id=X) for a depot near town A.
-  f. Build stops and depot using ONLY tiles from find_*_spots results:
+  d. Build stops using ONLY tiles from find_bus_stop_spots results:
      - build_road_stop(tile=<spot_A.tile>, direction=<spot_A.direction>)
      - build_road_stop(tile=<spot_B.tile>, direction=<spot_B.direction>)
-     - build_road_depot(tile=<depot.tile>, direction=<depot.depot_direction>)
-     Do NOT buy a vehicle yet -- infrastructure must be confirmed first.
+     Do NOT build a depot or buy a vehicle yet -- road must be built first.
 
 PHASE 2 -- CONNECT ROAD (cycle 2):
   CRITICAL: Towns do NOT have roads between them! You MUST build a connecting road
   or your buses will never reach the other town and earn zero revenue.
-  a. Check previous_actions -- did the builds succeed? If not, fix failures first.
+  a. Check previous_actions -- did the stop builds succeed? If not, fix failures first.
   b. Use connect_road to build a road between the two stops:
      {{"action_type": "connect_road", "parameters": {{
        "from_x": <stop_A.x>, "from_y": <stop_A.y>,
        "to_x": <stop_B.x>, "to_y": <stop_B.y>}}}}
      This automatically pathfinds around hills, builds bridges over water,
      tunnels through mountains, and handles road crossings. One action, done.
+  c. If connect_road FAILS, STOP. Return []. Do NOT build a depot. Do NOT buy a vehicle.
+     Next cycle: pick DIFFERENT, CLOSER towns and restart from PHASE 1.
+     ABSOLUTE RULE: No depot or vehicle purchase is allowed after a connect failure.
 
-PHASE 3 -- BUY VEHICLE, ORDERS AND START (cycle 3):
-  a. Check previous_actions -- did connect_road succeed?
-     If connect_road FAILED (timeout or pathfinding failure), do NOT buy a vehicle.
-     Instead: try connect_road again with different endpoints, or pick a new route entirely.
-     NEVER buy a vehicle without a confirmed road connection.
-  b. If connect_road succeeded:
+PHASE 3 -- BUILD DEPOT (cycle 3):
+  The depot must be on the road network you just built. Building a depot BEFORE connect_road
+  means it may attach to a random road fragment that is not connected to your stops.
+  a. Check previous_actions -- did connect_road succeed? If it FAILED or timed out,
+     do NOT build a depot. Abandon this route and restart PHASE 1 with closer towns.
+  b. Call find_depot_spots(town_id=X) for a depot near town A (where the road now exists).
+  c. Build depot: build_road_depot(tile=<depot.tile>, direction=<depot.depot_direction>)
+
+PHASE 4 -- BUY VEHICLE AND GET ID (cycle 4):
+  a. Check previous_actions -- did build_road_depot succeed?
+     NEVER buy a vehicle without a confirmed road connection AND a depot on the network.
+  b. If depot build succeeded:
      - buy_vehicle(depot_tile=<depot.tile>, engine_id=<bus_engine_id>)
-     - Call get_stations to get station IDs for your two stops.
-     - add_order(vehicle_id=<from buy result>, station_id=<stop_A_id>, order_flags=0)
-     - add_order(vehicle_id=<from buy result>, station_id=<stop_B_id>, order_flags=0)
-     - start_vehicle(vehicle_id=X)
+     - Do NOT add_order in the same cycle. The buy result contains the vehicle_id.
+     - STOP here. Return [] after buying. You need the vehicle_id for orders.
 
-PHASE 4 -- VERIFY (cycles 4-6):
+PHASE 5 -- ADD ORDERS AND START (cycle 5):
+  a. Check previous_actions for the buy_vehicle result. It contains "vehicle_id".
+     If you cannot find vehicle_id in previous_actions, call get_vehicles to find it.
+     NEVER use vehicle_id=0 -- that is always wrong. The real ID is 9 or higher.
+  b. Call get_stations to get station IDs for your two stops.
+  c. add_order(vehicle_id=<real_id>, station_id=<stop_A_id>, order_flags=0)
+  d. add_order(vehicle_id=<real_id>, station_id=<stop_B_id>, order_flags=0)
+  e. start_vehicle(vehicle_id=<real_id>)
+
+PHASE 6 -- VERIFY (cycles 6-8):
   a. Return [] and observe. Check get_vehicles -- is the bus moving (current_speed > 0)?
      Does it have 2 orders? Is it making profit?
   b. Check get_stations -- are BOTH stations getting cargo ratings (rated=true)?
@@ -351,15 +376,19 @@ PHASE 4 -- VERIFY (cycles 4-6):
   d. If any vehicle has 0 orders for 2+ cycles, sell it: send_to_depot then sell_vehicle.
   e. Do NOT build anything new until your first route is confirmed working.
 
-PHASE 5 -- EXPAND (cycle 7+):
+PHASE 7 -- EXPAND (cycle 9+):
   Only after your first route is verified working:
-  a. Clone profitable vehicles: clone_vehicle(depot_tile, vehicle_id, share_orders=true)
-  b. Build a second route to NEW towns (not the same ones).
-  c. Never build more than 2 stops per route. Each route = exactly 2 stops in 2 different towns.
+  a. Build a NEW route to DIFFERENT towns. Check your stations list -- if any new town has
+     the same nearest_town_id as an existing stop, pick a different town. You are duplicating.
+  b. Do NOT add more vehicles to an existing route unless BOTH stations show cargo_waiting > 20.
+     New routes to new towns always earn more than extra vehicles on a saturated route.
+  c. Each route = exactly 2 stops in 2 different towns. Max 2 stops per town across all routes.
 
 CRITICAL RULES:
 - You ONLY see road vehicles and bus/truck stations. Other transport types are invisible to you.
-- NEVER build multiple stops in the same town. One stop per town per route.
+- NEVER build multiple stops in the same town. One stop per town per route. Max 2 stops per town.
+  Before calling find_bus_stop_spots for a town, check your stations list. Each station has
+  nearest_town_id -- if you already have a stop in that town, REUSE it. Do not build another.
 - Stops must be in DIFFERENT towns for revenue. Same-town stops earn nothing.
 - After buying a vehicle, wait until NEXT cycle to get vehicle_id from get_vehicles.
 - Use station_id (small integer from get_stations "id") for add_order, NOT tile coordinates.
@@ -476,35 +505,37 @@ EVERY CYCLE -- CHECK FIRST:
   - "action_history" shows your successful actions from previous cycles. Use it to
     remember what you have already built.
   - "previous_actions" shows what happened last cycle (success/failure).
-  - Do you have stations WITHOUT trains? If yes, SKIP to PHASE 4 immediately.
+  - Do you have stations WITHOUT trains? If yes, SKIP to PHASE 5 immediately.
     Building more stations when existing ones have no vehicles is WASTING MONEY.
+  - Check action_history for connect_rail. If you already have a successful connect_rail
+    between two coordinates, do NOT call connect_rail with the same from/to again.
+    The track already exists. Move to the next phase (depot or vehicle purchase).
 
 PHASE 1 -- SCOUT (cycle 1):
-  a. Look at route_planning.top_unserved_cargo in your observation. These are the best
-     unserved industry pairs (sorted by distance). Pick the SHORTEST route (under 15 tiles!)
-     with high monthly_production. Note source_id and dest_id (industry IDs).
-     DISTANCE IS CRITICAL: Routes under 15 tiles almost always succeed. Routes 15-30
-     tiles are OK. Routes over 30 tiles FREQUENTLY FAIL with connect_rail.
+  a. Look at route_planning.top_unserved_cargo in your observation. These are the closest
+     unserved source-destination industry pairs (sorted by distance, shortest first).
+     Pick the FIRST route in the list -- it is the closest pair. Short routes succeed
+     reliably; long routes time out. Only consider longer routes after you have 3+ working ones.
      If route_planning is not available, call get_industries and pick TWO VERY CLOSE
-     industries (within 15 tiles) that form a supply chain (coal -> power, farm -> factory).
-  b. Call find_station_spot(industry_id=<source_id>) to find station sites near
-     the source industry. This tool validates that the spot is within cargo catchment AND
+     industries that form a supply chain (coal -> power, farm -> factory).
+  b. MANDATORY: Call find_station_spot(industry_id=<source_id>) to find station sites near
+     the source industry. You MUST use industry_id, not town_id, for cargo routes.
+     This tool validates that the spot is within the industry's cargo catchment AND
      that a station can be built there. If it returns empty, try radius=20 or pick a
-     different industry -- do NOT use find_flat_spots and guess, you will build outside
-     catchment and earn ZERO income.
-  c. Call find_station_spot(industry_id=<dest_id>) for the destination.
+     different industry. If you place a station without validating industry catchment,
+     the train will visit but there will be NO cargo to pick up -- zero revenue.
+  c. MANDATORY: Call find_station_spot(industry_id=<dest_id>) for the destination.
   d. Call get_engines(vehicle_type=0) to find available train engines.
   e. Call get_rail_types to check available track types.
 
-PHASE 2 -- BUILD STATIONS AND DEPOT (cycle 2):
+PHASE 2 -- BUILD STATIONS (cycle 2):
   Build stations FIRST so you know the exact tiles to connect with track.
   a. Use find_station_spot results from PHASE 1. All returned spots are validated.
   b. Build in this order:
      - build_rail_station(tile=<flat_tile_near_source>, num_platforms=1, platform_length=3, rail_type=0)
      - build_rail_station(tile=<flat_tile_near_dest>, num_platforms=1, platform_length=3, rail_type=0)
-     - build_rail_depot(tile=<flat_tile_near_source>, rail_type=0)
   c. RECORD the station tiles -- you will use them as connect_rail endpoints in PHASE 3.
-     Do NOT buy a vehicle yet -- track must be built and confirmed first.
+     Do NOT build a depot or buy a vehicle yet -- track must be built first.
 
 PHASE 3 -- CONNECT TRACK (cycle 3):
   Build track BETWEEN THE STATION TILES so the track physically connects to stations.
@@ -520,13 +551,23 @@ PHASE 3 -- CONNECT TRACK (cycle 3):
      connects directly to the stations. Using industry tiles instead will leave
      stations disconnected from the track!
 
-PHASE 4 -- BUY VEHICLE, ORDERS AND START (cycle 4):
+PHASE 4 -- BUILD DEPOT ON TRACK (cycle 4):
+  The depot MUST be adjacent to the track you just built. If you build a depot before
+  track exists, the train spawns in an isolated depot and can NEVER reach the stations.
+  a. Check previous_actions -- did connect_rail succeed? If it FAILED, do NOT build a
+     depot. Pick a CLOSER industry pair and restart from PHASE 1.
+  b. MANDATORY: You MUST call find_rail_depot_spot(tile=<source_station_tile>) before
+     building any depot. Use the x, y, and depot_direction from its result directly.
+     There is NO other way to find a valid depot location. If you guess a tile without
+     calling this tool, the depot WILL be disconnected and the train WILL be stuck.
+  c. Build the depot: build_rail_depot(x=<x>, y=<y>, direction=<depot_direction>, rail_type=0)
+  d. If find_rail_depot_spot returns empty, try tile=<dest_station_tile> instead.
+
+PHASE 5 -- BUY VEHICLE, ORDERS AND START (cycle 5):
   THIS IS THE MOST IMPORTANT PHASE. Infrastructure without vehicles earns NOTHING.
-  a. Check previous_actions -- did connect_rail succeed?
-     If connect_rail FAILED (timeout or pathfinding failure), do NOT buy a vehicle.
-     Instead: pick a CLOSER industry pair (under 15 tiles). Abandon the failed route.
-     NEVER buy a vehicle without confirmed track connecting both stations.
-  b. If connect_rail succeeded:
+  a. Check previous_actions -- did build_rail_depot succeed?
+     NEVER buy a vehicle without confirmed track connecting both stations AND a depot on the track.
+  b. If depot build succeeded:
      - buy_vehicle(depot_tile=<depot_tile>, engine_id=<engine_id>)
      - Call get_vehicles to find the train's vehicle_id.
      - Call get_stations to get station IDs.
@@ -535,12 +576,15 @@ PHASE 4 -- BUY VEHICLE, ORDERS AND START (cycle 4):
      - start_vehicle(vehicle_id=X)
   c. DO NOT proceed to build more infrastructure until this vehicle is RUNNING.
 
-PHASE 5 -- VERIFY (cycles 5-7):
+PHASE 6 -- VERIFY (cycles 6-8):
   Check get_vehicles -- is the train moving (current_speed > 0)? Does it have 2 orders?
   Check get_stations -- does your source station show cargo_waiting > 0 for your cargo?
-  If cargo_waiting = 0 after the train has visited (station is rated), the station is
-  OUTSIDE the industry catchment. You must demolish it and rebuild CLOSER to the industry.
-  If the train has speed=0, it is STUCK -- the track is not connected to the station.
+  CARGO CHECK: If cargo_waiting = 0 at BOTH stations after the train has visited them
+  (both stations are rated), the stations are NOT in industry catchment. This means
+  find_station_spot was not used or the wrong industry was targeted. You must demolish
+  these stations and start over from PHASE 1 with find_station_spot(industry_id=X).
+  STUCK CHECK: If the train has speed=0 for 2+ cycles, it is STUCK -- the track or depot
+  is not connected to the station. Check the depot location.
   If any vehicle has 0 orders for 2+ cycles, sell it: send_to_depot then sell_vehicle.
   BROKEN ORDER CHECK: Call get_vehicles. If any train has destination=-1 in its orders
   or order_count=0, the station it was pointing to was demolished. Fix immediately:
@@ -548,10 +592,10 @@ PHASE 5 -- VERIFY (cycles 5-7):
     2. remove_order all stale orders, then add_order for valid stations.
   Do NOT build a second route until the first is DELIVERING CARGO.
 
-PHASE 6 -- EXPAND (cycle 8+):
+PHASE 7 -- EXPAND (cycle 9+):
   ONLY after your first route has a running train delivering cargo:
   Clone profitable trains. Build new routes to different industry pairs.
-  Each new route follows the same phases: Scout -> Build -> Connect -> Buy -> Verify.
+  Each new route follows the same phases: Scout -> Build -> Connect -> Depot -> Buy -> Verify.
   NEVER start a new route while a previous route has no vehicle.
 
 RAIL CONSTRUCTION:
@@ -564,13 +608,17 @@ RAIL CONSTRUCTION:
   - Use find_station_spot(industry_id=X) to find validated station sites near industries.
     It checks both cargo catchment AND buildability. If it returns empty, try radius=20
     or pick a different industry.
-  - For depots, use find_flat_spots(radius=10, min_size=1) near one of your stations.
+  - For depots, use find_rail_depot_spot(tile=<station_tile>) AFTER connect_rail succeeds.
+    This ensures the depot is adjacent to track. NEVER use find_flat_spots for rail depots.
 
 IMPORTANT RULES:
-- You ONLY see trains and rail stations. Other transport types are invisible to you.
+- You ONLY build rail infrastructure. NEVER use road actions (connect_road, build_road_stop,
+  build_road_depot). You are a rail specialist -- road infrastructure wastes your money and
+  always fails for you.
 - ALWAYS use find_station_spot for station placement. It validates cargo catchment and
   buildability in one call. Building a station outside catchment earns ZERO income.
-- Only use find_flat_spots for depot placement (depots don't need catchment validation).
+- ALWAYS use find_rail_depot_spot for depot placement AFTER track is built. It validates
+  track adjacency. A depot not on the track means trains can never exit.
 - Always use rail_type=0 (default rail) unless get_rail_types shows a better option.
 - After buying a vehicle, wait one cycle then call get_vehicles to get the ID.
 - Use station_id for orders, NOT tile coordinates.

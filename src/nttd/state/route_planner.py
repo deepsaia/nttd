@@ -260,7 +260,10 @@ class RoutePlanner:
                 existing = [r for r in existing if r["vehicle_type"] == vtype]
 
         unserved_cargo = [r for r in cargo if not r["served"]]
-        unserved_towns = [r for r in towns if not r["served"]]
+        unserved_towns = sorted(
+            (r for r in towns if not r["served"]),
+            key=lambda r: r["distance"],
+        )
 
         if compact:
             return self._compact_output(
@@ -301,7 +304,9 @@ class RoutePlanner:
             "top_cargo": [
                 {
                     "src": r["source_name"],
+                    "src_id": r["source_id"],
                     "dst": r["dest_name"],
+                    "dst_id": r["dest_id"],
                     "cargo": r["cargo"],
                     "dist": r["distance"],
                     "prod": r["monthly_production"],
@@ -315,7 +320,9 @@ class RoutePlanner:
             "top_towns": [
                 {
                     "a": r["town_a_name"],
+                    "a_id": r["town_a_id"],
                     "b": r["town_b_name"],
+                    "b_id": r["town_b_id"],
                     "dist": r["distance"],
                     "demand": r["demand_score"],
                     "a_x": r["town_a_x"],

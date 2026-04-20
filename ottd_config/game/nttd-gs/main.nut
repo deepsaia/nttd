@@ -425,6 +425,7 @@ class NttdGS extends GSController {
         case "scan_town_area":      return this.CmdScanTownArea(p);
         case "find_bus_stop_spots": return this.CmdFindBusStopSpots(p);
         case "find_depot_spots":    return this.CmdFindDepotSpots(p);
+        case "find_rail_depot_spot": return this.CmdFindRailDepotSpot(p);
         case "find_airport_spots":  return this.CmdFindAirportSpots(p);
         case "find_dock_spots":     return this.CmdFindDockSpots(p);
         case "find_flat_spots":     return this.CmdFindFlatSpots(p);
@@ -1216,6 +1217,38 @@ class NttdGS extends GSController {
         }
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
+          depot_direction = adj[0].dir });
+      }
+    }
+    this._SortByDistance(spots);
+    if (spots.len() > max_results) spots = spots.slice(0, max_results);
+    return { success = true, result = spots };
+  }
+
+  function CmdFindRailDepotSpot(p) {
+    if (!("tile" in p)) return { success = false, error = "tile parameter required" };
+    local company_id = ("company_id" in p) ? p.company_id : 0;
+    local radius = ("radius" in p) ? p.radius : 10;
+    local max_results = ("max_results" in p) ? p.max_results : 5;
+    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    local cx = GSMap.GetTileX(p.tile), cy = GSMap.GetTileY(p.tile);
+    local spots = [];
+    for (local dy = -radius; dy <= radius; dy++) {
+      for (local dx = -radius; dx <= radius; dx++) {
+        local x = cx + dx, y = cy + dy;
+        local tile = GSMap.GetTileIndex(x, y);
+        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+        local adj = this._GetAdjacentRailTrack(x, y);
+        if (adj.len() == 0) continue;
+        // Dry-run: test if BuildRailDepot would actually succeed here
+        {
+          local company_mode = GSCompanyMode(company_id);
+          local test_mode = GSTestMode();
+          GSRail.SetCurrentRailType(rail_type);
+          if (!GSRail.BuildRailDepot(tile, this._GetAdjacentTile(tile, adj[0].dir))) continue;
+        }
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+          adjacent_track_x = adj[0].nx, adjacent_track_y = adj[0].ny,
           depot_direction = adj[0].dir });
       }
     }
@@ -3325,6 +3358,22 @@ class NttdGS extends GSController {
       local nx = x + o.dx, ny = y + o.dy;
       local t = GSMap.GetTileIndex(nx, ny);
       if (GSMap.IsValidTile(t) && GSRoad.IsRoadTile(t)) results.append({ nx = nx, ny = ny, dir = o.dir });
+    }
+    return results;
+  }
+
+  function _GetAdjacentRailTrack(x, y) {
+    local offsets = [
+      { dx = 1,  dy = 0,  dir = 0 },
+      { dx = 0,  dy = 1,  dir = 1 },
+      { dx = -1, dy = 0,  dir = 2 },
+      { dx = 0,  dy = -1, dir = 3 }
+    ];
+    local results = [];
+    foreach (o in offsets) {
+      local nx = x + o.dx, ny = y + o.dy;
+      local t = GSMap.GetTileIndex(nx, ny);
+      if (GSMap.IsValidTile(t) && GSRail.IsRailTile(t)) results.append({ nx = nx, ny = ny, dir = o.dir });
     }
     return results;
   }
