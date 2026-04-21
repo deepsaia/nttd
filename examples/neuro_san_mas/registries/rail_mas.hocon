@@ -103,8 +103,6 @@ action history, previous action results, and financial info.
         // Finds the best unserved industry pair and validates station sites.
         // Covers PHASE 1 (Scout).
         // ------------------------------------------------------------------
-
-
         {
             "name": "route_scout",
             "function": {
@@ -295,27 +293,27 @@ Returns tiles where a rail station can be successfully built.
                     "type": "object",
                     "properties": {
                         "industry_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Industry ID to find station spots near (for cargo routes)"
                         },
                         "town_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Town ID to find station spots near (for passenger routes)"
                         },
                         "platform_length": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Station platform length (default 3)"
                         },
                         "rail_type": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Rail type ID (default 0)"
                         },
                         "radius": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Search radius in tiles (default 15)"
                         },
                         "max_results": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Maximum results to return (default 5)"
                         }
                     },
@@ -336,19 +334,19 @@ Returns tile, x, y, and depot_direction for build_rail_depot.
                     "type": "object",
                     "properties": {
                         "tile": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Tile ID near which to search (use a station tile)"
                         },
                         "radius": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Search radius in tiles (default 10)"
                         },
                         "max_results": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Maximum results to return (default 5)"
                         },
                         "rail_type": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Rail type ID (default 0)"
                         }
                     },
@@ -368,7 +366,7 @@ Returns engine ID, name, cargo type, capacity, speed, and price.
                     "type": "object",
                     "properties": {
                         "vehicle_type": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Vehicle type: 0=train (default), 1=road, 2=ship, 3=aircraft"
                         }
                     },
