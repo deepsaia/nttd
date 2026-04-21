@@ -401,6 +401,10 @@ class NttdGS extends GSController {
       }
     }
 
+    // Reject null or non-numeric tile values before they reach command handlers.
+    if ("tile" in p && (p.tile == null || (typeof p.tile != "integer" && typeof p.tile != "float"))) {
+      return { success = false, error = "tile parameter is null or not a number -- use find_*_spots tools to get valid tile IDs" };
+    }
     // If tile was given but x/y could not be resolved, fail early with a clear error.
     if ("tile" in p && !("x" in p)) {
       return { success = false, error = "Invalid tile ID: " + p.tile + " (not a valid map position)" };
@@ -1175,6 +1179,7 @@ class NttdGS extends GSController {
     local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
     local stop_type = is_truck ? GSRoad.ROADVEHTYPE_TRUCK : GSRoad.ROADVEHTYPE_BUS;
     local spots = [];
+    // Pass 1: tiles adjacent to existing roads (preferred)
     for (local dy = -radius; dy <= radius; dy++) {
       for (local dx = -radius; dx <= radius; dx++) {
         local x = cx + dx, y = cy + dy;
@@ -1182,7 +1187,6 @@ class NttdGS extends GSController {
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRoads(x, y);
         if (adj.len() == 0) continue;
-        // Dry-run: test if BuildRoadStation would actually succeed here
         {
           local company_mode = GSCompanyMode(company_id);
           local test_mode = GSTestMode();
@@ -1194,10 +1198,36 @@ class NttdGS extends GSController {
           adjacent_road_x = adj[0].nx, adjacent_road_y = adj[0].ny,
           adjacent_road_count = adj.len(),
           direction = adj[0].dir,
+          has_adjacent_road = true,
           cargo_acceptance = cargo_info });
       }
     }
-    // Sort by cargo acceptance count (desc), then distance (asc) — prefer spots with more cargo types
+    // Pass 2: if no road-adjacent spots, find flat buildable tiles (agent must connect_road)
+    if (spots.len() == 0) {
+      for (local dy = -radius; dy <= radius; dy++) {
+        for (local dx = -radius; dx <= radius; dx++) {
+          local x = cx + dx, y = cy + dy;
+          local tile = GSMap.GetTileIndex(x, y);
+          if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+          if (GSTile.GetSlope(tile) != 0) continue;
+          local dir = this._FindAnyAdjacentBuildable(x, y);
+          if (dir < 0) continue;
+          {
+            local company_mode = GSCompanyMode(company_id);
+            local test_mode = GSTestMode();
+            local front = this._GetAdjacentTile(tile, dir);
+            if (!GSRoad.BuildRoadStation(tile, front, stop_type, GSStation.STATION_NEW)) continue;
+          }
+          local cargo_info = this._GetTileCargoInfo(tile, 1, 1, 3);
+          spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+            adjacent_road_count = 0,
+            direction = dir,
+            has_adjacent_road = false,
+            cargo_acceptance = cargo_info });
+        }
+      }
+    }
+    // Sort by cargo acceptance count (desc), then distance (asc)
     for (local i = 1; i < spots.len(); i++) {
       local key = spots[i];
       local j = i - 1;
@@ -1402,7 +1432,7 @@ class NttdGS extends GSController {
         if (required_cargo != null) {
           local found = false;
           foreach (ci in cargo_info) {
-            if (ci.cargo_name == required_cargo && ci.production > 0) { found = true; break; }
+            if (ci.cargo_label == required_cargo && ci.production > 0) { found = true; break; }
           }
           if (!found) continue;
         }
@@ -1480,7 +1510,7 @@ class NttdGS extends GSController {
         local has_target_cargo = false;
         foreach (ci in cargo_info) {
           foreach (lbl in cargo_labels) {
-            if (ci.cargo_name == lbl && (ci.production > 0 || ci.acceptance)) {
+            if (ci.cargo_label == lbl && (ci.production > 0 || ci.acceptance)) {
               has_target_cargo = true; break;
             }
           }
@@ -3388,6 +3418,20 @@ class NttdGS extends GSController {
       if (GSMap.IsValidTile(t) && GSRoad.IsRoadTile(t)) results.append({ nx = nx, ny = ny, dir = o.dir });
     }
     return results;
+  }
+
+  function _FindAnyAdjacentBuildable(x, y) {
+    local offsets = [
+      { dx = 1,  dy = 0,  dir = 0 },
+      { dx = 0,  dy = 1,  dir = 1 },
+      { dx = -1, dy = 0,  dir = 2 },
+      { dx = 0,  dy = -1, dir = 3 }
+    ];
+    foreach (o in offsets) {
+      local t = GSMap.GetTileIndex(x + o.dx, y + o.dy);
+      if (GSMap.IsValidTile(t) && (GSTile.IsBuildable(t) || GSRoad.IsRoadTile(t))) return o.dir;
+    }
+    return -1;
   }
 
   function _GetAdjacentRailTrack(x, y) {

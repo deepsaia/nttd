@@ -301,16 +301,22 @@ COMPLETE-ROUTE-FIRST STRATEGY:
 You must complete ONE working route before building anything else. A working route
 means: two stops in DIFFERENT towns, a vehicle with orders to both stops, running.
 
-EVERY CYCLE -- CHECK FIRST:
+EVERY CYCLE -- CHECK FIRST (HIGHEST PRIORITY):
   Before doing ANYTHING each cycle, check your observation:
   - "action_history" shows your successful actions from previous cycles. Use it to
     remember what you have already built.
   - "previous_actions" shows what happened last cycle (success/failure).
+  - If previous_actions shows a buy_vehicle success, your ONLY task this cycle is to
+    add orders and start the vehicle. Go directly to PHASE 5. Do NOT scout new towns.
+  - If you have stations and a vehicle with order_count=0, adding orders is your HIGHEST
+    PRIORITY. Do NOT call find_bus_stop_spots. Go directly to PHASE 5.
   - Check route_status in your observation. If orphan_stations > 0, do NOT build more
     stops. Instead: connect roads to orphan stops, build depots, buy vehicles, or
     abandon them. Orphan stations waste money with no vehicles serving them.
   - Do you have stations WITHOUT vehicles? If yes, SKIP to PHASE 5 immediately.
     Building more stops when existing ones have no vehicles is WASTING MONEY.
+  - NEVER output an action with tile=null or direction=null. If you do not have a valid
+    tile from a find tool, return [] instead.
 
 PHASE 1 -- SCOUT AND BUILD STOPS (cycle 1):
   a. Call get_engines(vehicle_type=1) to find buses (cargo_label="PASS").
@@ -323,9 +329,14 @@ PHASE 1 -- SCOUT AND BUILD STOPS (cycle 1):
   c. MANDATORY: Call find_bus_stop_spots(town_id=X) for town A. Pick a spot with PASS
      in cargo_acceptance. Call find_bus_stop_spots(town_id=Y) for town B.
      These tools validate flat terrain -- building without them causes ERR_FLAT_LAND_REQUIRED.
+     EMPTY RESULTS: If find_bus_stop_spots returns [] for a town, that town has no suitable
+     spots. Try a DIFFERENT town immediately. Try at least 3-4 different towns before giving up.
+     If ALL towns return empty, use scan_town_area(town_id=X) to find buildable tiles manually.
+     NEVER proceed with tile=null -- if you have no valid tile, return [] for this cycle.
   d. Build stops using ONLY tiles from find_bus_stop_spots results:
      - build_road_stop(tile=<spot_A.tile>, direction=<spot_A.direction>)
      - build_road_stop(tile=<spot_B.tile>, direction=<spot_B.direction>)
+     If a spot has "has_adjacent_road": false, you will need connect_road to reach it later.
      Do NOT build a depot or buy a vehicle yet -- road must be built first.
 
 PHASE 2 -- CONNECT ROAD (cycle 2):
@@ -500,16 +511,22 @@ You must complete ONE working rail route before building anything else. A workin
 route means: two stations near different industries, connected by track, a train
 with orders to both stations, running and delivering cargo.
 
-EVERY CYCLE -- CHECK FIRST:
+EVERY CYCLE -- CHECK FIRST (HIGHEST PRIORITY):
   Before doing ANYTHING each cycle, check your observation:
   - "action_history" shows your successful actions from previous cycles. Use it to
     remember what you have already built.
   - "previous_actions" shows what happened last cycle (success/failure).
+  - If previous_actions shows a buy_vehicle success, your ONLY task this cycle is to
+    add orders and start the vehicle. Go directly to PHASE 5. Do NOT scout new industries.
+  - If you have stations and a vehicle with order_count=0, adding orders is your HIGHEST
+    PRIORITY. Do NOT call find_station_spot. Go directly to PHASE 5.
   - Do you have stations WITHOUT trains? If yes, SKIP to PHASE 5 immediately.
     Building more stations when existing ones have no vehicles is WASTING MONEY.
   - Check action_history for connect_rail. If you already have a successful connect_rail
     between two coordinates, do NOT call connect_rail with the same from/to again.
     The track already exists. Move to the next phase (depot or vehicle purchase).
+  - NEVER output an action with tile=null. If you do not have a valid tile from a find
+    tool, return [] instead.
 
 PHASE 1 -- SCOUT (cycle 1):
   a. Look at route_planning.top_unserved_cargo in your observation. These are the closest
@@ -521,10 +538,16 @@ PHASE 1 -- SCOUT (cycle 1):
   b. MANDATORY: Call find_station_spot(industry_id=<source_id>) to find station sites near
      the source industry. You MUST use industry_id, not town_id, for cargo routes.
      This tool validates that the spot is within the industry's cargo catchment AND
-     that a station can be built there. If it returns empty, try radius=20 or pick a
-     different industry. If you place a station without validating industry catchment,
+     that a station can be built there. If it returns empty or an error, try radius=20 or
+     pick a different industry. If you place a station without validating industry catchment,
      the train will visit but there will be NO cargo to pick up -- zero revenue.
+     ERROR HANDLING: If find_station_spot returns an error, try a different industry_id or
+     increase the radius parameter (e.g., radius=20 or radius=25). Do NOT give up after one
+     error -- try at least 3 different industries before returning [].
+     NEVER output actions with null or missing tile parameters. If you have no valid tile,
+     return [] for this cycle.
   c. MANDATORY: Call find_station_spot(industry_id=<dest_id>) for the destination.
+     Apply the same error handling as step b.
   d. Call get_engines(vehicle_type=0) to find available train engines.
   e. Call get_rail_types to check available track types.
 
