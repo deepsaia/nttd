@@ -348,34 +348,46 @@ class NttdGS extends GSController {
     // Auto-resolve tile → x,y for all commands.
     // If "tile" is provided but x,y are not, derive them.
     if ("tile" in p && !("x" in p)) {
-      local t = p.tile.tointeger();
-      if (GSMap.IsValidTile(t)) {
-        p.rawset("x", GSMap.GetTileX(t));
-        p.rawset("y", GSMap.GetTileY(t));
+      local tv = p.tile;
+      if (typeof tv == "integer" || typeof tv == "float") {
+        local t = tv.tointeger();
+        if (GSMap.IsValidTile(t)) {
+          p.rawset("x", GSMap.GetTileX(t));
+          p.rawset("y", GSMap.GetTileY(t));
+        }
       }
     }
     // Same for tile_from → from_x, from_y
     if ("tile_from" in p && !("from_x" in p)) {
-      local t = p.tile_from.tointeger();
-      if (GSMap.IsValidTile(t)) {
-        p.rawset("from_x", GSMap.GetTileX(t));
-        p.rawset("from_y", GSMap.GetTileY(t));
+      local tv = p.tile_from;
+      if (typeof tv == "integer" || typeof tv == "float") {
+        local t = tv.tointeger();
+        if (GSMap.IsValidTile(t)) {
+          p.rawset("from_x", GSMap.GetTileX(t));
+          p.rawset("from_y", GSMap.GetTileY(t));
+        }
       }
     }
     // Same for tile_to → to_x, to_y
     if ("tile_to" in p && !("to_x" in p)) {
-      local t = p.tile_to.tointeger();
-      if (GSMap.IsValidTile(t)) {
-        p.rawset("to_x", GSMap.GetTileX(t));
-        p.rawset("to_y", GSMap.GetTileY(t));
+      local tv = p.tile_to;
+      if (typeof tv == "integer" || typeof tv == "float") {
+        local t = tv.tointeger();
+        if (GSMap.IsValidTile(t)) {
+          p.rawset("to_x", GSMap.GetTileX(t));
+          p.rawset("to_y", GSMap.GetTileY(t));
+        }
       }
     }
     // depot_tile → depot_x, depot_y (for buy_vehicle, clone_vehicle)
     if ("depot_tile" in p && !("depot_x" in p)) {
-      local t = p.depot_tile.tointeger();
-      if (GSMap.IsValidTile(t)) {
-        p.rawset("depot_x", GSMap.GetTileX(t));
-        p.rawset("depot_y", GSMap.GetTileY(t));
+      local tv = p.depot_tile;
+      if (typeof tv == "integer" || typeof tv == "float") {
+        local t = tv.tointeger();
+        if (GSMap.IsValidTile(t)) {
+          p.rawset("depot_x", GSMap.GetTileX(t));
+          p.rawset("depot_y", GSMap.GetTileY(t));
+        }
       }
     }
     // destination (for orders) — resolve to tile
@@ -387,6 +399,11 @@ class NttdGS extends GSController {
           p.rawset("dest_tile", t);
         }
       }
+    }
+
+    // If tile was given but x/y could not be resolved, fail early with a clear error.
+    if ("tile" in p && !("x" in p)) {
+      return { success = false, error = "Invalid tile ID: " + p.tile + " (not a valid map position)" };
     }
 
     try {
@@ -3302,14 +3319,20 @@ class NttdGS extends GSController {
     local xk = prefix + "x";
     local yk = prefix + "y";
     if (tk in p && p[tk] != null) {
-      local t = p[tk].tointeger();
+      local tv = p[tk];
+      if (typeof tv != "integer" && typeof tv != "float") return null;
+      local t = tv.tointeger();
       if (!GSMap.IsValidTile(t)) return null;
       return { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
     }
     if ((xk in p) && (yk in p)) {
-      local t = GSMap.GetTileIndex(p[xk].tointeger(), p[yk].tointeger());
+      local xv = p[xk];
+      local yv = p[yk];
+      if (typeof xv != "integer" && typeof xv != "float") return null;
+      if (typeof yv != "integer" && typeof yv != "float") return null;
+      local t = GSMap.GetTileIndex(xv.tointeger(), yv.tointeger());
       if (!GSMap.IsValidTile(t)) return null;
-      return { tile = t, x = p[xk].tointeger(), y = p[yk].tointeger() };
+      return { tile = t, x = xv.tointeger(), y = yv.tointeger() };
     }
     return null;
   }
@@ -3319,17 +3342,22 @@ class NttdGS extends GSController {
   function _ResolveTilePair(p) {
     local from_r = this._ResolveTile(p, "from_");
     if (from_r == null) {
-      // Try tile_from / tile_to format
-      if ("tile_from" in p) {
-        local t = p.tile_from.tointeger();
-        if (GSMap.IsValidTile(t)) from_r = { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
+      if ("tile_from" in p && p.tile_from != null) {
+        local tv = p.tile_from;
+        if (typeof tv == "integer" || typeof tv == "float") {
+          local t = tv.tointeger();
+          if (GSMap.IsValidTile(t)) from_r = { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
+        }
       }
     }
     local to_r = this._ResolveTile(p, "to_");
     if (to_r == null) {
-      if ("tile_to" in p) {
-        local t = p.tile_to.tointeger();
-        if (GSMap.IsValidTile(t)) to_r = { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
+      if ("tile_to" in p && p.tile_to != null) {
+        local tv = p.tile_to;
+        if (typeof tv == "integer" || typeof tv == "float") {
+          local t = tv.tointeger();
+          if (GSMap.IsValidTile(t)) to_r = { tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t) };
+        }
       }
     }
     if (from_r == null || to_r == null) return null;
