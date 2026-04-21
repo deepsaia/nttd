@@ -1,11 +1,16 @@
-"""HTTP/SSE client adapter for external MAS servers.
+"""HTTP client adapter for external MAS servers.
 
-Connects to any MAS framework that exposes HTTP endpoints:
-- POST endpoint: send observation, receive actions
-- SSE stream_endpoint (optional): stream intermediate agent messages for logging
+Connects to any MAS framework that exposes HTTP endpoints.
+Supports two protocols:
 
-Works with LangGraph (LangServe), Agno (Agent OS), CrewAI (AMP), or any
-custom FastAPI wrapper around a MAS framework.
+- "generic": POST {observation, instructions} -> {actions: [...]}
+  Works with LangGraph (LangServe), Agno (Agent OS), CrewAI, or any
+  custom FastAPI wrapper.
+
+- "neuro_san": POST streaming_chat request -> streaming JSON lines
+  Speaks neuro-san's native /api/v1/{agent}/streaming_chat protocol.
+  Sends observation as sly_data, reads actions from the final
+  AGENT_FRAMEWORK response.
 """
 
 from __future__ import annotations
@@ -26,8 +31,9 @@ logger = logging.getLogger(__name__)
 class MASHttpAdapter(BaseAdapter):
     """Adapter that connects to an external MAS server via HTTP.
 
-    Sends game observations as JSON POST requests and receives action lists.
-    Optionally streams intermediate agent messages via SSE for conversation logging.
+    Routes to the appropriate protocol handler based on config.protocol:
+    - "generic": simple POST/response
+    - "neuro_san": streaming_chat with sly_data
     """
 
     def __init__(self, transport_config: MASTransportConfig) -> None:
@@ -61,6 +67,122 @@ class MASHttpAdapter(BaseAdapter):
         tool_executor: ToolExecutor | None = None,
         message_logger: MessageLogger | None = None,
     ) -> str:
+        protocol = self._config.protocol.lower()
+        if protocol == "neuro_san":
+            return await self._decide_neuro_san(
+                observation, instructions, observation_tools, message_logger,
+            )
+        return await self._decide_generic(
+            observation, instructions, observation_tools, message_logger,
+        )
+
+    async def _decide_neuro_san(
+        self,
+        observation: dict[str, Any],
+        instructions: str,
+        observation_tools: list[dict[str, Any]] | None,
+        message_logger: MessageLogger | None,
+    ) -> str:
+        """Speak neuro-san's streaming_chat protocol.
+
+        POST /api/v1/{agent_name}/streaming_chat
+        Request:  {user_message: {type: "HUMAN", text: ...}, sly_data: {observation: ...}}
+        Response: newline-delimited JSON, final AGENT_FRAMEWORK message has the answer.
+        """
+        client = self._get_client()
+        endpoint = self._config.endpoint
+        if not endpoint:
+            raise RuntimeError("MAS HTTP adapter: endpoint URL not configured")
+
+        user_text = instructions
+        sly_data: dict[str, Any] = {"observation": observation}
+        if observation_tools:
+            sly_data["tools"] = observation_tools
+
+        payload = {
+            "user_message": {
+                "type": "HUMAN",
+                "text": user_text,
+            },
+            "sly_data": sly_data,
+        }
+
+        if message_logger:
+            message_logger("SYSTEM (neuro-san)", f"endpoint: {endpoint}")
+            message_logger("USER", user_text[:500])
+            message_logger("SLY_DATA keys", str(list(sly_data.keys())))
+
+        last_error: Exception | None = None
+        for attempt in range(self._config.retry_count + 1):
+            try:
+                return await self._stream_neuro_san(client, endpoint, payload, message_logger)
+            except (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException) as exc:
+                last_error = exc
+                if attempt < self._config.retry_count:
+                    import asyncio
+                    wait = self._config.retry_backoff * (2 ** attempt)
+                    logger.warning(
+                        "Neuro-SAN attempt %d failed (%s), retrying in %.1fs",
+                        attempt + 1, exc, wait,
+                    )
+                    await asyncio.sleep(wait)
+
+        logger.error("Neuro-SAN all %d attempts failed", self._config.retry_count + 1)
+        if message_logger:
+            message_logger("ERROR", str(last_error))
+        return "[]"
+
+    async def _stream_neuro_san(
+        self,
+        client: httpx.AsyncClient,
+        endpoint: str,
+        payload: dict[str, Any],
+        message_logger: MessageLogger | None,
+    ) -> str:
+        """Send streaming_chat request and collect the final answer."""
+        final_text = "[]"
+
+        async with client.stream(
+            "POST", endpoint, json=payload,
+            timeout=httpx.Timeout(self._config.timeout, connect=10.0),
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.debug("Neuro-SAN non-JSON line: %s", line[:200])
+                    continue
+
+                resp = msg.get("response", {})
+                msg_type = resp.get("type", "")
+                text = resp.get("text", "")
+                origin = resp.get("origin", [])
+                origin_str = origin[0].get("tool", "") if origin else ""
+
+                if message_logger and text:
+                    prefix = f"[{origin_str}] " if origin_str else ""
+                    message_logger(f"{prefix}{msg_type}", text[:2000])
+
+                if msg_type == "AGENT_FRAMEWORK" and text:
+                    final_text = text
+
+        if message_logger:
+            message_logger("FINAL RESPONSE", final_text[:2000])
+
+        return final_text
+
+    async def _decide_generic(
+        self,
+        observation: dict[str, Any],
+        instructions: str,
+        observation_tools: list[dict[str, Any]] | None,
+        message_logger: MessageLogger | None,
+    ) -> str:
+        """Generic HTTP protocol: POST {observation, instructions} -> {actions}."""
         client = self._get_client()
 
         payload: dict[str, Any] = {
@@ -113,7 +235,6 @@ class MASHttpAdapter(BaseAdapter):
         if message_logger:
             message_logger("ASSISTANT (MAS response)", output)
 
-        # Stream intermediate messages if stream_endpoint is configured
         if self._config.stream_endpoint and message_logger:
             await self._stream_log(payload, message_logger)
 
@@ -124,10 +245,7 @@ class MASHttpAdapter(BaseAdapter):
         payload: dict[str, Any],
         message_logger: MessageLogger,
     ) -> None:
-        """Connect to SSE stream endpoint and log intermediate agent messages.
-
-        This is best-effort: failures here don't affect the action response.
-        """
+        """Connect to SSE stream endpoint and log intermediate agent messages."""
         client = self._get_client()
         try:
             async with client.stream(

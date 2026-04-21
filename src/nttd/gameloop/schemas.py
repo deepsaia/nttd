@@ -22,6 +22,7 @@ class MASTransportConfig(BaseModel):
     """
 
     transport: str = "custom"
+    protocol: str = "generic"
     endpoint: str = ""
     stream_endpoint: str = ""
     config_path: str = ""
