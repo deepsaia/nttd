@@ -30,6 +30,15 @@ Give me the current game observation and I will build profitable rail cargo
 routes by delegating to specialist agents. I follow a strict phase sequence:
 Scout -> Build Stations -> Connect Track -> Build Depot -> Buy Vehicle -> Verify -> Expand.
 """,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "What to do this cycle, e.g. 'Build a profitable rail cargo route' or 'Continue building the current route'"
+                        }
+                    }
+                }
             },
             "instructions": """
 You are the rail transport coordinator for an OpenTTD company.
@@ -77,7 +86,12 @@ action history, previous action results, and financial info.
 """,
                 "parameters": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "detail_level": {
+                            "type": "string",
+                            "description": "Level of detail: 'full' (default) or 'summary'"
+                        }
+                    },
                     "required": []
                 }
             },
@@ -89,6 +103,8 @@ action history, previous action results, and financial info.
         // Finds the best unserved industry pair and validates station sites.
         // Covers PHASE 1 (Scout).
         // ------------------------------------------------------------------
+
+
         {
             "name": "route_scout",
             "function": {
@@ -367,7 +383,12 @@ Returns engine ID, name, cargo type, capacity, speed, and price.
                 "description": "Gets available rail track types. Returns rail type ID, name, and properties.",
                 "parameters": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "include_unavailable": {
+                            "type": "boolean",
+                            "description": "Include rail types not yet available in the current year (default false)"
+                        }
+                    },
                     "required": []
                 }
             },
