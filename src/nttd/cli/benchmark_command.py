@@ -39,7 +39,7 @@ def _parse_agents(raw: Any) -> list[dict[str, Any]]:
 
     agents: list[dict[str, Any]] = []
     for a in agents_raw:
-        agents.append({
+        agent_dict: dict[str, Any] = {
             "agent_id": a.get("agent_id", "agent"),
             "company_id": int(a.get("company_id", 0)),
             "framework": a.get("framework", "openai"),
@@ -53,7 +53,29 @@ def _parse_agents(raw: Any) -> list[dict[str, Any]]:
             "max_actions_per_cycle": int(a.get("max_actions_per_cycle", 10)),
             "max_history_cycles": int(a.get("max_history_cycles", 10)),
             "api_key_env": a.get("api_key_env", "OPENAI_API_KEY"),
-        })
+        }
+        mas_transport = a.get("mas_transport", None)
+        if mas_transport:
+            agent_dict["mas_transport"] = {
+                "transport": mas_transport.get("transport", "custom"),
+                "protocol": mas_transport.get("protocol", "generic"),
+                "endpoint": mas_transport.get("endpoint", ""),
+                "stream_endpoint": mas_transport.get("stream_endpoint", ""),
+                "config_path": mas_transport.get("config_path", ""),
+                "timeout": float(mas_transport.get("timeout", 60.0)),
+                "retry_count": int(mas_transport.get("retry_count", 2)),
+                "retry_backoff": float(mas_transport.get("retry_backoff", 1.0)),
+            }
+            auth = mas_transport.get("auth", None)
+            if auth:
+                agent_dict["mas_transport"]["auth"] = {
+                    "type": auth.get("type", "none"),
+                    "token_env": auth.get("token_env", ""),
+                }
+        mas_config = a.get("mas_config", None)
+        if mas_config and "mas_transport" not in agent_dict:
+            agent_dict["mas_config"] = mas_config
+        agents.append(agent_dict)
     return agents
 
 
@@ -164,7 +186,7 @@ def benchmark(
         if agent_cfg["instructions_file"]:
             agent_instructions = load_instructions(agent_cfg["instructions_file"])
 
-        agent_payload = {
+        agent_payload: dict[str, Any] = {
             "agent_id": agent_cfg["agent_id"],
             "company_id": agent_cfg["company_id"],
             "framework": agent_cfg["framework"],
@@ -178,6 +200,10 @@ def benchmark(
             "max_history_cycles": agent_cfg["max_history_cycles"],
             "api_key_env": agent_cfg["api_key_env"],
         }
+        if "mas_transport" in agent_cfg:
+            agent_payload["mas_transport"] = agent_cfg["mas_transport"]
+        if "mas_config" in agent_cfg:
+            agent_payload["mas_config"] = agent_cfg["mas_config"]
         resp = requests.post(
             f"{url}/sessions/{session_id}/gameloop/agents/register",
             json=agent_payload,

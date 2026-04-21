@@ -14,7 +14,7 @@ Coded tools call nttd's REST API for game state queries and validation.
         ]
     },
     "llm_config": {
-        "model_name": "gpt-4o"
+        "model_name": "gpt-5.2"
     },
     "tools": [
         // ------------------------------------------------------------------
