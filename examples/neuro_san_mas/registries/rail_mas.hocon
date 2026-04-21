@@ -1,0 +1,377 @@
+{
+    "metadata": {
+        "description": """
+Rail transport multi-agent system for nttd/OpenTTD.
+Decomposes rail route building into focused sub-agents:
+coordinator -> route_scout, infrastructure_builder, vehicle_manager.
+Coded tools call nttd's REST API for game state queries and validation.
+""",
+        "tags": ["nttd", "openttd", "rail", "transport"],
+        "sample_queries": [
+            "Build a profitable rail cargo route.",
+            "What are the best unserved cargo routes?",
+            "Connect two industries with a rail line."
+        ]
+    },
+    "llm_config": {
+        "model_name": "gpt-4o"
+    },
+    "tools": [
+        // ------------------------------------------------------------------
+        // FRONT MAN: rail_coordinator
+        // Determines current phase, delegates to specialist agents.
+        // ------------------------------------------------------------------
+        {
+            "name": "rail_coordinator",
+            "function": {
+                "description": """
+I am a rail transport coordinator for an OpenTTD game.
+Give me the current game observation and I will build profitable rail cargo
+routes by delegating to specialist agents. I follow a strict phase sequence:
+Scout -> Build Stations -> Connect Track -> Build Depot -> Buy Vehicle -> Verify -> Expand.
+""",
+            },
+            "instructions": """
+You are the rail transport coordinator for an OpenTTD company.
+Your job is to analyze the game state and delegate to the right specialist agent.
+
+STRATEGY: Complete ONE working rail route before starting another.
+A working route = two stations + track + depot + train with orders + running.
+
+PHASE DETERMINATION:
+Read the observation from the game_state tool. Check:
+1. Do we have any vehicles (trains)? If not, we need to build a first route.
+2. Do we have stations without vehicles serving them? Fix those first.
+3. Are all routes profitable and verified? Then expand.
+
+Based on the phase, delegate to ONE specialist per turn:
+- route_scout: Find the best industry pair and validate station sites (PHASE 1)
+- infrastructure_builder: Build stations, connect track, build depot (PHASES 2-4)
+- vehicle_manager: Buy trains, set orders, start, verify, expand (PHASES 5-7)
+
+RULES:
+- Always call game_state first to read the current observation.
+- Never skip ahead. Complete each phase before moving on.
+- If a previous action failed, analyze why and adjust (different tile, different industry).
+- If balance < 50,000: return an empty action list and wait.
+- Pick the SHORTEST unserved cargo route first. Short routes succeed reliably.
+
+OUTPUT: Return the JSON action array from whichever specialist you delegate to.
+Always return valid JSON: either an array of actions or [].
+""",
+            "tools": ["game_state", "route_scout", "infrastructure_builder", "vehicle_manager"]
+        },
+
+        // ------------------------------------------------------------------
+        // CODED TOOL: game_state
+        // Reads the current observation from sly_data. No HTTP call needed
+        // because nttd already sends the full observation each cycle.
+        // ------------------------------------------------------------------
+        {
+            "name": "game_state",
+            "function": {
+                "description": """
+Reads the current game observation from the nttd game loop.
+Returns: companies, stations, vehicles, industries, route planning data,
+action history, previous action results, and financial info.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            "class": "rail_mas.read_observation.ReadObservation"
+        },
+
+        // ------------------------------------------------------------------
+        // AGENT: route_scout
+        // Finds the best unserved industry pair and validates station sites.
+        // Covers PHASE 1 (Scout).
+        // ------------------------------------------------------------------
+        {
+            "name": "route_scout",
+            "function": {
+                "description": """
+Finds the best unserved cargo route and validates station locations.
+Returns a scouting report with source/destination industries, validated
+station tiles, available engines, and rail types.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "What to scout for, e.g. 'Find best unserved cargo route' or 'Find station sites for industry 5 and 12'"
+                        }
+                    },
+                    "required": ["request"]
+                }
+            },
+            "instructions": """
+You are a rail route scout. Your ONLY job: find the best industry pair for a new
+rail cargo route and validate that stations can be built near both industries.
+
+PROCESS:
+1. Call game_state to see current observation including route_planning data.
+2. From route_planning.top_unserved_cargo, pick the FIRST (shortest distance) route.
+   Short routes (under 15 tiles) succeed reliably. Only pick longer routes if asked.
+3. Call find_station_spot for the source industry.
+4. Call find_station_spot for the destination industry.
+5. Call get_engines to find available train engines.
+6. Call get_rail_types to check track types.
+
+If find_station_spot returns empty for an industry, try radius=20.
+If still empty, skip that industry and try the next route in the list.
+
+OUTPUT FORMAT -- return a JSON summary:
+{
+  "phase": "scout_complete",
+  "source": {"industry_id": N, "name": "...", "cargo": "...", "station_tile": N, "station_x": N, "station_y": N},
+  "destination": {"industry_id": N, "name": "...", "station_tile": N, "station_x": N, "station_y": N},
+  "distance": N,
+  "engine": {"engine_id": N, "name": "..."},
+  "rail_type": 0
+}
+""",
+            "tools": ["game_state", "find_station_spot", "get_engines", "get_rail_types"]
+        },
+
+        // ------------------------------------------------------------------
+        // AGENT: infrastructure_builder
+        // Builds stations, connects track, builds depot.
+        // Covers PHASES 2-4.
+        // ------------------------------------------------------------------
+        {
+            "name": "infrastructure_builder",
+            "function": {
+                "description": """
+Builds rail infrastructure: stations, track connections, and depots.
+Takes a scouting report and produces the action list to build everything.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "What to build. Include station tiles, rail_type, and any context from the scout report."
+                        }
+                    },
+                    "required": ["request"]
+                }
+            },
+            "instructions": """
+You are a rail infrastructure builder. You build stations, connect track,
+and place depots. You work from scouting reports provided by the coordinator.
+
+Read the game_state first to check action_history and previous_actions.
+
+PHASE 2 -- BUILD STATIONS:
+If no stations exist for this route yet:
+  Return actions to build two rail stations:
+  [
+    {"action_type": "build_rail_station", "parameters": {"tile": <source_tile>, "num_platforms": 1, "platform_length": 3, "rail_type": 0}},
+    {"action_type": "build_rail_station", "parameters": {"tile": <dest_tile>, "num_platforms": 1, "platform_length": 3, "rail_type": 0}}
+  ]
+
+PHASE 3 -- CONNECT TRACK:
+If stations exist but no track between them (check action_history for connect_rail):
+  Return action to connect them:
+  [
+    {"action_type": "connect_rail", "parameters": {"from_x": <source_x>, "from_y": <source_y>, "to_x": <dest_x>, "to_y": <dest_y>, "rail_type": 0}}
+  ]
+  CRITICAL: Use STATION tile coordinates, not industry coordinates.
+
+PHASE 4 -- BUILD DEPOT:
+If track exists but no depot (check action_history for build_rail_depot):
+  Call find_rail_depot_spot to find a valid depot location near the source station.
+  Return depot build action using the result's x, y, and depot_direction.
+  If find_rail_depot_spot returns empty near source, try near destination station.
+
+Only output actions for ONE phase per turn. Let the coordinator call you again
+for the next phase.
+
+OUTPUT: Return a JSON array of actions, or [] if waiting.
+""",
+            "tools": ["game_state", "find_rail_depot_spot"]
+        },
+
+        // ------------------------------------------------------------------
+        // AGENT: vehicle_manager
+        // Buys vehicles, sets orders, starts, verifies, clones.
+        // Covers PHASES 5-7.
+        // ------------------------------------------------------------------
+        {
+            "name": "vehicle_manager",
+            "function": {
+                "description": """
+Manages rail vehicles: buys trains, sets orders, starts them, verifies
+they are running and profitable, and clones successful trains.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "What to do. Include depot tile, engine_id, station IDs, or vehicle IDs as needed."
+                        }
+                    },
+                    "required": ["request"]
+                }
+            },
+            "instructions": """
+You are a rail vehicle manager. You buy trains, assign orders, start them,
+verify they are running, and expand the fleet.
+
+Read the game_state first to check vehicles, stations, and action_history.
+
+PHASE 5 -- BUY AND START:
+If a depot exists but no vehicle for this route:
+  Return actions to buy, add orders, and start:
+  [
+    {"action_type": "buy_vehicle", "parameters": {"depot_tile": <depot_tile>, "engine_id": <engine_id>}}
+  ]
+  On NEXT cycle (after buy_vehicle succeeds), read get_vehicles to find the vehicle_id, then:
+  [
+    {"action_type": "add_order", "parameters": {"vehicle_id": <id>, "station_id": <source_station_id>, "order_flags": 0}},
+    {"action_type": "add_order", "parameters": {"vehicle_id": <id>, "station_id": <dest_station_id>, "order_flags": 0}},
+    {"action_type": "start_vehicle", "parameters": {"vehicle_id": <id>}}
+  ]
+  CRITICAL: Use station_id (small integer from get_stations), NOT tile coordinates.
+  CRITICAL: After buy_vehicle, WAIT one cycle before setting orders (need vehicle_id).
+
+PHASE 6 -- VERIFY:
+  Check vehicles: is train moving (current_speed > 0)? Has 2+ orders?
+  Check stations: cargo_waiting > 0 at source? If both stations have 0 cargo after
+  train visited, stations are outside industry catchment. Report failure.
+  If train stuck (speed=0 for 2+ cycles): depot or track not connected.
+  If orders broken (destination=-1 or order_count=0): station was demolished.
+
+PHASE 7 -- EXPAND:
+  Only after first route has running train delivering cargo.
+  Clone profitable trains: {"action_type": "clone_vehicle", "parameters": {"depot_tile": <depot>, "vehicle_id": <id>, "share_orders": true}}
+  Tell coordinator to start a new route via route_scout.
+
+PATIENCE RULES (ABSOLUTE):
+  NEVER sell a train with age_days < 400.
+  First days of negative profit are NORMAL.
+  Only sell if age_days > 500 AND total profit is negative.
+  sell_vehicle only works when vehicle is at depot.
+
+OUTPUT: Return a JSON array of actions, or [] if waiting.
+""",
+            "tools": ["game_state"]
+        },
+
+        // ------------------------------------------------------------------
+        // CODED TOOLS: API calls to nttd server
+        // These make HTTP requests to nttd's observation tool endpoints.
+        // ------------------------------------------------------------------
+        {
+            "name": "find_station_spot",
+            "function": {
+                "description": """
+Finds validated rail station spots near an industry or town.
+Checks flat land, station buildability (dry-run), and cargo catchment.
+Returns tiles where a rail station can be successfully built.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "industry_id": {
+                            "type": "integer",
+                            "description": "Industry ID to find station spots near (for cargo routes)"
+                        },
+                        "town_id": {
+                            "type": "integer",
+                            "description": "Town ID to find station spots near (for passenger routes)"
+                        },
+                        "platform_length": {
+                            "type": "integer",
+                            "description": "Station platform length (default 3)"
+                        },
+                        "rail_type": {
+                            "type": "integer",
+                            "description": "Rail type ID (default 0)"
+                        },
+                        "radius": {
+                            "type": "integer",
+                            "description": "Search radius in tiles (default 15)"
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum results to return (default 5)"
+                        }
+                    },
+                    "required": []
+                }
+            },
+            "class": "rail_mas.find_station_spot.FindStationSpot"
+        },
+        {
+            "name": "find_rail_depot_spot",
+            "function": {
+                "description": """
+Finds tiles adjacent to existing rail track where a depot can be built.
+MUST be called AFTER connect_rail so track exists.
+Returns tile, x, y, and depot_direction for build_rail_depot.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tile": {
+                            "type": "integer",
+                            "description": "Tile ID near which to search (use a station tile)"
+                        },
+                        "radius": {
+                            "type": "integer",
+                            "description": "Search radius in tiles (default 10)"
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum results to return (default 5)"
+                        },
+                        "rail_type": {
+                            "type": "integer",
+                            "description": "Rail type ID (default 0)"
+                        }
+                    },
+                    "required": ["tile"]
+                }
+            },
+            "class": "rail_mas.find_rail_depot_spot.FindRailDepotSpot"
+        },
+        {
+            "name": "get_engines",
+            "function": {
+                "description": """
+Gets available train engines that can be purchased.
+Returns engine ID, name, cargo type, capacity, speed, and price.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "vehicle_type": {
+                            "type": "integer",
+                            "description": "Vehicle type: 0=train (default), 1=road, 2=ship, 3=aircraft"
+                        }
+                    },
+                    "required": []
+                }
+            },
+            "class": "rail_mas.get_engines.GetEngines"
+        },
+        {
+            "name": "get_rail_types",
+            "function": {
+                "description": "Gets available rail track types. Returns rail type ID, name, and properties.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            "class": "rail_mas.get_rail_types.GetRailTypes"
+        }
+    ]
+}

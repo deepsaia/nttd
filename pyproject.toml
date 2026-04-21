@@ -16,13 +16,16 @@ dependencies = [
     "requests>=2.32.5",
     "setuptools>=40,<72",
     "pyarrow>=18.0",
-    "langchain-openai>=1.1.12",
+    "openai>=1.54.1,<2.0",
+    "langchain-openai>=1.0.0,<2.0",
     "plotly>=6.6.0",
     "seaborn>=0.13.2",
     "matplotlib>=3.10.8",
     "kaleido>=1.2.0",
     "polars>=1.39.3",
     "imageio[pyav]>=2.37.3",
+    "neuro-san>=0.6.22",
+    "httpx>=0.28.0",
 ]
 
 [project.optional-dependencies]

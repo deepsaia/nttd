@@ -7,6 +7,7 @@ import collections
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from examples.agent_instructions import (
@@ -103,6 +104,11 @@ class AgentConnection:
                 runtime.admin_client, config.company_id, config.agent_type,
                 map_width=game.map_width, map_height=game.map_height,
             )
+
+        # Conversation log file for full message tracing
+        agents_dir = runtime.recorder._session_dir / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        self._conversation_log_path: Path = agents_dir / f"{config.agent_id}.txt"
 
     @property
     def status(self) -> str:
@@ -242,6 +248,10 @@ class AgentConnection:
             f" Any actions beyond {max_actions} will be discarded."
         )
 
+        # Build per-cycle message logger for conversation tracing
+        cycle_num = self.tracker.cycle_count + 1
+        msg_logger = self._make_message_logger(cycle_num)
+
         self.tracker.start_decide()
         try:
             raw_output = await asyncio.wait_for(
@@ -249,6 +259,7 @@ class AgentConnection:
                     observation, instructions,
                     observation_tools=tool_schemas,
                     tool_executor=tool_executor,
+                    message_logger=msg_logger,
                 ),
                 timeout=_LLM_TIMEOUT_SECONDS,
             )
@@ -345,6 +356,23 @@ class AgentConnection:
             record.actions_succeeded, record.actions_failed,
             record.total_ms,
         )
+
+    def _make_message_logger(self, cycle_num: int):
+        """Create a message logger callback that appends to this agent's conversation log."""
+        log_path = self._conversation_log_path
+        header_written = False
+
+        def log_message(role: str, content: str) -> None:
+            nonlocal header_written
+            with open(log_path, "a", encoding="utf-8") as f:
+                if not header_written:
+                    f.write(f"\n{'=' * 20} CYCLE {cycle_num} {'=' * 20}\n\n")
+                    header_written = True
+                f.write(f"--- {role} ---\n")
+                f.write(content)
+                f.write("\n\n")
+
+        return log_message
 
     async def _observe(self) -> dict[str, Any]:
         """Build the observation for this agent based on its snapshot class."""

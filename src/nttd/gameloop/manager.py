@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_MAS_FRAMEWORKS = frozenset({"mas"})
+
 _MAX_COMPANIES = 15
 
 
@@ -159,5 +161,54 @@ class GameloopManager:
                 model=config.model,
                 api_key_env=config.api_key_env,
             )
+        if framework in _MAS_FRAMEWORKS:
+            return self._create_mas_adapter(config)
 
-        raise ValueError(f"Unknown framework: {config.framework}. Use: openai, langchain, passthrough")
+        raise ValueError(
+            f"Unknown framework: {config.framework}. "
+            f"Use: openai, langchain, passthrough, mas"
+        )
+
+    def _create_mas_adapter(self, config: AgentConfig) -> BaseAdapter:
+        """Create the right MAS adapter based on transport config."""
+        transport = config.mas_transport.transport.lower()
+
+        if transport == "custom":
+            from nttd.gameloop.adapters.mas_adapter import MASAdapter
+
+            config_path = config.mas_transport.config_path or config.mas_config
+            if not config_path:
+                raise ValueError(
+                    f"Agent {config.agent_id}: MAS custom transport requires "
+                    f"mas_transport.config_path or mas_config"
+                )
+            return MASAdapter(
+                mas_config_path=config_path,
+                default_model=config.model,
+                api_key_env=config.api_key_env,
+            )
+
+        if transport == "http":
+            from nttd.gameloop.adapters.mas_http_adapter import MASHttpAdapter
+
+            if not config.mas_transport.endpoint:
+                raise ValueError(
+                    f"Agent {config.agent_id}: MAS HTTP transport requires "
+                    f"mas_transport.endpoint"
+                )
+            return MASHttpAdapter(transport_config=config.mas_transport)
+
+        if transport == "mcp":
+            from nttd.gameloop.adapters.mas_mcp_adapter import MASMcpAdapter
+
+            if not config.mas_transport.endpoint:
+                raise ValueError(
+                    f"Agent {config.agent_id}: MAS MCP transport requires "
+                    f"mas_transport.endpoint"
+                )
+            return MASMcpAdapter(transport_config=config.mas_transport)
+
+        raise ValueError(
+            f"Agent {config.agent_id}: Unknown MAS transport: {transport}. "
+            f"Use: custom, http, mcp"
+        )

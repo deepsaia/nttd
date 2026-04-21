@@ -12,7 +12,7 @@ import logging
 import os
 from typing import Any
 
-from nttd.gameloop.adapters.base import BaseAdapter, ToolExecutor
+from nttd.gameloop.adapters.base import BaseAdapter, MessageLogger, ToolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +58,15 @@ class OpenAIAdapter(BaseAdapter):
         instructions: str,
         observation_tools: list[dict[str, Any]] | None = None,
         tool_executor: ToolExecutor | None = None,
+        message_logger: MessageLogger | None = None,
     ) -> str:
         client = self._get_client()
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": instructions},
         ]
+        if message_logger:
+            message_logger("SYSTEM", instructions)
 
         # Current observation (includes action_history from prior cycles)
         obs_text = (
@@ -72,6 +75,8 @@ class OpenAIAdapter(BaseAdapter):
             "Then output your final action list as a JSON array."
         )
         messages.append({"role": "user", "content": obs_text})
+        if message_logger:
+            message_logger("USER", obs_text)
 
         kwargs: dict[str, Any] = {"model": self._model, "messages": messages}
         if observation_tools:
@@ -85,12 +90,18 @@ class OpenAIAdapter(BaseAdapter):
             messages.append(msg.model_dump())
 
             if not msg.tool_calls:
-                return msg.content or "[]"
+                output = msg.content or "[]"
+                if message_logger:
+                    message_logger("ASSISTANT", output)
+                return output
 
             # Execute tool calls
             if tool_executor is None:
                 logger.warning("LLM requested tools but no executor provided")
-                return msg.content or "[]"
+                output = msg.content or "[]"
+                if message_logger:
+                    message_logger("ASSISTANT", output)
+                return output
 
             for tc in msg.tool_calls:
                 tool_name = tc.function.name
@@ -102,7 +113,11 @@ class OpenAIAdapter(BaseAdapter):
                     "Agent tool call [round %d]: %s(%s)",
                     round_num + 1, tool_name, json.dumps(tool_args),
                 )
+                if message_logger:
+                    message_logger(f"TOOL CALL (round {round_num + 1})", f"{tool_name}({json.dumps(tool_args)})")
                 result = await tool_executor(tool_name, tool_args)
+                if message_logger:
+                    message_logger("TOOL RESULT", result)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -111,7 +126,10 @@ class OpenAIAdapter(BaseAdapter):
             kwargs["messages"] = messages
 
         logger.warning("Max tool rounds (%d) exceeded", self._max_tool_rounds)
-        return msg.content or "[]" if msg else "[]"
+        output = msg.content or "[]" if msg else "[]"
+        if message_logger:
+            message_logger("ASSISTANT", output)
+        return output
 
     async def close(self) -> None:
         if self._client is not None:

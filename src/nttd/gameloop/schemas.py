@@ -5,6 +5,32 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class MASAuthConfig(BaseModel):
+    """Authentication settings for external MAS connections."""
+
+    type: str = "none"
+    token_env: str = ""
+
+
+class MASTransportConfig(BaseModel):
+    """Transport configuration for connecting to a MAS server.
+
+    Supports three transports:
+    - "custom": in-process sub-agent graph (uses config_path for HOCON definition)
+    - "http": external MAS server via HTTP/HTTPS (POST observations, receive actions)
+    - "mcp": external MAS server via Model Context Protocol
+    """
+
+    transport: str = "custom"
+    endpoint: str = ""
+    stream_endpoint: str = ""
+    config_path: str = ""
+    auth: MASAuthConfig = Field(default_factory=MASAuthConfig)
+    timeout: float = 60.0
+    retry_count: int = 2
+    retry_backoff: float = 1.0
+
+
 class AgentConfig(BaseModel):
     """Configuration for registering an agent with the gameloop."""
 
@@ -23,6 +49,8 @@ class AgentConfig(BaseModel):
     max_actions_per_cycle: int = Field(default=10, ge=1)
     max_history_cycles: int = Field(default=10, ge=1)
     api_key_env: str = "OPENAI_API_KEY"
+    mas_config: str = ""
+    mas_transport: MASTransportConfig = Field(default_factory=MASTransportConfig)
 
     @property
     def effective_snapshot_class(self) -> str:

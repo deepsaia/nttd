@@ -7,7 +7,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from nttd.gameloop.adapters.base import BaseAdapter, ToolExecutor
+from nttd.gameloop.adapters.base import BaseAdapter, MessageLogger, ToolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class PassthroughAdapter(BaseAdapter):
         instructions: str,
         observation_tools: list[dict[str, Any]] | None = None,
         tool_executor: ToolExecutor | None = None,
+        message_logger: MessageLogger | None = None,
     ) -> str:
         if self._decide_fn is None:
             return "[]"

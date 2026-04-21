@@ -12,6 +12,12 @@ class ToolExecutor(Protocol):
     async def __call__(self, tool_name: str, arguments: dict[str, Any]) -> str: ...
 
 
+class MessageLogger(Protocol):
+    """Callable that logs a message role+content to the agent's conversation file."""
+
+    def __call__(self, role: str, content: str) -> None: ...
+
+
 class BaseAdapter(abc.ABC):
     """Abstract base for framework adapters that call an LLM.
 
@@ -27,6 +33,7 @@ class BaseAdapter(abc.ABC):
         instructions: str,
         observation_tools: list[dict[str, Any]] | None = None,
         tool_executor: ToolExecutor | None = None,
+        message_logger: MessageLogger | None = None,
     ) -> str:
         """Call the LLM with the observation and instructions.
 
@@ -35,6 +42,7 @@ class BaseAdapter(abc.ABC):
             instructions: System prompt for the agent.
             observation_tools: Optional OpenAI-format tool definitions.
             tool_executor: Callable to execute tools when the LLM requests them.
+            message_logger: Optional callback to log conversation messages.
 
         Returns:
             Raw LLM output text containing the action list.

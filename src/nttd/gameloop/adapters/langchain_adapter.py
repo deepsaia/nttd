@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Any
 
-from nttd.gameloop.adapters.base import BaseAdapter, ToolExecutor
+from nttd.gameloop.adapters.base import BaseAdapter, MessageLogger, ToolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,7 @@ class LangChainAdapter(BaseAdapter):
         instructions: str,
         observation_tools: list[dict[str, Any]] | None = None,
         tool_executor: ToolExecutor | None = None,
+        message_logger: MessageLogger | None = None,
     ) -> str:
         from langchain_core.messages import (
             HumanMessage,
@@ -112,6 +113,8 @@ class LangChainAdapter(BaseAdapter):
 
         # Build message list: system + current observation
         messages: list[Any] = [SystemMessage(content=instructions)]
+        if message_logger:
+            message_logger("SYSTEM", instructions)
 
         # Current observation (includes action_history from prior cycles)
         obs_text = (
@@ -121,6 +124,8 @@ class LangChainAdapter(BaseAdapter):
             "action list as a JSON array."
         )
         messages.append(HumanMessage(content=obs_text))
+        if message_logger:
+            message_logger("USER", obs_text)
 
         # Multi-turn tool calling loop
         response = None
@@ -130,12 +135,18 @@ class LangChainAdapter(BaseAdapter):
 
             # No tool calls → final response
             if not response.tool_calls:
-                return response.content or "[]"
+                output = response.content or "[]"
+                if message_logger:
+                    message_logger("ASSISTANT", output)
+                return output
 
             # Execute tool calls
             if tool_executor is None:
                 logger.warning("LLM requested tools but no executor provided")
-                return response.content or "[]"
+                output = response.content or "[]"
+                if message_logger:
+                    message_logger("ASSISTANT", output)
+                return output
 
             for tool_call in response.tool_calls:
                 tool_name = tool_call["name"]
@@ -144,14 +155,21 @@ class LangChainAdapter(BaseAdapter):
                     "Agent tool call [round %d]: %s(%s)",
                     round_num + 1, tool_name, json.dumps(tool_args),
                 )
+                if message_logger:
+                    message_logger(f"TOOL CALL (round {round_num + 1})", f"{tool_name}({json.dumps(tool_args)})")
                 result = await tool_executor(tool_name, tool_args)
+                if message_logger:
+                    message_logger("TOOL RESULT", result)
                 messages.append(
                     ToolMessage(content=result, tool_call_id=tool_call["id"])
                 )
 
         # Exhausted tool rounds — take whatever we have
         logger.warning("Max tool rounds (%d) exceeded", self._max_tool_rounds)
-        return response.content or "[]" if response else "[]"
+        output = response.content or "[]" if response else "[]"
+        if message_logger:
+            message_logger("ASSISTANT", output)
+        return output
 
     async def close(self) -> None:
         self._llm = None
