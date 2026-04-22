@@ -78,6 +78,7 @@ def ensure_reports_loaded() -> None:
         orders,
         route_completion,
         session_summary,
+        stations,
         tile_map,
         vehicle_fleet,
         video,
