@@ -7,12 +7,14 @@ from typing import Any, Dict
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
+from rail_mas.observation_util import get_observation
+
 
 class ReadCompanyStatus(CodedTool):
     """Extracts decision-making fields from sly_data observation for the coordinator."""
 
     async def async_invoke(self, args: Dict[str, Any], sly_data: Dict[str, Any]) -> Any:
-        obs = sly_data.get("observation", {})
+        obs = get_observation(sly_data)
         if not obs:
             return "No game observation available."
 
