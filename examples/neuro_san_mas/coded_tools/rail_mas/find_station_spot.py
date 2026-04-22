@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
 from rail_mas.nttd_client import execute_tool
+from rail_mas.sly_data_lock import SlyDataLock
 
 
 class FindStationSpot(CodedTool):
-    """Calls nttd's find_station_spot observation tool via HTTP."""
+    """Calls nttd's find_station_spot observation tool via HTTP. Caches in sly_data."""
 
     async def async_invoke(self, args: Dict[str, Any], sly_data: Dict[str, Any]) -> Any:
         params: Dict[str, Any] = {}
@@ -27,5 +29,14 @@ class FindStationSpot(CodedTool):
         if args.get("max_results") is not None:
             params["max_results"] = int(args["max_results"])
 
-        result = await execute_tool("find_station_spot", params, sly_data)
+        cache_key = f"_cached_station_spot_{json.dumps(params, sort_keys=True)}"
+
+        async with await SlyDataLock.get_lock(sly_data, f"{cache_key}_lock"):
+            cached = sly_data.get(cache_key)
+            if cached is not None:
+                return cached
+
+            result = await execute_tool("find_station_spot", params, sly_data)
+            sly_data[cache_key] = result
+
         return result

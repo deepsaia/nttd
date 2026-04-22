@@ -55,6 +55,14 @@ _BUILTIN_PRESETS: list[SnapshotClass] = [
         description="Rich observation for agents: vehicles, stations, industries, route planning",
     ),
     SnapshotClass(
+        name="mas_rail",
+        sections=frozenset({
+            "company", "vehicles_detail", "stations_detail", "top_towns", "industries",
+            "routes", "route_planning", "subsidies",
+        }),
+        description="Rail MAS observation: agent sections plus subsidies for route prioritization",
+    ),
+    SnapshotClass(
         name="standard",
         sections=frozenset({"company", "vehicles", "stations", "towns", "industries"}),
         description="Full entity lists for the agent's company",

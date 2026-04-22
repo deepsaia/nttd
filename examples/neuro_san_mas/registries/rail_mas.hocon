@@ -5,6 +5,7 @@ Rail transport multi-agent system for nttd/OpenTTD.
 Decomposes rail route building into focused sub-agents:
 coordinator -> route_scout, infrastructure_builder, vehicle_manager.
 Coded tools call nttd's REST API for game state queries and validation.
+Each agent sees only its relevant slice of the observation to minimize context.
 """,
         "tags": ["nttd", "openttd", "rail", "transport"],
         "sample_queries": [
@@ -19,7 +20,7 @@ Coded tools call nttd's REST API for game state queries and validation.
     "tools": [
         // ------------------------------------------------------------------
         // FRONT MAN: rail_coordinator
-        // Determines current phase, delegates to specialist agents.
+        // Reads company status, walks decision tree, delegates to specialist.
         // ------------------------------------------------------------------
         {
             "name": "rail_coordinator",
@@ -45,8 +46,8 @@ You are the rail coordinator for an OpenTTD company. You decide what to do each
 cycle and delegate to a specialist agent. You NEVER execute actions yourself.
 
 EVERY CYCLE, follow this algorithm:
-1. Call game_state with detail_level="summary" to read the observation.
-2. Read the summary: station_count, vehicle_count, action_history, balance, previous_actions.
+1. Call company_status to read the current state.
+2. Read: station_count, vehicle_count, action_history, balance, previous_actions, routes.
 3. Walk the decision tree below. Pick the FIRST matching rule.
 
 DECISION TREE (check in order, pick first match):
@@ -75,19 +76,26 @@ F) IF depot exists BUT vehicle_count == 0:
       the two stations. Check action_history for depot_tile and station IDs."
 
 G) IF vehicle_count >= 1 AND any vehicle has order_count < 2:
-   -> Delegate to vehicle_manager: "Vehicle <id> has missing orders. Set full-load
-      orders between the two stations."
+   -> Delegate to vehicle_manager: "Vehicle <id> has missing orders. Set orders
+      between the two stations."
 
 H) IF vehicle_count >= 1 AND all vehicles have orders AND all vehicles have speed > 0:
    -> The current route is working. Start a NEW route immediately.
    -> Delegate to route_scout: "Current route is running. Find the NEXT best unserved
-      cargo route for expansion."
+      cargo route for expansion. We have <unserved_cargo_routes> unserved routes."
+   -> Revenue comes from running trains. More routes = more revenue.
 
 I) IF vehicle_count >= 1 AND a vehicle is stopped (speed == 0, not in depot):
    -> Delegate to vehicle_manager: "Vehicle <id> is stuck. Diagnose and fix."
 
 J) DEFAULT (nothing else matched):
    -> Delegate to route_scout: "Assess the situation and find the next opportunity."
+
+FINANCES:
+- If balance is low (< 20,000) before delegating to infrastructure_builder or
+  vehicle_manager, call finance_advisor first: "Do we have enough to build a route?"
+- If finance_advisor says "cannot afford", delegate to route_scout instead to plan
+  a cheaper route, or wait for revenue (return [] only as absolute last resort).
 
 CRITICAL RULES:
 - NEVER return []. Always delegate to a sub-agent. If unsure, delegate to route_scout.
@@ -98,40 +106,144 @@ CRITICAL RULES:
 
 OUTPUT: Return the JSON action array from whichever specialist you delegate to.
 """,
-            "tools": ["game_state", "route_scout", "infrastructure_builder", "vehicle_manager"]
+            "tools": ["company_status", "finance_advisor", "route_scout", "infrastructure_builder", "vehicle_manager"]
         },
 
         // ------------------------------------------------------------------
-        // CODED TOOL: game_state
-        // Reads the current observation from sly_data. No HTTP call needed
-        // because nttd already sends the full observation each cycle.
+        // CODED TOOL: company_status
+        // Lightweight summary for coordinator: counts, financials, action history.
         // ------------------------------------------------------------------
         {
-            "name": "game_state",
+            "name": "company_status",
             "function": {
                 "description": """
-Reads the current game observation from the nttd game loop.
-Returns: companies, stations, vehicles, industries, route planning data,
-action history, previous action results, and financial info.
+Returns a lightweight summary of the company state for decision-making:
+game date, company financials (balance, loan, income, profit), station count,
+vehicle count with order/speed info, existing routes with profit, orphan
+station detection, action history (last 15 cycles), and previous action results.
 """,
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "detail_level": {
                             "type": "string",
-                            "description": "Level of detail: 'full' (default) or 'summary'"
+                            "description": "Level of detail (default 'full')"
                         }
                     },
                     "required": []
                 }
             },
-            "class": "rail_mas.read_observation.ReadObservation"
+            "class": "rail_mas.read_company_status.ReadCompanyStatus"
+        },
+
+        // ------------------------------------------------------------------
+        // CODED TOOL: route_planning_data
+        // Top unserved cargo/town routes, top producing unconnected industries.
+        // ------------------------------------------------------------------
+        {
+            "name": "route_planning_data",
+            "function": {
+                "description": """
+Returns route planning data for scouting new routes:
+top 5 unserved cargo routes (sorted shortest first), top 5 unserved town routes,
+top 5 unconnected producing industries, existing routes, planning summary counts,
+existing station locations, and company balance.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detail_level": {
+                            "type": "string",
+                            "description": "Level of detail (default 'full')"
+                        }
+                    },
+                    "required": []
+                }
+            },
+            "class": "rail_mas.read_route_planning.ReadRoutePlanning"
+        },
+
+        // ------------------------------------------------------------------
+        // CODED TOOL: infrastructure_data
+        // Station details and build history for infrastructure_builder.
+        // ------------------------------------------------------------------
+        {
+            "name": "infrastructure_data",
+            "function": {
+                "description": """
+Returns station details (coordinates, cargo waiting, cargo acceptance),
+company balance, action history (last 15 cycles), and previous action results
+for the infrastructure builder to plan construction.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detail_level": {
+                            "type": "string",
+                            "description": "Level of detail (default 'full')"
+                        }
+                    },
+                    "required": []
+                }
+            },
+            "class": "rail_mas.read_infrastructure.ReadInfrastructure"
+        },
+
+        // ------------------------------------------------------------------
+        // CODED TOOL: vehicle_data
+        // Vehicles with orders/speed and station IDs for vehicle_manager.
+        // ------------------------------------------------------------------
+        {
+            "name": "vehicle_data",
+            "function": {
+                "description": """
+Returns all vehicles with full details (orders, speed, profit, age, depot status),
+stations with cargo waiting info, action history (last 15 cycles), and previous
+action results for the vehicle manager to manage the fleet.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detail_level": {
+                            "type": "string",
+                            "description": "Level of detail (default 'full')"
+                        }
+                    },
+                    "required": []
+                }
+            },
+            "class": "rail_mas.read_vehicles.ReadVehicles"
+        },
+
+        // ------------------------------------------------------------------
+        // CODED TOOL: finance_data
+        // Detailed financials for the finance_advisor agent.
+        // ------------------------------------------------------------------
+        {
+            "name": "finance_data",
+            "function": {
+                "description": """
+Returns detailed financial data: balance, loan, max_loan, income, company_value,
+profit_last_year, q1_income/expenses, total route and vehicle profits,
+per-vehicle costs (profit, age, running status), and per-route profits.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "detail_level": {
+                            "type": "string",
+                            "description": "Level of detail (default 'full')"
+                        }
+                    },
+                    "required": []
+                }
+            },
+            "class": "rail_mas.read_finances.ReadFinances"
         },
 
         // ------------------------------------------------------------------
         // AGENT: route_scout
         // Finds the best unserved industry pair and validates station sites.
-        // Covers PHASE 1 (Scout).
         // ------------------------------------------------------------------
         {
             "name": "route_scout",
@@ -156,10 +268,11 @@ station tiles, available engines, and rail types.
 You are a rail route scout. Find the best industry pair and validate station sites.
 
 STEPS (do all in one turn):
-1. Call game_state (detail_level="summary").
-2. From route_planning.top_unserved_cargo, pick the SHORTEST route (lowest distance).
-   Prefer routes under 50 tiles. Skip routes that use industries already served
-   by existing stations (check station list in observation).
+1. Call route_planning_data to see unserved cargo routes, unconnected industries,
+   and existing station locations.
+2. From top_unserved_cargo, pick the SHORTEST route (lowest distance).
+   Prefer routes under 50 tiles. Skip routes whose source or destination industry
+   is already near an existing station (check existing_stations coordinates).
 3. Call find_station_spot for the source industry_id.
 4. Call find_station_spot for the destination industry_id.
    - If either returns empty, try again with radius=20.
@@ -183,13 +296,12 @@ SCOUT REPORT:
 - engine_id: <N> (<engine_name>)
 - rail_type: 0
 """,
-            "tools": ["game_state", "find_station_spot", "get_engines", "get_rail_types"]
+            "tools": ["route_planning_data", "find_station_spot", "get_engines", "get_rail_types"]
         },
 
         // ------------------------------------------------------------------
         // AGENT: infrastructure_builder
         // Builds stations, connects track, builds depot.
-        // Covers PHASES 2-4.
         // ------------------------------------------------------------------
         {
             "name": "infrastructure_builder",
@@ -213,8 +325,8 @@ Takes a scouting report and produces the action list to build everything.
 You are a rail infrastructure builder. You build stations, track, and depots.
 
 EVERY TIME you are called:
-1. Call game_state (detail_level="summary").
-2. Read action_history and previous_actions to see what already exists.
+1. Call infrastructure_data to see stations, action_history, and previous_actions.
+2. Read action_history to see what is already built.
 3. Walk this checklist. Return actions for ALL incomplete steps in ONE response:
 
 CHECKLIST (build everything that is missing):
@@ -239,6 +351,12 @@ DEPOT -- if no successful build_rail_depot in action_history:
   CRITICAL: Use the tile from find_rail_depot_spot result, not a computed value.
   The depot_tile you will need later is this same tile value.
 
+FINANCES:
+Before building, call finance_advisor: "Can we afford <N> stations + track + depot?"
+If finance_advisor recommends a loan, prepend a set_loan action to your action list:
+  {"action_type": "set_loan", "parameters": {"amount": <recommended_amount>}}
+If finance_advisor says "cannot afford", tell the coordinator and return [].
+
 COMBINE all needed actions into ONE response. For example, if nothing is built yet,
 return all 4 actions (2 stations + 1 track + 1 depot) in a single array.
 
@@ -246,13 +364,12 @@ OUTPUT: Return a JSON array of actions. Never return [].
 If everything is already built, tell the coordinator "Infrastructure complete,
 depot_tile=<tile>" so it can proceed to vehicle_manager.
 """,
-            "tools": ["game_state", "find_rail_depot_spot"]
+            "tools": ["infrastructure_data", "find_rail_depot_spot", "finance_advisor"]
         },
 
         // ------------------------------------------------------------------
         // AGENT: vehicle_manager
-        // Buys vehicles, sets orders, starts, verifies, clones.
-        // Covers PHASES 5-7.
+        // Buys vehicles, sets orders, starts, verifies.
         // ------------------------------------------------------------------
         {
             "name": "vehicle_manager",
@@ -276,18 +393,21 @@ they are running and profitable, and clones successful trains.
 You are a rail vehicle manager. You buy trains, set orders, and start them.
 
 EVERY TIME you are called:
-1. Call game_state (detail_level="summary").
-2. Read vehicles, stations, and action_history.
+1. Call vehicle_data to see vehicles, stations (with cargo waiting), and action_history.
+2. Check each vehicle's order_count, speed, and profit.
 3. Follow this decision tree:
 
 A) IF no vehicles exist AND action_history shows a depot was built:
-   -> Find the depot_tile from action_history (build_rail_depot result).
-   -> Find engine_id from action_history (scout report) or pick engine_id 0.
-   -> Return: [{"action_type": "buy_vehicle", "parameters": {"depot_tile": <depot_tile>, "engine_id": <engine_id>}}]
+   -> Call finance_advisor: "Can we afford to buy a train engine?"
+   -> If affordable (or with a recommended loan), proceed:
+      Find the depot_tile from action_history (build_rail_depot result).
+      Find engine_id from action_history (scout report) or pick engine_id 0.
+      If a loan is recommended, prepend: {"action_type": "set_loan", "parameters": {"amount": <recommended>}}
+      Then: {"action_type": "buy_vehicle", "parameters": {"depot_tile": <depot_tile>, "engine_id": <engine_id>}}
    -> STOP. The coordinator will call you again next cycle for orders.
 
 B) IF a vehicle exists with order_count == 0 or order_count == 1:
-   -> This vehicle needs orders. Find station IDs from the observation's stations list.
+   -> This vehicle needs orders. Find station IDs from the stations list.
    -> Use the two most recently built stations.
    -> Return:
       [
@@ -304,7 +424,7 @@ C) IF a vehicle exists with order_count >= 2 AND is running (speed > 0):
 
 D) IF a vehicle exists with order_count >= 2 BUT speed == 0:
    -> Vehicle might be loading cargo (normal) or stuck.
-   -> If vehicle is at a station: it is loading. This is normal. Return [].
+   -> Check cargo_waiting at stations: if cargo_waiting_total > 0, train is loading. Normal.
    -> If vehicle is NOT at a station and NOT in depot: it may be stuck.
       Tell the coordinator about the issue.
    -> Return [].
@@ -319,12 +439,60 @@ ABSOLUTE RULES:
 OUTPUT: Return a JSON array of actions. Only return [] if the vehicle is already
 running correctly (case C/D above).
 """,
-            "tools": ["game_state"]
+            "tools": ["vehicle_data", "finance_advisor"]
         },
 
         // ------------------------------------------------------------------
-        // CODED TOOLS: API calls to nttd server
+        // AGENT: finance_advisor
+        // Lightweight financial helper. Routes queries to the right data
+        // tools and returns concise advice to the calling agent.
+        // ------------------------------------------------------------------
+        {
+            "name": "finance_advisor",
+            "function": {
+                "description": """
+Financial advisor for the rail company. Call before expensive actions to
+check affordability, get cost estimates, or detect unprofitable vehicles.
+Returns concise financial guidance based on current company data.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "Financial question, e.g. 'Can we afford a new route?', 'What loan do we need for 2 stations + train?', 'Any unprofitable vehicles?'"
+                        }
+                    },
+                    "required": ["request"]
+                }
+            },
+            "instructions": """
+You are the finance advisor. Other agents call you for financial guidance.
+Read the request, call the relevant tools, and return a SHORT answer.
+
+TOOL SELECTION (based on what the caller asks):
+- Balance, loan, or affordability questions -> call finance_data
+- Vehicle purchase costs or engine prices -> call get_engines
+- Fleet profitability or vehicle waste -> call vehicle_data
+- Station count or infrastructure overview -> call infrastructure_data
+- Complex questions (e.g. "full route cost") -> call finance_data + get_engines
+
+LOAN GUIDANCE (when asked about loans):
+- Safety floor: keep at least 10,000 after spending.
+- Only recommend a loan if balance < estimated cost + 10,000.
+- Recommend the minimum loan amount, rounded up to nearest 10,000.
+- Never exceed max_loan. If at max and still short, say "cannot afford, wait for revenue."
+
+RESPONSE FORMAT: 2-4 lines max. Include balance, whether affordable, and
+any loan recommendation. No essays. The caller needs a quick go/no-go.
+""",
+            "tools": ["finance_data", "get_engines", "vehicle_data", "infrastructure_data"]
+        },
+
+        // ------------------------------------------------------------------
+        // CODED TOOLS: HTTP callbacks to nttd server
         // These make HTTP requests to nttd's observation tool endpoints.
+        // Results are cached in sly_data to prevent redundant calls.
         // ------------------------------------------------------------------
         {
             "name": "find_station_spot",
