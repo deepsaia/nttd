@@ -174,13 +174,16 @@ class MASHttpAdapter(BaseAdapter):
                 origin = resp.get("origin", [])
                 origin_str = origin[0].get("tool", "") if origin else ""
 
-                if message_logger and text:
+                if text:
                     prefix = f"[{origin_str}] " if origin_str else ""
-                    message_logger(f"{prefix}{msg_type}", text[:2000])
+                    logger.info("Neuro-SAN %s%s: %s", prefix, msg_type, text[:500])
+                    if message_logger:
+                        message_logger(f"{prefix}{msg_type}", text[:2000])
 
                 if msg_type == "AGENT_FRAMEWORK" and text:
                     final_text = text
 
+        logger.info("Neuro-SAN final response (%d chars)", len(final_text))
         if message_logger:
             message_logger("FINAL RESPONSE", final_text[:2000])
 

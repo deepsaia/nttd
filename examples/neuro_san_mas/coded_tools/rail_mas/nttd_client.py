@@ -36,16 +36,17 @@ async def execute_tool(
     session_id = sly_data.get("session_id", "")
     company_id = sly_data.get("company_id", 0)
 
-    url = f"{NTTD_API_URL}/api/v1/sessions/{session_id}/tools/execute"
-    payload = {
-        "tool_name": tool_name,
-        "parameters": {**parameters, "company_id": company_id},
-    }
+    url = f"{NTTD_API_URL}/sessions/{session_id}/state/gs/query"
+    gs_params = {**parameters, "company_id": company_id}
 
-    logger.info("Calling nttd tool %s with params %s", tool_name, json.dumps(parameters))
+    logger.info("Calling nttd tool %s with params %s", tool_name, json.dumps(gs_params))
 
     async with httpx.AsyncClient(timeout=NTTD_TIMEOUT_SECONDS) as client:
-        response = await client.post(url, json=payload)
+        response = await client.post(
+            url,
+            params={"action": tool_name},
+            json=gs_params,
+        )
         response.raise_for_status()
         result = response.json()
 
