@@ -36,8 +36,15 @@ class MASHttpAdapter(BaseAdapter):
     - "neuro_san": streaming_chat with sly_data
     """
 
-    def __init__(self, transport_config: MASTransportConfig) -> None:
+    def __init__(
+        self,
+        transport_config: MASTransportConfig,
+        session_id: str = "",
+        company_id: int = 0,
+    ) -> None:
         self._config = transport_config
+        self._session_id = session_id
+        self._company_id = company_id
         self._client: httpx.AsyncClient | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
@@ -95,7 +102,11 @@ class MASHttpAdapter(BaseAdapter):
             raise RuntimeError("MAS HTTP adapter: endpoint URL not configured")
 
         user_text = instructions
-        sly_data: dict[str, Any] = {"observation": observation}
+        sly_data: dict[str, Any] = {
+            "observation": observation,
+            "session_id": self._session_id,
+            "company_id": self._company_id,
+        }
         if observation_tools:
             sly_data["tools"] = observation_tools
 
@@ -188,6 +199,8 @@ class MASHttpAdapter(BaseAdapter):
         payload: dict[str, Any] = {
             "observation": observation,
             "instructions": instructions,
+            "session_id": self._session_id,
+            "company_id": self._company_id,
         }
         if observation_tools:
             payload["tools"] = observation_tools

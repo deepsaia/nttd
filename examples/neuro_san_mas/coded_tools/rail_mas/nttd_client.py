@@ -18,7 +18,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 NTTD_API_URL = os.environ.get("NTTD_API_URL", "http://localhost:8000")
-NTTD_TIMEOUT = float(os.environ.get("NTTD_TIMEOUT", "30.0"))
+NTTD_TIMEOUT_SECONDS = float(os.environ.get("NTTD_TIMEOUT_SECONDS", "300.0"))
 
 
 async def execute_tool(
@@ -44,7 +44,7 @@ async def execute_tool(
 
     logger.info("Calling nttd tool %s with params %s", tool_name, json.dumps(parameters))
 
-    async with httpx.AsyncClient(timeout=NTTD_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=NTTD_TIMEOUT_SECONDS) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
         result = response.json()

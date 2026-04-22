@@ -196,7 +196,11 @@ class GameloopManager:
                     f"Agent {config.agent_id}: MAS HTTP transport requires "
                     f"mas_transport.endpoint"
                 )
-            return MASHttpAdapter(transport_config=config.mas_transport)
+            return MASHttpAdapter(
+                transport_config=config.mas_transport,
+                session_id=self.runtime.session_id,
+                company_id=config.company_id,
+            )
 
         if transport == "mcp":
             from nttd.gameloop.adapters.mas_mcp_adapter import MASMcpAdapter

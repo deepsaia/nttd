@@ -13,12 +13,14 @@ class FindRailDepotSpot(CodedTool):
     """Calls nttd's find_rail_depot_spot observation tool via HTTP."""
 
     async def async_invoke(self, args: Dict[str, Any], sly_data: Dict[str, Any]) -> Any:
+        if args.get("tile") is None:
+            return {"error": "tile parameter is required"}
         params: Dict[str, Any] = {"tile": int(args["tile"])}
-        if "radius" in args:
+        if args.get("radius") is not None:
             params["radius"] = int(args["radius"])
-        if "max_results" in args:
+        if args.get("max_results") is not None:
             params["max_results"] = int(args["max_results"])
-        if "rail_type" in args:
+        if args.get("rail_type") is not None:
             params["rail_type"] = int(args["rail_type"])
 
         result = await execute_tool("find_rail_depot_spot", params, sly_data)

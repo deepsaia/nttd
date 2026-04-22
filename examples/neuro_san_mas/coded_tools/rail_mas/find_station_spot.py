@@ -14,17 +14,17 @@ class FindStationSpot(CodedTool):
 
     async def async_invoke(self, args: Dict[str, Any], sly_data: Dict[str, Any]) -> Any:
         params: Dict[str, Any] = {}
-        if "industry_id" in args:
+        if args.get("industry_id") is not None:
             params["industry_id"] = int(args["industry_id"])
-        if "town_id" in args:
+        if args.get("town_id") is not None:
             params["town_id"] = int(args["town_id"])
-        if "platform_length" in args:
+        if args.get("platform_length") is not None:
             params["platform_length"] = int(args["platform_length"])
-        if "rail_type" in args:
+        if args.get("rail_type") is not None:
             params["rail_type"] = int(args["rail_type"])
-        if "radius" in args:
+        if args.get("radius") is not None:
             params["radius"] = int(args["radius"])
-        if "max_results" in args:
+        if args.get("max_results") is not None:
             params["max_results"] = int(args["max_results"])
 
         result = await execute_tool("find_station_spot", params, sly_data)
