@@ -354,8 +354,10 @@ class WorldState:
             self.cargo_flows.append(CargoFlow(
                 company_id=company_id,
                 cargo_id=r.get("cargo_id", 0),
+                cargo_label=r.get("cargo_label", ""),
                 entity_type=r.get("entity_type", ""),
                 entity_id=r.get("entity_id", 0),
+                entity_name=r.get("entity_name", ""),
                 direction=r.get("direction", ""),
                 amount=r.get("amount", 0),
             ))

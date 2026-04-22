@@ -3615,19 +3615,24 @@ class NttdGS extends GSController {
 
     // Iterate over all cargo types
     foreach (cargo_id, _ in GSCargoList()) {
+      local lbl = GSCargo.GetCargoLabel(cargo_id);
       // Town deliveries and pickups
       foreach (town_id, _ in GSTownList()) {
         local del_amt = GSCargoMonitor.GetTownDeliveryAmount(cid, cargo_id, town_id, keep);
         if (del_amt > 0) {
           flows.append({
-            cargo_id = cargo_id, entity_type = "town", entity_id = town_id,
+            cargo_id = cargo_id, cargo_label = lbl,
+            entity_type = "town", entity_id = town_id,
+            entity_name = GSTown.GetName(town_id),
             direction = "delivery", amount = del_amt
           });
         }
         local pick_amt = GSCargoMonitor.GetTownPickupAmount(cid, cargo_id, town_id, keep);
         if (pick_amt > 0) {
           flows.append({
-            cargo_id = cargo_id, entity_type = "town", entity_id = town_id,
+            cargo_id = cargo_id, cargo_label = lbl,
+            entity_type = "town", entity_id = town_id,
+            entity_name = GSTown.GetName(town_id),
             direction = "pickup", amount = pick_amt
           });
         }
@@ -3637,14 +3642,18 @@ class NttdGS extends GSController {
         local del_amt = GSCargoMonitor.GetIndustryDeliveryAmount(cid, cargo_id, ind_id, keep);
         if (del_amt > 0) {
           flows.append({
-            cargo_id = cargo_id, entity_type = "industry", entity_id = ind_id,
+            cargo_id = cargo_id, cargo_label = lbl,
+            entity_type = "industry", entity_id = ind_id,
+            entity_name = GSIndustry.GetName(ind_id),
             direction = "delivery", amount = del_amt
           });
         }
         local pick_amt = GSCargoMonitor.GetIndustryPickupAmount(cid, cargo_id, ind_id, keep);
         if (pick_amt > 0) {
           flows.append({
-            cargo_id = cargo_id, entity_type = "industry", entity_id = ind_id,
+            cargo_id = cargo_id, cargo_label = lbl,
+            entity_type = "industry", entity_id = ind_id,
+            entity_name = GSIndustry.GetName(ind_id),
             direction = "pickup", amount = pick_amt
           });
         }

@@ -133,7 +133,11 @@ def analyze(
     else:
         for r in results:
             if r.markdown:
-                console.print(Panel(Markdown(r.markdown), title=r.title, border_style="cyan"))
+                display_md = r.markdown
+                lines = display_md.split("\n", 1)
+                if lines[0].startswith("# "):
+                    display_md = lines[1] if len(lines) > 1 else ""
+                console.print(Panel(Markdown(display_md), title=r.title, border_style="cyan"))
 
     # Show file artifacts (e.g. video) that were saved by report generators
     for r in results:
