@@ -40,6 +40,9 @@ ottd_config/ai/*
 !ottd_config/ai/nttd-idle/
 !ottd_config/scripts/
 
+# Worktrees
+.worktrees/
+
 # nttd runtime output
 runs/
 logs/
