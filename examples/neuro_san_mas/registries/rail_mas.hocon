@@ -498,83 +498,11 @@ station detection, action history (last 15 cycles), and previous action results.
         },
 
         // ==================================================================
-        // CODED TOOLS: HTTP callbacks to nttd server
-        // Used internally by build_route_actions and retry_failed_actions.
-        // Also available to route_planner LLM for direct queries.
+        // CODED TOOL: get_engines (used by route_planner LLM agent)
+        // find_station_spot, find_rail_depot_spot, get_rail_types are NOT
+        // in the HOCON -- they are called via nttd_client.execute_tool()
+        // (direct HTTP) by build_route_actions and retry_failed_actions.
         // ==================================================================
-        {
-            "name": "find_station_spot",
-            "function": {
-                "description": """
-Finds validated rail station spots near an industry or town.
-Checks flat land, station buildability (dry-run), and cargo catchment.
-Returns tiles where a rail station can be successfully built.
-""",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "industry_id": {
-                            "type": "int",
-                            "description": "Industry ID to find station spots near"
-                        },
-                        "town_id": {
-                            "type": "int",
-                            "description": "Town ID to find station spots near"
-                        },
-                        "platform_length": {
-                            "type": "int",
-                            "description": "Station platform length (default 3)"
-                        },
-                        "rail_type": {
-                            "type": "int",
-                            "description": "Rail type ID (default 0)"
-                        },
-                        "radius": {
-                            "type": "int",
-                            "description": "Search radius in tiles (default 15)"
-                        },
-                        "max_results": {
-                            "type": "int",
-                            "description": "Maximum results to return (default 5)"
-                        }
-                    }
-                }
-            },
-            "class": "rail_mas.find_station_spot.FindStationSpot"
-        },
-        {
-            "name": "find_rail_depot_spot",
-            "function": {
-                "description": """
-Finds tiles adjacent to existing rail track where a depot can be built.
-MUST be called AFTER connect_rail so track exists.
-Returns tile, x, y, and depot_direction for build_rail_depot.
-""",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "tile": {
-                            "type": "int",
-                            "description": "Tile ID near which to search (use a station tile)"
-                        },
-                        "radius": {
-                            "type": "int",
-                            "description": "Search radius in tiles (default 10)"
-                        },
-                        "max_results": {
-                            "type": "int",
-                            "description": "Maximum results to return (default 5)"
-                        },
-                        "rail_type": {
-                            "type": "int",
-                            "description": "Rail type ID (default 0)"
-                        }
-                    },
-                    "required": ["tile"]
-                }
-            },
-            "class": "rail_mas.find_rail_depot_spot.FindRailDepotSpot"
-        },
         {
             "name": "get_engines",
             "function": {
@@ -595,22 +523,6 @@ Locomotives have is_wagon=false, cargo wagons have is_wagon=true.
                 }
             },
             "class": "rail_mas.get_engines.GetEngines"
-        },
-        {
-            "name": "get_rail_types",
-            "function": {
-                "description": "Gets available rail track types. Returns rail type ID, name, and properties.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "include_unavailable": {
-                            "type": "boolean",
-                            "description": "Include rail types not yet available (default false)"
-                        }
-                    }
-                }
-            },
-            "class": "rail_mas.get_rail_types.GetRailTypes"
         }
     ]
 }
