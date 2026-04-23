@@ -317,6 +317,7 @@ class AgentConnection:
                         "action": action.action_type,
                         "status": "failed",
                         "error": r.get("error", "unknown"),
+                        "parameters": action.parameters,
                     })
         self._last_cycle_results = cycle_results
 

@@ -180,8 +180,19 @@ class MASHttpAdapter(BaseAdapter):
                     if message_logger:
                         message_logger(f"{prefix}{msg_type}", text[:2000])
 
-                if msg_type == "AGENT_FRAMEWORK" and text:
-                    final_text = text
+                if msg_type == "AGENT_FRAMEWORK":
+                    if message_logger:
+                        message_logger("AGENT_FRAMEWORK", json.dumps(resp, indent=2)[:2000])
+                    resp_sly_data = resp.get("sly_data", {})
+                    if isinstance(resp_sly_data, dict):
+                        action_list = resp_sly_data.get("action_list")
+                        if isinstance(action_list, list) and action_list:
+                            final_text = json.dumps(action_list)
+                            if message_logger:
+                                message_logger("SLY_DATA action_list", final_text[:2000])
+                            continue
+                    if text:
+                        final_text = text
 
         logger.info("Neuro-SAN final response (%d chars)", len(final_text))
         if message_logger:
