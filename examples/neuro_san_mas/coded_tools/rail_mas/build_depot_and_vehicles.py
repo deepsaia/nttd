@@ -34,7 +34,7 @@ class BuildDepotAndVehicles(CodedTool):
 
         obs = get_observation(sly_data)
 
-        if obs and self._route_has_vehicle(station_tile, obs):
+        if obs and self._route_has_vehicle(station_tile, obs, sly_data):
             return json.dumps({
                 "success": False,
                 "error": "Route already has a vehicle. Skipping (no signals, 1 train per route).",
@@ -99,16 +99,36 @@ class BuildDepotAndVehicles(CodedTool):
         })
 
     def _route_has_vehicle(
-        self, station_tile: int, obs: Dict[str, Any],
+        self,
+        station_tile: int,
+        obs: Dict[str, Any],
+        sly_data: Dict[str, Any],
     ) -> bool:
-        """Check if the route containing this station already has a vehicle."""
+        """Check if the route already has a vehicle, depot vehicle, or pending build."""
+        map_width = obs.get("map_size", {}).get("x", 256)
+        sx = station_tile % map_width
+        sy = station_tile // map_width
+
         station_id = self._station_id_for_tile(station_tile, obs)
-        if station_id is None:
-            return False
-        for route in obs.get("routes", []):
-            if station_id in route.get("station_ids", []):
-                if route.get("vehicle_count", 0) >= 1:
-                    return True
+        if station_id is not None:
+            for route in obs.get("routes", []):
+                if station_id in route.get("station_ids", []):
+                    if route.get("vehicle_count", 0) >= 1:
+                        return True
+
+        for v in obs.get("vehicles", []):
+            vx, vy = v.get("x", 0), v.get("y", 0)
+            if abs(vx - sx) + abs(vy - sy) <= 15:
+                return True
+
+        for action in sly_data.get("action_list", []):
+            if action.get("action_type") != "build_train":
+                continue
+            existing_tile = action.get("parameters", {}).get("depot_tile", -1)
+            ex = existing_tile % map_width
+            ey = existing_tile // map_width
+            if abs(ex - sx) + abs(ey - sy) <= 20:
+                return True
         return False
 
     def _auto_select_wagon(

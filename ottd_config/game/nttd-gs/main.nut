@@ -3027,7 +3027,9 @@ class NttdGS extends GSController {
 
   function CmdBuyVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local depot_tile = GSMap.GetTileIndex(p.depot_x, p.depot_y);
+    local depot_tile = ("depot_tile" in p && p.depot_tile != null)
+      ? p.depot_tile
+      : GSMap.GetTileIndex(p.depot_x, p.depot_y);
     local vid = GSVehicle.BuildVehicle(depot_tile, p.engine_id);
     if (GSVehicle.IsValidVehicle(vid)) {
       return { success = true, result = { vehicle_id = vid, name = GSVehicle.GetName(vid) } };
@@ -3037,7 +3039,9 @@ class NttdGS extends GSController {
 
   function CmdBuildTrain(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local depot_tile = GSMap.GetTileIndex(p.depot_x, p.depot_y);
+    local depot_tile = ("depot_tile" in p && p.depot_tile != null)
+      ? p.depot_tile
+      : GSMap.GetTileIndex(p.depot_x, p.depot_y);
     local vid = GSVehicle.BuildVehicle(depot_tile, p.engine_id);
     if (!GSVehicle.IsValidVehicle(vid))
       return { success = false, error = GSError.GetLastErrorString() };
