@@ -225,7 +225,7 @@ actions and recommends loan adjustments when needed.
                     "type": "object",
                     "properties": {
                         "estimated_cost": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Estimated cost of the planned actions"
                         }
                     },
@@ -285,7 +285,7 @@ Pairs orphan stations by Manhattan distance proximity. Returns a list of
                     "properties": {
                         "orphan_station_ids": {
                             "type": "array",
-                            "items": {"type": "integer"},
+                            "items": {"type": "int"},
                             "description": "List of orphan station IDs to pair"
                         }
                     },
@@ -306,15 +306,15 @@ specified stations.
                     "type": "object",
                     "properties": {
                         "vehicle_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "ID of the vehicle to repair"
                         },
                         "src_station_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Source station ID for the first order"
                         },
                         "dst_station_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Destination station ID for the second order"
                         }
                     },
@@ -379,23 +379,23 @@ Appends all actions to sly_data action_list in GS dependency order.
                     "type": "object",
                     "properties": {
                         "source_industry_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Source industry ID"
                         },
                         "dest_industry_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Destination industry ID"
                         },
                         "engine_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Locomotive engine ID to purchase"
                         },
                         "wagon_id": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Wagon engine ID for cargo capacity"
                         },
                         "num_wagons": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Number of wagons to attach (default 3)"
                         }
                     },
@@ -419,7 +419,7 @@ loan_room, and affordability assessment for a given estimated_cost.
                     "type": "object",
                     "properties": {
                         "estimated_cost": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "Estimated cost to check affordability against"
                         }
                     }
@@ -438,7 +438,7 @@ The loan action must execute before any spending actions.
                     "type": "object",
                     "properties": {
                         "amount": {
-                            "type": "integer",
+                            "type": "int",
                             "description": "New loan amount (must be <= max_loan)"
                         }
                     },
