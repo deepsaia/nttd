@@ -42,7 +42,9 @@ class CheckVehicleStatus(CodedTool):
             for s in obs.get("stations", []):
                 sid = s.get("id")
                 if sid in orphan_ids:
-                    station_tiles[sid] = s.get("tile", 0)
+                    tile = s.get("tile", 0)
+                    if tile > 0:
+                        station_tiles[sid] = tile
 
         sly_data["action_list"] = sly_data.get("action_list", [])
 

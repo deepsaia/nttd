@@ -240,7 +240,7 @@ AIR & MISC:
   remove_airport        tile
   build_dock            tile
   build_bridge          start_x, start_y, end_x, end_y, bridge_type, transport_type
-                        NOTE: uses x,y coordinates NOT tile IDs! Get x,y from find_station_spot, find_flat_spots, or get_tile_info.
+                        NOTE: uses x,y coords NOT tile IDs! Get x,y from find_station_spot or get_tile_info.
                         transport_type: 0=rail, 1=road. bridge_type: integer from get_bridge_types.
   build_tunnel          tile, transport_type
   demolish_tile         tile

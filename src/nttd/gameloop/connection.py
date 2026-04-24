@@ -495,6 +495,7 @@ class AgentConnection:
                 tid, tname = _nearest_town(s.x, s.y, world.towns)
                 obs["stations"].append({
                     "id": s.id, "name": s.name, "x": s.x, "y": s.y,
+                    "tile": s.y * game.map_width + s.x,
                     "nearest_town_id": tid, "nearest_town": tname,
                     "has_rail": s.has_rail, "has_bus": s.has_bus,
                     "has_truck": s.has_truck, "has_airport": s.has_airport,
@@ -524,6 +525,7 @@ class AgentConnection:
                 tid, tname = _nearest_town(s.x, s.y, world.towns)
                 obs["stations"].append({
                     "id": s.id, "name": s.name, "x": s.x, "y": s.y,
+                    "tile": s.y * game.map_width + s.x,
                     "nearest_town_id": tid, "nearest_town": tname,
                 })
         elif "stations_count" in sections:

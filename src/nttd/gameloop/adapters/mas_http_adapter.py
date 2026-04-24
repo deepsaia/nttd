@@ -120,7 +120,7 @@ class MASHttpAdapter(BaseAdapter):
         }
 
         if message_logger:
-            message_logger("SYSTEM (neuro-san)", f"endpoint: {endpoint}")
+            message_logger("SYSTEM (neuro-san)", f"endpoint: {endpoint} | user_id: {payload.get('user_id')}")
             message_logger("USER", user_text[:500])
             message_logger("SLY_DATA keys", str(list(sly_data.keys())))
 
