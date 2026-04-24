@@ -944,7 +944,7 @@ class NttdGS extends GSController {
         x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
         engine_id = eid,
         running_cost = GSEngine.IsValidEngine(eid) ? GSEngine.GetRunningCost(eid) : 0,
-        capacity = GSVehicle.GetCapacity(id, GSEngine.IsValidEngine(eid) ? GSEngine.GetCargoType(eid) : 0),
+        capacity = this._GetTotalCapacity(id),
         age = GSVehicle.GetAge(id),
         max_age = GSVehicle.GetMaxAge(id),
         profit_this_year = GSVehicle.GetProfitThisYear(id),
@@ -3055,9 +3055,13 @@ class NttdGS extends GSController {
         }
       }
     }
+    local refitted = false;
+    if ("cargo_id" in p && p.cargo_id != null) {
+      refitted = GSVehicle.RefitVehicle(vid, p.cargo_id) ? true : false;
+    }
     return { success = true, result = {
       vehicle_id = vid, name = GSVehicle.GetName(vid),
-      wagons_attached = wagons_attached
+      wagons_attached = wagons_attached, refitted = refitted
     }};
   }
 
@@ -4072,6 +4076,14 @@ class NttdGS extends GSController {
       }
     }
     return result;
+  }
+
+  function _GetTotalCapacity(vid) {
+    local total = 0;
+    foreach (cargo_id, _ in GSCargoList()) {
+      total += GSVehicle.GetCapacity(vid, cargo_id);
+    }
+    return total;
   }
 
   function _VehicleTypeName(vt) {

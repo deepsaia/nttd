@@ -23,6 +23,7 @@ RAIL_ACTIONS: Set[str] = {
     "add_order",
     "start_vehicle",
     "clone_vehicle",
+    "refit_vehicle",
 }
 
 DISRUPTIVE_ACTIONS: Set[str] = {

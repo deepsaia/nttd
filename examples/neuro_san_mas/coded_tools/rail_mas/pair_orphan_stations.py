@@ -57,6 +57,17 @@ class PairOrphanStations(CodedTool):
                     best_j = j
             if best_j >= 0:
                 s2 = orphans[best_j]
+                src_produces = [
+                    ca.get("cargo_label", "")
+                    for ca in s1.get("cargo_acceptance", [])
+                    if ca.get("produces")
+                ]
+                dst_accepts = [
+                    ca.get("cargo_label", "")
+                    for ca in s2.get("cargo_acceptance", [])
+                    if ca.get("accepts")
+                ]
+                cargo_label = self._pick_cargo(s1, s2)
                 pairs.append({
                     "src_id": s1_id,
                     "src_x": s1.get("x", 0),
@@ -65,8 +76,26 @@ class PairOrphanStations(CodedTool):
                     "dst_x": s2.get("x", 0),
                     "dst_y": s2.get("y", 0),
                     "distance": int(best_dist),
+                    "cargo_label": cargo_label,
+                    "src_produces": src_produces,
+                    "dst_accepts": dst_accepts,
                 })
                 used.add(s1_id)
                 used.add(orphans[best_j]["id"])
 
         return pairs
+
+    @staticmethod
+    def _pick_cargo(
+        s1: Dict[str, Any], s2: Dict[str, Any],
+    ) -> str:
+        """Return best cargo label for a station pair. Producing cargo wins."""
+        for s in (s1, s2):
+            for ca in s.get("cargo_acceptance", []):
+                if ca.get("produces") and ca.get("cargo_label"):
+                    return ca["cargo_label"]
+        for s in (s1, s2):
+            for cw in s.get("cargo_waiting", []):
+                if cw.get("waiting", 0) > 0 and cw.get("cargo_label"):
+                    return cw["cargo_label"]
+        return ""

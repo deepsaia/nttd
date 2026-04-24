@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from nttd.schemas.route import Route, make_route_id
+from nttd.schemas.route import make_route_id
 from nttd.schemas.station import Station
 from nttd.schemas.vehicle import Order, Vehicle
 from nttd.state.route_registry import RouteRegistry

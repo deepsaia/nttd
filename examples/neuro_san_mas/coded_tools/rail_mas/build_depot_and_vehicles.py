@@ -3,6 +3,9 @@
 Cycle N+1 work: after stations + track exist from the previous cycle,
 finds a valid depot spot adjacent to existing track, then emits
 build_rail_depot + build_train (engine + wagons assembled atomically).
+
+Auto-selects the correct wagon type by matching station cargo against
+the engine list.  Enforces 1-train-per-route (no signals yet).
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
+from rail_mas.cargo_matcher import CargoMatcher
 from rail_mas.nttd_client import query_gs
 from rail_mas.observation_util import get_observation
 
@@ -25,8 +29,20 @@ class BuildDepotAndVehicles(CodedTool):
     async def async_invoke(self, args: Dict[str, Any], sly_data: Dict[str, Any]) -> Any:
         station_tile: int = args["station_tile"]
         engine_id: int = args["engine_id"]
-        wagon_id: Optional[int] = args.get("wagon_id")
+        caller_wagon_id: Optional[int] = args.get("wagon_id")
         num_wagons: int = args.get("num_wagons", 3)
+
+        obs = get_observation(sly_data)
+
+        if obs and self._route_has_vehicle(station_tile, obs):
+            return json.dumps({
+                "success": False,
+                "error": "Route already has a vehicle. Skipping (no signals, 1 train per route).",
+            })
+
+        wagon_id, cargo_id = self._auto_select_wagon(
+            station_tile, caller_wagon_id, obs, sly_data,
+        )
 
         existing_depot = self._find_existing_depot(station_tile, sly_data)
         if existing_depot:
@@ -60,6 +76,8 @@ class BuildDepotAndVehicles(CodedTool):
         if wagon_id is not None:
             params["wagon_id"] = wagon_id
             params["num_wagons"] = num_wagons
+        if cargo_id is not None:
+            params["cargo_id"] = cargo_id
 
         action_list.append({
             "action_type": "build_train",
@@ -74,8 +92,82 @@ class BuildDepotAndVehicles(CodedTool):
             "depot_tile": depot_tile,
             "reused_depot": not needs_build,
             "actions_added": actions_added,
+            "wagon_id": wagon_id,
+            "cargo_id": cargo_id,
+            "auto_selected": wagon_id != caller_wagon_id,
             "note": "Orders + start will be added next cycle after vehicle appears in observation.",
         })
+
+    def _route_has_vehicle(
+        self, station_tile: int, obs: Dict[str, Any],
+    ) -> bool:
+        """Check if the route containing this station already has a vehicle."""
+        station_id = self._station_id_for_tile(station_tile, obs)
+        if station_id is None:
+            return False
+        for route in obs.get("routes", []):
+            if station_id in route.get("station_ids", []):
+                if route.get("vehicle_count", 0) >= 1:
+                    return True
+        return False
+
+    def _auto_select_wagon(
+        self,
+        station_tile: int,
+        caller_wagon_id: Optional[int],
+        obs: Optional[Dict[str, Any]],
+        sly_data: Dict[str, Any],
+    ) -> tuple[Optional[int], Optional[int]]:
+        """Return (wagon_id, cargo_id) by matching station cargo to engines.
+
+        Falls back to caller_wagon_id if auto-selection fails.
+        """
+        if not obs:
+            return caller_wagon_id, None
+
+        station_id = self._station_id_for_tile(station_tile, obs)
+        if station_id is None:
+            return caller_wagon_id, None
+
+        stations: List[Dict[str, Any]] = obs.get("stations", [])
+        cargo_label = CargoMatcher.get_station_cargo(station_id, stations)
+        if not cargo_label:
+            return caller_wagon_id, None
+
+        engines = self._get_engines(sly_data)
+        if not engines:
+            return caller_wagon_id, None
+
+        wagon = CargoMatcher.select_wagon(cargo_label, engines)
+        cargo_id = CargoMatcher.cargo_label_to_id(cargo_label, engines)
+
+        if wagon:
+            return wagon["id"], cargo_id
+        return caller_wagon_id, cargo_id
+
+    def _station_id_for_tile(
+        self, tile: int, obs: Dict[str, Any],
+    ) -> Optional[int]:
+        """Find station ID from observation matching a tile value."""
+        for s in obs.get("stations", []):
+            if s.get("tile") == tile:
+                return s.get("id")
+        map_width = obs.get("map_size", {}).get("x", 256)
+        tile_x = tile % map_width
+        tile_y = tile // map_width
+        for s in obs.get("stations", []):
+            sx, sy = s.get("x", 0), s.get("y", 0)
+            if abs(sx - tile_x) + abs(sy - tile_y) <= 5:
+                return s.get("id")
+        return None
+
+    def _get_engines(self, sly_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Read cached engine list from sly_data if available."""
+        cached = sly_data.get("_cached_engines_0")
+        if cached:
+            result = cached if isinstance(cached, list) else cached.get("result", [])
+            return result
+        return []
 
     def _find_existing_depot(
         self, near_tile: int, sly_data: Dict[str, Any],

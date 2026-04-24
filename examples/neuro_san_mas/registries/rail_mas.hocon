@@ -143,8 +143,8 @@ which station pairs form routes.
 
 STEP 3: Call get_engines (vehicle_type=0). For each station pair:
   - Pick a locomotive (is_wagon=false): prefer cheaper engines early game.
-  - Pick a wagon (is_wagon=true) that matches the cargo at those stations.
-    If unsure of cargo type, pick any wagon with capacity > 0.
+  - You do NOT need to pick a wagon. build_depot_and_vehicles auto-selects
+    the correct wagon based on station cargo data.
   - Use num_wagons=3 (matches platform_length=3).
 
 STEP 4: Estimate cost (engine_price + wagon_price * 3 + 3000 for depot).
@@ -152,7 +152,9 @@ Call finance_advisor with estimated_cost. If cannot afford, stop.
 
 STEP 5: Call build_depot_and_vehicles with:
   - station_tile: use one of the orphan_station_tiles values
-  - engine_id, wagon_id, num_wagons
+  - engine_id, num_wagons (wagon is auto-selected)
+  It will skip routes that already have a vehicle (1 train per route,
+  no signals yet).
 
 Report what you built and for which station pair.
 """,
@@ -195,9 +197,8 @@ STEP 2: Select the best route. Consider:
 
 STEP 3: Call get_engines (vehicle_type=0) to pick:
   - A locomotive (is_wagon=false): cheaper engines are fine early game.
-  - A wagon type (is_wagon=true) matching the route's cargo_label.
-  These are passed through to build_route_actions so route_completer
-  knows what to buy next cycle.
+  - You do NOT need to pick a wagon. The wagon will be auto-selected
+    to match the route's cargo when route_completer builds the train.
 
 STEP 4: Estimate cost: 2 stations (~8,000 each) + track (~200/tile * distance).
   Call finance_advisor with this estimated_cost.

@@ -55,6 +55,8 @@ class FindUnservedRoutes(CodedTool):
             (s.get("x", 0), s.get("y", 0)) for s in obs.get("stations", [])
         ]
 
+        served_station_locs = self._served_station_locs(obs)
+
         available: List[Dict[str, Any]] = []
         for route in unserved:
             src_x = route.get("source_x", 0)
@@ -66,7 +68,35 @@ class FindUnservedRoutes(CodedTool):
                 or abs(sx - dst_x) + abs(sy - dst_y) <= STATION_CATCHMENT
                 for sx, sy in station_locs
             )
-            if not near_existing:
-                available.append(route)
+            if near_existing:
+                continue
+            src_served = any(
+                abs(sx - src_x) + abs(sy - src_y) <= STATION_CATCHMENT
+                for sx, sy in served_station_locs
+            )
+            dst_served = any(
+                abs(sx - dst_x) + abs(sy - dst_y) <= STATION_CATCHMENT
+                for sx, sy in served_station_locs
+            )
+            if src_served and dst_served:
+                continue
+            available.append(route)
 
         return json.dumps({"routes": available})
+
+    def _served_station_locs(
+        self, obs: Dict[str, Any],
+    ) -> List[Tuple[int, int]]:
+        """Station coordinates for routes that already have at least 1 vehicle."""
+        stations_by_id: Dict[int, Dict[str, Any]] = {
+            s.get("id", -1): s for s in obs.get("stations", [])
+        }
+        locs: List[Tuple[int, int]] = []
+        for route in obs.get("routes", []):
+            if route.get("vehicle_count", 0) < 1:
+                continue
+            for sid in route.get("station_ids", []):
+                s = stations_by_id.get(sid)
+                if s:
+                    locs.append((s.get("x", 0), s.get("y", 0)))
+        return locs
