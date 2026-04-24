@@ -48,3 +48,29 @@ class TestPickDirection:
     def test_empty_valid_directions(self) -> None:
         spot = {"valid_directions": []}
         assert BuildRouteActions._pick_direction(spot, 0) == 0
+
+
+class TestTrackEdge:
+    def test_dir0_other_is_east(self) -> None:
+        x, y = BuildRouteActions._track_edge(50, 60, 0, 3, 100, 60)
+        assert (x, y) == (53, 60)
+
+    def test_dir0_other_is_west(self) -> None:
+        x, y = BuildRouteActions._track_edge(50, 60, 0, 3, 10, 60)
+        assert (x, y) == (49, 60)
+
+    def test_dir1_other_is_south(self) -> None:
+        x, y = BuildRouteActions._track_edge(50, 60, 1, 3, 50, 120)
+        assert (x, y) == (50, 63)
+
+    def test_dir1_other_is_north(self) -> None:
+        x, y = BuildRouteActions._track_edge(50, 60, 1, 3, 50, 10)
+        assert (x, y) == (50, 59)
+
+    def test_dir0_same_x_picks_hi(self) -> None:
+        x, y = BuildRouteActions._track_edge(50, 60, 0, 3, 50, 80)
+        assert (x, y) == (53, 60)
+
+    def test_dir1_same_y_picks_hi(self) -> None:
+        x, y = BuildRouteActions._track_edge(50, 60, 1, 3, 80, 60)
+        assert (x, y) == (50, 63)

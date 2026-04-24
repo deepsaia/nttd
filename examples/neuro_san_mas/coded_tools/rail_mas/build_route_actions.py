@@ -61,11 +61,19 @@ class BuildRouteActions(CodedTool):
                 "direction": dst_dir,
             },
         })
+        src_edge_x, src_edge_y = self._track_edge(
+            src_spot["x"], src_spot["y"], src_dir, 3,
+            dst_spot["x"], dst_spot["y"],
+        )
+        dst_edge_x, dst_edge_y = self._track_edge(
+            dst_spot["x"], dst_spot["y"], dst_dir, 3,
+            src_spot["x"], src_spot["y"],
+        )
         action_list.append({
             "action_type": "connect_rail",
             "parameters": {
-                "from_x": src_spot["x"], "from_y": src_spot["y"],
-                "to_x": dst_spot["x"], "to_y": dst_spot["y"],
+                "from_x": src_edge_x, "from_y": src_edge_y,
+                "to_x": dst_edge_x, "to_y": dst_edge_y,
                 "rail_type": 0,
             },
         })
@@ -105,6 +113,30 @@ class BuildRouteActions(CodedTool):
         if valid:
             return valid[0]
         return preferred
+
+    @staticmethod
+    def _track_edge(
+        sx: int, sy: int, direction: int, platform_length: int,
+        other_x: int, other_y: int,
+    ) -> tuple[int, int]:
+        """Return the tile just past the station's track end facing the other station.
+
+        For dir=0 (NE-SW), platform occupies (sx..sx+len-1, sy).
+        Track ends: (sx-1, sy) and (sx+len, sy).
+        For dir=1 (NW-SE), platform occupies (sx, sy..sy+len-1).
+        Track ends: (sx, sy-1) and (sx, sy+len).
+        """
+        if direction == 0:
+            end_lo_x = sx - 1
+            end_hi_x = sx + platform_length
+            if other_x >= sx:
+                return end_hi_x, sy
+            return end_lo_x, sy
+        end_lo_y = sy - 1
+        end_hi_y = sy + platform_length
+        if other_y >= sy:
+            return sx, end_hi_y
+        return sx, end_lo_y
 
     async def _find_station(
         self, industry_id: int, sly_data: Dict[str, Any],
