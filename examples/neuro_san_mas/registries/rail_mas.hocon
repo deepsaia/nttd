@@ -119,7 +119,7 @@ Report: needs_depot_and_vehicle flag, repairs done, retries queued.
                 "description": """
 Completes routes that have stations and track but no depot or vehicle yet.
 Picks an engine and wagons, finds a depot spot near existing track, and
-queues build_rail_depot + buy_vehicle actions.
+queues build_rail_depot + build_train actions (engine + wagons atomically).
 """,
                 "parameters": {
                     "type": "object",
@@ -187,8 +187,7 @@ You only build stations and track. Depot and vehicles are handled by
 route_completer in the next cycle.
 
 STEP 1: Call find_unserved_routes to see available routes.
-  - If it returns empty with "Vehicles still need orders", report that
-    expansion is deferred and stop.
+  - If it returns empty with a reason, report that reason and stop.
 
 STEP 2: Select the best route. Consider:
   - Shorter distance = lower build cost (track cost is ~200/tile)
@@ -339,8 +338,8 @@ Pairs orphan stations by Manhattan distance proximity. Returns a list of
             "function": {
                 "description": """
 Creates add_order x2 + start_vehicle actions for a vehicle and appends
-them to sly_data action_list. The vehicle will be sent between the two
-specified stations.
+them to sly_data action_list. Only starts the vehicle if it has cargo
+capacity (wagons attached). The vehicle will run between the two stations.
 """,
                 "parameters": {
                     "type": "object",
@@ -392,8 +391,8 @@ depots). Appends retries to sly_data action_list.
             "function": {
                 "description": """
 Finds a depot spot adjacent to existing track near the given station tile,
-builds the depot, and buys an engine + wagons. Requires track to already
-exist (from a previous cycle's connect_rail).
+builds the depot, and buys an engine with wagons atomically attached.
+Reuses existing depots when possible. Requires track to already exist.
 """,
                 "parameters": {
                     "type": "object",
@@ -428,8 +427,8 @@ exist (from a previous cycle's connect_rail).
             "name": "find_unserved_routes",
             "function": {
                 "description": """
-Returns unserved cargo routes not near existing stations. Checks expansion
-readiness (all vehicles must have 2+ orders). Returns route details:
+Returns unserved cargo routes not near existing stations. Allows expansion
+once at least one vehicle is running with orders. Returns route details:
 source/dest industry IDs, coordinates, cargo, distance, monthly_production.
 """,
                 "parameters": {
@@ -449,8 +448,8 @@ source/dest industry IDs, coordinates, cargo, distance, monthly_production.
             "function": {
                 "description": """
 Validates station/depot spots via HTTP and builds the complete action
-sequence for a new route: 2 stations + track + depot + engine + wagons.
-Appends all actions to sly_data action_list in GS dependency order.
+sequence for a new route: 2 stations + track. Depot and vehicles are
+handled by route_completer in the next cycle.
 """,
                 "parameters": {
                     "type": "object",

@@ -40,8 +40,8 @@ class RetryFailedActions(CodedTool):
                 self._retry_station(params, error, action_list, retries)
             elif action_type == "build_rail_depot":
                 await self._retry_depot(params, action_list, retries, sly_data)
-            elif action_type == "buy_vehicle":
-                retries.append(f"buy_vehicle failed ({error}), will retry next cycle")
+            elif action_type in ("buy_vehicle", "build_train"):
+                retries.append(f"{action_type} failed ({error}), will retry next cycle")
 
         sly_data["action_list"] = action_list
         failed_count = sum(1 for p in previous_actions if p.get("status") == "failed")

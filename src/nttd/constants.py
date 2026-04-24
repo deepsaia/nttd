@@ -32,7 +32,7 @@ ACTION_CATEGORIES: dict[str, list[str]] = {
     "sign": ["build_sign", "remove_sign"],
     "group": ["create_group", "delete_group", "move_to_group", "set_auto_replace"],
     "vehicle": [
-        "buy_vehicle", "sell_vehicle", "sell_wagon", "move_wagon",
+        "buy_vehicle", "build_train", "sell_vehicle", "sell_wagon", "move_wagon",
         "start_vehicle", "stop_vehicle", "send_to_depot", "send_to_depot_service",
         "clone_vehicle", "refit_vehicle", "reverse_vehicle", "rename_vehicle",
     ],

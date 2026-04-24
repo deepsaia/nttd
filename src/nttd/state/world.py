@@ -13,6 +13,7 @@ from nttd.schemas.station import CargoAcceptance, CargoWaiting, Station
 from nttd.schemas.subsidy import Subsidy
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Order, Vehicle
+from nttd.state.route_registry import RouteRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class WorldState:
         self.subsidies: list[Subsidy] = []
         self.infrastructure: dict[int, InfrastructureCosts] = {}
         self.cargo_flows: list[CargoFlow] = []
+        self.route_registry: RouteRegistry = RouteRegistry()
 
     def snapshot(self) -> StateSnapshot:
         self.game.snapshot_id = uuid.uuid4().hex[:12]
@@ -78,7 +80,7 @@ class WorldState:
             seen.add(tid)
             self.towns[tid] = Town(
                 id=tid,
-                name=r.get("name", ""),
+                name=r.get("name") or "",
                 population=r.get("population", 0),
                 houses=r.get("houses", 0),
                 x=r.get("x", 0),
@@ -116,7 +118,7 @@ class WorldState:
             ]
             self.industries[iid] = Industry(
                 id=iid,
-                name=r.get("name", ""),
+                name=r.get("name") or "",
                 type_id=r.get("type_id", 0),
                 type_name=r.get("type_name", ""),
                 x=r.get("x", 0),
@@ -158,7 +160,7 @@ class WorldState:
             ]
             self.stations[sid] = Station(
                 id=sid,
-                name=r.get("name", ""),
+                name=r.get("name") or "",
                 company_id=company_id,
                 x=r.get("x", 0),
                 y=r.get("y", 0),
@@ -193,10 +195,11 @@ class WorldState:
                 id=vid,
                 type=r.get("type", "train"),
                 company_id=company_id,
-                name=r.get("name", ""),
+                name=r.get("name") or "",
                 engine_id=r.get("engine_id", 0),
                 x=r.get("x", 0),
                 y=r.get("y", 0),
+                capacity=r.get("capacity", 0),
                 profit_this_year=r.get("profit_this_year", 0),
                 profit_last_year=r.get("profit_last_year", 0),
                 age=r.get("age", 0),
@@ -217,31 +220,10 @@ class WorldState:
                       len(seen), company_id, len(stale))
 
     def _derive_routes(self) -> list[Route]:
-        """Group vehicles with identical ordered station sequences into Route objects.
-
-        A route is uniquely identified by (company_id, vehicle_type, tuple of station IDs).
-        This is derived each snapshot — no extra GS round-trip needed.
-        """
-        seen: dict[tuple[int, str, tuple[int, ...]], Route] = {}
-        counter = 0
-        # Snapshot the values to avoid RuntimeError if dict is modified concurrently
-        for v in list(self.vehicles.values()):
-            station_ids = tuple(o.destination for o in v.orders if o.is_goto_station)
-            if not station_ids:
-                continue
-            key = (v.company_id, v.type, station_ids)
-            if key not in seen:
-                counter += 1
-                seen[key] = Route(
-                    route_id=counter,
-                    company_id=v.company_id,
-                    vehicle_type=v.type,
-                    station_ids=list(station_ids),
-                )
-            seen[key].vehicle_count += 1
-            seen[key].total_profit_this_year += v.profit_this_year
-            seen[key].total_profit_last_year += v.profit_last_year
-        return list(seen.values())
+        """Reconcile route registry and return all active routes with stable IDs."""
+        return self.route_registry.reconcile(
+            self.vehicles, self.stations, self.game.game_date,
+        )
 
     def apply_gs_companies(self, results: list[dict[str, Any]]) -> None:
         """Populate companies dict from GS get_companies result.

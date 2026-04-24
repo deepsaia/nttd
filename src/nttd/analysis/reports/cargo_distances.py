@@ -144,7 +144,7 @@ def _parse_snapshot_entities(
     ]
     routes = [
         Route(
-            route_id=r.get("route_id", 0),
+            route_id=r.get("route_id", ""),
             company_id=r.get("company_id", 0),
             vehicle_type=r.get("vehicle_type", ""),
             station_ids=r.get("station_ids", []),

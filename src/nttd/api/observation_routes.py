@@ -149,6 +149,7 @@ async def get_compact_state(session_id: str, company_id: int = -1) -> CompactSna
             route_id=r.route_id,
             vehicle_type=r.vehicle_type,
             station_ids=r.station_ids,
+            status=r.status,
             vehicle_count=r.vehicle_count,
             total_profit_this_year=r.total_profit_this_year,
         )

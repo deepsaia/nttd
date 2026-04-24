@@ -321,6 +321,19 @@ class AgentConnection:
                     })
         self._last_cycle_results = cycle_results
 
+        # Update route registry from successful action results
+        if valid_actions:
+            registry = self.runtime.world.route_registry
+            for action, r in zip(valid_actions, results):
+                if r.get("status") == "success":
+                    registry.on_action_result(
+                        action.action_type,
+                        action.parameters,
+                        r.get("result", {}),
+                        self.runtime.world.stations,
+                        game_date,
+                    )
+
         # Record successful actions in agent output format for rolling history
         successful_actions = [
             {"action_type": a.action_type, "parameters": a.parameters}
@@ -403,6 +416,7 @@ class AgentConnection:
         obs: dict[str, Any] = {
             "game_date": game.game_date,
             "paused": game.paused,
+            "map_size": {"x": game.map_width, "y": game.map_height},
         }
 
         if "company" in sections:
@@ -442,6 +456,7 @@ class AgentConnection:
                     "id": v.id, "type": v.type, "name": v.name,
                     "x": v.x, "y": v.y,
                     "running": v.running, "in_depot": v.in_depot,
+                    "capacity": v.capacity,
                     "profit_this_year": v.profit_this_year,
                     "profit_last_year": v.profit_last_year,
                     "current_speed": v.current_speed,
@@ -591,7 +606,10 @@ class AgentConnection:
                     "route_id": r.route_id,
                     "vehicle_type": r.vehicle_type,
                     "station_ids": r.station_ids,
+                    "status": r.status,
+                    "vehicle_ids": r.vehicle_ids,
                     "vehicle_count": r.vehicle_count,
+                    "depot_tile": r.depot_tile,
                     "profit_this_year": r.total_profit_this_year,
                 }
                 for r in derived_routes
@@ -618,11 +636,17 @@ class AgentConnection:
                         stations_with_vehicles.add(o.destination)
             orphan_ids = sorted(station_ids_in_obs - stations_with_vehicles)
             if station_ids_in_obs:
+                orphan_station_tiles: dict[int, int] = {}
+                for sid in orphan_ids:
+                    s = world.stations.get(sid)
+                    if s:
+                        orphan_station_tiles[sid] = s.y * game.map_width + s.x
                 obs["route_status"] = {
                     "total_stations": len(station_ids_in_obs),
                     "stations_with_vehicles": len(stations_with_vehicles),
                     "orphan_stations": len(orphan_ids),
                     "orphan_station_ids": orphan_ids,
+                    "orphan_station_tiles": orphan_station_tiles,
                 }
 
         # Always include previous cycle's action results so agent can learn

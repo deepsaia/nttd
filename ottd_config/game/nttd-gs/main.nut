@@ -523,6 +523,7 @@ class NttdGS extends GSController {
 
         // ---- VEHICLES ------------------------------------------------------
         case "buy_vehicle":          return this.CmdBuyVehicle(p);
+        case "build_train":          return this.CmdBuildTrain(p);
         case "sell_vehicle":         return this.CmdSellVehicle(p);
         case "sell_wagon":           return this.CmdSellWagon(p);
         case "move_wagon":           return this.CmdMoveWagon(p);
@@ -3032,6 +3033,32 @@ class NttdGS extends GSController {
       return { success = true, result = { vehicle_id = vid, name = GSVehicle.GetName(vid) } };
     }
     return { success = false, error = GSError.GetLastErrorString() };
+  }
+
+  function CmdBuildTrain(p) {
+    local company_mode = GSCompanyMode(p.company_id);
+    local depot_tile = GSMap.GetTileIndex(p.depot_x, p.depot_y);
+    local vid = GSVehicle.BuildVehicle(depot_tile, p.engine_id);
+    if (!GSVehicle.IsValidVehicle(vid))
+      return { success = false, error = GSError.GetLastErrorString() };
+    local wagons_attached = 0;
+    if ("wagon_id" in p && p.wagon_id != null) {
+      local num = ("num_wagons" in p) ? p.num_wagons : 1;
+      for (local i = 0; i < num; i++) {
+        local wid = GSVehicle.BuildVehicle(depot_tile, p.wagon_id);
+        if (GSVehicle.IsValidVehicle(wid)) {
+          if (GSVehicle.MoveWagonChain(wid, 0, vid, -1)) {
+            wagons_attached++;
+          } else {
+            GSVehicle.SellVehicle(wid);
+          }
+        }
+      }
+    }
+    return { success = true, result = {
+      vehicle_id = vid, name = GSVehicle.GetName(vid),
+      wagons_attached = wagons_attached
+    }};
   }
 
   function CmdSellVehicle(p) {

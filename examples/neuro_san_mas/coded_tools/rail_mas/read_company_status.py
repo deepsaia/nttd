@@ -47,7 +47,10 @@ class ReadCompanyStatus(CodedTool):
             route_summary.append({
                 "route_id": r.get("route_id"),
                 "station_ids": r.get("station_ids"),
+                "status": r.get("status"),
+                "vehicle_ids": r.get("vehicle_ids", []),
                 "vehicle_count": r.get("vehicle_count"),
+                "depot_tile": r.get("depot_tile", 0),
                 "profit_this_year": r.get("profit_this_year"),
             })
 

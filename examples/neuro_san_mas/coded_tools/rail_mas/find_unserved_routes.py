@@ -25,20 +25,25 @@ class FindUnservedRoutes(CodedTool):
 
         route_status: Dict[str, Any] = obs.get("route_status", {})
         orphan_count = route_status.get("orphan_stations", 0)
-        if orphan_count > 0:
+        vehicles: List[Dict[str, Any]] = obs.get("vehicles", [])
+        running_with_orders = [
+            v for v in vehicles
+            if v.get("order_count", 0) >= 2 and not v.get("in_depot", False)
+        ]
+
+        if orphan_count > 0 and not running_with_orders:
             return json.dumps({
                 "routes": [],
                 "reason": (
-                    f"{orphan_count} orphan stations without vehicles. "
-                    "Complete existing routes before expanding."
+                    f"{orphan_count} orphan stations and no running vehicles yet. "
+                    "Complete the first route before expanding."
                 ),
             })
 
-        vehicles: List[Dict[str, Any]] = obs.get("vehicles", [])
-        if vehicles and any(v.get("order_count", 0) < 2 for v in vehicles):
+        if vehicles and not running_with_orders:
             return json.dumps({
                 "routes": [],
-                "reason": "Vehicles still need orders. Expansion deferred until all trains are running.",
+                "reason": "No vehicles running with orders yet. Expansion deferred.",
             })
 
         route_planning: Dict[str, Any] = obs.get("route_planning", {})

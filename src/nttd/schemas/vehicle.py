@@ -31,6 +31,7 @@ class Vehicle(BaseModel):
     profit_last_year: int = 0
     age: int = 0
     max_age: int = 0
+    capacity: int = 0
     current_speed: int = 0
     state: int = 0
     running: bool = True

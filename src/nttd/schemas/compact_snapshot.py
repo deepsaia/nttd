@@ -20,9 +20,10 @@ class CompactCompany(BaseModel):
 
 
 class CompactRoute(BaseModel):
-    route_id: int
+    route_id: str
     vehicle_type: str
     station_ids: list[int]
+    status: str = "active"
     vehicle_count: int = 0
     total_profit_this_year: int = 0
 

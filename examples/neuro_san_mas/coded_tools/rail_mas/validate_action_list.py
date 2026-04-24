@@ -19,6 +19,7 @@ RAIL_ACTIONS: Set[str] = {
     "build_rail_signal",
     "connect_rail",
     "buy_vehicle",
+    "build_train",
     "add_order",
     "start_vehicle",
     "clone_vehicle",
