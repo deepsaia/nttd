@@ -2217,10 +2217,24 @@ class NttdGS extends GSController {
     local dir = ("direction" in p) ? p.direction : 0;
     GSRail.SetCurrentRailType(rail_type);
     local tile = GSMap.GetTileIndex(p.x, p.y);
-    if (GSRail.BuildRailDepot(tile, this._GetAdjacentTile(tile, dir))) {
-      return { success = true, result = { tile = [p.x, p.y] } };
+    local front = this._GetAdjacentTile(tile, dir);
+    if (!GSRail.BuildRailDepot(tile, front)) {
+      return { success = false, error = GSError.GetLastErrorString() };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    // Auto-connect: build rail on the front tile linking existing track to depot.
+    // Find an adjacent rail tile next to the front tile (excluding the depot tile)
+    // and build a rail piece: adj_rail -> front -> depot.
+    local connected = false;
+    local adj = this._GetAdjacentRailTrack(GSMap.GetTileX(front), GSMap.GetTileY(front));
+    foreach (a in adj) {
+      local adj_tile = GSMap.GetTileIndex(a.nx, a.ny);
+      if (adj_tile == tile) continue;
+      if (GSRail.BuildRail(adj_tile, front, tile)) {
+        connected = true;
+        break;
+      }
+    }
+    return { success = true, result = { tile = [p.x, p.y], connected = connected } };
   }
 
   function CmdBuildRailSignal(p) {
@@ -2536,7 +2550,7 @@ class NttdGS extends GSController {
 
   // Build rail along a path from _FindRailPath.
   // Rail needs 3-tile context: GSRail.BuildRail(prev, cur, next).
-  function _BuildRailPath(path) {
+  function _BuildRailPath(path, from_hint = null, to_hint = null) {
     local built = 0;
     local failed = [];
 
@@ -2574,14 +2588,24 @@ class NttdGS extends GSController {
       // Normal rail: needs prev_tile, cur_tile, next_tile.
       local prev_tile, next_tile;
       if (i == 0 && path.len() > 1) {
-        // First tile: virtual prev from opposite of travel direction.
-        local opp = (cur.dir + 2) % 4;
-        prev_tile = GSMap.GetTileIndex(cur.x + this._GetDirDx(opp), cur.y + this._GetDirDy(opp));
+        // First tile: use from_hint (station platform tile) if provided,
+        // otherwise fall back to opposite-of-travel extrapolation.
+        if (from_hint != null) {
+          prev_tile = from_hint;
+        } else {
+          local opp = (cur.dir + 2) % 4;
+          prev_tile = GSMap.GetTileIndex(cur.x + this._GetDirDx(opp), cur.y + this._GetDirDy(opp));
+        }
         next_tile = path[1].tile;
       } else if (i == path.len() - 1 && path.len() > 1) {
-        // Last tile: virtual next continuing travel direction.
+        // Last tile: use to_hint (station platform tile) if provided,
+        // otherwise fall back to continuing-travel extrapolation.
         prev_tile = path[i - 1].tile;
-        next_tile = GSMap.GetTileIndex(cur.x + this._GetDirDx(cur.dir), cur.y + this._GetDirDy(cur.dir));
+        if (to_hint != null) {
+          next_tile = to_hint;
+        } else {
+          next_tile = GSMap.GetTileIndex(cur.x + this._GetDirDx(cur.dir), cur.y + this._GetDirDy(cur.dir));
+        }
       } else if (path.len() == 1) {
         continue; // Single tile, nothing to build.
       } else {
@@ -2613,6 +2637,18 @@ class NttdGS extends GSController {
     if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
     local max_iter = ("max_iterations" in p) ? p.max_iterations : 50000;
 
+    // Optional hint tiles: the station platform tiles that the path endpoints
+    // should connect back to. Used as prev_tile for first path tile and
+    // next_tile for last path tile in _BuildRailPath.
+    local from_hint = null;
+    if ("from_hint_x" in p && "from_hint_y" in p) {
+      from_hint = GSMap.GetTileIndex(p.from_hint_x, p.from_hint_y);
+    }
+    local to_hint = null;
+    if ("to_hint_x" in p && "to_hint_y" in p) {
+      to_hint = GSMap.GetTileIndex(p.to_hint_x, p.to_hint_y);
+    }
+
     // Phase 1: Pathfind (runs in GSTestMode internally).
     local pf = this._FindRailPath(pair.from.tile, pair.to.tile, max_iter);
     if (!pf.success) {
@@ -2621,7 +2657,7 @@ class NttdGS extends GSController {
     }
 
     // Phase 2: Build the rail.
-    local build = this._BuildRailPath(pf.path);
+    local build = this._BuildRailPath(pf.path, from_hint, to_hint);
 
     // Compact path for response.
     local path_coords = [];

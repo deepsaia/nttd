@@ -74,3 +74,28 @@ class TestTrackEdge:
     def test_dir1_same_y_picks_hi(self) -> None:
         x, y = BuildRouteActions._track_edge(50, 60, 1, 3, 80, 60)
         assert (x, y) == (50, 63)
+
+
+class TestPlatformEnd:
+    def test_dir0_other_east_returns_last_platform(self) -> None:
+        x, y = BuildRouteActions._platform_end(50, 60, 0, 3, 100, 60)
+        assert (x, y) == (52, 60)
+
+    def test_dir0_other_west_returns_first_platform(self) -> None:
+        x, y = BuildRouteActions._platform_end(50, 60, 0, 3, 10, 60)
+        assert (x, y) == (50, 60)
+
+    def test_dir1_other_south_returns_last_platform(self) -> None:
+        x, y = BuildRouteActions._platform_end(50, 60, 1, 3, 50, 120)
+        assert (x, y) == (50, 62)
+
+    def test_dir1_other_north_returns_first_platform(self) -> None:
+        x, y = BuildRouteActions._platform_end(50, 60, 1, 3, 50, 10)
+        assert (x, y) == (50, 60)
+
+    def test_platform_end_adjacent_to_track_edge(self) -> None:
+        """Platform end should be exactly 1 tile inward from track edge."""
+        for direction in (0, 1):
+            edge_x, edge_y = BuildRouteActions._track_edge(50, 60, direction, 3, 100, 100)
+            hint_x, hint_y = BuildRouteActions._platform_end(50, 60, direction, 3, 100, 100)
+            assert abs(edge_x - hint_x) + abs(edge_y - hint_y) == 1

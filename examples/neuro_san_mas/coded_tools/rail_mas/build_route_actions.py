@@ -70,11 +70,21 @@ class BuildRouteActions(CodedTool):
             dst_spot["x"], dst_spot["y"], dst_dir, 3,
             src_spot["x"], src_spot["y"],
         )
+        src_hint_x, src_hint_y = self._platform_end(
+            src_spot["x"], src_spot["y"], src_dir, 3,
+            dst_spot["x"], dst_spot["y"],
+        )
+        dst_hint_x, dst_hint_y = self._platform_end(
+            dst_spot["x"], dst_spot["y"], dst_dir, 3,
+            src_spot["x"], src_spot["y"],
+        )
         action_list.append({
             "action_type": "connect_rail",
             "parameters": {
                 "from_x": src_edge_x, "from_y": src_edge_y,
                 "to_x": dst_edge_x, "to_y": dst_edge_y,
+                "from_hint_x": src_hint_x, "from_hint_y": src_hint_y,
+                "to_hint_x": dst_hint_x, "to_hint_y": dst_hint_y,
                 "rail_type": 0,
             },
         })
@@ -138,6 +148,25 @@ class BuildRouteActions(CodedTool):
         if other_y >= sy:
             return sx, end_hi_y
         return sx, end_lo_y
+
+    @staticmethod
+    def _platform_end(
+        sx: int, sy: int, direction: int, platform_length: int,
+        other_x: int, other_y: int,
+    ) -> tuple[int, int]:
+        """Return the last platform tile facing the other station.
+
+        This is one tile inward from _track_edge, on the station platform itself.
+        Used as a hint tile so connect_rail builds the first/last rail piece
+        pointing back into the station.
+        """
+        if direction == 0:
+            if other_x >= sx:
+                return sx + platform_length - 1, sy
+            return sx, sy
+        if other_y >= sy:
+            return sx, sy + platform_length - 1
+        return sx, sy
 
     async def _find_station(
         self, industry_id: int, sly_data: Dict[str, Any],

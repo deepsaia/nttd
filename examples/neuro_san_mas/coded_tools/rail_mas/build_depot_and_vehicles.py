@@ -71,19 +71,6 @@ class BuildDepotAndVehicles(CodedTool):
                     "direction": depot_spot.get("depot_direction", 0),
                 },
             })
-            adj_x = depot_spot.get("adjacent_track_x")
-            adj_y = depot_spot.get("adjacent_track_y")
-            if adj_x is not None and adj_y is not None:
-                action_list.append({
-                    "action_type": "build_rail",
-                    "parameters": {
-                        "from_x": adj_x,
-                        "from_y": adj_y,
-                        "to_x": depot_spot.get("x", 0),
-                        "to_y": depot_spot.get("y", 0),
-                        "rail_type": 0,
-                    },
-                })
 
         params: Dict[str, Any] = {
             "depot_tile": depot_tile,
@@ -308,7 +295,7 @@ class BuildDepotAndVehicles(CodedTool):
                     {"tile": near_tile, "radius": radius, "max_results": 3},
                     sly_data,
                 )
-                spots = result.get("result", [])
+                spots = result if isinstance(result, list) else result.get("result", [])
                 if spots:
                     return spots[0]
             except Exception:
