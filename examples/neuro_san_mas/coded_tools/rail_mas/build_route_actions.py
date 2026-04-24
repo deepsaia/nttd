@@ -40,6 +40,7 @@ class BuildRouteActions(CodedTool):
             return json.dumps({"success": False, "error": f"No station spot for dest industry {dst_industry_id}"})
 
         action_list: List[Dict[str, Any]] = sly_data.get("action_list", [])
+        actions_before = len(action_list)
 
         preferred_dir = self._preferred_direction(src_spot, dst_spot)
         src_dir = self._pick_direction(src_spot, preferred_dir)
@@ -82,7 +83,7 @@ class BuildRouteActions(CodedTool):
 
         return json.dumps({
             "success": True,
-            "actions_added": 3,
+            "actions_added": len(action_list) - actions_before,
             "source_tile": src_spot["tile"],
             "dest_tile": dst_spot["tile"],
             "engine_id": engine_id,

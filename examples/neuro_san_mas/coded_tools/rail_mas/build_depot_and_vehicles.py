@@ -61,6 +61,7 @@ class BuildDepotAndVehicles(CodedTool):
             needs_build = True
 
         action_list: List[Dict[str, Any]] = sly_data.get("action_list", [])
+        actions_before = len(action_list)
 
         if needs_build:
             action_list.append({
@@ -70,6 +71,19 @@ class BuildDepotAndVehicles(CodedTool):
                     "direction": depot_spot.get("depot_direction", 0),
                 },
             })
+            adj_x = depot_spot.get("adjacent_track_x")
+            adj_y = depot_spot.get("adjacent_track_y")
+            if adj_x is not None and adj_y is not None:
+                action_list.append({
+                    "action_type": "build_rail",
+                    "parameters": {
+                        "from_x": adj_x,
+                        "from_y": adj_y,
+                        "to_x": depot_spot.get("x", 0),
+                        "to_y": depot_spot.get("y", 0),
+                        "rail_type": 0,
+                    },
+                })
 
         params: Dict[str, Any] = {
             "depot_tile": depot_tile,
@@ -88,12 +102,11 @@ class BuildDepotAndVehicles(CodedTool):
 
         sly_data["action_list"] = action_list
 
-        actions_added = 2 if needs_build else 1
         return json.dumps({
             "success": True,
             "depot_tile": depot_tile,
             "reused_depot": not needs_build,
-            "actions_added": actions_added,
+            "actions_added": len(action_list) - actions_before,
             "wagon_id": wagon_id,
             "cargo_id": cargo_id,
             "auto_selected": wagon_id != caller_wagon_id,
