@@ -1494,25 +1494,46 @@ class NttdGS extends GSController {
         local tile = GSMap.GetTileIndex(x, y);
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         if (GSTile.GetSlope(tile) != 0) continue;
-        // Check area for platform_length
         local base_h = GSTile.GetMaxHeight(tile);
-        local ok = true;
-        for (local rx = 1; rx < platform_length && ok; rx++) {
-          local ct = GSMap.GetTileIndex(x + rx, y);
-          if (!GSMap.IsValidTile(ct) || !GSTile.IsBuildable(ct)) { ok = false; break; }
-          if (GSTile.GetMaxHeight(ct) != base_h || GSTile.GetSlope(ct) != 0) { ok = false; break; }
-        }
-        if (!ok) continue;
-        // Dry-run: test station placement
+        // Test both orientations: dir 0 = NE-SW (+X), dir 1 = NW-SE (+Y)
+        local valid_dirs = [];
+        // Direction 0 (NE-SW): platform extends along +X
         {
-          local company_mode = GSCompanyMode(company_id);
-          local test_mode = GSTestMode();
-          GSRail.SetCurrentRailType(rail_type);
-          if (!GSRail.BuildRailStation(tile, GSRail.RAILTRACK_NE_SW, 1, platform_length,
-                GSStation.STATION_NEW)) continue;
+          local ok_0 = true;
+          for (local rx = 1; rx < platform_length && ok_0; rx++) {
+            local ct = GSMap.GetTileIndex(x + rx, y);
+            if (!GSMap.IsValidTile(ct) || !GSTile.IsBuildable(ct)) { ok_0 = false; break; }
+            if (GSTile.GetMaxHeight(ct) != base_h || GSTile.GetSlope(ct) != 0) { ok_0 = false; break; }
+          }
+          if (ok_0) {
+            local company_mode = GSCompanyMode(company_id);
+            local test_mode = GSTestMode();
+            GSRail.SetCurrentRailType(rail_type);
+            if (GSRail.BuildRailStation(tile, GSRail.RAILTRACK_NE_SW, 1, platform_length,
+                  GSStation.STATION_NEW)) valid_dirs.append(0);
+          }
         }
-        // Check cargo at this tile
-        local cargo_info = this._GetTileCargoInfo(tile, platform_length, 1, 4);
+        // Direction 1 (NW-SE): platform extends along +Y
+        {
+          local ok_1 = true;
+          for (local ry = 1; ry < platform_length && ok_1; ry++) {
+            local ct = GSMap.GetTileIndex(x, y + ry);
+            if (!GSMap.IsValidTile(ct) || !GSTile.IsBuildable(ct)) { ok_1 = false; break; }
+            if (GSTile.GetMaxHeight(ct) != base_h || GSTile.GetSlope(ct) != 0) { ok_1 = false; break; }
+          }
+          if (ok_1) {
+            local company_mode = GSCompanyMode(company_id);
+            local test_mode = GSTestMode();
+            GSRail.SetCurrentRailType(rail_type);
+            if (GSRail.BuildRailStation(tile, GSRail.RAILTRACK_NW_SE, 1, platform_length,
+                  GSStation.STATION_NEW)) valid_dirs.append(1);
+          }
+        }
+        if (valid_dirs.len() == 0) continue;
+        // Check cargo using first valid direction's footprint
+        local ci_w = (valid_dirs[0] == 0) ? platform_length : 1;
+        local ci_h = (valid_dirs[0] == 0) ? 1 : platform_length;
+        local cargo_info = this._GetTileCargoInfo(tile, ci_w, ci_h, 4);
         local has_target_cargo = false;
         foreach (ci in cargo_info) {
           foreach (lbl in cargo_labels) {
@@ -1524,7 +1545,8 @@ class NttdGS extends GSController {
         }
         if (!has_target_cargo) continue;
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
-          max_height = base_h, cargo_acceptance = cargo_info });
+          max_height = base_h, cargo_acceptance = cargo_info,
+          valid_directions = valid_dirs });
       }
     }
     this._SortByDistance(spots);

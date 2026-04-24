@@ -93,7 +93,7 @@ class RouteRegistry:
     ) -> None:
         """Process a successful action result to update route associations."""
         if action_type == "connect_rail":
-            self._handle_connect_rail(params, stations, game_date)
+            self._handle_connect_rail(params, result, stations, game_date)
         elif action_type == "build_rail_depot":
             self._handle_depot(params, stations)
         elif action_type in ("build_train", "buy_vehicle"):
@@ -102,6 +102,7 @@ class RouteRegistry:
     def _handle_connect_rail(
         self,
         params: dict[str, Any],
+        result: dict[str, Any],
         stations: dict[int, Station],
         game_date: int,
     ) -> None:
@@ -109,6 +110,8 @@ class RouteRegistry:
         from_y = params.get("from_y", 0)
         to_x = params.get("to_x", 0)
         to_y = params.get("to_y", 0)
+
+        path_tiles = _extract_path_tiles(result)
 
         src_sid = _find_station_near(from_x, from_y, stations)
         dst_sid = _find_station_near(to_x, to_y, stations)
@@ -122,7 +125,8 @@ class RouteRegistry:
             if {src_sid, dst_sid} == route_sids:
                 route.status = "track_built"
                 route.track_confirmed_at = game_date
-                logger.info("Route %s: track confirmed", route.route_id)
+                route.path_tiles = path_tiles
+                logger.info("Route %s: track confirmed (%d path tiles)", route.route_id, len(path_tiles))
                 return
 
         rid = make_route_id(0, "train", (src_sid, dst_sid))
@@ -135,6 +139,7 @@ class RouteRegistry:
                 status="track_built",
                 created_at=game_date,
                 track_confirmed_at=game_date,
+                path_tiles=path_tiles,
             )
             logger.info("Route %s created from connect_rail: stations [%d, %d]", rid, src_sid, dst_sid)
 
@@ -239,6 +244,12 @@ class RouteRegistry:
             r for r in self._routes.values()
             if station_id in r.station_ids and r.status != "removed"
         ]
+
+
+def _extract_path_tiles(result: dict[str, Any], map_width: int = 256) -> list[int]:
+    """Convert connect_rail result path [{x, y, dir}, ...] to tile integers."""
+    path = result.get("path", [])
+    return [pt.get("y", 0) * map_width + pt.get("x", 0) for pt in path]
 
 
 def _find_station_near(

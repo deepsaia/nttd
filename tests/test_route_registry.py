@@ -142,6 +142,29 @@ class TestOnActionResult:
         assert routes[0].status == "track_built"
         assert routes[0].track_confirmed_at == 100
 
+    def test_connect_rail_stores_path_tiles(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        registry.register_planned_route(0, "train", [10, 20], game_date=50)
+
+        path = [
+            {"x": 50, "y": 60, "dir": 0},
+            {"x": 55, "y": 65, "dir": 1},
+            {"x": 60, "y": 70, "dir": 0},
+            {"x": 65, "y": 75, "dir": 1},
+            {"x": 80, "y": 90, "dir": 0},
+        ]
+        registry.on_action_result(
+            "connect_rail",
+            {"from_x": 50, "from_y": 60, "to_x": 80, "to_y": 90},
+            {"path": path},
+            stations,
+            game_date=100,
+        )
+        route = registry.get_routes()[0]
+        assert len(route.path_tiles) == 5
+        assert route.path_tiles[0] == 60 * 256 + 50
+        assert route.path_tiles[-1] == 90 * 256 + 80
+
     def test_depot_linked_to_route(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         registry.register_planned_route(0, "train", [10, 20], game_date=50)
@@ -173,6 +196,22 @@ class TestOnActionResult:
 
     def test_connect_rail_creates_route_if_missing(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
+        path = [{"x": 50, "y": 60, "dir": 0}, {"x": 80, "y": 90, "dir": 1}]
+        registry.on_action_result(
+            "connect_rail",
+            {"from_x": 50, "from_y": 60, "to_x": 80, "to_y": 90},
+            {"path": path},
+            stations,
+            game_date=100,
+        )
+        routes = registry.get_routes()
+        assert len(routes) == 1
+        assert routes[0].status == "track_built"
+        assert len(routes[0].path_tiles) == 2
+
+    def test_connect_rail_empty_path_still_works(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        registry.register_planned_route(0, "train", [10, 20], game_date=50)
         registry.on_action_result(
             "connect_rail",
             {"from_x": 50, "from_y": 60, "to_x": 80, "to_y": 90},
@@ -180,9 +219,9 @@ class TestOnActionResult:
             stations,
             game_date=100,
         )
-        routes = registry.get_routes()
-        assert len(routes) == 1
-        assert routes[0].status == "track_built"
+        route = registry.get_routes()[0]
+        assert route.status == "track_built"
+        assert route.path_tiles == []
 
 
 class TestLookups:

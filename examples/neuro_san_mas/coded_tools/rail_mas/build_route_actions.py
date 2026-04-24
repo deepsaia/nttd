@@ -41,11 +41,16 @@ class BuildRouteActions(CodedTool):
 
         action_list: List[Dict[str, Any]] = sly_data.get("action_list", [])
 
+        preferred_dir = self._preferred_direction(src_spot, dst_spot)
+        src_dir = self._pick_direction(src_spot, preferred_dir)
+        dst_dir = self._pick_direction(dst_spot, preferred_dir)
+
         action_list.append({
             "action_type": "build_rail_station",
             "parameters": {
                 "tile": src_spot["tile"], "num_platforms": 1,
                 "platform_length": 3, "rail_type": 0,
+                "direction": src_dir,
             },
         })
         action_list.append({
@@ -53,6 +58,7 @@ class BuildRouteActions(CodedTool):
             "parameters": {
                 "tile": dst_spot["tile"], "num_platforms": 1,
                 "platform_length": 3, "rail_type": 0,
+                "direction": dst_dir,
             },
         })
         action_list.append({
@@ -76,6 +82,29 @@ class BuildRouteActions(CodedTool):
             "num_wagons": num_wagons,
             "note": "Depot + vehicles will be built next cycle after track exists.",
         })
+
+    @staticmethod
+    def _preferred_direction(
+        src_spot: Dict[str, Any], dst_spot: Dict[str, Any],
+    ) -> int:
+        """Compute station direction from the source-to-destination vector.
+
+        NE-SW (dir=0): platforms extend along X axis, trains enter from NE/SW.
+        NW-SE (dir=1): platforms extend along Y axis, trains enter from NW/SE.
+        """
+        dx = abs(dst_spot["x"] - src_spot["x"])
+        dy = abs(dst_spot["y"] - src_spot["y"])
+        return 0 if dx >= dy else 1
+
+    @staticmethod
+    def _pick_direction(spot: Dict[str, Any], preferred: int) -> int:
+        """Pick the best direction for a station spot."""
+        valid = spot.get("valid_directions", [0, 1])
+        if preferred in valid:
+            return preferred
+        if valid:
+            return valid[0]
+        return preferred
 
     async def _find_station(
         self, industry_id: int, sly_data: Dict[str, Any],

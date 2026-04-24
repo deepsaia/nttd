@@ -27,5 +27,6 @@ class Route(BaseModel):
     total_profit_this_year: int = 0
     total_profit_last_year: int = 0
     created_at: int = 0
+    path_tiles: list[int] = []
     track_confirmed_at: int = 0
     first_vehicle_at: int = 0

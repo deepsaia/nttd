@@ -28,6 +28,7 @@ class BuildDepotAndVehicles(CodedTool):
 
     async def async_invoke(self, args: Dict[str, Any], sly_data: Dict[str, Any]) -> Any:
         station_tile: int = args["station_tile"]
+        dest_station_tile: Optional[int] = args.get("dest_station_tile")
         engine_id: int = args["engine_id"]
         caller_wagon_id: Optional[int] = args.get("wagon_id")
         num_wagons: int = args.get("num_wagons", 3)
@@ -49,11 +50,12 @@ class BuildDepotAndVehicles(CodedTool):
             depot_tile = existing_depot
             needs_build = False
         else:
-            depot_spot = await self._find_new_depot_spot(station_tile, sly_data)
+            search_tile = self._midpoint_tile(station_tile, dest_station_tile, obs)
+            depot_spot = await self._find_new_depot_spot(search_tile, sly_data)
             if not depot_spot:
                 return json.dumps({
                     "success": False,
-                    "error": f"No depot spot found near tile {station_tile}. Track may not exist yet.",
+                    "error": f"No depot spot found near tile {search_tile}. Track may not exist yet.",
                 })
             depot_tile = depot_spot["tile"]
             needs_build = True
@@ -206,6 +208,81 @@ class BuildDepotAndVehicles(CodedTool):
                 if abs(vx - near_x) + abs(vy - near_y) <= 15:
                     return vy * map_width + vx
         return None
+
+    def _midpoint_tile(
+        self,
+        station_tile: int,
+        dest_station_tile: Optional[int],
+        obs: Optional[Dict[str, Any]],
+    ) -> int:
+        """Find a mid-route tile for depot placement using connect_rail path data."""
+        if obs is None:
+            return station_tile
+
+        map_width = obs.get("map_size", {}).get("x", 256)
+
+        path_tiles = self._get_route_path_tiles(station_tile, dest_station_tile, obs, map_width)
+        if len(path_tiles) >= 5:
+            return path_tiles[len(path_tiles) * 2 // 5]
+
+        path_tiles = self._get_path_from_previous_actions(obs, map_width)
+        if len(path_tiles) >= 5:
+            return path_tiles[len(path_tiles) * 2 // 5]
+
+        if dest_station_tile is not None and dest_station_tile > 0:
+            sx = station_tile % map_width
+            sy = station_tile // map_width
+            dx = dest_station_tile % map_width
+            dy = dest_station_tile // map_width
+            return ((sy + dy) // 2) * map_width + (sx + dx) // 2
+
+        return station_tile
+
+    def _get_route_path_tiles(
+        self,
+        station_tile: int,
+        dest_station_tile: Optional[int],
+        obs: Dict[str, Any],
+        map_width: int,
+    ) -> List[int]:
+        """Find path_tiles from routes observation matching our stations."""
+        sx = station_tile % map_width
+        sy = station_tile // map_width
+        dx = (dest_station_tile % map_width) if dest_station_tile else -1
+        dy = (dest_station_tile // map_width) if dest_station_tile else -1
+
+        for route in obs.get("routes", []):
+            path_tiles = route.get("path_tiles", [])
+            if not path_tiles:
+                continue
+            first = path_tiles[0]
+            last = path_tiles[-1]
+            fx, fy = first % map_width, first // map_width
+            lx, ly = last % map_width, last // map_width
+            src_near = (abs(fx - sx) + abs(fy - sy) <= 5
+                        or abs(lx - sx) + abs(ly - sy) <= 5)
+            if not src_near:
+                continue
+            if dest_station_tile is not None and dest_station_tile > 0:
+                dst_near = (abs(fx - dx) + abs(fy - dy) <= 5
+                            or abs(lx - dx) + abs(ly - dy) <= 5)
+                if not dst_near:
+                    continue
+            return path_tiles
+        return []
+
+    @staticmethod
+    def _get_path_from_previous_actions(
+        obs: Dict[str, Any], map_width: int,
+    ) -> List[int]:
+        """Extract path tiles from previous_actions connect_rail result."""
+        for pa in obs.get("previous_actions", []):
+            if pa.get("action") != "connect_rail" or pa.get("status") != "success":
+                continue
+            path = pa.get("result", {}).get("path", [])
+            if path:
+                return [pt.get("y", 0) * map_width + pt.get("x", 0) for pt in path]
+        return []
 
     async def _find_new_depot_spot(
         self, near_tile: int, sly_data: Dict[str, Any],

@@ -310,6 +310,7 @@ class AgentConnection:
                         "action": action.action_type,
                         "status": "success",
                         "result": r.get("result", {}),
+                        "parameters": action.parameters,
                     })
                 else:
                     failed += 1
@@ -611,6 +612,7 @@ class AgentConnection:
                     "vehicle_count": r.vehicle_count,
                     "depot_tile": r.depot_tile,
                     "profit_this_year": r.total_profit_this_year,
+                    "path_tiles": r.path_tiles,
                 }
                 for r in derived_routes
                 if not allowed_vtypes or r.vehicle_type in allowed_vtypes
