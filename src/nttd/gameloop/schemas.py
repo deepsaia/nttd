@@ -13,16 +13,20 @@ class MASAuthConfig(BaseModel):
 
 
 class MASTransportConfig(BaseModel):
-    """Transport configuration for connecting to a MAS server.
+    """Connection configuration for an external MAS server.
 
-    Supports three transports:
+    protocol selects the transport layer:
     - "custom": in-process sub-agent graph (uses config_path for HOCON definition)
     - "http": external MAS server via HTTP/HTTPS (POST observations, receive actions)
     - "mcp": external MAS server via Model Context Protocol
+
+    mas_framework selects the message format over that transport:
+    - "generic": POST {observation, instructions} -> {actions: [...]}
+    - "neuro_san": streaming_chat with sly_data
     """
 
-    transport: str = "custom"
-    protocol: str = "generic"
+    protocol: str = "custom"
+    mas_framework: str = "generic"
     endpoint: str = ""
     stream_endpoint: str = ""
     config_path: str = ""
@@ -39,7 +43,7 @@ class AgentConfig(BaseModel):
     company_id: int = Field(ge=0, le=14)
     name: str = ""
     agent_type: str = "road"
-    framework: str = "openai"
+    nttd_framework: str = "openai"
     model: str = "gpt-4o"
     instructions: str = ""
     observation_mode: str = "compact"
@@ -65,7 +69,7 @@ class ConnectionStatus(BaseModel):
     connection_id: str
     agent_id: str
     company_id: int
-    framework: str
+    nttd_framework: str
     model: str
     status: str = "registered"
     cycle_count: int = 0

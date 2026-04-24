@@ -136,12 +136,12 @@ def test_write_and_read_agents_conf(session_dir: Path) -> None:
         "road-agent": {
             "company_id": 0,
             "agent_type": "road",
-            "framework": "langchain",
+            "nttd_framework": "langchain",
         },
         "rail-agent": {
             "company_id": 1,
             "agent_type": "rail",
-            "framework": "scripted",
+            "nttd_framework": "scripted",
         },
     }
     write_agents_conf(session_dir, agents)

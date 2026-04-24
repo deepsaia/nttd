@@ -68,7 +68,7 @@ async def get_agent_summary(session_id: str) -> list[dict[str, Any]]:
         results.append({
             "agent_id": aid,
             "company_id": data.get("company_id"),
-            "framework": data.get("framework"),
+            "nttd_framework": data.get("nttd_framework"),
             "model": data.get("model"),
             "total_cycles": data.get("total_cycles", 0),
             "total_actions": total,

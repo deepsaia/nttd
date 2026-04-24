@@ -125,7 +125,7 @@ class AgentConnection:
             connection_id=self.connection_id,
             agent_id=self.config.agent_id,
             company_id=self.config.company_id,
-            framework=self.config.framework,
+            nttd_framework=self.config.nttd_framework,
             model=self.config.model,
             status=self.status,
             cycle_count=self.tracker.cycle_count,
@@ -156,7 +156,7 @@ class AgentConnection:
             connection_id=self.connection_id,
             agent_id=self.config.agent_id,
             company_id=self.config.company_id,
-            framework=self.config.framework,
+            nttd_framework=self.config.nttd_framework,
             model=self.config.model,
             observation_mode=self.config.observation_mode,
             poll_interval=self.config.poll_interval,
@@ -188,7 +188,7 @@ class AgentConnection:
             connection_id=self.connection_id,
             agent_id=self.config.agent_id,
             company_id=self.config.company_id,
-            framework=self.config.framework,
+            nttd_framework=self.config.nttd_framework,
             model=self.config.model,
             observation_mode=self.config.observation_mode,
             poll_interval=self.config.poll_interval,
@@ -204,9 +204,9 @@ class AgentConnection:
     async def _run(self) -> None:
         """Main cycle loop: observe → decide → interpret → execute → sleep."""
         logger.info(
-            "Agent %s cycle loop started (company=%d, framework=%s, poll=%.1fs)",
+            "Agent %s cycle loop started (company=%d, nttd_framework=%s, poll=%.1fs)",
             self.config.agent_id, self.config.company_id,
-            self.config.framework, self.config.poll_interval,
+            self.config.nttd_framework, self.config.poll_interval,
         )
 
         while self._running:

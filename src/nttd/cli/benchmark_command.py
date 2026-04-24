@@ -42,7 +42,7 @@ def _parse_agents(raw: Any) -> list[dict[str, Any]]:
         agent_dict: dict[str, Any] = {
             "agent_id": a.get("agent_id", "agent"),
             "company_id": int(a.get("company_id", 0)),
-            "framework": a.get("framework", "openai"),
+            "nttd_framework": a.get("nttd_framework", "openai"),
             "model": a.get("model", "gpt-4o"),
             "agent_type": a.get("agent_type", "road"),
             "instructions": a.get("instructions", ""),
@@ -59,8 +59,8 @@ def _parse_agents(raw: Any) -> list[dict[str, Any]]:
         mas_transport = a.get("mas_transport", None)
         if mas_transport:
             agent_dict["mas_transport"] = {
-                "transport": mas_transport.get("transport", "custom"),
-                "protocol": mas_transport.get("protocol", "generic"),
+                "protocol": mas_transport.get("protocol", "custom"),
+                "mas_framework": mas_transport.get("mas_framework", "generic"),
                 "endpoint": mas_transport.get("endpoint", ""),
                 "stream_endpoint": mas_transport.get("stream_endpoint", ""),
                 "config_path": mas_transport.get("config_path", ""),
@@ -191,7 +191,7 @@ def benchmark(
         agent_payload: dict[str, Any] = {
             "agent_id": agent_cfg["agent_id"],
             "company_id": agent_cfg["company_id"],
-            "framework": agent_cfg["framework"],
+            "nttd_framework": agent_cfg["nttd_framework"],
             "model": agent_cfg["model"],
             "agent_type": agent_cfg["agent_type"],
             "instructions": agent_instructions,

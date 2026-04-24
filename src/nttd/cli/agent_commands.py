@@ -16,7 +16,9 @@ def agent_register(
     session: Annotated[str, session_option()],
     agent_id: Annotated[str, typer.Option("--agent-id", "-a", help="Agent identifier")],
     company_id: Annotated[int, typer.Option("--company-id", "-c", help="Company ID (0-14)")],
-    framework: Annotated[str, typer.Option("--framework", "-f", help="openai | langchain | passthrough")] = "openai",
+    nttd_framework: Annotated[
+        str, typer.Option("--nttd-framework", "-f", help="openai | langchain | passthrough | mas"),
+    ] = "openai",
     model: Annotated[str, typer.Option("--model", "-m", help="LLM model name")] = "gpt-4o",
     instructions_file: Annotated[
         Optional[str], typer.Option("--instructions-file", help="Path to instructions file"),
@@ -45,7 +47,7 @@ def agent_register(
     payload = {
         "agent_id": agent_id,
         "company_id": company_id,
-        "framework": framework,
+        "nttd_framework": nttd_framework,
         "model": model,
         "instructions": agent_instructions,
         "observation_mode": observation_mode,
@@ -67,7 +69,7 @@ def agent_register(
         f"[bold]Connection ID:[/] [cyan]{data.get('connection_id', '?')}[/]\n"
         f"[bold]Agent:[/]         {agent_id}\n"
         f"[bold]Company:[/]       {company_id}\n"
-        f"[bold]Framework:[/]     {framework}\n"
+        f"[bold]Framework:[/]     {nttd_framework}\n"
         f"[bold]Model:[/]         {model}",
         title="Agent registered",
     ))
@@ -157,7 +159,7 @@ def agent_list(
         table.add_row(
             a.get("agent_id", "?"),
             str(a.get("company_id", "?")),
-            a.get("framework", "?"),
+            a.get("nttd_framework", "?"),
             a.get("model", "?"),
             status_str,
             str(a.get("cycle_count", 0)),

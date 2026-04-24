@@ -354,7 +354,7 @@ class SessionRecorder:
         connection_id: str,
         agent_id: str,
         company_id: int,
-        framework: str,
+        nttd_framework: str,
         model: str,
         observation_mode: str = "compact",
         poll_interval: float = 5.0,
@@ -373,7 +373,7 @@ class SessionRecorder:
         agent_data: dict[str, Any] = {
             "connection_id": connection_id,
             "company_id": company_id,
-            "framework": framework,
+            "nttd_framework": nttd_framework,
             "model": model,
             "observation_mode": observation_mode,
             "poll_interval": poll_interval,

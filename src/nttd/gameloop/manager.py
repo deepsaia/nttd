@@ -73,13 +73,13 @@ class GameloopManager:
         # Also register in the agent_registry for visibility
         self.runtime.agent_registry.connect(AgentRegistration(
             agent_id=config.agent_id,
-            name=config.name or f"{config.framework}:{config.model}",
+            name=config.name or f"{config.nttd_framework}:{config.model}",
             company_scope=[config.company_id],
         ))
 
         logger.info(
-            "Registered agent %s (company=%d, framework=%s) → %s",
-            config.agent_id, config.company_id, config.framework, connection_id,
+            "Registered agent %s (company=%d, nttd_framework=%s) → %s",
+            config.agent_id, config.company_id, config.nttd_framework, connection_id,
         )
         return connection_id
 
@@ -147,39 +147,39 @@ class GameloopManager:
 
     def _create_adapter(self, config: AgentConfig) -> BaseAdapter:
         """Create the appropriate framework adapter based on config."""
-        framework = config.framework.lower()
+        nttd_framework = config.nttd_framework.lower()
 
-        if framework == "passthrough":
+        if nttd_framework == "passthrough":
             return PassthroughAdapter()
-        if framework == "openai":
+        if nttd_framework == "openai":
             return OpenAIAdapter(
                 model=config.model,
                 api_key_env=config.api_key_env,
             )
-        if framework == "langchain":
+        if nttd_framework == "langchain":
             return LangChainAdapter(
                 model=config.model,
                 api_key_env=config.api_key_env,
             )
-        if framework in _MAS_FRAMEWORKS:
+        if nttd_framework in _MAS_FRAMEWORKS:
             return self._create_mas_adapter(config)
 
         raise ValueError(
-            f"Unknown framework: {config.framework}. "
+            f"Unknown nttd_framework: {config.nttd_framework}. "
             f"Use: openai, langchain, passthrough, mas"
         )
 
     def _create_mas_adapter(self, config: AgentConfig) -> BaseAdapter:
         """Create the right MAS adapter based on transport config."""
-        transport = config.mas_transport.transport.lower()
+        protocol = config.mas_transport.protocol.lower()
 
-        if transport == "custom":
+        if protocol == "custom":
             from nttd.gameloop.adapters.mas_adapter import MASAdapter
 
             config_path = config.mas_transport.config_path or config.mas_config
             if not config_path:
                 raise ValueError(
-                    f"Agent {config.agent_id}: MAS custom transport requires "
+                    f"Agent {config.agent_id}: MAS custom protocol requires "
                     f"mas_transport.config_path or mas_config"
                 )
             return MASAdapter(
@@ -188,12 +188,12 @@ class GameloopManager:
                 api_key_env=config.api_key_env,
             )
 
-        if transport == "http":
+        if protocol == "http":
             from nttd.gameloop.adapters.mas_http_adapter import MASHttpAdapter
 
             if not config.mas_transport.endpoint:
                 raise ValueError(
-                    f"Agent {config.agent_id}: MAS HTTP transport requires "
+                    f"Agent {config.agent_id}: MAS HTTP protocol requires "
                     f"mas_transport.endpoint"
                 )
             return MASHttpAdapter(
@@ -202,17 +202,17 @@ class GameloopManager:
                 company_id=config.company_id,
             )
 
-        if transport == "mcp":
+        if protocol == "mcp":
             from nttd.gameloop.adapters.mas_mcp_adapter import MASMcpAdapter
 
             if not config.mas_transport.endpoint:
                 raise ValueError(
-                    f"Agent {config.agent_id}: MAS MCP transport requires "
+                    f"Agent {config.agent_id}: MAS MCP protocol requires "
                     f"mas_transport.endpoint"
                 )
             return MASMcpAdapter(transport_config=config.mas_transport)
 
         raise ValueError(
-            f"Agent {config.agent_id}: Unknown MAS transport: {transport}. "
+            f"Agent {config.agent_id}: Unknown MAS protocol: {protocol}. "
             f"Use: custom, http, mcp"
         )

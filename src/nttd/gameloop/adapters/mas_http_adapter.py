@@ -1,14 +1,14 @@
 """HTTP client adapter for external MAS servers.
 
 Connects to any MAS framework that exposes HTTP endpoints.
-Supports two protocols:
+Routes to the appropriate handler based on mas_framework:
 
 - "generic": POST {observation, instructions} -> {actions: [...]}
   Works with LangGraph (LangServe), Agno (Agent OS), CrewAI, or any
   custom FastAPI wrapper.
 
 - "neuro_san": POST streaming_chat request -> streaming JSON lines
-  Speaks neuro-san's native /api/v1/{agent}/streaming_chat protocol.
+  Speaks neuro-san's native /api/v1/{agent}/streaming_chat endpoint.
   Sends observation as sly_data, reads actions from the final
   AGENT_FRAMEWORK response.
 """
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class MASHttpAdapter(BaseAdapter):
     """Adapter that connects to an external MAS server via HTTP.
 
-    Routes to the appropriate protocol handler based on config.protocol:
+    Routes to the appropriate handler based on config.mas_framework:
     - "generic": simple POST/response
     - "neuro_san": streaming_chat with sly_data
     """
@@ -74,8 +74,8 @@ class MASHttpAdapter(BaseAdapter):
         tool_executor: ToolExecutor | None = None,
         message_logger: MessageLogger | None = None,
     ) -> str:
-        protocol = self._config.protocol.lower()
-        if protocol == "neuro_san":
+        mas_framework = self._config.mas_framework.lower()
+        if mas_framework == "neuro_san":
             return await self._decide_neuro_san(
                 observation, instructions, observation_tools, message_logger,
             )

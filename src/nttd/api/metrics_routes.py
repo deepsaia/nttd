@@ -126,7 +126,7 @@ async def get_session_leaderboard(session_id: str) -> dict[str, Any]:
             "balance": c.get("money", 0),
             "income": c.get("income", 0),
             "agent_id": agent_info.get("agent_id"),
-            "framework": agent_info.get("framework"),
+            "nttd_framework": agent_info.get("nttd_framework"),
             "total_actions": action_stats.get("total", 0),
             "success_rate": action_stats.get("success_rate", 0.0),
         })
