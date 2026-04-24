@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nttd.gameloop.adapters.base import BaseAdapter
@@ -21,6 +23,49 @@ logger = logging.getLogger(__name__)
 _MAS_FRAMEWORKS = frozenset({"mas"})
 
 _MAX_COMPANIES = 15
+
+
+async def _resolve_neuro_san_model(endpoint: str) -> str | None:
+    """Extract model name from neuro-san HOCON via AGENT_MANIFEST_FILE env var.
+
+    Parses the agent network name from the endpoint URL, finds the HOCON
+    in the same directory as the manifest, and reads llm_config.model_name.
+    Returns None if anything fails (missing env var, file not found, etc.).
+    """
+    manifest = os.environ.get("AGENT_MANIFEST_FILE", "")
+    if not manifest:
+        return None
+
+    registries_dir = Path(manifest).parent
+
+    parts = endpoint.rstrip("/").split("/")
+    try:
+        idx = parts.index("streaming_chat")
+        network_name = parts[idx - 1]
+    except (ValueError, IndexError):
+        return None
+
+    hocon_path = registries_dir / f"{network_name}.hocon"
+    if not hocon_path.exists():
+        return None
+
+    try:
+        from neuro_san.internals.persistence.abstract_async_config_restorer import (
+            AbstractAsyncConfigRestorer,
+        )
+
+        restorer = AbstractAsyncConfigRestorer(
+            file_purpose="get_agent_network_definition", must_exist=True,
+        )
+        config = await restorer.async_restore(file_reference=str(hocon_path))
+        llm_config = config.get("llm_config", {})
+        model_name = llm_config.get("model_name")
+        if model_name:
+            provider = llm_config.get("class", "")
+            return f"{model_name} ({provider})" if provider else model_name
+    except Exception:
+        logger.debug("Could not resolve model from HOCON %s", hocon_path, exc_info=True)
+    return None
 
 
 class GameloopManager:
@@ -55,6 +100,16 @@ class GameloopManager:
         connection_id = self._make_connection_id(config)
         if connection_id in self.connections:
             raise ValueError(f"Agent {config.agent_id} already registered for company {config.company_id}")
+
+        # Resolve model name from HOCON for neuro-san MAS agents
+        if (
+            config.nttd_framework.lower() in _MAS_FRAMEWORKS
+            and config.mas_transport.mas_framework.lower() == "neuro_san"
+        ):
+            resolved = await _resolve_neuro_san_model(config.mas_transport.endpoint)
+            if resolved:
+                config.model = resolved
+                logger.info("Resolved model from HOCON: %s", resolved)
 
         # Create adapter
         adapter = self._create_adapter(config)

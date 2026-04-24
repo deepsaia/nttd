@@ -29,34 +29,34 @@ def session_dir(tmp_path: Path) -> Path:
     sdir = tmp_path / "ses_test123"
     sdir.mkdir()
 
-    # session.conf
-    (sdir / "session.conf").write_text(
-        'session {\n'
-        '  name = "test-session"\n'
-        '  status = "ended"\n'
-        '  created_at = "2026-01-01T00:00:00"\n'
-        '  started_at = "2026-01-01T00:00:00"\n'
-        '  ended_at = "2026-01-01T00:10:00"\n'
-        '  end_reason = "time_limit"\n'
-        '  game_port = 3979\n'
-        '  admin_port = 3977\n'
-        '}\n'
+    # session.parquet
+    from nttd.db.conf_writer import write_agents_conf, write_session_conf
+
+    write_session_conf(
+        sdir,
+        session_id="ses_test123",
+        name="test-session",
+        status="ended",
+        created_at="2026-01-01T00:00:00",
+        started_at="2026-01-01T00:00:00",
+        ended_at="2026-01-01T00:10:00",
+        end_reason="time_limit",
+        game_port=3979,
+        admin_port=3977,
     )
 
-    # agents.conf
-    (sdir / "agents.conf").write_text(
-        'agents {\n'
-        '  test_agent {\n'
-        '    model = "test-model"\n'
-        '    total_actions = 5\n'
-        '    successful_actions = 4\n'
-        '    failed_actions = 1\n'
-        '    total_cycles = 3\n'
-        '    avg_decide_ms = 100.0\n'
-        '    avg_cycle_ms = 150.0\n'
-        '  }\n'
-        '}\n'
-    )
+    # agents.parquet
+    write_agents_conf(sdir, {
+        "test_agent": {
+            "model": "test-model",
+            "total_actions": 5,
+            "successful_actions": 4,
+            "failed_actions": 1,
+            "total_cycles": 3,
+            "avg_decide_ms": 100.0,
+            "avg_cycle_ms": 150.0,
+        },
+    })
 
     # actions.parquet
     actions_schema = pa.schema([
@@ -245,9 +245,9 @@ def fragment_dir(tmp_path: Path) -> Path:
     fdir = sdir / "_fragments"
     fdir.mkdir(parents=True)
 
-    (sdir / "session.conf").write_text(
-        'session {\n  name = "frag-test"\n  status = "active"\n}\n'
-    )
+    from nttd.db.conf_writer import write_session_conf
+
+    write_session_conf(sdir, session_id="ses_frag", name="frag-test", status="active")
 
     schema = pa.schema([
         ("action_id", pa.string()),

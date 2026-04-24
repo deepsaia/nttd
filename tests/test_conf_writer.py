@@ -122,7 +122,7 @@ def test_write_creates_directory(tmp_path: Path) -> None:
         session_dir=session_dir,
         session_id="ses_auto_dir",
     )
-    assert (session_dir / "session.conf").exists()
+    assert (session_dir / "session.parquet").exists()
 
 
 # ---------------------------------------------------------------------------

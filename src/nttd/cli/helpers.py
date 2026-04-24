@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,10 +17,40 @@ console = Console()
 _DEFAULT_BASE_URL = "http://localhost:8000"
 
 
+def load_dotenv(env_file: Path | None = None) -> dict[str, str]:
+    """Load key=value pairs from a .env file, skipping comments and blanks.
+
+    If env_file is None, defaults to .env in the current directory.
+    Returns the loaded vars (empty dict if file not found).
+    """
+    path = env_file or Path(".env")
+    loaded: dict[str, str] = {}
+    if not path.exists():
+        return loaded
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        loaded[key] = value
+    return loaded
+
+
+def apply_dotenv(env_file: Path | None = None) -> dict[str, str]:
+    """Load .env and inject into os.environ (existing vars take precedence)."""
+    loaded = load_dotenv(env_file)
+    for key, value in loaded.items():
+        if key not in os.environ:
+            os.environ[key] = value
+    return loaded
+
+
 def get_base_url() -> str:
     """Return the nttd base URL from env or default."""
-    import os
-
     return os.environ.get("NTTD_BASE_URL", _DEFAULT_BASE_URL)
 
 

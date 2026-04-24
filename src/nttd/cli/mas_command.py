@@ -20,31 +20,13 @@ from typing import Annotated
 
 import typer
 
-from nttd.cli.helpers import console
+from nttd.cli.helpers import console, load_dotenv
 
 mas_app = typer.Typer(
     name="mas",
     help="Start external MAS framework servers for multi-agent benchmarks.",
     no_args_is_help=True,
 )
-
-
-def _load_dotenv(env_file: Path) -> dict[str, str]:
-    """Load key=value pairs from a .env file, skipping comments and blanks."""
-    loaded: dict[str, str] = {}
-    if not env_file.exists():
-        return loaded
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        loaded[key] = value
-    return loaded
 
 
 @mas_app.command("neuro-san")
@@ -89,7 +71,7 @@ def neuro_san(
     env_path = Path(env_file)
     if not env_path.is_absolute():
         env_path = project_root / env_path
-    dotenv = _load_dotenv(env_path)
+    dotenv = load_dotenv(env_path)
     if dotenv:
         console.print(f"  Loaded {len(dotenv)} var(s) from [cyan]{env_path.name}[/]")
     elif env_path.exists():
