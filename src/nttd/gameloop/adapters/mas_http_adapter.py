@@ -116,6 +116,7 @@ class MASHttpAdapter(BaseAdapter):
                 "text": user_text,
             },
             "sly_data": sly_data,
+            "user_id": os.environ.get("USER", "nttd"),
         }
 
         if message_logger:
