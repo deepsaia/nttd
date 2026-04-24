@@ -49,7 +49,8 @@ class CheckVehicleStatus(CodedTool):
         return json.dumps({
             "incomplete_vehicles": [
                 {"id": v.get("id"), "order_count": v.get("order_count", 0),
-                 "speed": v.get("speed", 0), "in_depot": v.get("in_depot", False)}
+                 "speed": v.get("speed", 0), "in_depot": v.get("in_depot", False),
+                 "x": v.get("x", 0), "y": v.get("y", 0)}
                 for v in incomplete
             ],
             "orphan_station_ids": orphan_ids,

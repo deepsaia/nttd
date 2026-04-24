@@ -23,6 +23,17 @@ class FindUnservedRoutes(CodedTool):
         if not obs:
             return json.dumps({"routes": [], "reason": "No observation available."})
 
+        route_status: Dict[str, Any] = obs.get("route_status", {})
+        orphan_count = route_status.get("orphan_stations", 0)
+        if orphan_count > 0:
+            return json.dumps({
+                "routes": [],
+                "reason": (
+                    f"{orphan_count} orphan stations without vehicles. "
+                    "Complete existing routes before expanding."
+                ),
+            })
+
         vehicles: List[Dict[str, Any]] = obs.get("vehicles", [])
         if vehicles and any(v.get("order_count", 0) < 2 for v in vehicles):
             return json.dumps({

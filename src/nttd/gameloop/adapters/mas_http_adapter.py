@@ -189,8 +189,6 @@ class MASHttpAdapter(BaseAdapter):
                         action_list = resp_sly_data.get("action_list")
                         if isinstance(action_list, list) and action_list:
                             final_text = json.dumps(action_list)
-                            if message_logger:
-                                message_logger("SLY_DATA action_list", final_text[:2000])
                             continue
                     if text:
                         final_text = text
@@ -202,7 +200,15 @@ class MASHttpAdapter(BaseAdapter):
 
         logger.info("Neuro-SAN final response (%d chars)", len(final_text))
         if message_logger:
-            message_logger("FINAL RESPONSE", final_text[:2000])
+            try:
+                parsed = json.loads(final_text)
+                if isinstance(parsed, list):
+                    display = json.dumps(parsed, indent=2)[:4000]
+                else:
+                    display = final_text[:2000]
+            except (json.JSONDecodeError, TypeError):
+                display = final_text[:2000]
+            message_logger("FINAL RESPONSE", display)
 
         return final_text
 

@@ -94,8 +94,11 @@ STEP 1: Call check_vehicle_status to see the current state.
 
 STEP 2: For vehicles with < 2 orders (incomplete, need orders):
   - Call pair_orphan_stations with orphan_station_ids.
-  - For each (vehicle, station_pair): call build_repair_actions with
-    vehicle_id, src_station_id, dst_station_id.
+  - Match each incomplete vehicle to the nearest station pair by
+    comparing the vehicle's (x, y) to the pair's station coordinates.
+    A vehicle at (30, 207) belongs to the pair near (30, 207).
+  - For each match: call build_repair_actions with vehicle_id,
+    src_station_id, dst_station_id.
 
 STEP 3: If there were failed actions from the previous cycle:
   - Call retry_failed_actions to queue retries with adjusted parameters.

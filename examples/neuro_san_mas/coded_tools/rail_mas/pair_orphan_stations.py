@@ -56,9 +56,14 @@ class PairOrphanStations(CodedTool):
                     best_dist = dist
                     best_j = j
             if best_j >= 0:
+                s2 = orphans[best_j]
                 pairs.append({
                     "src_id": s1_id,
-                    "dst_id": orphans[best_j]["id"],
+                    "src_x": s1.get("x", 0),
+                    "src_y": s1.get("y", 0),
+                    "dst_id": s2["id"],
+                    "dst_x": s2.get("x", 0),
+                    "dst_y": s2.get("y", 0),
                     "distance": int(best_dist),
                 })
                 used.add(s1_id)

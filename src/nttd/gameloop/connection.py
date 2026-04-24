@@ -440,6 +440,7 @@ class AgentConnection:
             obs["vehicles"] = [
                 {
                     "id": v.id, "type": v.type, "name": v.name,
+                    "x": v.x, "y": v.y,
                     "running": v.running, "in_depot": v.in_depot,
                     "profit_this_year": v.profit_this_year,
                     "profit_last_year": v.profit_last_year,
