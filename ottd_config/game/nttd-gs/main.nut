@@ -1013,6 +1013,10 @@ class NttdGS extends GSController {
       if (!GSEngine.IsBuildable(id)) continue;
       local ct = GSEngine.GetCargoType(id);
       local cl = GSCargo.IsValidCargo(ct) ? GSCargo.GetCargoLabel(ct) : "";
+      local rt = -1;
+      if (vt == GSVehicle.VT_RAIL && GSEngine.IsValidEngine(id)) {
+        rt = GSEngine.GetRailType(id);
+      }
       engines.append({
         id = id, name = GSEngine.GetName(id),
         cargo_type = ct,
@@ -1024,7 +1028,8 @@ class NttdGS extends GSController {
         power = GSEngine.GetPower(id),
         weight = GSEngine.GetWeight(id),
         reliability = GSEngine.GetReliability(id),
-        is_wagon = GSEngine.IsWagon(id)
+        is_wagon = GSEngine.IsWagon(id),
+        rail_type = rt
       });
     }
     return { success = true, result = engines };
@@ -3046,6 +3051,7 @@ class NttdGS extends GSController {
     if (!GSVehicle.IsValidVehicle(vid))
       return { success = false, error = GSError.GetLastErrorString() };
     local wagons_attached = 0;
+    local wagons_failed = 0;
     if ("wagon_id" in p && p.wagon_id != null) {
       local num = ("num_wagons" in p) ? p.num_wagons : 1;
       for (local i = 0; i < num; i++) {
@@ -3055,7 +3061,10 @@ class NttdGS extends GSController {
             wagons_attached++;
           } else {
             GSVehicle.SellVehicle(wid);
+            wagons_failed++;
           }
+        } else {
+          wagons_failed++;
         }
       }
     }
@@ -3065,7 +3074,8 @@ class NttdGS extends GSController {
     }
     return { success = true, result = {
       vehicle_id = vid, name = GSVehicle.GetName(vid),
-      wagons_attached = wagons_attached, refitted = refitted
+      wagons_attached = wagons_attached, wagons_failed = wagons_failed,
+      refitted = refitted
     }};
   }
 

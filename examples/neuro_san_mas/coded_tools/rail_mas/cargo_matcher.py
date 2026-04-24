@@ -10,10 +10,14 @@ class CargoMatcher:
 
     @staticmethod
     def select_wagon(
-        cargo_label: str, engines: list[dict[str, Any]],
+        cargo_label: str,
+        engines: list[dict[str, Any]],
+        rail_type: Optional[int] = None,
     ) -> Optional[dict[str, Any]]:
         """Find best wagon matching cargo_label. Prefer highest capacity."""
         wagons = [e for e in engines if e.get("is_wagon")]
+        if rail_type is not None:
+            wagons = [w for w in wagons if w.get("rail_type") == rail_type]
         matches = [w for w in wagons if w.get("cargo_label") == cargo_label]
         if matches:
             return max(matches, key=lambda w: w.get("capacity", 0))
@@ -22,12 +26,15 @@ class CargoMatcher:
     @staticmethod
     def select_engine(
         engines: list[dict[str, Any]],
+        rail_type: Optional[int] = None,
     ) -> Optional[dict[str, Any]]:
         """Pick cheapest locomotive (is_wagon=false, power > 0)."""
         locos = [
             e for e in engines
             if not e.get("is_wagon") and e.get("power", 0) > 0
         ]
+        if rail_type is not None:
+            locos = [e for e in locos if e.get("rail_type") == rail_type]
         if locos:
             return min(locos, key=lambda e: e.get("price", float("inf")))
         return None

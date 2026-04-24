@@ -158,7 +158,7 @@ class BuildDepotAndVehicles(CodedTool):
         if not engines:
             return caller_wagon_id, None
 
-        wagon = CargoMatcher.select_wagon(cargo_label, engines)
+        wagon = CargoMatcher.select_wagon(cargo_label, engines, rail_type=0)
         cargo_id = CargoMatcher.cargo_label_to_id(cargo_label, engines)
 
         if wagon:
