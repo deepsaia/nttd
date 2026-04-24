@@ -35,6 +35,15 @@ class CheckVehicleStatus(CodedTool):
             for p in previous_actions if p.get("status") == "failed"
         ]
 
+        needs_depot_and_vehicle = bool(orphan_ids) and len(incomplete) == 0
+
+        station_tiles: Dict[int, int] = {}
+        if needs_depot_and_vehicle:
+            for s in obs.get("stations", []):
+                sid = s.get("id")
+                if sid in orphan_ids:
+                    station_tiles[sid] = s.get("tile", 0)
+
         sly_data["action_list"] = sly_data.get("action_list", [])
 
         return json.dumps({
@@ -44,6 +53,8 @@ class CheckVehicleStatus(CodedTool):
                 for v in incomplete
             ],
             "orphan_station_ids": orphan_ids,
+            "orphan_station_tiles": station_tiles,
+            "needs_depot_and_vehicle": needs_depot_and_vehicle,
             "total_vehicles": len(vehicles),
             "running_vehicles": len(vehicles) - len(incomplete),
             "failed_actions": failed_actions,

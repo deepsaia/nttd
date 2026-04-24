@@ -43,17 +43,16 @@ Actions are delivered automatically via sly_data.
             "instructions": """
 You are the rail coordinator. Every cycle, follow these steps in order:
 
-1. Call route_doctor to fix incomplete routes from previous cycles
-   (adds orders to trains, retries failed builds).
-2. Call route_planner to select the next cargo route and queue build actions
-   (stations, track, depot, engine, wagons).
-3. Call action_validator to validate and deduplicate the action list.
+1. Call route_doctor to diagnose issues, add orders to incomplete vehicles,
+   and retry failed builds.
+2. Call route_completer to build depots and buy vehicles for routes that
+   have stations and track but no vehicle yet.
+3. Call route_planner to select the next cargo route and queue station + track
+   build actions.
+4. Call action_validator to validate and deduplicate the action list.
 
 Actions flow through sly_data automatically. Relay the summaries from each
 agent. Do NOT add your own actions or modify the list.
-
-If route_doctor reports issues, still call route_planner -- it will skip
-expansion if vehicles need orders.
 """,
             "allow": {
                 "to_upstream": {
@@ -63,7 +62,7 @@ expansion if vehicles need orders.
                     "sly_data": ["action_list", "plan_summary"]
                 }
             },
-            "tools": ["route_doctor", "route_planner", "action_validator", "company_status"]
+            "tools": ["route_doctor", "route_completer", "route_planner", "action_validator", "company_status"]
         },
 
         // ==================================================================
@@ -89,30 +88,72 @@ action list in sly_data. Never touches running trains (2+ orders).
                 }
             },
             "instructions": """
-You are the route doctor. You repair incomplete routes each cycle.
+You are the route doctor. You add orders to incomplete vehicles and retry failures.
 
-STEP 1: Call check_vehicle_status to see which vehicles need repair and
-what failed in the previous cycle.
+STEP 1: Call check_vehicle_status to see the current state.
 
-STEP 2: For vehicles with < 2 orders (incomplete):
-  - Call pair_orphan_stations with the orphan_station_ids to find
-    which station pairs belong together.
+STEP 2: For vehicles with < 2 orders (incomplete, need orders):
+  - Call pair_orphan_stations with orphan_station_ids.
   - For each (vehicle, station_pair): call build_repair_actions with
     vehicle_id, src_station_id, dst_station_id.
-  - Prioritize vehicles that have been waiting longest (lowest id first).
 
 STEP 3: If there were failed actions from the previous cycle:
   - Call retry_failed_actions to queue retries with adjusted parameters.
-  - If the same action has failed multiple cycles, note it but do not
-    keep retrying indefinitely -- mention it in your summary.
-
-STEP 4: If repairs require funding (e.g., buying a replacement vehicle),
-call finance_advisor with an estimated_cost to check affordability.
 
 NEVER touch running trains (vehicles with 2+ orders). They are working.
-Report what you repaired and what is still pending.
+Report: needs_depot_and_vehicle flag, repairs done, retries queued.
 """,
-            "tools": ["check_vehicle_status", "pair_orphan_stations", "build_repair_actions", "retry_failed_actions", "finance_advisor", "find_station_spot", "find_rail_depot_spot"]
+            "tools": ["check_vehicle_status", "pair_orphan_stations", "build_repair_actions", "retry_failed_actions"]
+        },
+
+        // ==================================================================
+        // LLM AGENT: route_completer
+        // Builds depot + buys vehicles when stations+track exist but no vehicle.
+        // ==================================================================
+        {
+            "name": "route_completer",
+            "function": {
+                "description": """
+Completes routes that have stations and track but no depot or vehicle yet.
+Picks an engine and wagons, finds a depot spot near existing track, and
+queues build_rail_depot + buy_vehicle actions.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "Context from route_doctor about what needs completing"
+                        }
+                    }
+                }
+            },
+            "instructions": """
+You are the route completer. You finish routes that have stations and track
+but still need a depot and vehicles.
+
+STEP 1: Call check_vehicle_status. If needs_depot_and_vehicle is false,
+report "Nothing to complete" and stop.
+
+STEP 2: Call pair_orphan_stations with the orphan_station_ids to find
+which station pairs form routes.
+
+STEP 3: Call get_engines (vehicle_type=0). For each station pair:
+  - Pick a locomotive (is_wagon=false): prefer cheaper engines early game.
+  - Pick a wagon (is_wagon=true) that matches the cargo at those stations.
+    If unsure of cargo type, pick any wagon with capacity > 0.
+  - Use num_wagons=3 (matches platform_length=3).
+
+STEP 4: Estimate cost (engine_price + wagon_price * 3 + 3000 for depot).
+Call finance_advisor with estimated_cost. If cannot afford, stop.
+
+STEP 5: Call build_depot_and_vehicles with:
+  - station_tile: use one of the orphan_station_tiles values
+  - engine_id, wagon_id, num_wagons
+
+Report what you built and for which station pair.
+""",
+            "tools": ["check_vehicle_status", "pair_orphan_stations", "build_depot_and_vehicles", "get_engines", "finance_advisor", "find_rail_depot_spot"]
         },
 
         // ==================================================================
@@ -139,6 +180,8 @@ queues build actions in sly_data.
             },
             "instructions": """
 You are the route planner. You select and build new cargo routes.
+You only build stations and track. Depot and vehicles are handled by
+route_completer in the next cycle.
 
 STEP 1: Call find_unserved_routes to see available routes.
   - If it returns empty with "Vehicles still need orders", report that
@@ -147,29 +190,23 @@ STEP 1: Call find_unserved_routes to see available routes.
 STEP 2: Select the best route. Consider:
   - Shorter distance = lower build cost (track cost is ~200/tile)
   - Higher monthly_production = more cargo = more revenue
-  - Prefer high-value cargoes when available
 
-STEP 3: Call get_engines (vehicle_type=0) to see available engines and wagons.
-  Pick:
-  - A locomotive (is_wagon=false): balance speed vs cost vs reliability.
-    Cheaper engines are fine early game.
+STEP 3: Call get_engines (vehicle_type=0) to pick:
+  - A locomotive (is_wagon=false): cheaper engines are fine early game.
   - A wagon type (is_wagon=true) matching the route's cargo_label.
-    If no exact match, pick any wagon with capacity > 0.
-  - Number of wagons: typically 3 for platform_length=3.
+  These are passed through to build_route_actions so route_completer
+  knows what to buy next cycle.
 
-STEP 4: Estimate total cost:
-  - 2 stations (~8,000 each) + track (~200/tile * distance) + depot (~3,000)
-  - Engine price + wagon_price * num_wagons (from get_engines data)
+STEP 4: Estimate cost: 2 stations (~8,000 each) + track (~200/tile * distance).
   Call finance_advisor with this estimated_cost.
-  If loan needed, the finance_advisor will handle it.
-  If cannot afford, skip this route and report.
+  If cannot afford, skip and report.
 
-STEP 5: Call build_route_actions with your selections:
+STEP 5: Call build_route_actions with:
   source_industry_id, dest_industry_id, engine_id, wagon_id, num_wagons.
 
-Report which route you selected, why, and what engine/wagons you chose.
+Report which route you selected and why.
 """,
-            "tools": ["find_unserved_routes", "build_route_actions", "get_engines", "finance_advisor", "find_station_spot", "find_rail_depot_spot", "get_rail_types"]
+            "tools": ["find_unserved_routes", "build_route_actions", "get_engines", "finance_advisor", "find_station_spot", "get_rail_types"]
         },
 
         // ==================================================================
@@ -345,6 +382,43 @@ depots). Appends retries to sly_data action_list.
         },
 
         // ==================================================================
+        // CODED TOOL: route_completer sub-tool
+        // ==================================================================
+        {
+            "name": "build_depot_and_vehicles",
+            "function": {
+                "description": """
+Finds a depot spot adjacent to existing track near the given station tile,
+builds the depot, and buys an engine + wagons. Requires track to already
+exist (from a previous cycle's connect_rail).
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "station_tile": {
+                            "type": "int",
+                            "description": "Tile ID of a station near which to search for a depot spot"
+                        },
+                        "engine_id": {
+                            "type": "int",
+                            "description": "Locomotive engine ID to purchase"
+                        },
+                        "wagon_id": {
+                            "type": "int",
+                            "description": "Wagon engine ID for cargo capacity"
+                        },
+                        "num_wagons": {
+                            "type": "int",
+                            "description": "Number of wagons to attach (default 3)"
+                        }
+                    },
+                    "required": ["station_tile", "engine_id"]
+                }
+            },
+            "class": "rail_mas.build_depot_and_vehicles.BuildDepotAndVehicles"
+        },
+
+        // ==================================================================
         // CODED TOOLS: route_planner sub-tools
         // ==================================================================
         {
@@ -498,9 +572,9 @@ station detection, action history (last 15 cycles), and previous action results.
         },
 
         // ==================================================================
-        // CODED TOOLS: HTTP query tools (shared by route_planner + doctor)
-        // Also called internally via nttd_client.execute_tool() by
-        // build_route_actions and retry_failed_actions.
+        // CODED TOOLS: HTTP query tools
+        // Called internally by build_route_actions, build_depot_and_vehicles,
+        // and retry_failed_actions via nttd_client.query_gs().
         // ==================================================================
         {
             "name": "find_station_spot",

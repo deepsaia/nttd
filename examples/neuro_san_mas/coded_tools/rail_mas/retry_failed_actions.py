@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from rail_mas.nttd_client import execute_tool
+from rail_mas.nttd_client import query_gs
 from rail_mas.observation_util import get_observation
 
 logger = logging.getLogger(__name__)
@@ -81,12 +81,12 @@ class RetryFailedActions(CodedTool):
         if tile is None:
             return
         try:
-            depot_result = await execute_tool(
+            depot_result = await query_gs(
                 "find_rail_depot_spot",
                 {"tile": tile, "radius": 15},
                 sly_data,
             )
-            spots = depot_result.get("result", {}).get("spots", [])
+            spots = depot_result.get("result", [])
             if spots:
                 spot = spots[0]
                 action_list.append({

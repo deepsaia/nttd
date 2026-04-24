@@ -174,15 +174,16 @@ class MASHttpAdapter(BaseAdapter):
                 origin = resp.get("origin", [])
                 origin_str = origin[0].get("tool", "") if origin else ""
 
-                if text:
-                    prefix = f"[{origin_str}] " if origin_str else ""
-                    logger.info("Neuro-SAN %s%s: %s", prefix, msg_type, text[:500])
-                    if message_logger:
-                        message_logger(f"{prefix}{msg_type}", text[:2000])
-
                 if msg_type == "AGENT_FRAMEWORK":
                     if message_logger:
-                        message_logger("AGENT_FRAMEWORK", json.dumps(resp, indent=2)[:2000])
+                        summary: dict[str, Any] = {"type": msg_type}
+                        if resp.get("structure"):
+                            summary["structure"] = resp["structure"]
+                        resp_sly_data = resp.get("sly_data")
+                        if isinstance(resp_sly_data, dict):
+                            summary["sly_data_keys"] = list(resp_sly_data.keys())
+                        message_logger("AGENT_FRAMEWORK", json.dumps(summary, indent=2))
+
                     resp_sly_data = resp.get("sly_data", {})
                     if isinstance(resp_sly_data, dict):
                         action_list = resp_sly_data.get("action_list")
@@ -193,6 +194,11 @@ class MASHttpAdapter(BaseAdapter):
                             continue
                     if text:
                         final_text = text
+                elif text:
+                    prefix = f"[{origin_str}] " if origin_str else ""
+                    logger.info("Neuro-SAN %s%s: %s", prefix, msg_type, text[:500])
+                    if message_logger:
+                        message_logger(f"{prefix}{msg_type}", text[:2000])
 
         logger.info("Neuro-SAN final response (%d chars)", len(final_text))
         if message_logger:

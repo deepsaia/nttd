@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from rail_mas.nttd_client import execute_tool
+from rail_mas.nttd_client import query_gs
 from rail_mas.sly_data_lock import SlyDataLock
 
 
@@ -36,7 +36,7 @@ class FindStationSpot(CodedTool):
             if cached is not None:
                 return cached
 
-            result = await execute_tool("find_station_spot", params, sly_data)
+            result = await query_gs("find_station_spot", params, sly_data)
             sly_data[cache_key] = result
 
         return result

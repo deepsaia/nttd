@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from rail_mas.nttd_client import execute_tool
+from rail_mas.nttd_client import query_gs
 from rail_mas.sly_data_lock import SlyDataLock
 
 
@@ -23,7 +23,7 @@ class GetEngines(CodedTool):
                 return cached
 
             params: Dict[str, Any] = {"vehicle_type": vtype}
-            result = await execute_tool("get_engines", params, sly_data)
+            result = await query_gs("get_engines", params, sly_data)
             sly_data[cache_key] = result
 
         return result

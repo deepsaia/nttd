@@ -1,9 +1,13 @@
-"""HTTP client helper for calling nttd observation tools from neuro-san coded tools.
+"""HTTP client for read-only GS queries from neuro-san coded tools.
 
 Coded tools in the rail_mas agent network call back to nttd's REST API
-to execute observation tools (find_station_spot, get_engines, etc.).
+to run observation queries (find_station_spot, get_engines, etc.).
 Connection info comes from sly_data (session_id, company_id) and the
 NTTD_API_URL environment variable.
+
+Mutating actions (build, buy, connect) are never called here -- they
+accumulate in sly_data["action_list"] and execute through nttd's
+action executor after the agent turn completes.
 """
 
 from __future__ import annotations
@@ -21,12 +25,12 @@ NTTD_API_URL = os.environ.get("NTTD_API_URL", "http://localhost:8000")
 NTTD_TIMEOUT_SECONDS = float(os.environ.get("NTTD_TIMEOUT_SECONDS", "300.0"))
 
 
-async def execute_tool(
+async def query_gs(
     tool_name: str,
     parameters: Dict[str, Any],
     sly_data: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Execute an nttd observation tool via HTTP callback.
+    """Query nttd game state via a read-only GS observation tool.
 
     :param tool_name: Name of the observation tool (e.g. "find_station_spot").
     :param parameters: Tool parameters as a dictionary.
