@@ -96,21 +96,23 @@ action list in sly_data. Never touches running trains (2+ orders).
 You are the route doctor. You add orders to incomplete vehicles and retry failures.
 
 STEP 1: Call check_vehicle_status to see the current state.
+  It returns incomplete_vehicles, orphan_station_ids, and suggested_assignments.
 
-STEP 2: For vehicles with < 2 orders (incomplete, need orders):
-  - Call pair_orphan_stations with orphan_station_ids.
-  - Match each incomplete vehicle to the nearest station pair by
-    comparing the vehicle's (x, y) to the pair's station coordinates.
-    A vehicle at (30, 207) belongs to the pair near (30, 207).
-  - For each match: call build_repair_actions with vehicle_id,
-    src_station_id, dst_station_id.
+STEP 2: If suggested_assignments is non-empty, use those directly.
+  Each assignment has {vehicle_id, src_station_id, dst_station_id}.
+  For each: call build_repair_actions with those exact IDs.
+  Do NOT override the assignments with your own proximity matching.
 
-STEP 3: If there were failed actions from the previous cycle:
+STEP 3: If there are incomplete vehicles but no suggested_assignments,
+  call pair_orphan_stations with orphan_station_ids to find pairs,
+  then call build_repair_actions for each vehicle-to-pair match.
+
+STEP 4: If there were failed actions from the previous cycle:
   - Call retry_failed_actions to queue retries with adjusted parameters.
 
 NEVER touch running trains (vehicles with 2+ orders). They are working.
 build_repair_actions will reject assignments if the station pair already has
-a running vehicle. If it returns an error, try a different station pair.
+a running vehicle. If it returns an error, skip that assignment.
 Report: needs_depot_and_vehicle flag, repairs done, retries queued.
 """,
             "tools": ["check_vehicle_status", "pair_orphan_stations", "build_repair_actions", "retry_failed_actions"]
@@ -319,8 +321,9 @@ Keep responses to 2-3 lines. The caller needs a quick go/no-go.
             "function": {
                 "description": """
 Returns vehicles needing repair (< 2 orders), orphan station IDs not
-visited by any vehicle, and failed actions from the previous cycle.
-Also initializes sly_data action_list.
+visited by any vehicle, failed actions from the previous cycle, and
+suggested_assignments matching incomplete vehicles to unserved orphan
+station pairs. Also initializes sly_data action_list.
 """,
                 "parameters": {
                     "type": "object",
