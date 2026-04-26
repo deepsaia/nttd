@@ -99,3 +99,54 @@ class TestPlatformEnd:
             edge_x, edge_y = BuildRouteActions._track_edge(50, 60, direction, 3, 100, 100)
             hint_x, hint_y = BuildRouteActions._platform_end(50, 60, direction, 3, 100, 100)
             assert abs(edge_x - hint_x) + abs(edge_y - hint_y) == 1
+
+
+class TestCargoValidation:
+    """Tests for _validate_cargo_chain supply-chain checking."""
+
+    @staticmethod
+    def _obs(industries: list) -> dict:
+        return {"industries": industries}
+
+    def test_valid_chain(self) -> None:
+        obs = self._obs([
+            {"id": 1, "name": "Coal Mine", "production": [{"cargo_label": "COAL"}], "accepted": []},
+            {"id": 2, "name": "Power Station", "production": [], "accepted": [{"cargo_label": "COAL"}]},
+        ])
+        valid, reason = BuildRouteActions._validate_cargo_chain(1, 2, obs)
+        assert valid is True
+        assert reason == ""
+
+    def test_mismatched_chain(self) -> None:
+        obs = self._obs([
+            {"id": 1, "name": "Coal Mine",
+             "production": [{"cargo_label": "COAL"}], "accepted": []},
+            {"id": 3, "name": "Factory", "production": [],
+             "accepted": [{"cargo_label": "STEL"}, {"cargo_label": "GRAI"}]},
+        ])
+        valid, reason = BuildRouteActions._validate_cargo_chain(1, 3, obs)
+        assert valid is False
+        assert "Coal Mine" in reason
+        assert "Factory" in reason
+
+    def test_missing_industry_allows(self) -> None:
+        obs = self._obs([
+            {"id": 1, "name": "Coal Mine", "production": [{"cargo_label": "COAL"}], "accepted": []},
+        ])
+        valid, _ = BuildRouteActions._validate_cargo_chain(1, 999, obs)
+        assert valid is True
+
+    def test_no_industries_in_obs(self) -> None:
+        valid, _ = BuildRouteActions._validate_cargo_chain(1, 2, {})
+        assert valid is True
+
+    def test_multi_cargo_overlap(self) -> None:
+        obs = self._obs([
+            {"id": 5, "name": "Farm",
+             "production": [{"cargo_label": "GRAI"}, {"cargo_label": "LVST"}],
+             "accepted": []},
+            {"id": 6, "name": "Factory", "production": [],
+             "accepted": [{"cargo_label": "GRAI"}, {"cargo_label": "STEL"}]},
+        ])
+        valid, _ = BuildRouteActions._validate_cargo_chain(5, 6, obs)
+        assert valid is True

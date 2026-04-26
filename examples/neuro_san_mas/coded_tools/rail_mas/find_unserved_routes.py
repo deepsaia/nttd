@@ -14,6 +14,19 @@ logger = logging.getLogger(__name__)
 
 STATION_CATCHMENT = 10
 
+_COMPACT_TO_FULL: Dict[str, str] = {
+    "src_id": "source_id",
+    "dst_id": "dest_id",
+    "src": "source_name",
+    "dst": "dest_name",
+    "dist": "distance",
+    "prod": "monthly_production",
+    "src_x": "source_x",
+    "src_y": "source_y",
+    "dst_x": "dest_x",
+    "dst_y": "dest_y",
+}
+
 
 class FindUnservedRoutes(CodedTool):
     """Returns unserved cargo routes not near existing stations."""
@@ -47,9 +60,14 @@ class FindUnservedRoutes(CodedTool):
             })
 
         route_planning: Dict[str, Any] = obs.get("route_planning", {})
-        unserved: List[Dict[str, Any]] = route_planning.get("top_unserved_cargo", [])
+        unserved: List[Dict[str, Any]] = (
+            route_planning.get("top_unserved_cargo")
+            or route_planning.get("top_cargo", [])
+        )
         if not unserved:
             return json.dumps({"routes": [], "reason": "No unserved cargo routes available."})
+
+        unserved = [self._normalize_route(r) for r in unserved]
 
         station_locs: List[Tuple[int, int]] = [
             (s.get("x", 0), s.get("y", 0)) for s in obs.get("stations", [])
@@ -83,6 +101,14 @@ class FindUnservedRoutes(CodedTool):
             available.append(route)
 
         return json.dumps({"routes": available})
+
+    @staticmethod
+    def _normalize_route(route: Dict[str, Any]) -> Dict[str, Any]:
+        """Map compact short field names to full names for consistent output."""
+        for short, full in _COMPACT_TO_FULL.items():
+            if short in route and full not in route:
+                route[full] = route[short]
+        return route
 
     def _served_station_locs(
         self, obs: Dict[str, Any],

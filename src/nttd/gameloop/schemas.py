@@ -47,7 +47,6 @@ class AgentConfig(BaseModel):
     model: str = "gpt-4o"
     instructions: str = ""
     observation_mode: str = "compact"
-    snapshot_class: str = ""
     include_finance: bool = False
     poll_interval: float = Field(default=5.0, ge=0.5)
     observation_tools: bool = True
@@ -56,11 +55,6 @@ class AgentConfig(BaseModel):
     api_key_env: str = "OPENAI_API_KEY"
     mas_config: str = ""
     mas_transport: MASTransportConfig = Field(default_factory=MASTransportConfig)
-
-    @property
-    def effective_snapshot_class(self) -> str:
-        """Return snapshot_class if set, otherwise fall back to observation_mode."""
-        return self.snapshot_class or self.observation_mode
 
 
 class ConnectionStatus(BaseModel):

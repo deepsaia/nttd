@@ -396,7 +396,7 @@ class AgentConnection:
         company_id = self.config.company_id
 
         # Resolve snapshot class
-        class_name = self.config.effective_snapshot_class
+        class_name = self.config.observation_mode
         try:
             snap_class = self.runtime.snapshot_class_registry.get(class_name)
         except KeyError:

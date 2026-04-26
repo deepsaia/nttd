@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 from neuro_san.interfaces.coded_tool import CodedTool
 
 from rail_mas.nttd_client import query_gs
+from rail_mas.observation_util import get_observation
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,12 @@ class BuildRouteActions(CodedTool):
         engine_id: int = args["engine_id"]
         wagon_id: Optional[int] = args.get("wagon_id")
         num_wagons: int = args.get("num_wagons", 3)
+
+        obs = get_observation(sly_data)
+        if obs:
+            valid, reason = self._validate_cargo_chain(src_industry_id, dst_industry_id, obs)
+            if not valid:
+                return json.dumps({"success": False, "error": f"Cargo mismatch: {reason}"})
 
         src_spot = await self._find_station(src_industry_id, sly_data)
         if not src_spot:
@@ -167,6 +174,26 @@ class BuildRouteActions(CodedTool):
         if other_y >= sy:
             return sx, sy + platform_length - 1
         return sx, sy
+
+    @staticmethod
+    def _validate_cargo_chain(
+        src_id: int, dst_id: int, obs: Dict[str, Any],
+    ) -> tuple[bool, str]:
+        """Check that the source industry produces cargo the destination accepts."""
+        industries = {i["id"]: i for i in obs.get("industries", [])}
+        src = industries.get(src_id)
+        dst = industries.get(dst_id)
+        if not src or not dst:
+            return True, ""
+        src_cargos = {p["cargo_label"] for p in src.get("production", [])}
+        dst_cargos = {a["cargo_label"] for a in dst.get("accepted", [])}
+        overlap = src_cargos & dst_cargos
+        if not overlap:
+            return False, (
+                f"{src.get('name', src_id)} produces {src_cargos} "
+                f"but {dst.get('name', dst_id)} accepts {dst_cargos}"
+            )
+        return True, ""
 
     async def _find_station(
         self, industry_id: int, sly_data: Dict[str, Any],

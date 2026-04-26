@@ -1,4 +1,4 @@
-# Neuro-SAN Rail MAS Example
+# Neuro-SAN Rail MAS
 
 Multi-agent rail transport system for nttd using [Neuro-SAN](https://github.com/cognizant-ai-labs/neuro-san).
 
@@ -10,10 +10,10 @@ nttd server                          neuro-san server
      |                                    |
      |  1. POST observation -------->     |
      |                               rail_coordinator
-     |                                 /     |     \
-     |                          scout  builder  vehicle_mgr
-     |                            |       |
-     |  <-- HTTP callback --------+-------+
+     |                                /   |   |    \
+     |                       doctor planner completer validator
+     |                          |       |       |
+     |  <-- HTTP callback ------+-------+-------+
      |  (find_station_spot, get_engines, etc.)
      |                                    |
      |  <--- action JSON response --------|
@@ -23,23 +23,80 @@ nttd server                          neuro-san server
 ```
 
 nttd sends game observations to the neuro-san server via HTTP. The agent
-network reasons about what to do and calls back to nttd's observation tool
-API for queries like `find_station_spot`. The final response is a JSON
-action list that nttd executes in OpenTTD.
+network reasons about route planning, and coded tools call back to nttd
+for GS queries like `find_station_spot`. The final response is a JSON
+action list that nttd executes in OpenTTD via GameScript.
+
+All actions flow through `sly_data["action_list"]` -- coded tools append
+actions to this list, and nttd reads the final list from the response.
 
 ## Agent Network
 
-**rail_coordinator** (front man) -- determines the current phase and delegates:
-- **route_scout** -- finds best unserved cargo routes, validates station sites (Phase 1)
-- **infrastructure_builder** -- builds stations, connects track, places depots (Phases 2-4)
-- **vehicle_manager** -- buys trains, sets orders, starts, verifies, expands (Phases 5-7)
+Defined in `registries/rail_mas.hocon`.
 
-**Coded tools** (HTTP callbacks to nttd):
-- `game_state` -- reads current observation from sly_data
-- `find_station_spot` -- validates rail station placement near industries
-- `find_rail_depot_spot` -- finds depot locations adjacent to existing track
-- `get_engines` -- lists available train engines
-- `get_rail_types` -- lists available track types
+**rail_coordinator** (front man) -- calls agents in sequence each cycle:
+
+1. **route_doctor** -- repairs incomplete routes: adds orders to vehicles
+   with < 2 orders, retries failed builds from the previous cycle.
+2. **route_completer** -- builds depots and buys vehicles for routes that
+   have stations + track but no train yet. Auto-selects wagon type by
+   matching station cargo to engine list.
+3. **route_planner** -- selects the next unserved cargo route, validates
+   station spots, checks finances, and queues station + track build actions.
+4. **action_validator** -- deduplicates actions, filters unknown types,
+   blocks disruptive actions against running trains.
+
+**Shared agents:**
+- **finance_advisor** -- checks affordability and adjusts loans. Called by
+  both route_completer and route_planner.
+- **company_status** -- diagnostic summary of company state.
+
+## Coded Tools
+
+All coded tools are under `coded_tools/rail_mas/` and implement
+`neuro_san.interfaces.coded_tool.CodedTool`.
+
+### Route planning tools
+| Tool | Description |
+|------|-------------|
+| `find_unserved_routes` | Returns cargo routes from observation not near existing stations |
+| `build_route_actions` | Validates station spots via GS, emits station + track actions. Validates cargo chain. |
+| `build_depot_and_vehicles` | Finds depot spot near track, builds depot + engine + wagons |
+
+### Route repair tools
+| Tool | Description |
+|------|-------------|
+| `check_vehicle_status` | Reports vehicles needing orders, orphan stations, failed actions |
+| `pair_orphan_stations` | Pairs orphan stations by proximity into likely route endpoints |
+| `build_repair_actions` | Creates add_order + start_vehicle actions for incomplete vehicles |
+| `retry_failed_actions` | Retries failed actions from previous cycle with adjusted parameters |
+
+### Finance tools
+| Tool | Description |
+|------|-------------|
+| `check_finances` | Returns balance, loan, affordability assessment |
+| `set_loan_action` | Prepends a set_loan action to the action list |
+
+### Validation tools
+| Tool | Description |
+|------|-------------|
+| `validate_action_list` | Deduplicates, filters, blocks unsafe actions |
+
+### GS query tools (HTTP callbacks to nttd)
+| Tool | Description |
+|------|-------------|
+| `find_station_spot` | Validates rail station placement near industries |
+| `find_rail_depot_spot` | Finds depot spots adjacent to existing track |
+| `get_engines` | Lists available train engines and wagons |
+| `get_rail_types` | Lists available rail track types |
+
+### Utilities
+| File | Description |
+|------|-------------|
+| `nttd_client.py` | HTTP client for GS queries to nttd API |
+| `observation_util.py` | Parses and caches observation from sly_data |
+| `cargo_matcher.py` | Matches cargo labels to wagons from engine list |
+| `read_company_status.py` | Builds diagnostic company summary from observation |
 
 ## Setup
 
@@ -53,7 +110,7 @@ export OPENAI_API_KEY="sk-..."
 export NTTD_API_URL="http://localhost:8000"
 export NTTD_TIMEOUT="30.0"
 
-# Neuro-SAN paths -- point to this example's files
+# Neuro-SAN paths
 export AGENT_MANIFEST_FILE="$(pwd)/examples/neuro_san_mas/registries/manifest.hocon"
 export AGENT_TOOL_PATH="$(pwd)/examples/neuro_san_mas/coded_tools"
 export PYTHONPATH="$(pwd)/examples/neuro_san_mas/coded_tools:${PYTHONPATH}"
@@ -63,62 +120,72 @@ export AGENT_HTTP_PORT=8080
 export AGENT_MCP_ENABLE="false"
 ```
 
-### Start Servers
+### Running
 
 ```bash
-# Terminal 1: Start nttd server
-nttd server start --scenario config/scenario_30min.conf
+# Terminal 1: Start nttd server + session
+nttd server start
 
 # Terminal 2: Start neuro-san server
 python -m neuro_san.service.main_loop.server_main_loop
+
+# Terminal 3: Run benchmark (creates session, registers agent, runs)
+nttd benchmark run config/scenario_20min_rail_mas.conf
 ```
 
 ### nttd Scenario Config
 
-Add the rail_mas agent to your scenario `.conf` file:
+The rail MAS agent is configured in `config/scenario_20min_rail_mas.conf`:
 
 ```hocon
 agents = [
   {
-    agent_id = "rail_mas"
-    company_id = 0
-    framework = "mas"
+    agent_id          = "rail_mas"
+    company_id        = 0
+    nttd_framework    = "mas"
+    agent_type        = "rail"
+    observation_mode  = "mas_rail"
+    include_finance   = true
+    poll_interval     = 10.0
+    max_actions_per_cycle = 50
     mas_transport {
-      transport = "http"
-      endpoint = "http://localhost:8080/v1/agent/rail_coordinator"
+      protocol      = "http"
+      mas_framework = "neuro_san"
+      endpoint      = "http://localhost:8080/api/v1/rail_mas/streaming_chat"
+      timeout       = 300.0
     }
-    poll_interval = 5.0
-    observation_tools = true
-    max_actions_per_cycle = 20
   }
 ]
 ```
 
-## Replicating for Other Transport Types
-
-To create a road, air, or water MAS:
-
-1. Copy `registries/rail_mas.hocon` to `registries/road_mas.hocon`
-2. Rename agents: `rail_coordinator` -> `road_coordinator`, etc.
-3. Adjust agent prompts for the transport type
-4. Add transport-specific coded tools (e.g., `find_bus_stop_spots`, `find_dock_spots`)
-5. Add the new `.hocon` to `manifest.hocon`
-6. Add coded tools under `coded_tools/road_mas/`
+See `docs/agent_guide.md` for full configuration reference.
 
 ## File Structure
 
 ```
 examples/neuro_san_mas/
   registries/
-    manifest.hocon           # Lists agent networks to serve
-    rail_mas.hocon           # Rail agent network definition
+    manifest.hocon              # Lists agent networks to serve
+    rail_mas.hocon              # Rail agent network definition (HOCON)
   coded_tools/
     rail_mas/
       __init__.py
-      nttd_client.py         # Shared HTTP client for nttd API calls
-      read_observation.py    # Surfaces game observation from sly_data
-      find_station_spot.py   # Validates station placement
-      find_rail_depot_spot.py # Finds depot locations on track
-      get_engines.py         # Lists available engines
-      get_rail_types.py      # Lists rail track types
+      nttd_client.py            # HTTP client for GS queries
+      observation_util.py       # Parse/cache observation from sly_data
+      cargo_matcher.py          # Cargo-to-wagon matching
+      find_unserved_routes.py   # Route discovery from observation
+      build_route_actions.py    # Station + track action builder
+      build_depot_and_vehicles.py  # Depot + train action builder
+      check_vehicle_status.py   # Vehicle/station diagnostics
+      pair_orphan_stations.py   # Station pairing by proximity
+      build_repair_actions.py   # Order + start actions for vehicles
+      retry_failed_actions.py   # Retry logic for failed actions
+      check_finances.py         # Financial assessment
+      set_loan_action.py        # Loan adjustment actions
+      validate_action_list.py   # Action dedup and safety filtering
+      read_company_status.py    # Company status summary
+      find_station_spot.py      # GS query: station placement
+      find_rail_depot_spot.py   # GS query: depot placement
+      get_engines.py            # GS query: available engines
+      get_rail_types.py         # GS query: available rail types
 ```
