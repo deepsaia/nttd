@@ -101,6 +101,37 @@ class TestPlatformEnd:
             assert abs(edge_x - hint_x) + abs(edge_y - hint_y) == 1
 
 
+class TestTownRouteParams:
+    """Tests for town/passenger route parameter handling."""
+
+    def test_town_route_skips_cargo_validation(self) -> None:
+        """Town routes should not call _validate_cargo_chain."""
+        obs = {
+            "industries": [
+                {"id": 1, "name": "Coal Mine",
+                 "production": [{"cargo_label": "COAL"}], "accepted": []},
+            ],
+        }
+        valid, _ = BuildRouteActions._validate_cargo_chain(1, 999, obs)
+        assert valid is True
+
+    def test_industry_and_town_both_none_invalid(self) -> None:
+        """Both industry and town IDs missing should be rejected."""
+        import asyncio
+        import json
+        tool = BuildRouteActions()
+
+        async def run() -> str:
+            return await tool.async_invoke(
+                {"engine_id": 0},
+                {"observation": {}, "session_id": "test", "company_id": 0},
+            )
+
+        result = json.loads(asyncio.run(run()))
+        assert result["success"] is False
+        assert "Must provide" in result["error"]
+
+
 class TestCargoValidation:
     """Tests for _validate_cargo_chain supply-chain checking."""
 
@@ -140,7 +171,7 @@ class TestCargoValidation:
         valid, _ = BuildRouteActions._validate_cargo_chain(1, 2, {})
         assert valid is True
 
-    def test_multi_cargo_overlap(self) -> None:
+    def test_multi_cargo_overlap_final_consumer(self) -> None:
         obs = self._obs([
             {"id": 5, "name": "Farm",
              "production": [{"cargo_label": "GRAI"}, {"cargo_label": "LVST"}],
@@ -150,3 +181,41 @@ class TestCargoValidation:
         ])
         valid, _ = BuildRouteActions._validate_cargo_chain(5, 6, obs)
         assert valid is True
+
+    def test_rejects_intermediate_processor(self) -> None:
+        """Destination that also produces cargo is an intermediate processor."""
+        obs = self._obs([
+            {"id": 10, "name": "Iron Ore Mine",
+             "production": [{"cargo_label": "IORE"}], "accepted": []},
+            {"id": 11, "name": "Steel Mill",
+             "production": [{"cargo_label": "STEL"}],
+             "accepted": [{"cargo_label": "IORE"}]},
+        ])
+        valid, reason = BuildRouteActions._validate_cargo_chain(10, 11, obs)
+        assert valid is False
+        assert "intermediate processor" in reason
+        assert "Steel Mill" in reason
+
+    def test_allows_final_consumer(self) -> None:
+        """Destination with no production is a final consumer (e.g. Power Station)."""
+        obs = self._obs([
+            {"id": 1, "name": "Coal Mine",
+             "production": [{"cargo_label": "COAL"}], "accepted": []},
+            {"id": 2, "name": "Power Station",
+             "production": [], "accepted": [{"cargo_label": "COAL"}]},
+        ])
+        valid, _ = BuildRouteActions._validate_cargo_chain(1, 2, obs)
+        assert valid is True
+
+    def test_rejects_sawmill_as_intermediate(self) -> None:
+        """Sawmill accepts WOOD but produces GOOD -- intermediate processor."""
+        obs = self._obs([
+            {"id": 20, "name": "Forest",
+             "production": [{"cargo_label": "WOOD"}], "accepted": []},
+            {"id": 21, "name": "Sawmill",
+             "production": [{"cargo_label": "GOOD"}],
+             "accepted": [{"cargo_label": "WOOD"}]},
+        ])
+        valid, reason = BuildRouteActions._validate_cargo_chain(20, 21, obs)
+        assert valid is False
+        assert "Sawmill" in reason

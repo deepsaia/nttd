@@ -26,25 +26,41 @@ class BuildRouteActions(CodedTool):
     """Validates station spots and builds station + track actions for a new route."""
 
     async def async_invoke(self, args: Dict[str, Any], sly_data: Dict[str, Any]) -> Any:
-        src_industry_id: int = args["source_industry_id"]
-        dst_industry_id: int = args["dest_industry_id"]
+        src_industry_id: Optional[int] = args.get("source_industry_id")
+        dst_industry_id: Optional[int] = args.get("dest_industry_id")
+        src_town_id: Optional[int] = args.get("source_town_id")
+        dst_town_id: Optional[int] = args.get("dest_town_id")
         engine_id: int = args["engine_id"]
         wagon_id: Optional[int] = args.get("wagon_id")
         num_wagons: int = args.get("num_wagons", 3)
 
+        is_town_route = src_town_id is not None or dst_town_id is not None
+
+        if not is_town_route and (src_industry_id is None or dst_industry_id is None):
+            return json.dumps({
+                "success": False,
+                "error": "Must provide source_industry_id+dest_industry_id or source_town_id+dest_town_id.",
+            })
+
         obs = get_observation(sly_data)
-        if obs:
+        if obs and not is_town_route:
             valid, reason = self._validate_cargo_chain(src_industry_id, dst_industry_id, obs)
             if not valid:
                 return json.dumps({"success": False, "error": f"Cargo mismatch: {reason}"})
 
-        src_spot = await self._find_station(src_industry_id, sly_data)
+        src_spot = await self._find_station(
+            sly_data, industry_id=src_industry_id, town_id=src_town_id,
+        )
         if not src_spot:
-            return json.dumps({"success": False, "error": f"No station spot for source industry {src_industry_id}"})
+            src_label = f"town {src_town_id}" if is_town_route else f"industry {src_industry_id}"
+            return json.dumps({"success": False, "error": f"No station spot for source {src_label}"})
 
-        dst_spot = await self._find_station(dst_industry_id, sly_data)
+        dst_spot = await self._find_station(
+            sly_data, industry_id=dst_industry_id, town_id=dst_town_id,
+        )
         if not dst_spot:
-            return json.dumps({"success": False, "error": f"No station spot for dest industry {dst_industry_id}"})
+            dst_label = f"town {dst_town_id}" if is_town_route else f"industry {dst_industry_id}"
+            return json.dumps({"success": False, "error": f"No station spot for dest {dst_label}"})
 
         action_list: List[Dict[str, Any]] = sly_data.get("action_list", [])
         actions_before = len(action_list)
@@ -179,7 +195,13 @@ class BuildRouteActions(CodedTool):
     def _validate_cargo_chain(
         src_id: int, dst_id: int, obs: Dict[str, Any],
     ) -> tuple[bool, str]:
-        """Check that the source industry produces cargo the destination accepts."""
+        """Check cargo compatibility and reject intermediate processors.
+
+        Rejects routes where:
+        1. Source doesn't produce any cargo the destination accepts.
+        2. Destination is an intermediate processor (also produces cargo),
+           since that would be one leg of a multi-step supply chain.
+        """
         industries = {i["id"]: i for i in obs.get("industries", [])}
         src = industries.get(src_id)
         dst = industries.get(dst_id)
@@ -193,31 +215,47 @@ class BuildRouteActions(CodedTool):
                 f"{src.get('name', src_id)} produces {src_cargos} "
                 f"but {dst.get('name', dst_id)} accepts {dst_cargos}"
             )
+        dst_produces = [
+            p["cargo_label"] for p in dst.get("production", [])
+            if p.get("cargo_label")
+        ]
+        if dst_produces:
+            return False, (
+                f"{dst.get('name', dst_id)} is an intermediate processor "
+                f"(produces {dst_produces}). Only deliver to final consumers."
+            )
         return True, ""
 
     async def _find_station(
-        self, industry_id: int, sly_data: Dict[str, Any],
+        self,
+        sly_data: Dict[str, Any],
+        industry_id: Optional[int] = None,
+        town_id: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Find a valid station spot near an industry, trying wider radius on failure."""
+        """Find a valid station spot near an industry or town."""
+        params: Dict[str, Any] = {
+            "platform_length": 3,
+            "rail_type": 0,
+            "max_results": 3,
+        }
+        if town_id is not None:
+            params["town_id"] = town_id
+        elif industry_id is not None:
+            params["industry_id"] = industry_id
+        else:
+            return None
+
+        label = f"town {town_id}" if town_id is not None else f"industry {industry_id}"
         for radius in (15, 20):
             try:
-                result = await query_gs(
-                    "find_station_spot",
-                    {
-                        "industry_id": industry_id,
-                        "platform_length": 3,
-                        "rail_type": 0,
-                        "radius": radius,
-                        "max_results": 3,
-                    },
-                    sly_data,
-                )
+                params["radius"] = radius
+                result = await query_gs("find_station_spot", params, sly_data)
                 spots = result.get("result", {}).get("spots", [])
                 if spots:
                     return spots[0]
             except Exception:
                 logger.warning(
-                    "find_station_spot failed for industry %d radius %d",
-                    industry_id, radius, exc_info=True,
+                    "find_station_spot failed for %s radius %d",
+                    label, radius, exc_info=True,
                 )
         return None

@@ -47,12 +47,17 @@ You are the rail coordinator. Every cycle, follow these steps in order:
    and retry failed builds.
 2. Call route_completer to build depots and buy vehicles for routes that
    have stations and track but no vehicle yet.
-3. Call route_planner to select the next cargo route and queue station + track
-   build actions.
+3. Call route_planner to select the next route and queue station + track
+   build actions. SKIP this step if there are already 3+ active routes
+   and none are profitable yet -- focus on completing existing routes first.
 4. Call action_validator to validate and deduplicate the action list.
 
-Actions flow through sly_data automatically. Relay the summaries from each
-agent. Do NOT add your own actions or modify the list.
+CRITICAL RULES:
+- Actions flow through sly_data automatically via coded tools.
+- Do NOT add your own actions or modify the action list directly.
+- NEVER construct raw build_rail_station, connect_rail, build_train, or
+  build_rail_depot actions yourself. Always use the coded tools.
+- Only build simple 2-station routes (producer -> consumer, or town -> town).
 """,
             "allow": {
                 "to_upstream": {
@@ -141,7 +146,8 @@ report "Nothing to complete" and stop.
 STEP 2: Call pair_orphan_stations with the orphan_station_ids to find
 which station pairs form routes.
 
-STEP 3: Call get_engines (vehicle_type=0). For each station pair:
+STEP 3: Call get_engines (vehicle_type=0). Pick ONE station pair to complete
+(the first pair). Do NOT try to complete multiple pairs in one cycle.
   - Pick a locomotive (is_wagon=false): prefer cheaper engines early game.
   - You do NOT need to pick a wagon. build_depot_and_vehicles auto-selects
     the correct wagon based on station cargo data.
@@ -155,6 +161,9 @@ STEP 5: Call build_depot_and_vehicles with:
   - engine_id, num_wagons (wagon is auto-selected)
   It will skip routes that already have a vehicle (1 train per route,
   no signals yet).
+
+CRITICAL: Complete only 1 depot + 1 train per cycle. Do NOT build multiple
+depots or trains. Each route gets exactly 1 train (no signals for passing).
 
 Report what you built and for which station pair.
 """,
@@ -184,16 +193,20 @@ queues build actions in sly_data.
                 }
             },
             "instructions": """
-You are the route planner. You select and build new cargo routes.
+You are the route planner. You select and build new routes (cargo or passenger).
 You only build stations and track. Depot and vehicles are handled by
 route_completer in the next cycle.
 
 STEP 1: Call find_unserved_routes to see available routes.
-  - If it returns empty with a reason, report that reason and stop.
+  - It returns "routes" (cargo) and "town_routes" (passenger).
+  - If both are empty with a reason, report that reason and stop.
 
-STEP 2: Select the best route. Consider:
+STEP 2: Select ONE route to build. Consider:
   - Shorter distance = lower build cost (track cost is ~200/tile)
   - Higher monthly_production = more cargo = more revenue
+  - Town/passenger routes are good early revenue sources
+  - Only build simple 2-station chains. Never plan multi-step supply chains.
+  Build at most 1 route per cycle. Do NOT queue multiple routes.
 
 STEP 3: Call get_engines (vehicle_type=0) to pick:
   - A locomotive (is_wagon=false): cheaper engines are fine early game.
@@ -205,7 +218,12 @@ STEP 4: Estimate cost: 2 stations (~8,000 each) + track (~200/tile * distance).
   If cannot afford, skip and report.
 
 STEP 5: Call build_route_actions with:
-  source_industry_id, dest_industry_id, engine_id, wagon_id, num_wagons.
+  - For cargo routes: source_industry_id, dest_industry_id, engine_id
+  - For town/passenger routes: source_town_id, dest_town_id, engine_id
+
+CRITICAL: ALWAYS use the build_route_actions coded tool. NEVER construct
+raw build_rail_station or connect_rail actions yourself. The coded tool
+validates spots via GS queries and ensures correct station directions.
 
 Report which route you selected and why.
 """,
@@ -428,9 +446,10 @@ Reuses existing depots when possible. Requires track to already exist.
             "name": "find_unserved_routes",
             "function": {
                 "description": """
-Returns unserved cargo routes not near existing stations. Allows expansion
-once at least one vehicle is running with orders. Returns route details:
-source/dest industry IDs, coordinates, cargo, distance, monthly_production.
+Returns unserved cargo routes and town/passenger routes not near existing
+stations. Allows expansion once at least one vehicle is running with orders.
+Blocks expansion if 3+ routes exist and none are profitable. Returns:
+"routes" (cargo) and "town_routes" (passenger) with coordinates and details.
 """,
                 "parameters": {
                     "type": "object",
@@ -448,8 +467,9 @@ source/dest industry IDs, coordinates, cargo, distance, monthly_production.
             "name": "build_route_actions",
             "function": {
                 "description": """
-Validates station/depot spots via HTTP and builds the complete action
-sequence for a new route: 2 stations + track. Depot and vehicles are
+Validates station spots via HTTP and builds the complete action sequence
+for a new route: 2 stations + track. Supports both cargo routes (by
+industry ID) and passenger routes (by town ID). Depot and vehicles are
 handled by route_completer in the next cycle.
 """,
                 "parameters": {
@@ -457,11 +477,19 @@ handled by route_completer in the next cycle.
                     "properties": {
                         "source_industry_id": {
                             "type": "int",
-                            "description": "Source industry ID"
+                            "description": "Source industry ID (for cargo routes)"
                         },
                         "dest_industry_id": {
                             "type": "int",
-                            "description": "Destination industry ID"
+                            "description": "Destination industry ID (for cargo routes)"
+                        },
+                        "source_town_id": {
+                            "type": "int",
+                            "description": "Source town ID (for passenger routes)"
+                        },
+                        "dest_town_id": {
+                            "type": "int",
+                            "description": "Destination town ID (for passenger routes)"
                         },
                         "engine_id": {
                             "type": "int",
@@ -476,7 +504,7 @@ handled by route_completer in the next cycle.
                             "description": "Number of wagons to attach (default 3)"
                         }
                     },
-                    "required": ["source_industry_id", "dest_industry_id", "engine_id"]
+                    "required": ["engine_id"]
                 }
             },
             "class": "rail_mas.build_route_actions.BuildRouteActions"

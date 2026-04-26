@@ -40,9 +40,10 @@ Defined in `registries/rail_mas.hocon`.
    with < 2 orders, retries failed builds from the previous cycle.
 2. **route_completer** -- builds depots and buys vehicles for routes that
    have stations + track but no train yet. Auto-selects wagon type by
-   matching station cargo to engine list.
-3. **route_planner** -- selects the next unserved cargo route, validates
-   station spots, checks finances, and queues station + track build actions.
+   matching station cargo to engine list. Completes 1 route per cycle.
+3. **route_planner** -- selects the next unserved cargo or passenger route,
+   validates station spots, checks finances, and queues station + track
+   build actions. Skipped when 3+ routes exist and none are profitable.
 4. **action_validator** -- deduplicates actions, filters unknown types,
    blocks disruptive actions against running trains.
 
@@ -50,6 +51,25 @@ Defined in `registries/rail_mas.hocon`.
 - **finance_advisor** -- checks affordability and adjusts loans. Called by
   both route_completer and route_planner.
 - **company_status** -- diagnostic summary of company state.
+
+### Route Selection Strategy
+
+The system enforces several constraints to prevent over-expansion and
+ensure profitable operations:
+
+- **Simple chains only** -- routes to intermediate processors (industries
+  that both accept AND produce cargo, e.g. Steel Mill, Sawmill, Oil
+  Refinery) are filtered out. Only routes to final consumers (Power
+  Station, Towns) are offered. This works across all climate types by
+  checking actual industry production data from the game observation.
+- **Expansion gate** -- new routes are blocked when 3+ active routes exist
+  and none are profitable yet. Revenue must flow before expanding.
+- **1 route per cycle** -- only one new route can be built per cycle to
+  prevent financial death spirals.
+- **1 train per route** -- no signals means only one train per single-track
+  route. The build_depot_and_vehicles tool enforces this automatically.
+- **Cargo and passenger routes** -- both industry cargo routes and
+  town-to-town passenger routes are supported.
 
 ## Coded Tools
 
@@ -59,9 +79,9 @@ All coded tools are under `coded_tools/rail_mas/` and implement
 ### Route planning tools
 | Tool | Description |
 |------|-------------|
-| `find_unserved_routes` | Returns cargo routes from observation not near existing stations |
-| `build_route_actions` | Validates station spots via GS, emits station + track actions. Validates cargo chain. |
-| `build_depot_and_vehicles` | Finds depot spot near track, builds depot + engine + wagons |
+| `find_unserved_routes` | Returns cargo and town routes from observation. Filters intermediate processors, enforces expansion gate and per-cycle limit. |
+| `build_route_actions` | Validates station spots via GS, emits station + track actions. Validates cargo chain and rejects intermediate processors. Supports both industry and town routes. |
+| `build_depot_and_vehicles` | Finds depot spot near track, builds depot + engine + wagons. Auto-selects wagon by matching station cargo. |
 
 ### Route repair tools
 | Tool | Description |
@@ -85,7 +105,7 @@ All coded tools are under `coded_tools/rail_mas/` and implement
 ### GS query tools (HTTP callbacks to nttd)
 | Tool | Description |
 |------|-------------|
-| `find_station_spot` | Validates rail station placement near industries |
+| `find_station_spot` | Validates rail station placement near industries or towns |
 | `find_rail_depot_spot` | Finds depot spots adjacent to existing track |
 | `get_engines` | Lists available train engines and wagons |
 | `get_rail_types` | Lists available rail track types |
@@ -173,8 +193,8 @@ examples/neuro_san_mas/
       nttd_client.py            # HTTP client for GS queries
       observation_util.py       # Parse/cache observation from sly_data
       cargo_matcher.py          # Cargo-to-wagon matching
-      find_unserved_routes.py   # Route discovery from observation
-      build_route_actions.py    # Station + track action builder
+      find_unserved_routes.py   # Route discovery (cargo + passenger) with expansion gates
+      build_route_actions.py    # Station + track action builder (industry + town routes)
       build_depot_and_vehicles.py  # Depot + train action builder
       check_vehicle_status.py   # Vehicle/station diagnostics
       pair_orphan_stations.py   # Station pairing by proximity
