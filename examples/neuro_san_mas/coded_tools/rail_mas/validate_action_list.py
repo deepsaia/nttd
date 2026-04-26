@@ -75,6 +75,7 @@ class ValidateActionList(CodedTool):
             validated.append(action)
 
         validated = self._cap_orders_per_vehicle(validated, removed)
+        validated = self._cap_build_train(validated, removed)
         sly_data["action_list"] = validated
 
         return json.dumps({
@@ -98,6 +99,22 @@ class ValidateActionList(CodedTool):
                     if order_count[vid] > 2:
                         removed.append(f"excess add_order for vehicle {vid}")
                         continue
+            result.append(action)
+        return result
+
+    @staticmethod
+    def _cap_build_train(
+        actions: List[Dict[str, Any]], removed: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Allow at most 1 build_train per cycle."""
+        train_count = 0
+        result: List[Dict[str, Any]] = []
+        for action in actions:
+            if action.get("action_type") == "build_train":
+                train_count += 1
+                if train_count > 1:
+                    removed.append("excess build_train (max 1 per cycle)")
+                    continue
             result.append(action)
         return result
 

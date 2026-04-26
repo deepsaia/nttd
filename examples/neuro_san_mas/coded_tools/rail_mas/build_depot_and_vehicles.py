@@ -41,6 +41,18 @@ class BuildDepotAndVehicles(CodedTool):
                 "error": "Route already has a vehicle. Skipping (no signals, 1 train per route).",
             })
 
+        if obs and self._has_unassigned_vehicles(obs):
+            return json.dumps({
+                "success": False,
+                "error": "Unassigned vehicles exist (0 orders). Assign them before building more.",
+            })
+
+        if obs and self._has_enough_vehicles(obs):
+            return json.dumps({
+                "success": False,
+                "error": "Already have enough vehicles for existing station pairs.",
+            })
+
         wagon_id, cargo_id = self._auto_select_wagon(
             station_tile, caller_wagon_id, obs, sly_data,
         )
@@ -132,6 +144,22 @@ class BuildDepotAndVehicles(CodedTool):
             if abs(ex - sx) + abs(ey - sy) <= 20:
                 return True
         return False
+
+    @staticmethod
+    def _has_unassigned_vehicles(obs: Dict[str, Any]) -> bool:
+        """Return True if any vehicle has 0 orders (waiting for assignment)."""
+        for v in obs.get("vehicles", []):
+            if v.get("order_count", 0) == 0:
+                return True
+        return False
+
+    @staticmethod
+    def _has_enough_vehicles(obs: Dict[str, Any]) -> bool:
+        """Return True if vehicle count already covers all station pairs."""
+        num_stations = len(obs.get("stations", []))
+        num_vehicles = len(obs.get("vehicles", []))
+        max_routes = max(num_stations // 2, 1)
+        return num_vehicles >= max_routes
 
     def _auto_select_wagon(
         self,
