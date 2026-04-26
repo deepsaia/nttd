@@ -86,7 +86,9 @@ class FindUnservedRoutes(CodedTool):
             })
 
         active_routes = [r for r in obs.get("routes", []) if r.get("vehicle_count", 0) >= 1]
-        if len(active_routes) >= MAX_ACTIVE_ROUTES:
+        orphan_pair_count = orphan_count // 2
+        total_in_flight = len(active_routes) + orphan_pair_count
+        if total_in_flight >= MAX_ACTIVE_ROUTES:
             any_profitable = any(
                 r.get("profit_this_year", 0) > 0 or r.get("profit_last_year", 0) > 0
                 for r in active_routes
@@ -96,8 +98,9 @@ class FindUnservedRoutes(CodedTool):
                     "routes": [],
                     "town_routes": [],
                     "reason": (
-                        f"{len(active_routes)} active routes but none profitable yet. "
-                        "Wait for existing routes to generate revenue before expanding."
+                        f"{len(active_routes)} active routes + {orphan_pair_count} "
+                        f"in-progress (orphan stations), none profitable yet. "
+                        "Complete existing routes before expanding."
                     ),
                 })
 

@@ -210,6 +210,47 @@ class TestExpansionGate:
         assert len(result["routes"]) >= 1
 
 
+    def test_blocks_when_orphan_pairs_hit_limit(self) -> None:
+        import asyncio
+        tool = self._tool()
+        obs = self._obs_with_routes(
+            routes=[],
+            vehicles=[{"order_count": 2, "in_depot": False}],
+        )
+        obs["route_status"]["orphan_stations"] = 6
+        sly_data = {"observation": obs}
+        result = json.loads(asyncio.run(tool.async_invoke({}, sly_data)))
+        assert result["routes"] == []
+        assert "in-progress" in result.get("reason", "")
+
+    def test_blocks_when_active_plus_orphan_hit_limit(self) -> None:
+        import asyncio
+        tool = self._tool()
+        obs = self._obs_with_routes(
+            routes=[
+                {"vehicle_count": 1, "profit_this_year": -100, "profit_last_year": 0, "station_ids": [0, 1]},
+            ],
+        )
+        obs["route_status"]["orphan_stations"] = 4
+        sly_data = {"observation": obs}
+        result = json.loads(asyncio.run(tool.async_invoke({}, sly_data)))
+        assert result["routes"] == []
+        assert "in-progress" in result.get("reason", "")
+
+    def test_allows_when_total_in_flight_under_limit(self) -> None:
+        import asyncio
+        tool = self._tool()
+        obs = self._obs_with_routes(
+            routes=[
+                {"vehicle_count": 1, "profit_this_year": -100, "profit_last_year": 0, "station_ids": [0, 1]},
+            ],
+        )
+        obs["route_status"]["orphan_stations"] = 2
+        sly_data = {"observation": obs}
+        result = json.loads(asyncio.run(tool.async_invoke({}, sly_data)))
+        assert len(result["routes"]) >= 1
+
+
 class TestPerCycleLimit:
     """Tests that only 1 new route per cycle is allowed."""
 

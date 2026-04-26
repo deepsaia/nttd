@@ -113,10 +113,15 @@ async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
         config_settings.update(settings)
         settings = config_settings
 
+    meta: dict[str, str] = {}
+    if request.config_path:
+        meta["config_path"] = request.config_path
+
     await session_repo.create_session(
         session_id=session_id,
         name=name,
         status="pending",
+        meta=meta or None,
     )
 
     if settings:

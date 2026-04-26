@@ -132,23 +132,14 @@ def benchmark(
     # 2. Create session
     resp = requests.post(
         f"{url}/admin/sessions/new",
-        json={"name": f"benchmark_{cfg.name}", "settings": settings},
+        json={"name": f"benchmark_{cfg.name}", "settings": settings, "config_path": config},
         timeout=10,
     )
     resp.raise_for_status()
     session_id = resp.json()["session_id"]
     console.print(f"[green]Created session:[/] [cyan]{session_id}[/]")
 
-    # 3. Set end conditions
-    ec_payload = build_end_conditions_payload(cfg.end_conditions)
-    if len(ec_payload) > 1:
-        requests.post(
-            f"{url}/admin/sessions/{session_id}/end-conditions",
-            json=ec_payload,
-            timeout=10,
-        )
-
-    # 4. Start session (spawn OpenTTD)
+    # 3. Start session (spawn OpenTTD)
     with console.status("Starting OpenTTD server..."):
         resp = requests.post(
             f"{url}/admin/sessions/{session_id}/start",
@@ -165,6 +156,16 @@ def benchmark(
         f"[green]Server started:[/] game_port=[cyan]{start_data.get('game_port')}[/] "
         f"pid={start_data.get('pid')}"
     )
+
+    # 4. Set end conditions (must be after start -- runtime must exist)
+    ec_payload = build_end_conditions_payload(cfg.end_conditions)
+    if len(ec_payload) > 1:
+        resp = requests.post(
+            f"{url}/admin/sessions/{session_id}/end-conditions",
+            json=ec_payload,
+            timeout=10,
+        )
+        resp.raise_for_status()
 
     # 5. Set game speed
     if cfg.runtime.game_speed > 1:

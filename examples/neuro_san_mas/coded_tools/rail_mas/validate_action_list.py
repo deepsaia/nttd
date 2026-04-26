@@ -74,6 +74,7 @@ class ValidateActionList(CodedTool):
 
             validated.append(action)
 
+        validated = self._cap_orders_per_vehicle(validated, removed)
         sly_data["action_list"] = validated
 
         return json.dumps({
@@ -81,6 +82,24 @@ class ValidateActionList(CodedTool):
             "removed": removed,
             "total_before": len(action_list),
         })
+
+    @staticmethod
+    def _cap_orders_per_vehicle(
+        actions: List[Dict[str, Any]], removed: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Allow at most 2 add_order actions per vehicle."""
+        order_count: Dict[int, int] = {}
+        result: List[Dict[str, Any]] = []
+        for action in actions:
+            if action.get("action_type") == "add_order":
+                vid = action.get("parameters", {}).get("vehicle_id")
+                if vid is not None:
+                    order_count[vid] = order_count.get(vid, 0) + 1
+                    if order_count[vid] > 2:
+                        removed.append(f"excess add_order for vehicle {vid}")
+                        continue
+            result.append(action)
+        return result
 
     def _get_protected_vehicles(self, obs: Dict[str, Any]) -> Set[int]:
         """Return IDs of vehicles with 2+ orders that must not be disrupted."""

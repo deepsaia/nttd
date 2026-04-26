@@ -109,6 +109,8 @@ STEP 3: If there were failed actions from the previous cycle:
   - Call retry_failed_actions to queue retries with adjusted parameters.
 
 NEVER touch running trains (vehicles with 2+ orders). They are working.
+build_repair_actions will reject assignments if the station pair already has
+a running vehicle. If it returns an error, try a different station pair.
 Report: needs_depot_and_vehicle flag, repairs done, retries queued.
 """,
             "tools": ["check_vehicle_status", "pair_orphan_stations", "build_repair_actions", "retry_failed_actions"]
@@ -158,6 +160,7 @@ Call finance_advisor with estimated_cost. If cannot afford, stop.
 
 STEP 5: Call build_depot_and_vehicles with:
   - station_tile: use one of the orphan_station_tiles values
+  - dest_station_tile: use the OTHER orphan_station_tiles value from the pair
   - engine_id, num_wagons (wagon is auto-selected)
   It will skip routes that already have a vehicle (1 train per route,
   no signals yet).
@@ -419,6 +422,10 @@ Reuses existing depots when possible. Requires track to already exist.
                         "station_tile": {
                             "type": "int",
                             "description": "Tile ID of a station near which to search for a depot spot"
+                        },
+                        "dest_station_tile": {
+                            "type": "int",
+                            "description": "Tile ID of the other station in the pair (for duplicate-vehicle check and depot placement)"
                         },
                         "engine_id": {
                             "type": "int",

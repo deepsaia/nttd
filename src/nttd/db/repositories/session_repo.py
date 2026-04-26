@@ -29,6 +29,7 @@ async def create_session(
     game_start_date: int | None = None,
     game_port: int | None = None,
     admin_port: int | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> None:
     session_dir = _SESSIONS_DIR / session_id
     write_session_conf(
@@ -39,6 +40,7 @@ async def create_session(
         created_at=datetime.now(timezone.utc).isoformat(),
         game_port=game_port,
         admin_port=admin_port,
+        meta=meta,
     )
 
 

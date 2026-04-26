@@ -35,7 +35,7 @@ class BuildDepotAndVehicles(CodedTool):
 
         obs = get_observation(sly_data)
 
-        if obs and self._route_has_vehicle(station_tile, obs, sly_data):
+        if obs and self._route_has_vehicle(station_tile, dest_station_tile, obs, sly_data):
             return json.dumps({
                 "success": False,
                 "error": "Route already has a vehicle. Skipping (no signals, 1 train per route).",
@@ -103,26 +103,26 @@ class BuildDepotAndVehicles(CodedTool):
     def _route_has_vehicle(
         self,
         station_tile: int,
+        dest_station_tile: Optional[int],
         obs: Dict[str, Any],
         sly_data: Dict[str, Any],
     ) -> bool:
-        """Check if the route already has a vehicle, depot vehicle, or pending build."""
+        """Check if the route already has a vehicle or a pending build_train."""
+        src_sid = self._station_id_for_tile(station_tile, obs)
+        dst_sid = self._station_id_for_tile(dest_station_tile, obs) if dest_station_tile else None
+
+        for route in obs.get("routes", []):
+            if route.get("vehicle_count", 0) < 1:
+                continue
+            route_sids = set(route.get("station_ids", []))
+            if src_sid is not None and src_sid in route_sids:
+                return True
+            if dst_sid is not None and dst_sid in route_sids:
+                return True
+
         map_width = obs.get("map_size", {}).get("x", 256)
         sx = station_tile % map_width
         sy = station_tile // map_width
-
-        station_id = self._station_id_for_tile(station_tile, obs)
-        if station_id is not None:
-            for route in obs.get("routes", []):
-                if station_id in route.get("station_ids", []):
-                    if route.get("vehicle_count", 0) >= 1:
-                        return True
-
-        for v in obs.get("vehicles", []):
-            vx, vy = v.get("x", 0), v.get("y", 0)
-            if abs(vx - sx) + abs(vy - sy) <= 15:
-                return True
-
         for action in sly_data.get("action_list", []):
             if action.get("action_type") != "build_train":
                 continue

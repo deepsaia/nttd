@@ -119,9 +119,7 @@ def read_session_conf(session_dir: Path) -> dict[str, Any] | None:
         settings_raw = row.get("settings_json", "{}")
         result["settings"] = json.loads(settings_raw) if settings_raw else {}
         meta_raw = row.get("meta_json", "{}")
-        meta = json.loads(meta_raw) if meta_raw else {}
-        if meta:
-            result["meta"] = meta
+        result["meta"] = json.loads(meta_raw) if meta_raw else {}
         return result
     except Exception:
         logger.exception("Failed to read session.parquet at %s", parquet_path)

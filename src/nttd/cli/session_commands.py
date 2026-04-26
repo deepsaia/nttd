@@ -49,7 +49,7 @@ def session_create(
 
     resp = requests.post(
         f"{url}/admin/sessions/new",
-        json={"name": session_name, "settings": settings},
+        json={"name": session_name, "settings": settings, "config_path": config or ""},
         timeout=10,
     )
     resp.raise_for_status()
@@ -174,17 +174,21 @@ def session_list(
         console.print("[dim]No sessions found.[/]")
         return
 
-    table = Table("ID", "Name", "Status", "Game Port", "Created")
+    table = Table("ID", "Name", "Status", "Game Port", "Created", "Ended", "Config")
     for s in sessions:
         status = s.get("status", "?")
         running = s.get("running", False)
         status_str = f"[green]{status}[/]" if running else f"[dim]{status}[/]"
+        meta = s.get("meta", {}) or {}
+        config_path = meta.get("config_path", "")
         table.add_row(
             s.get("session_id", "?"),
             s.get("name", ""),
             status_str,
-            str(s.get("game_port") or "—"),
+            str(s.get("game_port") or ""),
             s.get("created_at", "")[:19],
+            s.get("ended_at", "")[:19],
+            config_path,
         )
     console.print(table)
 
