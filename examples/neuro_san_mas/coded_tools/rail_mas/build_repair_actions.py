@@ -21,6 +21,12 @@ class BuildRepairActions(CodedTool):
         src_sid: int = args["src_station_id"]
         dst_sid: int = args["dst_station_id"]
 
+        route_context = sly_data.get("route_context")
+        if route_context:
+            error = self._check_route_membership(vid, src_sid, dst_sid, route_context)
+            if error:
+                return json.dumps({"success": False, "error": error})
+
         obs = get_observation(sly_data)
         if obs:
             error = self._check_duplicate(vid, src_sid, dst_sid, obs)
@@ -48,6 +54,28 @@ class BuildRepairActions(CodedTool):
             "success": True,
             "message": f"Queued: add orders (stations {src_sid}, {dst_sid}) + start for vehicle {vid}",
         })
+
+    @staticmethod
+    def _check_route_membership(
+        vid: int, src_sid: int, dst_sid: int, route_context: Dict[str, Any],
+    ) -> str:
+        """Return error if vehicle's route doesn't match target stations."""
+        vehicle_to_route = route_context.get("vehicle_to_route", {})
+        route_to_stations = route_context.get("route_to_stations", {})
+
+        route_id = vehicle_to_route.get(vid)
+        if route_id is None:
+            return ""
+
+        route_stations = set(route_to_stations.get(route_id, []))
+        target_pair = {src_sid, dst_sid}
+        if not target_pair.issubset(route_stations):
+            return (
+                f"BLOCKED: vehicle {vid} belongs to route {route_id} "
+                f"(stations {sorted(route_stations)}), but assignment targets "
+                f"stations {sorted(target_pair)}. Wrong route."
+            )
+        return ""
 
     @staticmethod
     def _check_duplicate(

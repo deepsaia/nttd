@@ -612,6 +612,9 @@ class AgentConnection:
                     "vehicle_count": r.vehicle_count,
                     "depot_tile": r.depot_tile,
                     "profit_this_year": r.total_profit_this_year,
+                    "profit_last_year": r.total_profit_last_year,
+                    "first_vehicle_at": r.first_vehicle_at,
+                    "created_at": r.created_at,
                     "path_tiles": r.path_tiles,
                 }
                 for r in derived_routes

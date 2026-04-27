@@ -44,7 +44,7 @@ Actions are delivered automatically via sly_data.
 You are the rail coordinator. Every cycle, follow these steps in order:
 
 1. Call route_doctor to diagnose issues, add orders to incomplete vehicles,
-   and retry failed builds.
+   and retry failed builds. It will call route_manager for route context.
 2. Call route_completer to build depots and buy vehicles for routes that
    have stations and track but no vehicle yet.
 3. Call route_planner to select the next route and queue station + track
@@ -64,7 +64,7 @@ CRITICAL RULES:
                     "sly_data": ["action_list", "plan_summary"]
                 },
                 "from_downstream": {
-                    "sly_data": ["action_list", "plan_summary"]
+                    "sly_data": ["action_list", "plan_summary", "route_context"]
                 }
             },
             "tools": ["route_doctor", "route_completer", "route_planner", "action_validator", "company_status"]
@@ -95,27 +95,31 @@ action list in sly_data. Never touches running trains (2+ orders).
             "instructions": """
 You are the route doctor. You add orders to incomplete vehicles and retry failures.
 
-STEP 1: Call check_vehicle_status to see the current state.
-  It returns incomplete_vehicles, orphan_station_ids, and suggested_assignments.
+STEP 1: Call route_manager to assess route health and set route context.
+  It maps vehicles to their correct routes and flags stalled routes.
 
-STEP 2: If suggested_assignments is non-empty, use those directly.
+STEP 2: Call check_vehicle_status to see incomplete vehicles and assignments.
+  It uses route_context to produce authoritative suggested_assignments
+  mapping each vehicle to its correct route's stations.
+
+STEP 3: If suggested_assignments is non-empty, use those directly.
   Each assignment has {vehicle_id, src_station_id, dst_station_id}.
   For each: call build_repair_actions with those exact IDs.
   Do NOT override the assignments with your own proximity matching.
 
-STEP 3: If there are incomplete vehicles but no suggested_assignments,
+STEP 4: If there are incomplete vehicles but no suggested_assignments,
   call pair_orphan_stations with orphan_station_ids to find pairs,
   then call build_repair_actions for each vehicle-to-pair match.
 
-STEP 4: If there were failed actions from the previous cycle:
+STEP 5: If there were failed actions from the previous cycle:
   - Call retry_failed_actions to queue retries with adjusted parameters.
 
 NEVER touch running trains (vehicles with 2+ orders). They are working.
-build_repair_actions will reject assignments if the station pair already has
-a running vehicle. If it returns an error, skip that assignment.
-Report: needs_depot_and_vehicle flag, repairs done, retries queued.
+build_repair_actions will reject assignments if the vehicle's route doesn't
+match the target stations. If it returns an error, skip that assignment.
+Report: route health, repairs done, retries queued.
 """,
-            "tools": ["check_vehicle_status", "pair_orphan_stations", "build_repair_actions", "retry_failed_actions"]
+            "tools": ["route_manager", "check_vehicle_status", "pair_orphan_stations", "build_repair_actions", "retry_failed_actions"]
         },
 
         // ==================================================================
@@ -172,7 +176,7 @@ depots or trains. Each route gets exactly 1 train (no signals for passing).
 
 Report what you built and for which station pair.
 """,
-            "tools": ["check_vehicle_status", "pair_orphan_stations", "build_depot_and_vehicles", "get_engines", "finance_advisor", "find_rail_depot_spot"]
+            "tools": ["route_manager", "check_vehicle_status", "pair_orphan_stations", "build_depot_and_vehicles", "get_engines", "finance_advisor", "find_rail_depot_spot"]
         },
 
         // ==================================================================
@@ -232,7 +236,7 @@ validates spots via GS queries and ensures correct station directions.
 
 Report which route you selected and why.
 """,
-            "tools": ["find_unserved_routes", "build_route_actions", "get_engines", "finance_advisor", "find_station_spot", "get_rail_types"]
+            "tools": ["route_manager", "find_unserved_routes", "build_route_actions", "get_engines", "finance_advisor", "find_station_spot", "get_rail_types"]
         },
 
         // ==================================================================
@@ -311,6 +315,102 @@ Decision logic:
 Keep responses to 2-3 lines. The caller needs a quick go/no-go.
 """,
             "tools": ["check_finances", "set_loan_action"]
+        },
+
+        // ==================================================================
+        // LLM AGENT: route_manager
+        // Route health monitor. Shared diamond sub-agent available to
+        // route_doctor, route_completer, and route_planner.
+        // ==================================================================
+        {
+            "name": "route_manager",
+            "function": {
+                "description": """
+Route health monitor. Reads all route data, maps vehicles to their correct
+routes, computes health status (healthy/new/stalled), and flags stalled
+routes for dismantling. Writes route_context to sly_data for all downstream
+tools. Any agent needing route info should call this first.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "Optional context about what to check"
+                        }
+                    }
+                }
+            },
+            "instructions": """
+You are the route manager. You run first to provide route intelligence.
+
+STEP 1: Call read_route_health. It reads routes, vehicles, and stations
+from the observation and returns a health summary with vehicle-to-route
+mappings. It also writes route_context to sly_data for all downstream tools.
+
+STEP 2: Review the health summary:
+- "healthy" routes: no action needed.
+- "new" routes (< 200 game days old): no action, give them time.
+- "stalled" routes (no profit, > 200 days): recommend dismantling.
+- "incomplete" routes: need the doctor or completer.
+
+STEP 3: If there are stalled routes, call dismantle_route for EACH
+stalled route_id. This queues stop + send_to_depot + sell_vehicle
+for each vehicle on that route.
+
+CRITICAL: Only dismantle routes marked "stalled". Never dismantle
+"new" or "healthy" routes. Let new routes run for at least 200 days.
+
+Report: route health overview, unassigned vehicles, dismantles queued.
+""",
+            "tools": ["read_route_health", "dismantle_route"]
+        },
+
+        // ==================================================================
+        // CODED TOOLS: route_manager sub-tools
+        // ==================================================================
+        {
+            "name": "read_route_health",
+            "function": {
+                "description": """
+Reads all route, vehicle, and station data from the observation. Computes
+per-route health (healthy/new/stalled/incomplete), maps vehicles to their
+routes using authoritative route registry data, identifies unassigned
+vehicles and their correct routes. Writes sly_data['route_context'] for
+all downstream tools. Also initializes sly_data action_list.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "request": {
+                            "type": "string",
+                            "description": "Optional (reads observation directly)"
+                        }
+                    }
+                }
+            },
+            "class": "rail_mas.read_route_health.ReadRouteHealth"
+        },
+        {
+            "name": "dismantle_route",
+            "function": {
+                "description": """
+Dismantles a stalled route: queues stop_vehicle, send_to_depot, and
+sell_vehicle actions for each vehicle on the route. The vehicle sale
+may need a follow-up cycle if the vehicle hasn't reached the depot yet.
+""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "route_id": {
+                            "type": "string",
+                            "description": "Route ID to dismantle (from read_route_health)"
+                        }
+                    },
+                    "required": ["route_id"]
+                }
+            },
+            "class": "rail_mas.dismantle_route.DismantleRoute"
         },
 
         // ==================================================================
@@ -571,8 +671,9 @@ The loan action must execute before any spending actions.
             "function": {
                 "description": """
 Deduplicates the action list, filters unknown action types, and blocks
-disruptive actions (send_to_depot, remove_order) against running trains
-(vehicles with 2+ orders). Writes validated list back to sly_data.
+disruptive actions (send_to_depot, sell_vehicle) against running trains
+unless flagged for dismantling by route_manager. Writes validated list
+back to sly_data.
 """,
                 "parameters": {
                     "type": "object",

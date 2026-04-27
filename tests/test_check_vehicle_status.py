@@ -148,3 +148,54 @@ class TestMatchVehiclesToOrphans:
         )
         assert len(result) == 1
         assert result[0]["vehicle_id"] == 20
+
+
+class TestAssignmentsFromRouteContext:
+    def test_uses_correct_stations_from_context(self) -> None:
+        route_context = {
+            "unassigned_vehicles": [
+                {"id": 18, "correct_route_id": "rt_bbb", "correct_stations": [2, 3]},
+            ],
+        }
+        incomplete = [{"id": 18, "order_count": 0}]
+        result = CheckVehicleStatus._assignments_from_route_context(route_context, incomplete)
+        assert len(result) == 1
+        assert result[0] == {"vehicle_id": 18, "src_station_id": 2, "dst_station_id": 3}
+
+    def test_skips_vehicles_not_in_incomplete(self) -> None:
+        route_context = {
+            "unassigned_vehicles": [
+                {"id": 18, "correct_route_id": "rt_bbb", "correct_stations": [2, 3]},
+            ],
+        }
+        incomplete = [{"id": 99, "order_count": 0}]
+        result = CheckVehicleStatus._assignments_from_route_context(route_context, incomplete)
+        assert result == []
+
+    def test_skips_vehicles_without_correct_stations(self) -> None:
+        route_context = {
+            "unassigned_vehicles": [
+                {"id": 18, "correct_route_id": None, "correct_stations": []},
+            ],
+        }
+        incomplete = [{"id": 18, "order_count": 0}]
+        result = CheckVehicleStatus._assignments_from_route_context(route_context, incomplete)
+        assert result == []
+
+    def test_multiple_assignments(self) -> None:
+        route_context = {
+            "unassigned_vehicles": [
+                {"id": 18, "correct_route_id": "rt_a", "correct_stations": [0, 1]},
+                {"id": 23, "correct_route_id": "rt_b", "correct_stations": [2, 3]},
+            ],
+        }
+        incomplete = [
+            {"id": 18, "order_count": 0},
+            {"id": 23, "order_count": 0},
+        ]
+        result = CheckVehicleStatus._assignments_from_route_context(route_context, incomplete)
+        assert len(result) == 2
+        assert result[0]["vehicle_id"] == 18
+        assert result[0]["src_station_id"] == 0
+        assert result[1]["vehicle_id"] == 23
+        assert result[1]["src_station_id"] == 2

@@ -24,6 +24,10 @@ RAIL_ACTIONS: Set[str] = {
     "start_vehicle",
     "clone_vehicle",
     "refit_vehicle",
+    "send_to_depot",
+    "stop_vehicle",
+    "remove_order",
+    "sell_vehicle",
 }
 
 DISRUPTIVE_ACTIONS: Set[str] = {
@@ -64,7 +68,8 @@ class ValidateActionList(CodedTool):
 
             if action_type in DISRUPTIVE_ACTIONS:
                 vid = params.get("vehicle_id")
-                if vid in protected_vehicle_ids:
+                dismantle_ids = self._get_dismantle_ids(sly_data)
+                if vid in protected_vehicle_ids and vid not in dismantle_ids:
                     removed.append(f"{action_type} blocked for running vehicle {vid}")
                     continue
 
@@ -117,6 +122,12 @@ class ValidateActionList(CodedTool):
                     continue
             result.append(action)
         return result
+
+    @staticmethod
+    def _get_dismantle_ids(sly_data: Dict[str, Any]) -> Set[int]:
+        """Return vehicle IDs flagged for dismantling by route_manager."""
+        route_context = sly_data.get("route_context", {})
+        return set(route_context.get("dismantle_vehicle_ids", []))
 
     def _get_protected_vehicles(self, obs: Dict[str, Any]) -> Set[int]:
         """Return IDs of vehicles with 2+ orders that must not be disrupted."""

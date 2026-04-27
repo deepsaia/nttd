@@ -26,7 +26,13 @@ class CheckVehicleStatus(CodedTool):
         route_status: Dict[str, Any] = obs.get("route_status", {})
         previous_actions: List[Dict[str, Any]] = obs.get("previous_actions", [])
 
-        incomplete = [v for v in vehicles if v.get("order_count", 0) < 2]
+        dismantle_ids: Set[int] = set(
+            sly_data.get("route_context", {}).get("dismantle_vehicle_ids", [])
+        )
+        incomplete = [
+            v for v in vehicles
+            if v.get("order_count", 0) < 2 and v.get("id") not in dismantle_ids
+        ]
         orphan_ids = route_status.get("orphan_station_ids", [])
 
         failed_actions = [
@@ -47,9 +53,13 @@ class CheckVehicleStatus(CodedTool):
                     if tile > 0:
                         station_tiles[sid] = tile
 
-        assignments = self._match_vehicles_to_orphans(
-            incomplete, orphan_ids, obs.get("stations", []), served_sids,
-        )
+        route_context = sly_data.get("route_context")
+        if route_context and route_context.get("unassigned_vehicles"):
+            assignments = self._assignments_from_route_context(route_context, incomplete)
+        else:
+            assignments = self._match_vehicles_to_orphans(
+                incomplete, orphan_ids, obs.get("stations", []), served_sids,
+            )
 
         sly_data["action_list"] = sly_data.get("action_list", [])
 
@@ -68,6 +78,27 @@ class CheckVehicleStatus(CodedTool):
             "running_vehicles": len(vehicles) - len(incomplete),
             "failed_actions": failed_actions,
         })
+
+    @staticmethod
+    def _assignments_from_route_context(
+        route_context: Dict[str, Any],
+        incomplete: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build assignments from authoritative route_context vehicle-to-route mapping."""
+        incomplete_ids = {v.get("id") for v in incomplete}
+        assignments: List[Dict[str, Any]] = []
+        for entry in route_context.get("unassigned_vehicles", []):
+            vid = entry.get("id")
+            if vid not in incomplete_ids:
+                continue
+            stations = entry.get("correct_stations", [])
+            if len(stations) >= 2:
+                assignments.append({
+                    "vehicle_id": vid,
+                    "src_station_id": stations[0],
+                    "dst_station_id": stations[1],
+                })
+        return assignments
 
     @staticmethod
     def _served_station_ids(obs: Dict[str, Any]) -> Set[int]:

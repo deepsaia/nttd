@@ -127,3 +127,38 @@ class TestDuplicateGuard:
         )))
         assert result["success"] is True
         assert len(sly_data["action_list"]) == 3
+
+
+class TestRouteMembership:
+    def test_blocks_wrong_route_assignment(self) -> None:
+        route_context = {
+            "vehicle_to_route": {18: "rt_bbb"},
+            "route_to_stations": {"rt_bbb": [2, 3]},
+        }
+        error = BuildRepairActions._check_route_membership(18, 0, 1, route_context)
+        assert "BLOCKED" in error
+        assert "rt_bbb" in error
+
+    def test_allows_correct_route_assignment(self) -> None:
+        route_context = {
+            "vehicle_to_route": {18: "rt_bbb"},
+            "route_to_stations": {"rt_bbb": [2, 3]},
+        }
+        error = BuildRepairActions._check_route_membership(18, 2, 3, route_context)
+        assert error == ""
+
+    def test_allows_unknown_vehicle(self) -> None:
+        route_context = {
+            "vehicle_to_route": {},
+            "route_to_stations": {},
+        }
+        error = BuildRepairActions._check_route_membership(99, 0, 1, route_context)
+        assert error == ""
+
+    def test_blocks_partial_station_overlap(self) -> None:
+        route_context = {
+            "vehicle_to_route": {18: "rt_a"},
+            "route_to_stations": {"rt_a": [0, 1]},
+        }
+        error = BuildRepairActions._check_route_membership(18, 0, 5, route_context)
+        assert "BLOCKED" in error
