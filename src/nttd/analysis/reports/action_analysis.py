@@ -10,7 +10,7 @@ from nttd.analysis.plots import (
     action_type_distribution,
     actions_per_cycle_scatter,
 )
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _compute_action_stats(s: SessionData) -> dict:
@@ -68,8 +68,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"actions": stats}
     md_lines: list[str] = ["# Action Analysis\n"]
 
-    for st in stats:
-        md_lines.append(f"## {st['session_id']} ({st['model']})")
+    for s, st in zip(sessions, stats):
+        md_lines.append(session_header(s))
         if not st["has_data"]:
             md_lines.append("- No action data available\n")
             continue

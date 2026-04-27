@@ -367,7 +367,7 @@ class TestRenderer:
         assert md_path.exists()
         content = md_path.read_text()
         assert "Session Summary" in content
-        assert "test-session" in content
+        assert "ses_test123" in content
 
     def test_render_json(self, session_dir: Path, tmp_path: Path) -> None:
         s = load_session("ses_test123", sessions_dir=session_dir.parent)

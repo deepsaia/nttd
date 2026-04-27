@@ -8,7 +8,7 @@ import polars as pl
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import actions_per_agent_bar, agent_spending_proxy
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 _BUILD_ACTIONS = {
     "connect_road", "build_road_depot", "build_road_stop",
@@ -60,8 +60,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"infrastructure": stats}
     md_lines: list[str] = ["# Infrastructure Report\n"]
 
-    for st in stats:
-        md_lines.append(f"## {st['session_id']} ({st['model']})")
+    for s, st in zip(sessions, stats):
+        md_lines.append(session_header(s))
         if not st["has_data"]:
             md_lines.append("- No action data available\n")
             continue

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from nttd.analysis.loader import SessionData
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _classify_type(st: dict) -> str:
@@ -99,8 +99,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"stations": all_data}
     md_lines: list[str] = ["# Stations Report\n"]
 
-    for sd in all_data:
-        md_lines.append(f"## {sd['session_id']} ({sd['model']})")
+    for s, sd in zip(sessions, all_data):
+        md_lines.append(session_header(s))
         if not sd["has_data"]:
             md_lines.append("- No station data available\n")
             continue

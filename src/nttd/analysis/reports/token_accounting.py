@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import token_usage_by_agent, tokens_over_time
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _extract_agent_id(connection_id: str) -> str:
@@ -48,7 +48,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
             continue
         has_token_data = True
 
-        md_lines.append(f"## {s.name} ({s.model})\n")
+        md_lines.append(session_header(s) + "\n")
 
         for group in df.partition_by("connection_id"):
             conn_id = str(group["connection_id"][0])

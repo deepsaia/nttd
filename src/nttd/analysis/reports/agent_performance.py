@@ -9,7 +9,7 @@ from nttd.analysis.plots import (
     cycle_decide_over_time,
     cycle_timing_boxplots,
 )
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, agent_header, register
 
 
 def _stats_from_cycles(session: SessionData) -> dict[str, dict]:
@@ -81,7 +81,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
             }
             data["agents"].append(agent_data)
 
-            md_lines.append(f"## {agent_id} ({s.model})")
+            md_lines.append(agent_header(s, agent_id))
             md_lines.append(f"- **Actions**: {total} total, {ok} ok, {failed} failed ({rate}%)")
             cycles_str = f"- **Cycles**: {total_cycles}"
             if idle:

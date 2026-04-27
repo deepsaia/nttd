@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 import polars as pl
 
 from nttd.analysis.loader import SessionData
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 from nttd.schemas.industry import Industry, IndustryAcceptance, IndustryProduction
 from nttd.schemas.route import Route
 from nttd.schemas.station import Station
@@ -208,12 +208,15 @@ def _compute_distances(s: SessionData) -> dict[str, Any]:
     }
 
 
-def _format_markdown(stats: list[dict[str, Any]]) -> str:
+def _format_markdown(
+    stats: list[dict[str, Any]],
+    sessions: list[SessionData],
+) -> str:
     """Render cargo distance data as markdown."""
     lines: list[str] = ["# Cargo Distances Report\n"]
 
-    for st in stats:
-        lines.append(f"## {st['session_id']} ({st['model']})")
+    for s, st in zip(sessions, stats):
+        lines.append(session_header(s))
         if not st["has_data"]:
             lines.append("- No snapshot data available\n")
             continue
@@ -306,7 +309,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     """Produce cargo chain distance matrix and town pair distances."""
     stats = [_compute_distances(s) for s in sessions]
     data = {"cargo_distances": stats}
-    markdown = _format_markdown(stats)
+    markdown = _format_markdown(stats, sessions)
     figures = [("cargo_route_distances", _build_figure(stats))]
 
     return ReportResult(

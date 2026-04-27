@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import polars as pl
 
 from nttd.analysis.loader import SessionData
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 from nttd.analysis.reports.terrain_palette import (
     COLOR_AIR,
     COLOR_INDUSTRY,
@@ -153,7 +153,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
 
     for s in sessions:
         if s.tiles.is_empty():
-            md_lines.append(f"## {s.session_id} ({s.model})")
+            md_lines.append(session_header(s))
             md_lines.append("- No tile data available\n")
             data["maps"].append({
                 "session_id": s.session_id,
@@ -182,7 +182,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
         }
         data["maps"].append(map_data)
 
-        md_lines.append(f"## {s.session_id} ({s.model})")
+        md_lines.append(session_header(s))
         md_lines.append(f"- **Map size**: {map_data['map_size']}")
         md_lines.append(f"- **Total tiles**: {map_data['total_tiles']:,}")
         md_lines.append(f"- **Water**: {map_data['water_tiles']:,} ({map_data['water_pct']}%)")

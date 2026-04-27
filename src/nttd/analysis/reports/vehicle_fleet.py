@@ -6,7 +6,7 @@ import json
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import entity_growth_timeseries
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _extract_vehicle_roster(s: SessionData) -> dict:
@@ -53,8 +53,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"fleets": rosters}
     md_lines: list[str] = ["# Vehicle Fleet Report\n"]
 
-    for r in rosters:
-        md_lines.append(f"## {r['session_id']} ({r['model']})")
+    for s, r in zip(sessions, rosters):
+        md_lines.append(session_header(s))
         if not r["has_data"]:
             md_lines.append("- No vehicle data available\n")
             continue

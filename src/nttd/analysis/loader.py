@@ -39,6 +39,7 @@ class SessionData:
     game_port: int = 0
     admin_port: int = 0
     settings: dict[str, str] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     # From agents.conf
     agents: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -49,6 +50,14 @@ class SessionData:
     events: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     snapshots: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     tiles: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
+
+    @property
+    def config_name(self) -> str:
+        """Scenario config name (filename stem from meta.config_path)."""
+        cp = self.meta.get("config_path", "")
+        if cp:
+            return Path(cp).stem
+        return ""
 
     @property
     def model(self) -> str:
@@ -144,6 +153,7 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
         data.game_port = sess.get("game_port", 0)
         data.admin_port = sess.get("admin_port", 0)
         data.settings = sess.get("settings", {})
+        data.meta = sess.get("meta", {})
 
     # Load agent data (parquet preferred, .conf fallback)
     data.agents = read_agents_conf(session_dir)

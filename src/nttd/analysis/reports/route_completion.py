@@ -9,7 +9,7 @@ from typing import Any
 import polars as pl
 
 from nttd.analysis.loader import SessionData
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 # Action categories for funnel analysis
 _INFRA_ACTIONS = {
@@ -155,12 +155,15 @@ def _compute_session_data(s: SessionData) -> dict[str, Any]:
     }
 
 
-def _format_markdown(stats: list[dict[str, Any]]) -> str:
+def _format_markdown(
+    stats: list[dict[str, Any]],
+    sessions: list[SessionData],
+) -> str:
     """Render route completion stats as markdown."""
     lines: list[str] = ["# Route Completion Report\n"]
 
-    for st in stats:
-        lines.append(f"## {st['session_id']} ({st['model']})")
+    for s, st in zip(sessions, stats):
+        lines.append(session_header(s))
         if not st["has_data"]:
             lines.append("- No action data available\n")
             continue
@@ -224,7 +227,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     """Produce route completion funnel analysis per agent."""
     stats = [_compute_session_data(s) for s in sessions]
     data = {"route_completion": stats}
-    markdown = _format_markdown(stats)
+    markdown = _format_markdown(stats, sessions)
 
     return ReportResult(
         name="route_completion",

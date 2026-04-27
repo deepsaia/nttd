@@ -6,7 +6,7 @@ import json
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import transport_mode_finances
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _extract_cargo_stats(s: SessionData) -> dict:
@@ -137,8 +137,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"cargo": stats}
     md_lines: list[str] = ["# Cargo & Transport Report\n"]
 
-    for st in stats:
-        md_lines.append(f"## {st['session_id']} ({st['model']})")
+    for s, st in zip(sessions, stats):
+        md_lines.append(session_header(s))
         if not st["has_data"]:
             md_lines.append("- No vehicle data available\n")
             continue

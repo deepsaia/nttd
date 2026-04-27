@@ -5,7 +5,7 @@ from __future__ import annotations
 from nttd.analysis.date_utils import game_date_to_str
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import events_timeline
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 @register("events_timeline")
@@ -16,14 +16,14 @@ def generate(sessions: list[SessionData]) -> ReportResult:
 
     for s in sessions:
         if s.events.is_empty():
-            md_lines.append(f"## {s.session_id} ({s.model})")
+            md_lines.append(session_header(s))
             md_lines.append("- No events recorded\n")
             continue
 
         events_sorted = s.events.sort("game_date")
         session_events: list[dict] = []
 
-        md_lines.append(f"## {s.session_id} ({s.model})")
+        md_lines.append(session_header(s))
         md_lines.append(f"- **Total events**: {len(events_sorted)}\n")
         md_lines.append("| Date | Type | Company | Detail |")
         md_lines.append("|------|------|--------:|--------|")

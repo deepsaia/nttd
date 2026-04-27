@@ -19,7 +19,7 @@ from nttd.analysis.reports.cargo_distances import (
     _parse_snapshot_entities,
     _water_tiles_from_parquet,
 )
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 from nttd.state.route_planner import RoutePlanner
 
 logger = logging.getLogger(__name__)
@@ -116,12 +116,15 @@ def _compute_cargo_routes(s: SessionData) -> dict[str, Any]:
     }
 
 
-def _format_markdown(stats: list[dict[str, Any]]) -> str:
+def _format_markdown(
+    stats: list[dict[str, Any]],
+    sessions: list[SessionData],
+) -> str:
     """Render cargo route matrices as markdown."""
     lines: list[str] = ["# Cargo Routes Report\n"]
 
-    for st in stats:
-        lines.append(f"## {st['session_id']} ({st['model']})")
+    for s, st in zip(sessions, stats):
+        lines.append(session_header(s))
         if not st["has_data"]:
             lines.append("- No snapshot data available\n")
             continue
@@ -221,7 +224,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     """Produce per-cargo route matrix with revenue potential ranking."""
     stats = [_compute_cargo_routes(s) for s in sessions]
     data = {"cargo_routes": stats}
-    markdown = _format_markdown(stats)
+    markdown = _format_markdown(stats, sessions)
     figures = [("cargo_revenue_potential", _build_figure(stats))]
 
     return ReportResult(

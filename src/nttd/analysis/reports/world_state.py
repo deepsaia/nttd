@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from nttd.analysis.loader import SessionData
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _extract_world_state(s: SessionData) -> dict:
@@ -84,8 +84,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"world": states}
     md_lines: list[str] = ["# World State Report\n"]
 
-    for st in states:
-        md_lines.append(f"## {st['session_id']} ({st['model']})")
+    for s, st in zip(sessions, states):
+        md_lines.append(session_header(s))
         if not st["has_data"]:
             md_lines.append("- No snapshot data available\n")
             continue

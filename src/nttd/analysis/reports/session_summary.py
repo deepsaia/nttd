@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import session_overview_table
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 @register("session_summary")
@@ -40,7 +40,7 @@ def generate(sessions: list[SessionData]) -> ReportResult:
         dur_m, dur_s = divmod(dur_rem, 60)
         dur_str = f"{dur_h:02d}:{dur_m:02d}:{dur_s:02d}"
 
-        md_lines.append(f"## {s.name} ({s.model})")
+        md_lines.append(session_header(s))
         rows = [
             ("Status", status_label),
             ("Duration (hh:mm:ss)", dur_str),

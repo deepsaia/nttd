@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import company_finances_timeseries, company_loan_balance
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _compute_finance_summary(s: SessionData) -> dict:
@@ -73,13 +73,13 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"companies": summaries}
     md_lines: list[str] = ["# Financial Report\n"]
 
-    for summary in summaries:
+    for s, summary in zip(sessions, summaries):
         if not summary["has_data"]:
-            md_lines.append(f"## {summary['session_id']} ({summary['model']})")
+            md_lines.append(session_header(s))
             md_lines.append("- No snapshot data available\n")
             continue
 
-        md_lines.append(f"## {summary['session_id']} ({summary['model']})")
+        md_lines.append(session_header(s))
         md_lines.append(f"- **Game days elapsed**: {summary['game_days_elapsed']}")
         init = summary["initial_balance"]
         final = summary["final_balance"]

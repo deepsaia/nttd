@@ -7,7 +7,7 @@ import json
 import polars as pl
 
 from nttd.analysis.loader import SessionData
-from nttd.analysis.reports.registry import ReportResult, register
+from nttd.analysis.reports.registry import ReportResult, register, session_header
 
 
 def _extract_orders_data(s: SessionData) -> dict:
@@ -119,8 +119,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     data = {"orders": all_data}
     md_lines: list[str] = ["# Orders & Routes Report\n"]
 
-    for od in all_data:
-        md_lines.append(f"## {od['session_id']} ({od['model']})")
+    for s, od in zip(sessions, all_data):
+        md_lines.append(session_header(s))
         if not od["has_data"]:
             md_lines.append("- No snapshot data available\n")
             continue

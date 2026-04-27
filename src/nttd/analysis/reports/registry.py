@@ -87,6 +87,40 @@ def ensure_reports_loaded() -> None:
     )
 
 
+def session_header(session: SessionData) -> str:
+    """Build a consistent markdown sub-header for a session.
+
+    Format: ## session_id  |  config_name  |  model
+    """
+    parts = [str(session.session_id)]
+    config = str(getattr(session, "config_name", "") or "")
+    if config:
+        parts.append(config)
+    parts.append(str(session.model))
+    return "## " + "  |  ".join(parts)
+
+
+def agent_header(session: SessionData, agent_id: str) -> str:
+    """Build a consistent markdown sub-header for an agent within a session.
+
+    Format: ## session_id  |  config_name  |  agent_id (provider+model)
+    """
+    agents = getattr(session, "agents", {})
+    if not isinstance(agents, dict):
+        agents = {}
+    agent_info = agents.get(agent_id, {})
+    model = str(agent_info.get("model", session.model))
+    framework = str(agent_info.get("nttd_framework", ""))
+    model_str = f"{framework}+{model}" if framework else model
+
+    parts = [str(session.session_id)]
+    config = str(getattr(session, "config_name", "") or "")
+    if config:
+        parts.append(config)
+    parts.append(f"{agent_id} ({model_str})")
+    return "## " + "  |  ".join(parts)
+
+
 def _period_context(sessions: list[SessionData]) -> dict[str, Any]:
     """Extract game-date period and wall-clock duration from sessions."""
     date_from: int | None = None
