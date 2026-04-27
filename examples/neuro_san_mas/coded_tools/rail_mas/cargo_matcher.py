@@ -56,9 +56,14 @@ class CargoMatcher:
             for cw in s.get("cargo_waiting", []):
                 if cw.get("waiting", 0) > 0:
                     return cw.get("cargo_label")
-            for ca in s.get("cargo_acceptance", []):
-                if ca.get("accepts"):
-                    return ca.get("cargo_label")
+            accepted = [
+                ca.get("cargo_label") for ca in s.get("cargo_acceptance", [])
+                if ca.get("accepts")
+            ]
+            if "PASS" in accepted:
+                return "PASS"
+            if accepted:
+                return accepted[0]
         return None
 
     @staticmethod

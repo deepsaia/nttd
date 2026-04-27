@@ -644,8 +644,10 @@ class AgentConnection:
                 if allowed_vtypes and v.type not in allowed_vtypes:
                     continue
                 for o in v.orders:
-                    if o.is_goto_station and o.destination in station_ids_in_obs:
-                        stations_with_vehicles.add(o.destination)
+                    if o.is_goto_station:
+                        sid = world.tile_to_station_id(o.destination)
+                        if sid is not None and sid in station_ids_in_obs:
+                            stations_with_vehicles.add(sid)
             orphan_ids = sorted(station_ids_in_obs - stations_with_vehicles)
             if station_ids_in_obs:
                 orphan_station_tiles: dict[int, int] = {}

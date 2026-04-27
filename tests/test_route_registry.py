@@ -19,12 +19,25 @@ def stations() -> dict[int, Station]:
     }
 
 
+def _station_tile(stations: dict[int, Station], sid: int, map_width: int = 256) -> int:
+    s = stations[sid]
+    return s.y * map_width + s.x
+
+
 def _make_vehicle(
-    vid: int, company_id: int, station_ids: list[int], vtype: str = "train",
+    vid: int,
+    company_id: int,
+    station_ids: list[int],
+    stations: dict[int, Station] | None = None,
+    vtype: str = "train",
 ) -> Vehicle:
+    dests = [
+        _station_tile(stations, sid) if stations else sid
+        for sid in station_ids
+    ]
     orders = [
-        Order(index=i, destination=sid, is_goto_station=True)
-        for i, sid in enumerate(station_ids)
+        Order(index=i, destination=dest, is_goto_station=True)
+        for i, dest in enumerate(dests)
     ]
     return Vehicle(
         id=vid, type=vtype, company_id=company_id,
@@ -63,8 +76,8 @@ class TestReconcile:
     def test_creates_route_from_vehicles(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         vehicles = {
-            1: _make_vehicle(1, 0, [10, 20]),
-            2: _make_vehicle(2, 0, [10, 20]),
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 0, [10, 20], stations=stations),
         }
         routes = registry.reconcile(vehicles, stations, game_date=100)
         assert len(routes) == 1
@@ -77,7 +90,7 @@ class TestReconcile:
 
     def test_stable_id_across_reconcile(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        v = {1: _make_vehicle(1, 0, [10, 20])}
+        v = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
         routes1 = registry.reconcile(v, stations, game_date=100)
         routes2 = registry.reconcile(v, stations, game_date=200)
         assert routes1[0].route_id == routes2[0].route_id
@@ -85,8 +98,8 @@ class TestReconcile:
     def test_multiple_routes(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         vehicles = {
-            1: _make_vehicle(1, 0, [10, 20]),
-            2: _make_vehicle(2, 0, [20, 30]),
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 0, [20, 30], stations=stations),
         }
         routes = registry.reconcile(vehicles, stations, game_date=100)
         assert len(routes) == 2
@@ -95,7 +108,7 @@ class TestReconcile:
 
     def test_vehicle_removed_degrades_route(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        vehicles = {1: _make_vehicle(1, 0, [10, 20])}
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
         registry.reconcile(vehicles, stations, game_date=100)
 
         routes = registry.reconcile({}, stations, game_date=200)
@@ -109,7 +122,7 @@ class TestReconcile:
             10: Station(id=10, x=50, y=60),
             20: Station(id=20, x=80, y=90),
         }
-        vehicles = {1: _make_vehicle(1, 0, [10, 20])}
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations_full)}
         registry.reconcile(vehicles, stations_full, game_date=100)
 
         stations_partial: dict[int, Station] = {10: Station(id=10, x=50, y=60)}
@@ -118,9 +131,9 @@ class TestReconcile:
 
     def test_profit_aggregation(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        v1 = _make_vehicle(1, 0, [10, 20])
+        v1 = _make_vehicle(1, 0, [10, 20], stations=stations)
         v1.profit_this_year = 500
-        v2 = _make_vehicle(2, 0, [10, 20])
+        v2 = _make_vehicle(2, 0, [10, 20], stations=stations)
         v2.profit_this_year = 300
         routes = registry.reconcile({1: v1, 2: v2}, stations, game_date=100)
         assert routes[0].total_profit_this_year == 800
@@ -227,7 +240,7 @@ class TestOnActionResult:
 class TestLookups:
     def test_route_for_vehicle(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        vehicles = {1: _make_vehicle(1, 0, [10, 20])}
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
         registry.reconcile(vehicles, stations, game_date=100)
 
         route = registry.route_for_vehicle(1)
@@ -239,8 +252,8 @@ class TestLookups:
     def test_routes_for_station(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         vehicles = {
-            1: _make_vehicle(1, 0, [10, 20]),
-            2: _make_vehicle(2, 0, [20, 30]),
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 0, [20, 30], stations=stations),
         }
         registry.reconcile(vehicles, stations, game_date=100)
 
@@ -262,8 +275,8 @@ class TestLookups:
     def test_get_routes_by_company(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         vehicles = {
-            1: _make_vehicle(1, 0, [10, 20]),
-            2: _make_vehicle(2, 1, [20, 30]),
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 1, [20, 30], stations=stations),
         }
         registry.reconcile(vehicles, stations, game_date=100)
 

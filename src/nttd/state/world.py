@@ -219,10 +219,19 @@ class WorldState:
         logger.debug("WorldState: refreshed %d vehicles for company %d (removed %d stale)",
                       len(seen), company_id, len(stale))
 
+    def tile_to_station_id(self, tile: int) -> int | None:
+        """Convert a tile index (from GSOrder.GetOrderDestination) to a station ID."""
+        map_w = self.game.map_width or 256
+        for sid, station in self.stations.items():
+            if station.y * map_w + station.x == tile:
+                return sid
+        return None
+
     def _derive_routes(self) -> list[Route]:
         """Reconcile route registry and return all active routes with stable IDs."""
         return self.route_registry.reconcile(
             self.vehicles, self.stations, self.game.game_date,
+            map_width=self.game.map_width or 256,
         )
 
     def apply_gs_companies(self, results: list[dict[str, Any]]) -> None:

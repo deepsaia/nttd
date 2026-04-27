@@ -98,4 +98,11 @@ class PairOrphanStations(CodedTool):
             for cw in s.get("cargo_waiting", []):
                 if cw.get("waiting", 0) > 0 and cw.get("cargo_label"):
                     return cw["cargo_label"]
+        for s in (s1, s2):
+            accepted = [
+                ca.get("cargo_label") for ca in s.get("cargo_acceptance", [])
+                if ca.get("accepts")
+            ]
+            if "PASS" in accepted:
+                return "PASS"
         return ""

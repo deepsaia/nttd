@@ -22,19 +22,30 @@ class RouteRegistry:
 
     def __init__(self) -> None:
         self._routes: dict[str, Route] = {}
+        self._map_width: int = 256
 
     def reconcile(
         self,
         vehicles: dict[int, Vehicle],
         stations: dict[int, Station],
         game_date: int,
+        map_width: int = 256,
     ) -> list[Route]:
         """Reconcile registry with live vehicle/station data. Returns all routes."""
+        self._map_width = map_width
         active_route_ids: set[str] = set()
+
+        tile_to_sid: dict[int, int] = {}
+        for sid, s in stations.items():
+            tile_to_sid[s.y * map_width + s.x] = sid
 
         vehicle_groups: dict[tuple[int, str, tuple[int, ...]], list[Vehicle]] = {}
         for v in vehicles.values():
-            sids = tuple(o.destination for o in v.orders if o.is_goto_station)
+            sids = tuple(
+                tile_to_sid[o.destination]
+                for o in v.orders
+                if o.is_goto_station and o.destination in tile_to_sid
+            )
             if not sids:
                 continue
             key = (v.company_id, v.type, sids)
@@ -192,7 +203,7 @@ class RouteRegistry:
                 station = stations.get(sid)
                 if station is None:
                     continue
-                map_width = 256
+                map_width = self._map_width
                 tx = tile % map_width
                 ty = tile // map_width
                 dist = abs(station.x - tx) + abs(station.y - ty)
