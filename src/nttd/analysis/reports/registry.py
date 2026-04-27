@@ -88,7 +88,7 @@ def ensure_reports_loaded() -> None:
 
 
 def _period_context(sessions: list[SessionData]) -> dict[str, Any]:
-    """Extract game-date period from sessions for report headers."""
+    """Extract game-date period and wall-clock duration from sessions."""
     date_from: int | None = None
     date_to: int | None = None
     for s in sessions:
@@ -102,12 +102,24 @@ def _period_context(sessions: list[SessionData]) -> dict[str, Any]:
     if date_from is None or date_to is None:
         return {}
 
+    total_minutes = sum(s.duration_minutes for s in sessions)
+    if total_minutes >= 60:
+        hours = int(total_minutes // 60)
+        mins = int(total_minutes % 60)
+        clock_str = f"{hours}h {mins}m" if mins else f"{hours}h"
+    elif total_minutes >= 1:
+        clock_str = f"{int(total_minutes)}m {int((total_minutes % 1) * 60)}s"
+    else:
+        clock_str = f"{int(total_minutes * 60)}s"
+
     return {
         "date_from": date_from,
         "date_to": date_to,
         "date_from_str": game_date_to_str(date_from),
         "date_to_str": game_date_to_str(date_to),
         "total_days": date_to - date_from,
+        "clock_duration_str": clock_str,
+        "clock_duration_minutes": round(total_minutes, 1),
     }
 
 
@@ -119,6 +131,8 @@ def _inject_period(result: ReportResult, period: dict[str, Any]) -> None:
     header = (
         f"> Period: **{period['date_from_str']}** to **{period['date_to_str']}** "
         f"({period['total_days']} game days)\n"
+        f">\n"
+        f"> *Clock time: {period['clock_duration_str']}*\n"
     )
 
     # Inject into markdown after the first heading line
@@ -135,7 +149,7 @@ def _inject_period(result: ReportResult, period: dict[str, Any]) -> None:
     # Inject as subtitle annotation on all figures
     subtitle = (
         f"Period: {period['date_from_str']} -- {period['date_to_str']} "
-        f"({period['total_days']} days)"
+        f"({period['total_days']} days) | Clock: {period['clock_duration_str']}"
     )
     for _, fig in result.figures:
         if fig is not None:
