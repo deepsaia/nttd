@@ -28,6 +28,28 @@ from nttd.gameloop.schemas import MASTransportConfig, TokenUsage
 logger = logging.getLogger(__name__)
 
 
+def _parse_token_structure(structure: dict[str, Any]) -> TokenUsage | None:
+    """Extract TokenUsage from a neuro-san token accounting structure dict."""
+    if not isinstance(structure, dict) or "total_tokens" not in structure:
+        return None
+    models_dict = structure.get("models", {})
+    model_name = ""
+    provider_name = ""
+    if models_dict:
+        provider_name = next(iter(models_dict), "")
+        provider_models = models_dict.get(provider_name, {})
+        if provider_models:
+            model_name = next(iter(provider_models), "")
+    return TokenUsage(
+        prompt_tokens=structure.get("prompt_tokens", 0),
+        completion_tokens=structure.get("completion_tokens", 0),
+        total_tokens=structure.get("total_tokens", 0),
+        total_cost=structure.get("total_cost", 0.0),
+        model=model_name,
+        provider=provider_name,
+    )
+
+
 class MASHttpAdapter(BaseAdapter):
     """Adapter that connects to an external MAS server via HTTP.
 
@@ -176,30 +198,28 @@ class MASHttpAdapter(BaseAdapter):
                 origin = resp.get("origin", [])
                 origin_str = origin[0].get("tool", "") if origin else ""
 
+                logger.info(
+                    "Neuro-SAN msg: type=%s origin=%s has_structure=%s",
+                    msg_type, origin_str, bool(resp.get("structure")),
+                )
+
                 # Capture token accounting from neuro-san AGENT messages
                 if msg_type == "AGENT" and len(origin) == 1:
-                    structure = resp.get("structure")
-                    if isinstance(structure, dict) and "total_tokens" in structure:
-                        models_dict = structure.get("models", {})
-                        model_name = ""
-                        provider_name = ""
-                        if models_dict:
-                            provider_name = next(iter(models_dict), "")
-                            provider_models = models_dict.get(provider_name, {})
-                            if provider_models:
-                                model_name = next(iter(provider_models), "")
-                        token_usage = TokenUsage(
-                            prompt_tokens=structure.get("prompt_tokens", 0),
-                            completion_tokens=structure.get("completion_tokens", 0),
-                            total_tokens=structure.get("total_tokens", 0),
-                            total_cost=structure.get("total_cost", 0.0),
-                            model=model_name,
-                            provider=provider_name,
-                        )
+                    parsed = _parse_token_structure(resp.get("structure", {}))
+                    if parsed is not None:
+                        token_usage = parsed
                         if message_logger:
-                            message_logger("TOKEN_ACCOUNTING", json.dumps(structure))
+                            message_logger("TOKEN_ACCOUNTING", json.dumps(resp["structure"]))
 
                 if msg_type == "AGENT_FRAMEWORK":
+                    # Fallback: token accounting embedded in AGENT_FRAMEWORK structure
+                    if token_usage is None:
+                        parsed = _parse_token_structure(resp.get("structure", {}))
+                        if parsed is not None:
+                            token_usage = parsed
+                            if message_logger:
+                                message_logger("TOKEN_ACCOUNTING (framework)", json.dumps(resp["structure"]))
+
                     if message_logger:
                         summary: dict[str, Any] = {"type": msg_type}
                         if resp.get("structure"):
@@ -211,6 +231,18 @@ class MASHttpAdapter(BaseAdapter):
 
                     resp_sly_data = resp.get("sly_data", {})
                     if isinstance(resp_sly_data, dict):
+                        # Check for token accounting in sly_data
+                        if token_usage is None:
+                            sly_token_data = resp_sly_data.get("token_accounting")
+                            if isinstance(sly_token_data, dict):
+                                parsed = _parse_token_structure(sly_token_data)
+                                if parsed is not None:
+                                    token_usage = parsed
+                                    if message_logger:
+                                        message_logger(
+                                            "TOKEN_ACCOUNTING (sly_data)", json.dumps(sly_token_data),
+                                        )
+
                         action_list = resp_sly_data.get("action_list")
                         if isinstance(action_list, list) and action_list:
                             final_text = json.dumps(action_list)
