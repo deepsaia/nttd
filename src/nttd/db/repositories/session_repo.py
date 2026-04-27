@@ -155,8 +155,8 @@ async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
     Reads the existing data, merges settings, and rewrites the file.
     """
     session_dir = _SESSIONS_DIR / session_id
-    conf_path = session_dir / "session.conf"
-    if not conf_path.exists():
+    parquet_path = session_dir / "session.parquet"
+    if not parquet_path.exists():
         write_session_conf(
             session_dir=session_dir,
             session_id=session_id,

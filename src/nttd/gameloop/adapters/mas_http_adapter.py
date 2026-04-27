@@ -21,6 +21,7 @@ import os
 from typing import Any
 
 import httpx
+from neuro_san.message_processing.basic_message_processor import BasicMessageProcessor
 
 from nttd.gameloop.adapters.base import BaseAdapter, MessageLogger, ToolExecutor
 from nttd.gameloop.schemas import MASTransportConfig, TokenUsage
@@ -138,6 +139,7 @@ class MASHttpAdapter(BaseAdapter):
                 "text": user_text,
             },
             "sly_data": sly_data,
+            "chat_filter": {"chat_filter_type": "MAXIMAL"},
             "user_id": os.environ.get("USER", "nttd"),
         }
 
@@ -175,7 +177,7 @@ class MASHttpAdapter(BaseAdapter):
     ) -> str:
         """Send streaming_chat request and collect the final answer."""
         final_text = "[]"
-        token_usage: TokenUsage | None = None
+        processor = BasicMessageProcessor()
 
         async with client.stream(
             "POST", endpoint, json=payload,
@@ -203,23 +205,9 @@ class MASHttpAdapter(BaseAdapter):
                     msg_type, origin_str, bool(resp.get("structure")),
                 )
 
-                # Capture token accounting from neuro-san AGENT messages
-                if msg_type == "AGENT" and len(origin) == 1:
-                    parsed = _parse_token_structure(resp.get("structure", {}))
-                    if parsed is not None:
-                        token_usage = parsed
-                        if message_logger:
-                            message_logger("TOKEN_ACCOUNTING", json.dumps(resp["structure"]))
+                processor.process_message(resp)
 
                 if msg_type == "AGENT_FRAMEWORK":
-                    # Fallback: token accounting embedded in AGENT_FRAMEWORK structure
-                    if token_usage is None:
-                        parsed = _parse_token_structure(resp.get("structure", {}))
-                        if parsed is not None:
-                            token_usage = parsed
-                            if message_logger:
-                                message_logger("TOKEN_ACCOUNTING (framework)", json.dumps(resp["structure"]))
-
                     if message_logger:
                         summary: dict[str, Any] = {"type": msg_type}
                         if resp.get("structure"):
@@ -231,18 +219,6 @@ class MASHttpAdapter(BaseAdapter):
 
                     resp_sly_data = resp.get("sly_data", {})
                     if isinstance(resp_sly_data, dict):
-                        # Check for token accounting in sly_data
-                        if token_usage is None:
-                            sly_token_data = resp_sly_data.get("token_accounting")
-                            if isinstance(sly_token_data, dict):
-                                parsed = _parse_token_structure(sly_token_data)
-                                if parsed is not None:
-                                    token_usage = parsed
-                                    if message_logger:
-                                        message_logger(
-                                            "TOKEN_ACCOUNTING (sly_data)", json.dumps(sly_token_data),
-                                        )
-
                         action_list = resp_sly_data.get("action_list")
                         if isinstance(action_list, list) and action_list:
                             final_text = json.dumps(action_list)
@@ -255,13 +231,20 @@ class MASHttpAdapter(BaseAdapter):
                     if message_logger:
                         message_logger(f"{prefix}{msg_type}", text[:2000])
 
-        self.last_token_usage = token_usage
+        token_accounting = processor.get_token_accounting()
+        if token_accounting:
+            self.last_token_usage = _parse_token_structure(token_accounting)
+            if message_logger and self.last_token_usage:
+                message_logger("TOKEN_ACCOUNTING", json.dumps(token_accounting))
+        else:
+            self.last_token_usage = None
+
         logger.info("Neuro-SAN final response (%d chars)", len(final_text))
         if message_logger:
             try:
-                parsed = json.loads(final_text)
-                if isinstance(parsed, list):
-                    display = json.dumps(parsed, indent=2)[:4000]
+                parsed_resp = json.loads(final_text)
+                if isinstance(parsed_resp, list):
+                    display = json.dumps(parsed_resp, indent=2)[:4000]
                 else:
                     display = final_text[:2000]
             except (json.JSONDecodeError, TypeError):
