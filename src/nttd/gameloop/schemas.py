@@ -57,6 +57,17 @@ class AgentConfig(BaseModel):
     mas_transport: MASTransportConfig = Field(default_factory=MASTransportConfig)
 
 
+class TokenUsage(BaseModel):
+    """Token usage from a single LLM cycle."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    total_cost: float = 0.0
+    model: str = ""
+    provider: str = ""
+
+
 class ConnectionStatus(BaseModel):
     """Status snapshot of a single agent connection."""
 
@@ -96,3 +107,9 @@ class CycleRecord(BaseModel):
     company_value: int = 0
     balance_delta: int = 0
     vehicles_running: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    total_cost: float = 0.0
+    llm_model: str = ""
+    llm_provider: str = ""

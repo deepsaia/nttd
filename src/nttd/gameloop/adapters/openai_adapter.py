@@ -13,6 +13,8 @@ import os
 from typing import Any
 
 from nttd.gameloop.adapters.base import BaseAdapter, MessageLogger, ToolExecutor
+from nttd.gameloop.schemas import TokenUsage
+from nttd.gameloop.token_costs import estimate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +85,25 @@ class OpenAIAdapter(BaseAdapter):
             kwargs["tools"] = observation_tools
             kwargs["tool_choice"] = "auto"
 
+        total_prompt = 0
+        total_completion = 0
+
+        def _record_usage() -> None:
+            self.last_token_usage = TokenUsage(
+                prompt_tokens=total_prompt,
+                completion_tokens=total_completion,
+                total_tokens=total_prompt + total_completion,
+                total_cost=estimate_cost(self._model, total_prompt, total_completion),
+                model=self._model,
+                provider="openai",
+            )
+
         msg = None
         for round_num in range(self._max_tool_rounds):
             response = await client.chat.completions.create(**kwargs)
+            if response.usage:
+                total_prompt += response.usage.prompt_tokens or 0
+                total_completion += response.usage.completion_tokens or 0
             msg = response.choices[0].message
             messages.append(msg.model_dump())
 
@@ -93,6 +111,7 @@ class OpenAIAdapter(BaseAdapter):
                 output = msg.content or "[]"
                 if message_logger:
                     message_logger("ASSISTANT", output)
+                _record_usage()
                 return output
 
             # Execute tool calls
@@ -101,6 +120,7 @@ class OpenAIAdapter(BaseAdapter):
                 output = msg.content or "[]"
                 if message_logger:
                     message_logger("ASSISTANT", output)
+                _record_usage()
                 return output
 
             for tc in msg.tool_calls:
@@ -129,6 +149,7 @@ class OpenAIAdapter(BaseAdapter):
         output = msg.content or "[]" if msg else "[]"
         if message_logger:
             message_logger("ASSISTANT", output)
+        _record_usage()
         return output
 
     async def close(self) -> None:

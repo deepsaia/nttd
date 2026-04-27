@@ -751,6 +751,95 @@ def transport_mode_finances(sessions: list[SessionData]) -> go.Figure:
 # Batch rendering
 # ---------------------------------------------------------------------------
 
+def token_usage_by_agent(sessions: list[SessionData]) -> go.Figure:
+    """Grouped bar chart: prompt vs completion tokens per agent."""
+    rows = []
+    for s in sessions:
+        if s.agent_cycles.is_empty() or "total_tokens" not in s.agent_cycles.columns:
+            continue
+        for group in s.agent_cycles.partition_by("connection_id"):
+            conn_id = str(group["connection_id"][0])
+            parts = conn_id.split(":")
+            agent_id = parts[-1] if len(parts) >= 3 else conn_id
+            rows.append({
+                "agent": agent_id,
+                "model": s.model,
+                "prompt_tokens": int(group["prompt_tokens"].sum()),
+                "completion_tokens": int(group["completion_tokens"].sum()),
+                "total_cost": round(float(group["total_cost"].sum()), 4),
+            })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        fig = go.Figure()
+        fig.update_layout(title="Token Usage by Agent (no data)", template=_TEMPLATE)
+        return fig
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Token Usage by Agent", "Cost by Agent ($)"),
+        horizontal_spacing=0.15,
+    )
+
+    for agent in df["agent"].unique():
+        adf = df[df["agent"] == agent]
+        color = get_agent_color(agent)
+        fig.add_trace(go.Bar(
+            x=["Prompt", "Completion"],
+            y=[int(adf["prompt_tokens"].sum()), int(adf["completion_tokens"].sum())],
+            name=agent, marker_color=color,
+        ), row=1, col=1)
+        fig.add_trace(go.Bar(
+            x=[agent], y=[float(adf["total_cost"].sum())],
+            name=agent, marker_color=color, showlegend=False,
+        ), row=1, col=2)
+
+    fig.update_layout(
+        title="Token Usage by Agent",
+        barmode="group", template=_TEMPLATE,
+        height=450, legend=dict(orientation="h", y=1.1),
+    )
+    return fig
+
+
+def tokens_over_time(sessions: list[SessionData]) -> go.Figure:
+    """Line chart: total_tokens per cycle over game_date, one line per agent."""
+    fig = go.Figure()
+    has_data = False
+
+    for s in sessions:
+        if s.agent_cycles.is_empty() or "total_tokens" not in s.agent_cycles.columns:
+            continue
+        for group in s.agent_cycles.partition_by("connection_id"):
+            conn_id = str(group["connection_id"][0])
+            parts = conn_id.split(":")
+            agent_id = parts[-1] if len(parts) >= 3 else conn_id
+
+            dates = group["game_date"].to_list()
+            tokens = group["total_tokens"].to_list()
+            if not any(t > 0 for t in tokens):
+                continue
+            has_data = True
+            fig.add_trace(go.Scatter(
+                x=dates, y=tokens,
+                mode="lines+markers", name=agent_id,
+                line=dict(color=get_agent_color(agent_id)),
+            ))
+
+    if not has_data:
+        fig.update_layout(title="Tokens Over Time (no data)", template=_TEMPLATE)
+        return fig
+
+    fig.update_layout(
+        title="Token Usage Per Cycle Over Time",
+        xaxis_title="Game Date",
+        yaxis_title="Total Tokens",
+        template=_TEMPLATE, height=450,
+        legend=dict(orientation="h", y=1.1),
+    )
+    return fig
+
+
 def generate_all_plots(
     sessions: list[SessionData],
     output_dir: str | None = None,

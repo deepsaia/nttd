@@ -276,6 +276,7 @@ class AgentConnection:
             logger.warning("Agent %s LLM call failed: %s", self.config.agent_id, exc)
             return
         self.tracker.end_decide()
+        token_usage = self.adapter.last_token_usage
 
         logger.info("Agent %s raw LLM output: %r", self.config.agent_id, raw_output[:1000])
 
@@ -359,6 +360,12 @@ class AgentConnection:
             income=company_data.get("income", 0),
             company_value=company_data.get("company_value", 0),
             vehicles_running=sum(1 for v in vehicles_data if v.get("running")),
+            prompt_tokens=token_usage.prompt_tokens if token_usage else 0,
+            completion_tokens=token_usage.completion_tokens if token_usage else 0,
+            total_tokens=token_usage.total_tokens if token_usage else 0,
+            total_cost=token_usage.total_cost if token_usage else 0.0,
+            llm_model=token_usage.model if token_usage else "",
+            llm_provider=token_usage.provider if token_usage else "",
         )
 
         # Persist cycle record to DB

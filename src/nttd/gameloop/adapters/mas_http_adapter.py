@@ -23,7 +23,7 @@ from typing import Any
 import httpx
 
 from nttd.gameloop.adapters.base import BaseAdapter, MessageLogger, ToolExecutor
-from nttd.gameloop.schemas import MASTransportConfig
+from nttd.gameloop.schemas import MASTransportConfig, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,7 @@ class MASHttpAdapter(BaseAdapter):
     ) -> str:
         """Send streaming_chat request and collect the final answer."""
         final_text = "[]"
+        token_usage: TokenUsage | None = None
 
         async with client.stream(
             "POST", endpoint, json=payload,
@@ -175,6 +176,29 @@ class MASHttpAdapter(BaseAdapter):
                 origin = resp.get("origin", [])
                 origin_str = origin[0].get("tool", "") if origin else ""
 
+                # Capture token accounting from neuro-san AGENT messages
+                if msg_type == "AGENT" and len(origin) == 1:
+                    structure = resp.get("structure")
+                    if isinstance(structure, dict) and "total_tokens" in structure:
+                        models_dict = structure.get("models", {})
+                        model_name = ""
+                        provider_name = ""
+                        if models_dict:
+                            provider_name = next(iter(models_dict), "")
+                            provider_models = models_dict.get(provider_name, {})
+                            if provider_models:
+                                model_name = next(iter(provider_models), "")
+                        token_usage = TokenUsage(
+                            prompt_tokens=structure.get("prompt_tokens", 0),
+                            completion_tokens=structure.get("completion_tokens", 0),
+                            total_tokens=structure.get("total_tokens", 0),
+                            total_cost=structure.get("total_cost", 0.0),
+                            model=model_name,
+                            provider=provider_name,
+                        )
+                        if message_logger:
+                            message_logger("TOKEN_ACCOUNTING", json.dumps(structure))
+
                 if msg_type == "AGENT_FRAMEWORK":
                     if message_logger:
                         summary: dict[str, Any] = {"type": msg_type}
@@ -193,12 +217,13 @@ class MASHttpAdapter(BaseAdapter):
                             continue
                     if text:
                         final_text = text
-                elif text:
+                elif text and msg_type != "AGENT":
                     prefix = f"[{origin_str}] " if origin_str else ""
                     logger.info("Neuro-SAN %s%s: %s", prefix, msg_type, text[:500])
                     if message_logger:
                         message_logger(f"{prefix}{msg_type}", text[:2000])
 
+        self.last_token_usage = token_usage
         logger.info("Neuro-SAN final response (%d chars)", len(final_text))
         if message_logger:
             try:

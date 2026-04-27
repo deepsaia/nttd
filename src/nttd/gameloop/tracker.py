@@ -91,6 +91,12 @@ class ConnectionTracker:
         income: int = 0,
         company_value: int = 0,
         vehicles_running: int = 0,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        total_cost: float = 0.0,
+        llm_model: str = "",
+        llm_provider: str = "",
     ) -> CycleRecord:
         """Complete the cycle and produce a CycleRecord."""
         total_ms = (time.monotonic() - self._cycle_start) * 1000
@@ -122,6 +128,12 @@ class ConnectionTracker:
             company_value=company_value,
             balance_delta=balance_delta,
             vehicles_running=vehicles_running,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            total_cost=round(total_cost, 6),
+            llm_model=llm_model,
+            llm_provider=llm_provider,
         )
         self.recent_cycles.append(record)
         return record

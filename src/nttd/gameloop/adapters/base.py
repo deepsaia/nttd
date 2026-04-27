@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import abc
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from nttd.gameloop.schemas import TokenUsage
 
 
 class ToolExecutor(Protocol):
@@ -25,6 +28,8 @@ class BaseAdapter(abc.ABC):
     and implements the ``decide`` method to turn an observation + instructions
     into raw agent output (text or structured action list).
     """
+
+    last_token_usage: TokenUsage | None = None
 
     @abc.abstractmethod
     async def decide(

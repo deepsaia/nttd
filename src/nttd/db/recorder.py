@@ -69,6 +69,12 @@ _AGENT_CYCLES_SCHEMA = pa.schema([
     ("company_value", pa.int64()),
     ("balance_delta", pa.int64()),
     ("vehicles_running", pa.int16()),
+    ("prompt_tokens", pa.int32()),
+    ("completion_tokens", pa.int32()),
+    ("total_tokens", pa.int32()),
+    ("total_cost", pa.float32()),
+    ("llm_model", pa.string()),
+    ("llm_provider", pa.string()),
 ])
 
 _EVENTS_SCHEMA = pa.schema([
@@ -347,6 +353,12 @@ class SessionRecorder:
             "company_value": record.company_value,
             "balance_delta": record.balance_delta,
             "vehicles_running": record.vehicles_running,
+            "prompt_tokens": record.prompt_tokens,
+            "completion_tokens": record.completion_tokens,
+            "total_tokens": record.total_tokens,
+            "total_cost": record.total_cost,
+            "llm_model": record.llm_model,
+            "llm_provider": record.llm_provider,
         })
 
     def record_agent_connection(

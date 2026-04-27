@@ -17,6 +17,8 @@ import os
 from typing import Any
 
 from nttd.gameloop.adapters.base import BaseAdapter, MessageLogger, ToolExecutor
+from nttd.gameloop.schemas import TokenUsage
+from nttd.gameloop.token_costs import estimate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -128,16 +130,37 @@ class LangChainAdapter(BaseAdapter):
             message_logger("USER", obs_text)
 
         # Multi-turn tool calling loop
+        total_prompt = 0
+        total_completion = 0
+
+        _, _, provider_env = _resolve_provider(self._model)
+        provider = "anthropic" if "anthropic" in provider_env.lower() else "openai"
+
+        def _record_usage() -> None:
+            self.last_token_usage = TokenUsage(
+                prompt_tokens=total_prompt,
+                completion_tokens=total_completion,
+                total_tokens=total_prompt + total_completion,
+                total_cost=estimate_cost(self._model, total_prompt, total_completion),
+                model=self._model,
+                provider=provider,
+            )
+
         response = None
         for round_num in range(self._max_tool_rounds):
             response = await bound_llm.ainvoke(messages)
+            meta = getattr(response, "response_metadata", {}) or {}
+            usage = meta.get("token_usage", {})
+            total_prompt += usage.get("prompt_tokens", 0)
+            total_completion += usage.get("completion_tokens", 0)
             messages.append(response)
 
-            # No tool calls → final response
+            # No tool calls -> final response
             if not response.tool_calls:
                 output = response.content or "[]"
                 if message_logger:
                     message_logger("ASSISTANT", output)
+                _record_usage()
                 return output
 
             # Execute tool calls
@@ -146,6 +169,7 @@ class LangChainAdapter(BaseAdapter):
                 output = response.content or "[]"
                 if message_logger:
                     message_logger("ASSISTANT", output)
+                _record_usage()
                 return output
 
             for tool_call in response.tool_calls:
@@ -164,11 +188,12 @@ class LangChainAdapter(BaseAdapter):
                     ToolMessage(content=result, tool_call_id=tool_call["id"])
                 )
 
-        # Exhausted tool rounds — take whatever we have
+        # Exhausted tool rounds
         logger.warning("Max tool rounds (%d) exceeded", self._max_tool_rounds)
         output = response.content or "[]" if response else "[]"
         if message_logger:
             message_logger("ASSISTANT", output)
+        _record_usage()
         return output
 
     async def close(self) -> None:

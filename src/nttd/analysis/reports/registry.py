@@ -80,6 +80,7 @@ def ensure_reports_loaded() -> None:
         session_summary,
         stations,
         tile_map,
+        token_accounting,
         vehicle_fleet,
         video,
         world_state,
