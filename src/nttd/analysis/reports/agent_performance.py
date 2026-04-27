@@ -33,11 +33,13 @@ def _stats_from_cycles(session: SessionData) -> dict[str, dict]:
         ok = int(group["actions_succeeded"].sum())
         failed = int(group["actions_failed"].sum())
 
+        idle_cycles = int((group["actions_proposed"] == 0).sum())
         stats[agent_id] = {
             "total_cycles": len(group),
             "total_actions": total_actions,
             "successful_actions": ok,
             "failed_actions": failed,
+            "idle_cycles": idle_cycles,
             "avg_decide_ms": round(float(group["decide_ms"].mean()), 1),
             "avg_cycle_ms": round(float(group["total_ms"].mean()), 1),
         }
@@ -62,6 +64,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
             failed = src.get("failed_actions", 0)
             rate = round(ok / total * 100, 1) if total > 0 else 0.0
 
+            idle = src.get("idle_cycles", 0)
+            total_cycles = src.get("total_cycles", 0)
             agent_data = {
                 "session_id": s.session_id,
                 "agent_id": agent_id,
@@ -70,7 +74,8 @@ def generate(sessions: list[SessionData]) -> ReportResult:
                 "successful_actions": ok,
                 "failed_actions": failed,
                 "success_rate": rate,
-                "total_cycles": src.get("total_cycles", 0),
+                "total_cycles": total_cycles,
+                "idle_cycles": idle,
                 "avg_decide_ms": round(src.get("avg_decide_ms", 0), 1),
                 "avg_cycle_ms": round(src.get("avg_cycle_ms", 0), 1),
             }
@@ -78,7 +83,10 @@ def generate(sessions: list[SessionData]) -> ReportResult:
 
             md_lines.append(f"## {agent_id} ({s.model})")
             md_lines.append(f"- **Actions**: {total} total, {ok} ok, {failed} failed ({rate}%)")
-            md_lines.append(f"- **Cycles**: {agent_data['total_cycles']}")
+            cycles_str = f"- **Cycles**: {total_cycles}"
+            if idle:
+                cycles_str += f" ({idle} idle -- 0 actions)"
+            md_lines.append(cycles_str)
             md_lines.append(f"- **Avg decide**: {agent_data['avg_decide_ms']}ms")
             md_lines.append(f"- **Avg cycle**: {agent_data['avg_cycle_ms']}ms")
             md_lines.append("")

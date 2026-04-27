@@ -225,7 +225,15 @@ class MASHttpAdapter(BaseAdapter):
                             continue
                     if text:
                         final_text = text
-                elif text and msg_type != "AGENT":
+                elif text and msg_type not in ("AGENT", "SYSTEM", "HUMAN"):
+                    # AGENT: token accounting handled by BasicMessageProcessor
+                    # SYSTEM: repeated agent prompts, no diagnostic value
+                    # HUMAN: coordinator-to-sub-agent instructions, repetitive
+                    # AGENT_TOOL_RESULT prose: echo of prior AI response relayed
+                    #   up the chain; only JSON results (coded tool outputs) are
+                    #   worth logging -- prose echoes inflate the log ~40%
+                    if msg_type == "AGENT_TOOL_RESULT" and not text.lstrip().startswith(("{", "[")):
+                        continue
                     prefix = f"[{origin_str}] " if origin_str else ""
                     logger.info("Neuro-SAN %s%s: %s", prefix, msg_type, text[:500])
                     if message_logger:

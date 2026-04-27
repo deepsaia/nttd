@@ -39,19 +39,26 @@ class DismantleRoute(CodedTool):
         action_list: List[Dict[str, Any]] = sly_data.get("action_list", [])
         actions_before = len(action_list)
 
+        vehicles_by_id = {v["id"]: v for v in obs.get("vehicles", [])}
+
         for vid in vehicle_ids:
-            action_list.append({
-                "action_type": "stop_vehicle",
-                "parameters": {"vehicle_id": vid},
-            })
-            action_list.append({
-                "action_type": "send_to_depot",
-                "parameters": {"vehicle_id": vid},
-            })
-            action_list.append({
-                "action_type": "sell_vehicle",
-                "parameters": {"vehicle_id": vid},
-            })
+            vehicle = vehicles_by_id.get(vid, {})
+            if vehicle.get("in_depot", False):
+                # Already in depot: sell immediately
+                action_list.append({
+                    "action_type": "sell_vehicle",
+                    "parameters": {"vehicle_id": vid},
+                })
+            else:
+                # Not in depot: stop and send; sell next cycle when arrived
+                action_list.append({
+                    "action_type": "stop_vehicle",
+                    "parameters": {"vehicle_id": vid},
+                })
+                action_list.append({
+                    "action_type": "send_to_depot",
+                    "parameters": {"vehicle_id": vid},
+                })
 
         sly_data["action_list"] = action_list
 
@@ -60,7 +67,7 @@ class DismantleRoute(CodedTool):
             "route_id": route_id,
             "vehicle_ids": vehicle_ids,
             "actions_added": len(action_list) - actions_before,
-            "note": "sell_vehicle may fail if vehicle not yet in depot; retried next cycle.",
+            "note": "Vehicles not in depot are sent there; sell happens next cycle when arrived.",
         })
 
     @staticmethod

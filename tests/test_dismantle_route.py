@@ -24,6 +24,10 @@ class TestDismantleRoute:
             "routes": [
                 {"route_id": "rt_abc", "vehicle_ids": [9, 18], "vehicle_count": 2},
             ],
+            "vehicles": [
+                {"id": 9, "in_depot": False},
+                {"id": 18, "in_depot": False},
+            ],
         }
         sly = _make_sly(obs)
         tool = DismantleRoute()
@@ -31,16 +35,36 @@ class TestDismantleRoute:
 
         assert result["success"] is True
         assert result["vehicle_ids"] == [9, 18]
-        assert result["actions_added"] == 6
+        assert result["actions_added"] == 4
 
         actions = sly["action_list"]
         types = [a["action_type"] for a in actions]
         assert types == [
-            "stop_vehicle", "send_to_depot", "sell_vehicle",
-            "stop_vehicle", "send_to_depot", "sell_vehicle",
+            "stop_vehicle", "send_to_depot",
+            "stop_vehicle", "send_to_depot",
         ]
         assert actions[0]["parameters"]["vehicle_id"] == 9
-        assert actions[3]["parameters"]["vehicle_id"] == 18
+        assert actions[2]["parameters"]["vehicle_id"] == 18
+
+    @pytest.mark.asyncio
+    async def test_sells_immediately_when_in_depot(self) -> None:
+        obs = {
+            "routes": [
+                {"route_id": "rt_dep", "vehicle_ids": [7], "vehicle_count": 1},
+            ],
+            "vehicles": [
+                {"id": 7, "in_depot": True},
+            ],
+        }
+        sly = _make_sly(obs)
+        tool = DismantleRoute()
+        result = json.loads(await tool.async_invoke({"route_id": "rt_dep"}, sly))
+
+        assert result["success"] is True
+        assert result["actions_added"] == 1
+        actions = sly["action_list"]
+        assert actions[0]["action_type"] == "sell_vehicle"
+        assert actions[0]["parameters"]["vehicle_id"] == 7
 
     @pytest.mark.asyncio
     async def test_route_not_found(self) -> None:
@@ -70,11 +94,14 @@ class TestDismantleRoute:
             "routes": [
                 {"route_id": "rt_x", "vehicle_ids": [5], "vehicle_count": 1},
             ],
+            "vehicles": [
+                {"id": 5, "in_depot": False},
+            ],
         }
         sly = _make_sly(obs)
         sly["action_list"] = [{"action_type": "set_loan", "parameters": {"amount": 100000}}]
         tool = DismantleRoute()
         result = json.loads(await tool.async_invoke({"route_id": "rt_x"}, sly))
-        assert result["actions_added"] == 3
-        assert len(sly["action_list"]) == 4
+        assert result["actions_added"] == 2
+        assert len(sly["action_list"]) == 3
         assert sly["action_list"][0]["action_type"] == "set_loan"

@@ -12,7 +12,7 @@ from rail_mas.observation_util import get_observation
 
 logger = logging.getLogger(__name__)
 
-STALL_THRESHOLD_DAYS = 200
+STALL_THRESHOLD_DAYS = 365
 
 
 class ReadRouteHealth(CodedTool):
