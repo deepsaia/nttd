@@ -22,6 +22,40 @@ cd nttd
 uv sync --extra agents    # includes LangChain + OpenAI adapters
 ```
 
+### Run Benchmarks
+
+You can follow [cli_guide.md](docs/cli_guide.md) for detailed CLI guide.
+
+From project root
+
+On one terminal
+```bash
+nttd server
+```
+
+[Optional] On second terminal (If running neuro-san based multi-agent systems)
+```bash
+nttd mas neuro-san
+```
+
+Then on another terminal
+```bash
+nttd benchmark --config config/scenario_30min_3agent.conf
+```
+> [!TIP]
+> Note: Pick the appropriate benchmark config file from `nttd/config/` dir
+> You should see a session id generated when a sessoin begins. 
+> The id goes like this ses_<hex_code>
+
+Observability:
+Then on yet another terminal,
+```bash
+nttd analyze -r orders,financial,session_summary,action_analysis,agent_performance,cargo_delivery,token_accounting -s ses_xyz
+```
+Note: The session id is your own session ID
+
+---
+
 ### Run an AI Agent (step by step)
 
 ```bash
