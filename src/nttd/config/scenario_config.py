@@ -13,6 +13,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from nttd.config.benchmark_profile import PROFILE_VERSION, VARIABLE_SETTINGS
+from nttd.config.benchmark_profile import deviations as profile_deviations
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "scenario.conf"
@@ -272,7 +275,7 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
 
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
-    agents: Any = None,
+    agents: Any = None, scored: bool = False,
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -288,11 +291,20 @@ def _validate_config(
         rt: The ``runtime`` config tree, if present.
         fair: The ``fairness`` config tree, if present.
         agents: The ``agents`` list, if present.
+        scored: Whether the scenario is scored, which additionally holds the map
+            to the benchmark profile.
 
     Raises:
         ScenarioConfigError: In strict mode, if any problem was found.
     """
     problems: list[str] = []
+
+    # --- Benchmark profile: a scored world may not be arbitrary ---------------
+    # Only for scored scenarios. Free play sets whatever it likes, because there
+    # is no comparison to protect.
+    if scored:
+        for problem in profile_deviations(m, _get):
+            _report(strict, problems, "%s", problem)
 
     # --- Enum validation ---
     _enum_checks: list[tuple[str, dict[str, str], Any]] = [
@@ -491,9 +503,11 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     m = _get(raw, "map", {})
     co = _get(raw, "companies", {})
 
+    scored = bool(_get(raw, "scored", False))
     _validate_config(
         m, co, strict=strict, rt=_get(raw, "runtime", {}),
         fair=_get(raw, "fairness", None), agents=_get(raw, "agents", None),
+        scored=scored,
     )
 
     # Map dimensions (log2)
@@ -582,8 +596,21 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     scenario_name = str(_get(raw, "name", "default"))
     settings["_scenario_id"] = str(_get(raw, "id", scenario_name))
     settings["_scenario_version"] = str(_get(raw, "version", "1"))
-    if _get(raw, "scored", False):
+    if scored:
         settings["_scored"] = "1"
+        # Which profile the run was held to. Recorded rather than assumed, so a
+        # result stays readable after LOCKED_SETTINGS changes: two runs under
+        # different profile versions are not comparable, and the record says so.
+        settings["_profile_version"] = PROFILE_VERSION
+
+    # The dimensions a scored scenario is allowed to vary. Emitted so the result
+    # record can carry them as leaderboard columns -- they are what lets a reader
+    # judge whether two runs are comparable, which is the whole reason they are
+    # permitted to differ rather than locked.
+    for key in sorted(VARIABLE_SETTINGS):
+        value = _get(m, key, None)
+        if value is not None:
+            settings[f"_map_{key}"] = str(value)
 
     # nttd-internal runtime metadata (prefixed with _)
     settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))
