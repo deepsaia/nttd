@@ -14,6 +14,7 @@ from nttd.schemas.subsidy import Subsidy
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Order, Vehicle
 from nttd.state.route_registry import RouteRegistry
+from nttd.utils.game_text import sanitise
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class WorldState:
             seen.add(tid)
             self.towns[tid] = Town(
                 id=tid,
-                name=r.get("name") or "",
+                name=sanitise(r.get("name")),
                 population=r.get("population", 0),
                 houses=r.get("houses", 0),
                 x=r.get("x", 0),
@@ -118,9 +119,9 @@ class WorldState:
             ]
             self.industries[iid] = Industry(
                 id=iid,
-                name=r.get("name") or "",
+                name=sanitise(r.get("name")),
                 type_id=r.get("type_id", 0),
-                type_name=r.get("type_name", ""),
+                type_name=sanitise(r.get("type_name")),
                 x=r.get("x", 0),
                 y=r.get("y", 0),
                 is_raw=r.get("is_raw", False),
@@ -160,7 +161,7 @@ class WorldState:
             ]
             self.stations[sid] = Station(
                 id=sid,
-                name=r.get("name") or "",
+                name=sanitise(r.get("name")),
                 company_id=company_id,
                 x=r.get("x", 0),
                 y=r.get("y", 0),
@@ -195,7 +196,7 @@ class WorldState:
                 id=vid,
                 type=r.get("type", "train"),
                 company_id=company_id,
-                name=r.get("name") or "",
+                name=sanitise(r.get("name")),
                 engine_id=r.get("engine_id", 0),
                 x=r.get("x", 0),
                 y=r.get("y", 0),
@@ -253,7 +254,7 @@ class WorldState:
             company = self.companies.get(cid)
             if company is None:
                 company = Company(id=cid)
-            company.name = r.get("name", company.name)
+            company.name = sanitise(r.get("name", company.name))
             company.manager = r.get("manager", company.manager)
             company.color = r.get("color", company.color)
             company.is_ai = r.get("is_ai", company.is_ai)
@@ -314,10 +315,10 @@ class WorldState:
                 cargo_label=r.get("cargo_label", ""),
                 src_type=_type_map.get(r.get("src_type", -1), ""),
                 src_id=r.get("src_id", 0),
-                src_name=r.get("src_name", ""),
+                src_name=sanitise(r.get("src_name")),
                 dst_type=_type_map.get(r.get("dst_type", -1), ""),
                 dst_id=r.get("dst_id", 0),
-                dst_name=r.get("dst_name", ""),
+                dst_name=sanitise(r.get("dst_name")),
                 value=r.get("value", 0),
                 remaining_years=r.get("remaining_years", 0),
             )
@@ -357,7 +358,7 @@ class WorldState:
                 cargo_label=r.get("cargo_label", ""),
                 entity_type=r.get("entity_type", ""),
                 entity_id=r.get("entity_id", 0),
-                entity_name=r.get("entity_name", ""),
+                entity_name=sanitise(r.get("entity_name")),
                 direction=r.get("direction", ""),
                 amount=r.get("amount", 0),
             ))

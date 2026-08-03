@@ -31,6 +31,7 @@ from nttd.interpreter.validator import validate_actions
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.state.route_planner import RoutePlanner
+from nttd.utils.game_text import sanitise_observation
 
 if TYPE_CHECKING:
     from nttd.runtime.session_runtime import SessionRuntime
@@ -700,7 +701,11 @@ class AgentConnection:
                 "mode": game.mode,
             }
 
-        return obs
+        # Company, vehicle, station, and sign names are all writable by a
+        # contestant, and this observation becomes part of an agent's prompt. Strip
+        # newlines and control codes once here, at the boundary, rather than at each
+        # of the places a name is copied out of game state.
+        return sanitise_observation(obs)  # type: ignore[return-value]
 
     async def _execute(self, actions: list[Any], game_date: int = 0) -> list[dict[str, Any]]:
         """Execute validated actions via GS commands through the admin client."""
