@@ -80,6 +80,14 @@ _SCHEMA = pa.schema([
     ("blocked_attempts", pa.int32()),
     ("blocked_operations", pa.string()),
     ("capability_digest", pa.string()),
+    # Effective fairness limits. Recorded because they decide how much the
+    # contestant was allowed to do, so a reader cannot compare two results without
+    # knowing them.
+    ("fairness_enforced", pa.bool_()),
+    ("poll_interval", pa.float64()),
+    ("max_actions_per_cycle", pa.int32()),
+    ("llm_timeout_seconds", pa.float64()),
+    ("observation_mode", pa.string()),
     # Provenance of the code that ran
     ("nttd_git_sha", pa.string()),
     ("nttd_git_dirty", pa.bool_()),
@@ -162,6 +170,7 @@ class ResultWriter:
         gamescript_path: Path | None = None,
         openttd_binary: str = "",
         capability: dict[str, Any] | None = None,
+        fairness: dict[str, Any] | None = None,
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
 
@@ -173,6 +182,7 @@ class ResultWriter:
             openttd_binary: Path to the OpenTTD binary, queried for its version.
             capability: Attestation from the session's scored lock -- whether the
                 run was scored and whether it stayed within the participant tier.
+            fairness: The effective pacing and budget limits the run was held to.
         """
         if not scores:
             logger.warning("Session %s: no company scores, result.parquet not written", session_id)
@@ -188,6 +198,7 @@ class ResultWriter:
         # The capability set the run was allowed, hashed so a verifier can tell
         # whether two results were scored under the same rules.
         attest = capability or {}
+        limits = fairness or {}
         blocked_ops = attest.get("blocked_operations") or []
 
         rows: list[dict[str, Any]] = []
@@ -230,6 +241,11 @@ class ResultWriter:
                 "blocked_attempts": int(attest.get("blocked_attempts", 0)),
                 "blocked_operations": ",".join(blocked_ops),
                 "capability_digest": capability_digest(),
+                "fairness_enforced": bool(limits.get("enforced", False)),
+                "poll_interval": float(limits.get("poll_interval", 0.0)),
+                "max_actions_per_cycle": int(limits.get("max_actions_per_cycle", 0)),
+                "llm_timeout_seconds": float(limits.get("llm_timeout_seconds", 0.0)),
+                "observation_mode": str(limits.get("observation_mode", "")),
                 "nttd_git_sha": git_sha,
                 "nttd_git_dirty": git_dirty,
                 "gamescript_digest": gs_digest or "",

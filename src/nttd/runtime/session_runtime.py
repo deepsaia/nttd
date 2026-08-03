@@ -11,6 +11,7 @@ from pathlib import Path
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.bridge import Bridge
+from nttd.config.fairness import FairnessConfig
 from nttd.config.task_instance import TaskInstance
 from nttd.db.recorder import SessionRecorder
 from nttd.db.tile_writer import TileWriter
@@ -85,6 +86,10 @@ class SessionRuntime:
         # protection for a benchmark run: session state rather than a credential,
         # because a self-hosting contestant holds every credential anyway.
         self.scored_lock = ScoredLock()
+        # Pacing and budget limits imposed by the scenario. Replaced at session
+        # start from the scenario settings; the default is unenforced, so an
+        # ad-hoc session keeps whatever the caller asked for.
+        self.fairness = FairnessConfig()
         self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
         self.gameloop_manager = GameloopManager(self)
 

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nttd.runtime.orchestrator import Orchestrator
 
 from nttd.analysis.score import rank_companies
+from nttd.config.fairness import from_settings as fairness_from_settings
 from nttd.config.scenario_config import (
     BankruptcyConfig,
     CargoThresholdConfig,
@@ -186,6 +187,7 @@ class SessionManager:
         # Lock a scored session before the server is up, so the window between
         # spawn and lock cannot be used.
         runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
+        runtime.fairness = fairness_from_settings(effective_settings)
         if runtime.scored_lock.scored:
             logger.info(
                 "Session %s is SCORED: game-mutating operator operations are refused",
@@ -319,6 +321,7 @@ class SessionManager:
             gamescript_path=self.base_config_dir / "game" / "nttd-gs" / "main.nut",
             openttd_binary=self.openttd_binary,
             capability=runtime.scored_lock.summary(),
+            fairness=runtime.fairness.as_dict(),
         )
 
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:
