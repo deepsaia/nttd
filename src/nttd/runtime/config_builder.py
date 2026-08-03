@@ -76,6 +76,7 @@ def build_session_config(
     settings: dict[str, str] | None = None,
     ai_opponents: int = 0,
     agent_companies: int = 0,
+    scenario_path: Path | str | None = None,
 ) -> Path:
     """Create a per-session OpenTTD config directory.
 
@@ -91,11 +92,24 @@ def build_session_config(
         settings: Game settings to bake into the config (key=value pairs).
         ai_opponents: Number of AI opponent companies to configure.
         agent_companies: Number of idle company slots for nttd agents.
+        scenario_path: The scenario file this session was built from. Copied into
+            the session directory so the run stays verifiable even if the source
+            file is later edited or moved.
 
     Returns:
         Path to the session config directory.
     """
     session_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- nttd_scenario.conf: snapshot the resolved scenario for provenance ---
+    # Named distinctly from OpenTTD's own scenario/ directory, which is transient
+    # and removed on cleanup.
+    if scenario_path:
+        src_scenario = Path(scenario_path)
+        if src_scenario.is_file():
+            shutil.copy2(src_scenario, session_dir / "nttd_scenario.conf")
+        else:
+            logger.warning("Scenario path %s is not a file -- not snapshotted", src_scenario)
 
     # --- openttd.cfg: copy and patch ports + game settings ---
     src_cfg = base_config_dir / "openttd.cfg"
@@ -104,8 +118,15 @@ def build_session_config(
     cfg_content = _patch_ini_value(cfg_content, "server_port", str(game_port))
     cfg_content = _patch_ini_value(cfg_content, "server_admin_port", str(admin_port))
 
-    # Bake game settings into the config (from scenario HOCON)
+    # Bake game settings into the config (from scenario HOCON).
+    #
+    # Keys prefixed with "_" are nttd-internal runtime metadata (_runtime_mode,
+    # _map_seed, _ec_*, ...). They are not OpenTTD settings, so writing them
+    # would pollute the generated cfg -- which is preserved as the provenance
+    # record of the world played -- with keys OpenTTD silently ignores.
     for key, value in (settings or {}).items():
+        if key.startswith("_"):
+            continue
         cfg_content = _patch_ini_value(cfg_content, key, value)
 
     # Company slots AFTER settings so agent_companies aren't overridden
