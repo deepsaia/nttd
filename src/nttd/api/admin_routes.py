@@ -39,6 +39,9 @@ class StartSessionRequest(BaseModel):
     savefile: str | None = None
     ai_opponents: int = 0
     agent_companies: int = 0
+    # Company names by company_id, as strings since JSON object keys are strings.
+    # Any company omitted here gets a generated name like 'jade-heron-4f2a'.
+    company_names: dict[str, str] | None = None
 
 
 class EndConditionsRequest(BaseModel):
@@ -212,12 +215,25 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
     # Get stored settings
     settings = await session_repo.get_settings(session_id)
 
+    # JSON object keys are strings, so company ids arrive as strings.
+    try:
+        company_names = (
+            {int(cid): name for cid, name in request.company_names.items()}
+            if request.company_names else None
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"company_names keys must be integer company ids: {e}",
+        ) from e
+
     # Start the OpenTTD server (spawns process, connects admin client)
     try:
         runtime = await mgr.start_session(
             session_id, settings,
             ai_opponents=request.ai_opponents,
             agent_companies=request.agent_companies,
+            company_names=company_names,
         )
     except Exception as e:
         logger.exception("Failed to start session %s", session_id)

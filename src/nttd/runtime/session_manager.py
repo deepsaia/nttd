@@ -102,11 +102,17 @@ class SessionManager:
         settings: dict[str, str] | None = None,
         ai_opponents: int = 0,
         agent_companies: int = 0,
+        company_names: dict[int, str] | None = None,
     ) -> SessionRuntime:
         """Start an OpenTTD server for a session.
 
         Allocates ports, builds config, spawns the process, connects admin client,
         applies settings, and starts a new game.
+
+        Args:
+            company_names: Names by company_id. Any contestant company omitted
+                gets a generated name, since OpenTTD's default "Unnamed" leaves a
+                result row unable to identify who played.
         """
         if session_id in self.runtimes:
             raise ValueError(f"Session {session_id} is already running")
@@ -201,6 +207,7 @@ class SessionManager:
             for company_id in range(agent_companies):
                 runtime.participants.issue(company_id)
             runtime.participants.write(session_dir)
+            await runtime.name_companies(agent_companies, names=company_names)
 
         # Configure orchestrator from runtime settings
         orch = runtime.orchestrator

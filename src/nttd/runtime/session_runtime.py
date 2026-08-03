@@ -21,6 +21,7 @@ from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
 from nttd.state.world import WorldState
+from nttd.utils.name_generator import generate_company_name
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,51 @@ class SessionRuntime:
                     "Expected %d companies but found %d for session %s",
                     total, company_count, self.session_id,
                 )
+
+    async def name_companies(
+        self, count: int, names: dict[int, str] | None = None,
+    ) -> dict[int, str]:
+        """Give each contestant company a readable name.
+
+        OpenTTD leaves companies as "Unnamed", which makes a leaderboard row
+        unable to say who played and the company_name column in the result record
+        useless. Generated names look like 'jade-heron-4f2a'.
+
+        Args:
+            count: How many companies to name, starting from company 0.
+            names: Explicit names by company_id, overriding the generated one.
+                Lets a contestant choose their own.
+
+        Returns:
+            The name applied per company_id. Companies that failed to rename are
+            omitted rather than reported optimistically.
+        """
+        supplied = names or {}
+        applied: dict[int, str] = {}
+        for company_id in range(count):
+            name = supplied.get(company_id) or generate_company_name()
+            result = await self.admin_client.send_gamescript(
+                "rename_company", {"company_id": company_id, "name": name}, timeout=10.0,
+            )
+            if result.get("success"):
+                applied[company_id] = name
+                # Reflect it immediately so a snapshot taken before the next GS
+                # refresh does not still say "Unnamed".
+                company = self.world.companies.get(company_id)
+                if company is not None:
+                    company.name = name
+            else:
+                logger.warning(
+                    "Could not name company %d in session %s: %s",
+                    company_id, self.session_id, result.get("error", "unknown"),
+                )
+        if applied:
+            logger.info(
+                "Named %d company(ies) for session %s: %s",
+                len(applied), self.session_id,
+                ", ".join(f"{cid}={name}" for cid, name in sorted(applied.items())),
+            )
+        return applied
 
     async def _capture_tiles(self) -> None:
         """Capture full tile terrain data in the background."""
