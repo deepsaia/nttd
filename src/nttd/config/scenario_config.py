@@ -259,7 +259,9 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
         logger.warning("%s -- falling back to default", formatted)
 
 
-def _validate_config(m: Any, co: Any, strict: bool = False, rt: Any = None) -> None:
+def _validate_config(
+    m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
+) -> None:
     """Validate map, company, and runtime config values.
 
     Checks for: unknown enum values, out-of-range numbers, conflicting combos.
@@ -272,6 +274,7 @@ def _validate_config(m: Any, co: Any, strict: bool = False, rt: Any = None) -> N
             an ill-specified task instance is refused rather than silently
             substituted -- a typo must not quietly produce a different world.
         rt: The ``runtime`` config tree, if present.
+        fair: The ``fairness`` config tree, if present.
 
     Raises:
         ScenarioConfigError: In strict mode, if any problem was found.
@@ -388,6 +391,23 @@ def _validate_config(m: Any, co: Any, strict: bool = False, rt: Any = None) -> N
                 "(calendar mode is fixed at 12)", minutes,
             )
 
+    # --- Fairness limits: ranges that keep a run comparable -----------------
+    if fair is not None:
+        checks = (
+            # A floor below ~1s is not a pacing limit, it is a busy loop. The
+            # measured slowest decide time is ~11s, so allow a wide upper range.
+            ("poll_interval", float(_get(fair, "poll_interval", 10.0)), 0.5, 600.0),
+            ("max_actions_per_cycle", int(_get(fair, "max_actions_per_cycle", 15)), 1, 200),
+            ("max_history_cycles", int(_get(fair, "max_history_cycles", 10)), 0, 1000),
+            ("llm_timeout_seconds", float(_get(fair, "llm_timeout_seconds", 120.0)), 1.0, 3600.0),
+        )
+        for name, value, low, high in checks:
+            if not low <= value <= high:
+                _report(
+                    strict, problems,
+                    "fairness.%s = %s is outside range [%s, %s]", name, value, low, high,
+                )
+
     if problems:
         raise ScenarioConfigError(
             f"{len(problems)} problem(s) in scenario config (strict mode): "
@@ -425,7 +445,9 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     m = _get(raw, "map", {})
     co = _get(raw, "companies", {})
 
-    _validate_config(m, co, strict=strict, rt=_get(raw, "runtime", {}))
+    _validate_config(
+        m, co, strict=strict, rt=_get(raw, "runtime", {}), fair=_get(raw, "fairness", None),
+    )
 
     # Map dimensions (log2)
     settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", 256))))
@@ -486,6 +508,17 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     max_loan = int(_get(co, "max_loan", 300000))
     if max_loan != 300000:
         settings["difficulty.max_loan"] = str(max_loan)
+
+    # Fairness limits. Operator-owned, because they decide how much a contestant
+    # may do: declared on AgentConfig they would let each contestant set their own
+    # budget. Enforced only for a scored session -- see config/fairness.py.
+    fair = _get(raw, "fairness", {})
+    if fair:
+        settings["_fair_poll_interval"] = str(float(_get(fair, "poll_interval", 10.0)))
+        settings["_fair_max_actions"] = str(int(_get(fair, "max_actions_per_cycle", 15)))
+        settings["_fair_max_history"] = str(int(_get(fair, "max_history_cycles", 10)))
+        settings["_fair_llm_timeout"] = str(float(_get(fair, "llm_timeout_seconds", 120.0)))
+        settings["_fair_observation_mode"] = str(_get(fair, "observation_mode", "compact"))
 
     # Timekeeping. These are the only real pacing knobs and they apply at map
     # generation only -- see RuntimeConfig. They move the calendar clock, not the
