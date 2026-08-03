@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import nttd.api.dependencies as deps
+from nttd.api.scored_guard import require_unscored
 from nttd.db.repositories import session_repo
 from nttd.utils.name_generator import generate_session_name
 
@@ -192,6 +193,10 @@ async def update_settings(session_id: str, request: UpdateSettingsRequest) -> di
     runtime = mgr.get_runtime(session_id) if mgr else None
     applied = False
     if runtime and runtime.connected:
+        # Rewriting settings mid-run changes the task instance itself, so a scored
+        # session refuses it. Storing them above is harmless: they only take effect
+        # on the next start.
+        require_unscored(runtime, "settings/apply_live")
         for key, value in request.settings.items():
             await runtime.admin_client.send_rcon(f"setting {key} {value}")
         applied = True
@@ -332,6 +337,7 @@ async def get_spectators(session_id: str) -> dict[str, Any]:
 @router.post("/sessions/{session_id}/deity/change_balance")
 async def deity_change_balance(session_id: str, request: DeityBalanceRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/change_balance")
     params: dict[str, Any] = {"company_id": request.company_id, "delta": request.delta}
     if request.expense_type is not None:
         params["expense_type"] = request.expense_type
@@ -344,6 +350,7 @@ async def deity_change_balance(session_id: str, request: DeityBalanceRequest) ->
 @router.post("/sessions/{session_id}/deity/set_max_loan")
 async def deity_set_max_loan(session_id: str, request: DeityMaxLoanRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/set_max_loan")
     result = await runtime.admin_client.send_gamescript(
         "set_max_loan", {"company_id": request.company_id, "amount": request.amount}
     )
@@ -355,6 +362,7 @@ async def deity_set_max_loan(session_id: str, request: DeityMaxLoanRequest) -> d
 @router.post("/sessions/{session_id}/deity/set_setting")
 async def deity_set_setting(session_id: str, request: DeitySettingRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/set_setting")
     result = await runtime.admin_client.send_gamescript(
         "set_game_setting", {"key": request.key, "value": request.value}
     )
@@ -366,6 +374,7 @@ async def deity_set_setting(session_id: str, request: DeitySettingRequest) -> di
 @router.post("/sessions/{session_id}/deity/found_town")
 async def deity_found_town(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/found_town")
     params: dict[str, Any] = {}
     if request.x is not None and request.y is not None:
         params["x"] = request.x
@@ -384,6 +393,7 @@ async def deity_found_town(session_id: str, request: DeityTownRequest) -> dict[s
 @router.post("/sessions/{session_id}/deity/expand_town")
 async def deity_expand_town(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/expand_town")
     if request.town_id is None:
         raise HTTPException(status_code=400, detail="town_id required")
     params: dict[str, Any] = {"town_id": request.town_id}
@@ -398,6 +408,7 @@ async def deity_expand_town(session_id: str, request: DeityTownRequest) -> dict[
 @router.post("/sessions/{session_id}/deity/set_town_growth")
 async def deity_set_town_growth(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/set_town_growth")
     if request.town_id is None or request.growth_rate is None:
         raise HTTPException(status_code=400, detail="town_id and growth_rate required")
     result = await runtime.admin_client.send_gamescript(
@@ -411,6 +422,7 @@ async def deity_set_town_growth(session_id: str, request: DeityTownRequest) -> d
 @router.post("/sessions/{session_id}/deity/create_subsidy")
 async def deity_create_subsidy(session_id: str, request: DeitySubsidyRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/create_subsidy")
     result = await runtime.admin_client.send_gamescript("create_subsidy", {
         "cargo_id": request.cargo_id,
         "src_type": request.src_type,
@@ -426,6 +438,7 @@ async def deity_create_subsidy(session_id: str, request: DeitySubsidyRequest) ->
 @router.post("/sessions/{session_id}/deity/change_town_rating")
 async def deity_change_town_rating(session_id: str, request: DeityTownRatingRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/change_town_rating")
     result = await runtime.admin_client.send_gamescript("change_town_rating", {
         "town_id": request.town_id,
         "company_id": request.company_id,

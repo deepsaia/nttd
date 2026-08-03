@@ -24,6 +24,7 @@ from nttd.api.participant_auth import (
     apply_company_scope,
     extract_token,
 )
+from nttd.api.scored_guard import require_unscored
 from nttd.schemas.game import GameState, RuntimeMode
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,7 @@ def set_action_window(session_id: str, seconds: float) -> dict[str, float]:
 @operator_router.post("/rcon")
 async def send_rcon(session_id: str, command: str) -> dict[str, list[str]]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "rcon", detail=command[:120])
     if not runtime.admin_client.connected:
         return {"response": ["Not connected to OpenTTD"]}
     response = await runtime.admin_client.send_rcon(command)
@@ -202,6 +204,7 @@ async def save_game(session_id: str, filename: str = "nttd_save") -> dict[str, A
 async def load_game(session_id: str, filename: str) -> dict[str, Any]:
     """Load a saved game by filename. This will reset the world state."""
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "load", detail=filename)
     if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
     response = await runtime.admin_client.send_rcon(f"load {filename}")
@@ -222,6 +225,7 @@ async def trigger_assist(session_id: str) -> dict[str, Any]:
 async def approve_assist(session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
     """Execute the approved action list and unpause the game."""
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "assist/approve", detail=f"{len(actions)} action(s)")
     results = await runtime.orchestrator.approve_assist(actions)
     return {"executed": len(results), "results": results}
 

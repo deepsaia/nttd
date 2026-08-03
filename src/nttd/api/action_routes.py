@@ -1,6 +1,7 @@
 """Session-scoped action routes: submit, validate, track actions."""
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +13,7 @@ from nttd.api.participant_auth import (
     apply_company_scope,
     extract_token,
 )
+from nttd.api.scored_guard import require_unscored
 from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS, OPERATOR_ACTIONS
 from nttd.interpreter.parser import parse_action_list
 from nttd.interpreter.validator import validate_actions as validate_agent_actions
@@ -52,11 +54,15 @@ async def submit_action(
             f"for scenario authoring."
         )
         runtime.action_tracker.update_result(envelope.action_id, ActionStatus.REJECTED, error)
-        return ActionResult(
+        result = ActionResult(
             action_id=envelope.action_id,
             status=ActionStatus.REJECTED,
             error=error,
         )
+        # Recorded: reaching for a superhuman power is exactly what an auditor
+        # wants to see, even though it was refused.
+        _record(runtime, envelope, dict(envelope.parameters), result)
+        return result
 
     if envelope.action_type not in KNOWN_ACTIONS:
         return ActionResult(
@@ -95,7 +101,7 @@ async def submit_action(
                 envelope.action_id, ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result", {}),
             )
-            return ActionResult(
+            result = ActionResult(
                 action_id=envelope.action_id,
                 status=ActionStatus.SUCCESS,
                 changed_entities=gs_result.get("result") or {},
@@ -103,7 +109,7 @@ async def submit_action(
         else:
             error = gs_result.get("error", "GS returned failure")
             runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, error)
-            return ActionResult(
+            result = ActionResult(
                 action_id=envelope.action_id,
                 status=ActionStatus.FAILED,
                 error=error,
@@ -111,11 +117,46 @@ async def submit_action(
     except Exception as exc:
         logger.exception("Action execution failed: %s", envelope.action_type)
         runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, str(exc))
-        return ActionResult(
+        result = ActionResult(
             action_id=envelope.action_id,
             status=ActionStatus.FAILED,
             error=str(exc),
         )
+
+    # Persist to actions.parquet. Only the gameloop path used to do this, so an
+    # action submitted over REST left no audit trail at all -- and a benchmark
+    # cannot be verified from an action log that is missing the actions.
+    _record(runtime, envelope, params, result)
+    return result
+
+
+def _record(
+    runtime: Any, envelope: ActionEnvelope, params: dict[str, Any], result: ActionResult,
+) -> None:
+    """Write an executed action to the session's action log."""
+    recorder = getattr(runtime, "recorder", None)
+    if recorder is None:
+        return
+    try:
+        recorder.record_action(
+            envelope=ActionEnvelope(
+                action_id=envelope.action_id,
+                action_type=envelope.action_type,
+                parameters=params,
+                company_id=params.get("company_id", envelope.company_id),
+                mode=envelope.mode,
+                metadata={
+                    **envelope.metadata,
+                    "participant_type": "agent",
+                    "game_date": runtime.world.game.game_date,
+                    "submitted_at": datetime.now(timezone.utc).isoformat(),
+                },
+            ),
+            result=result,
+        )
+    except Exception:
+        # The audit trail must not be able to fail the action it describes.
+        logger.exception("Could not record action %s", envelope.action_id)
 
 
 @participant_router.post("/submit-batch")
@@ -173,20 +214,15 @@ async def gs_execute(session_id: str, action: str, params: dict[str, Any] | None
 
     OPERATOR TIER. This reaches all GameScript commands, including deity powers a
     human player has no access to, and it is not recorded in the action log. It
-    exists for scenario authoring and debugging, not for play, so a session with
-    participant tokens issued refuses it.
+    exists for scenario authoring and debugging, not for play, so a scored session
+    refuses it.
     """
     runtime = deps.get_runtime(session_id)
-    if not runtime.participants.is_empty():
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "gs/execute is operator-tier and is refused once participant "
-                "tokens are issued: it bypasses the action allowlist and the "
-                "action log, so a run using it would not be scoreable. Use "
-                "/actions/submit for gameplay."
-            ),
-        )
+    # Keyed on whether the session is scored, not on whether tokens were issued.
+    # Tokens are addressing -- which company an action is for -- and conflating
+    # them with the boundary would refuse this during an unscored multi-agent run
+    # while permitting it in a scored single-agent one.
+    require_unscored(runtime, "gs/execute", detail=f"action={action}")
     if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
     return await runtime.admin_client.send_gamescript(action, params)
