@@ -27,7 +27,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from nttd.analysis.score import SCORE_VERSION, CompanyScore
-from nttd.config.golden_tasks import is_golden
 from nttd.config.task_instance import TaskInstance, file_digest
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
 
@@ -54,10 +53,6 @@ _SCHEMA = pa.schema([
     ("scenario_version", pa.string()),
     ("map_seed", pa.int64()),
     ("settings_digest", pa.string()),
-    # Whether the leaderboard has a column for this exact task. Derived from
-    # task_id, so reproducing a golden world reaches golden status by content
-    # rather than by declaring it.
-    ("is_golden_task", pa.bool_()),
     # The world settings a scored scenario is allowed to vary. They may differ
     # between scored runs only because they are disclosed here: a reader comparing
     # two rows needs to see that one was 512x512 mountainous.
@@ -226,13 +221,6 @@ class ResultWriter:
         dims = dimensions or {}
         blocked_ops = attest.get("blocked_operations") or []
 
-        # Whether the leaderboard has a column for this task at all. Derived from
-        # task_id, so a contestant who reproduces a golden world reaches the golden
-        # id by content and one who alters anything reaches a different id. A False
-        # is not a complaint: local experimentation and private variants are normal
-        # play, they are simply not comparable to other rows.
-        golden = is_golden(task.task_id) if task else False
-
         rows: list[dict[str, Any]] = []
         for score in scores:
             who = people.get(score.company_id, {})
@@ -252,7 +240,6 @@ class ResultWriter:
                 "scenario_version": task.scenario_version if task else "",
                 "map_seed": task.seed if (task and task.seed is not None) else -1,
                 "settings_digest": task.settings_digest if task else "",
-                "is_golden_task": golden,
                 # The permitted-to-vary dimensions, as leaderboard columns.
                 "map_size_x": int(dims.get("size_x", 0) or 0),
                 "map_size_y": int(dims.get("size_y", 0) or 0),

@@ -16,7 +16,6 @@ import typer
 from rich.table import Table
 
 from nttd.cli.helpers import console
-from nttd.config.golden_tasks import lookup
 
 
 def _sessions_dir() -> Path:
@@ -91,12 +90,6 @@ def result(
     )
     provenance.add_row("capability set", first["capability_digest"] or "[yellow]none[/]")
     provenance.add_row("task_id", first["task_id"] or "[yellow]none[/]")
-    golden = lookup(first["task_id"] or "")
-    provenance.add_row(
-        "leaderboard task",
-        f"[green]{golden.tier}[/] ({golden.summary})" if golden
-        else "[yellow]not a ranked task[/]",
-    )
     provenance.add_row(
         "scenario", f"{first['scenario_id'] or '?'} v{first['scenario_version'] or '?'}"
     )
@@ -143,13 +136,6 @@ def result(
         gaps.append("no map seed -- the world cannot be regenerated")
     if not first["task_id"]:
         gaps.append("no task_id -- the run is not tied to a task instance")
-    elif not first["is_golden_task"]:
-        # Not a defect. A private variant is legitimate play; it simply has no
-        # column on the board, so a contestant should know before submitting.
-        gaps.append(
-            "not a ranked task -- this world is not one the leaderboard has a column "
-            "for, so the result is comparable only to other runs of the same task"
-        )
     if first["nttd_git_dirty"]:
         gaps.append("uncommitted changes -- the recorded revision does not reproduce this run")
     if not first["gamescript_digest"]:
