@@ -38,7 +38,18 @@ _NON_TASK_KEYS: frozenset[str] = frozenset({
     # settings dict (as orphan recovery does) must yield the same task_id.
     "_task_id",
     "_settings_digest",
+    # The benchmark profile version. It records which RULES a run was held to, which
+    # the result reports separately; the settings those rules produced are already
+    # hashed individually, so including it would make a profile renumbering look
+    # like a different world.
+    "_profile_version",
 })
+
+# Readable display copies of the variable dimensions (_dim_landscape and friends).
+# Excluded by prefix rather than by name so that adding a dimension cannot silently
+# change every task_id: identity comes from the real game_creation.* and difficulty.*
+# settings these are projected from, and hashing both would double-count them.
+_NON_TASK_PREFIXES: tuple[str, ...] = ("_dim_",)
 
 _TASK_ID_LENGTH = 16
 
@@ -73,7 +84,7 @@ def normalise_settings(settings: dict[str, str]) -> dict[str, str]:
     return {
         key: str(settings[key])
         for key in sorted(settings)
-        if key not in _NON_TASK_KEYS
+        if key not in _NON_TASK_KEYS and not key.startswith(_NON_TASK_PREFIXES)
     }
 
 

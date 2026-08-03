@@ -215,16 +215,16 @@ def test_the_variable_dimensions_are_emitted_for_the_leaderboard(
     """They are permitted to differ precisely because they are disclosed."""
     path = _write(tmp_path, scored=True, size_x=512, terrain_type="hilly")
     settings = scenario_to_settings(load(path), strict=True)
-    assert settings["_map_size_x"] == "512"
-    assert settings["_map_terrain_type"] == "hilly"
-    assert settings["_map_landscape"] == "temperate"
+    assert settings["_dim_size_x"] == "512"
+    assert settings["_dim_terrain_type"] == "hilly"
+    assert settings["_dim_landscape"] == "temperate"
 
 
 def test_locked_settings_are_not_emitted_as_map_columns(tmp_path: Path) -> None:
     """They are constant across every scored run, so a column would say nothing."""
     settings = scenario_to_settings(load(_write(tmp_path, scored=True)), strict=True)
-    assert "_map_number_towns" not in settings
-    assert "_map_starting_year" not in settings
+    assert "_dim_number_towns" not in settings
+    assert "_dim_starting_year" not in settings
 
 
 # ---------------------------------------------------------------------------

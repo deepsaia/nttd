@@ -13,7 +13,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from nttd.config.benchmark_profile import PROFILE_VERSION, VARIABLE_SETTINGS
+from nttd.config.benchmark_profile import (
+    DIMENSION_PREFIX,
+    PROFILE_VERSION,
+    VARIABLE_SETTINGS,
+)
 from nttd.config.benchmark_profile import deviations as profile_deviations
 
 logger = logging.getLogger(__name__)
@@ -603,14 +607,20 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         # different profile versions are not comparable, and the record says so.
         settings["_profile_version"] = PROFILE_VERSION
 
-    # The dimensions a scored scenario is allowed to vary. Emitted so the result
+    # The dimensions a scored scenario is allowed to vary, emitted so the result
     # record can carry them as leaderboard columns -- they are what lets a reader
     # judge whether two runs are comparable, which is the whole reason they are
     # permitted to differ rather than locked.
+    #
+    # A distinct "_dim_" prefix rather than "_map_", for two reasons: "_map_seed" is
+    # a load-bearing key that SessionRuntime reads for the -G flag, and these are
+    # display projections of settings already emitted as game_creation.* and
+    # difficulty.*. The projection is excluded from task_id, since an identity hash
+    # must not depend on the format of a display copy.
     for key in sorted(VARIABLE_SETTINGS):
         value = _get(m, key, None)
         if value is not None:
-            settings[f"_map_{key}"] = str(value)
+            settings[f"{DIMENSION_PREFIX}{key}"] = str(value)
 
     # nttd-internal runtime metadata (prefixed with _)
     settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))

@@ -59,6 +59,13 @@ VARIABLE_SETTINGS: frozenset[str] = frozenset({
 # such a change are not comparable.
 PROFILE_VERSION = "1"
 
+# Prefix for the emitted display copies of the variable dimensions. These are
+# projections of settings already carried as game_creation.* and difficulty.*, kept
+# in readable form so a leaderboard column reads "mountainous" rather than "3".
+# Excluded from task_id: identity comes from the real OpenTTD settings, and must not
+# shift because a display copy was reformatted or a dimension was added here.
+DIMENSION_PREFIX = "_dim_"
+
 
 def deviations(map_cfg: Any, get: Any) -> list[str]:
     """Return a human-readable problem per locked setting that does not match.
