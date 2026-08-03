@@ -12,7 +12,7 @@ from nttd.api.participant_auth import (
     apply_company_scope,
     extract_token,
 )
-from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS
+from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS, OPERATOR_ACTIONS
 from nttd.interpreter.parser import parse_action_list
 from nttd.interpreter.validator import validate_actions as validate_agent_actions
 from nttd.schemas.action_envelope import ActionEnvelope
@@ -41,6 +41,22 @@ async def submit_action(
     """Submit an action. If action_type maps to a GS command, execute it immediately."""
     runtime = deps.get_runtime(session_id)
     runtime.action_tracker.submit(envelope)
+
+    if envelope.action_type in OPERATOR_ACTIONS:
+        # Refused with a distinct message rather than "unknown": the action does
+        # exist, it just has no human equivalent, so using it would make the run
+        # unscoreable. Saying so plainly stops an agent retrying it forever.
+        error = (
+            f"{envelope.action_type} is operator-tier: it has no human-player "
+            f"equivalent, so it is not available for play. See the operator tier "
+            f"for scenario authoring."
+        )
+        runtime.action_tracker.update_result(envelope.action_id, ActionStatus.REJECTED, error)
+        return ActionResult(
+            action_id=envelope.action_id,
+            status=ActionStatus.REJECTED,
+            error=error,
+        )
 
     if envelope.action_type not in KNOWN_ACTIONS:
         return ActionResult(

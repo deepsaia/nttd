@@ -4,7 +4,7 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
-from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS
+from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS, OPERATOR_ACTIONS
 from nttd.mcp.client import NttdMCPClient
 
 
@@ -31,6 +31,18 @@ def register_validation_tools(mcp: FastMCP, client: NttdMCPClient) -> None:
 
             if not action_type:
                 results.append({"index": i, "status": "invalid", "error": "missing action_type"})
+                continue
+
+            if action_type in OPERATOR_ACTIONS:
+                results.append({
+                    "index": i,
+                    "status": "invalid",
+                    "action_type": action_type,
+                    "error": (
+                        f"{action_type} is operator-tier: no human-player "
+                        f"equivalent, so it is not available for play"
+                    ),
+                })
                 continue
 
             if action_type not in KNOWN_ACTIONS:
