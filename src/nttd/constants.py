@@ -117,3 +117,36 @@ OPERATOR_ACTIONS: set[str] = {
 
 # Sanity: an action cannot be both play and authoring.
 assert not (KNOWN_ACTIONS & OPERATOR_ACTIONS)
+
+
+# ---------------------------------------------------------------------------
+# Read-only GameScript commands
+# ---------------------------------------------------------------------------
+
+# POST /state/gs/query reaches the GameScript directly, so it can call any command
+# the GS implements -- it was a byte-for-byte clone of the guarded
+# /actions/gs/execute. Verified: set_max_loan raised a scored company's credit
+# ceiling from 300,000 to 9,000,000 through it.
+#
+# An explicit set rather than a "get_*" prefix rule, because a prefix rule silently
+# admits any future mutator that happens to be named like a getter. A test
+# cross-checks this against the GameScript dispatch table.
+READ_ONLY_GS_ACTIONS: frozenset[str] = frozenset({
+    "ping",
+    "find_airport_spots", "find_bus_stop_spots", "find_depot_spots", "find_dock_spots",
+    "find_flat_spots", "find_rail_depot_spot", "find_station_spot", "find_water_depot_spots",
+    "get_airport_types", "get_bridge_types", "get_cargo_flows", "get_cargo_types",
+    "get_clients", "get_companies", "get_company_finance", "get_date",
+    "get_engine_details", "get_engines", "get_expense_breakdown", "get_game_settings",
+    "get_groups", "get_hangars", "get_industries", "get_industry_info",
+    "get_infrastructure_costs", "get_map_size", "get_map_terrain", "get_orders",
+    "get_rail_types", "get_road_types", "get_signs", "get_station_info",
+    "get_stations", "get_subsidies", "get_tile_area", "get_tile_info",
+    "get_town_info", "get_town_rating", "get_towns", "get_vehicle_info",
+    "get_vehicles", "get_waypoints", "scan_town_area",
+})
+
+# A read-only command must never also be an action, or the query endpoint would be
+# a route around the action allowlist.
+assert not (READ_ONLY_GS_ACTIONS & KNOWN_ACTIONS)
+assert not (READ_ONLY_GS_ACTIONS & OPERATOR_ACTIONS)

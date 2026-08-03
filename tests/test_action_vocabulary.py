@@ -230,3 +230,65 @@ def test_operator_action_is_rejected_before_param_checks() -> None:
 
     errors = validate_actions([AgentAction(action_type="create_subsidy", parameters={})])
     assert "operator-tier" in errors[0]
+
+
+# ---------------------------------------------------------------------------
+# The observation query endpoint must not be a route around the allowlist
+# ---------------------------------------------------------------------------
+
+
+def test_read_only_set_excludes_every_action() -> None:
+    """POST /state/gs/query reaches the GameScript directly, so anything in this
+    set is callable without the action allowlist or the scored lock.
+
+    Verified before the fix: set_max_loan raised a scored company's credit ceiling
+    from 300,000 to 9,000,000 through that endpoint while the guarded twin at
+    /actions/gs/execute correctly returned 403.
+    """
+    from nttd.constants import READ_ONLY_GS_ACTIONS
+
+    assert not (READ_ONLY_GS_ACTIONS & KNOWN_ACTIONS)
+    assert not (READ_ONLY_GS_ACTIONS & OPERATOR_ACTIONS)
+
+
+def test_read_only_set_contains_no_mutating_command() -> None:
+    """Cross-check the hand-maintained set against the GameScript.
+
+    A command whose handler writes must never be reachable as a "query", so this
+    fails if a mutator is added to the set by mistake.
+    """
+    from nttd.constants import READ_ONLY_GS_ACTIONS
+
+    mutating_prefixes = (
+        "build_", "remove_", "connect_", "buy_", "sell_", "start_", "stop_",
+        "create_", "delete_", "move_", "add_", "insert_", "skip_", "share_",
+        "copy_", "set_", "change_", "found_", "expand_", "convert_", "demolish_",
+        "plant_", "raise_", "lower_", "level_", "clone_", "refit_", "reverse_",
+        "rename_", "send_", "open_close_",
+    )
+    offenders = sorted(
+        c for c in READ_ONLY_GS_ACTIONS if c.startswith(mutating_prefixes)
+    )
+    assert not offenders, f"mutating commands in the read-only set: {offenders}"
+
+
+def test_read_only_commands_all_exist_in_the_gamescript() -> None:
+    from nttd.constants import READ_ONLY_GS_ACTIONS
+
+    # ping answers inline rather than delegating to a Cmd* handler, so it is not
+    # matched by _gamescript_commands. Verify it separately.
+    assert 'case "ping"' in _GAMESCRIPT.read_text()
+
+    missing = sorted(READ_ONLY_GS_ACTIONS - _gamescript_commands() - {"ping"})
+    assert not missing, f"read-only commands not dispatched by the GameScript: {missing}"
+
+
+def test_every_read_only_gamescript_command_is_reachable() -> None:
+    """An observation command left out of the set becomes silently unavailable."""
+    from nttd.constants import READ_ONLY_GS_ACTIONS
+
+    unreachable = sorted(
+        c for c in _gamescript_commands()
+        if c.startswith(_READ_ONLY_PREFIXES) and c not in READ_ONLY_GS_ACTIONS
+    )
+    assert not unreachable, f"read-only commands not exposed for query: {unreachable}"

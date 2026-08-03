@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
+from nttd.constants import READ_ONLY_GS_ACTIONS
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
     CompactRecentAction,
@@ -202,8 +203,28 @@ async def get_compact_state(session_id: str, company_id: int = -1) -> CompactSna
 
 @router.post("/gs/query")
 async def gs_query(session_id: str, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Query game state via GameScript."""
+    """Query game state via GameScript.
+
+    Read-only by contract, but the underlying transport is not: send_gamescript
+    reaches every GameScript command, so this endpoint was a byte-for-byte clone of
+    the guarded /actions/gs/execute. Verified: set_max_loan raised a scored
+    company's credit ceiling from 300,000 to 9,000,000 through here while the
+    guarded twin correctly returned 403.
+
+    Mutating actions are therefore refused rather than merely discouraged.
+    """
     runtime = deps.get_runtime(session_id)
+
+    if action not in READ_ONLY_GS_ACTIONS:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"{action} is not a read-only query. This endpoint reaches the "
+                f"GameScript directly, so it accepts observation commands only. "
+                f"Use /actions/submit for gameplay."
+            ),
+        )
+
     if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
     return await runtime.admin_client.send_gamescript(action, params)
