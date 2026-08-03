@@ -161,3 +161,60 @@ def test_unenforced_fairness_yields_an_unenforced_budget() -> None:
     budget = from_fairness(FairnessConfig(enforced=False))
     assert budget.enforced is False
     assert budget.check(company_id=0, count=1000).allowed is True
+
+
+# ---------------------------------------------------------------------------
+# The gameloop draws from the same company budget as the REST path
+# ---------------------------------------------------------------------------
+
+
+class _StubConnection:
+    """Binds the real AgentConnection method to a stub, so the test exercises
+    production logic rather than a copy of it."""
+
+    def __init__(self, budget: ActionBudget, company_id: int, ceiling: int) -> None:
+        from types import SimpleNamespace
+
+        from nttd.gameloop.connection import AgentConnection
+
+        self.runtime = SimpleNamespace(action_budget=budget)
+        self.config = SimpleNamespace(
+            company_id=company_id, max_actions_per_cycle=ceiling,
+        )
+        self._allowance = AgentConnection._company_action_allowance.__get__(self)
+
+
+def test_allowance_shrinks_as_a_company_spends_its_budget() -> None:
+    """Three agents on one company must share the ceiling, not each get it.
+
+    The shipped 3-agent scenario puts road, air, and water all on company 0, so a
+    per-agent ceiling handed that entry 3x the actions of a single-agent entry.
+    """
+    budget = _budget(max_actions=6)
+    conn = _StubConnection(budget, company_id=0, ceiling=6)
+
+    assert conn._allowance(4) == 4          # agent one takes its share
+    budget.consume(0, 4)
+    assert conn._allowance(4) == 2          # agent two gets what is left
+    budget.consume(0, 2)
+    assert conn._allowance(4) == 0          # agent three gets nothing
+
+
+def test_allowance_is_independent_across_companies() -> None:
+    budget = _budget(max_actions=3)
+    budget.consume(0, 3)
+
+    assert _StubConnection(budget, company_id=0, ceiling=3)._allowance(3) == 0
+    assert _StubConnection(budget, company_id=1, ceiling=3)._allowance(3) == 3
+
+
+def test_allowance_falls_back_to_the_agent_ceiling_when_unenforced() -> None:
+    """An unscored run behaves as it did before, truncating per agent."""
+    budget = _budget(max_actions=2, enforced=False)
+    assert _StubConnection(budget, company_id=0, ceiling=5)._allowance(9) == 5
+
+
+def test_allowance_never_exceeds_the_agent_ceiling() -> None:
+    """The per-agent ceiling is still an upper bound, not just the company budget."""
+    budget = _budget(max_actions=100)
+    assert _StubConnection(budget, company_id=0, ceiling=5)._allowance(50) == 5
