@@ -53,6 +53,19 @@ Agent-agnostic OpenTTD as an AI simulation and benchmarking environment.
 
 ---
 
+## Commits & PRs
+
+- **One commit per single task or single file.** Keep each commit tightly scoped;
+  never bundle unrelated changes.
+- **Single-line, simple commit messages.** No body paragraphs unless truly needed.
+- **No co-authored / "Co-Authored-By" trailer.** Ever.
+- **No "Generated with Claude Code" footer** (or any tool-attribution footer) in
+  commit messages or PR bodies.
+- **Absolutely no em-dashes anywhere** in commit messages, PR text, code comments,
+  or docs.
+
+---
+
 ## Testing
 
 * Write tests for new functionality whenever possible.
