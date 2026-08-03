@@ -67,6 +67,27 @@ PROFILE_VERSION = "1"
 DIMENSION_PREFIX = "_dim_"
 
 
+def dimensions_from_settings(settings: dict[str, str]) -> dict[str, str]:
+    """Extract the readable variable dimensions from a session's settings.
+
+    Reads the ``_dim_*`` keys emitted by ``scenario_to_settings``, so both session
+    start and crash recovery derive them the same way rather than one path
+    reconstructing them from the OpenTTD integers.
+
+    Includes ``profile_version`` when present, since a reader needs to know which
+    ruleset produced the dimensions alongside the dimensions themselves.
+    """
+    dims = {
+        key[len(DIMENSION_PREFIX):]: value
+        for key, value in settings.items()
+        if key.startswith(DIMENSION_PREFIX)
+    }
+    profile = settings.get("_profile_version")
+    if profile:
+        dims["profile_version"] = profile
+    return dims
+
+
 def deviations(map_cfg: Any, get: Any) -> list[str]:
     """Return a human-readable problem per locked setting that does not match.
 
