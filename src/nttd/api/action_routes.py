@@ -19,10 +19,19 @@ from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/sessions/{session_id}/actions", tags=["actions"])
+_ACTIONS_PREFIX = "/sessions/{session_id}/actions"
+
+# gs/execute is operator-tier: it bypasses the KNOWN_ACTIONS allowlist and the
+# action log, so it can reach deity powers a human player has no access to and
+# leaves no auditable trace. Everything else here is gameplay.
+participant_router = APIRouter(prefix=_ACTIONS_PREFIX, tags=["actions"])
+operator_router = APIRouter(prefix=_ACTIONS_PREFIX, tags=["actions"])
+
+# Aggregate view used to serve the legacy unprefixed paths.
+router = APIRouter()
 
 
-@router.post("/submit", response_model=ActionResult)
+@participant_router.post("/submit", response_model=ActionResult)
 async def submit_action(
     session_id: str,
     envelope: ActionEnvelope,
@@ -93,7 +102,7 @@ async def submit_action(
         )
 
 
-@router.post("/submit-batch")
+@participant_router.post("/submit-batch")
 async def submit_action_batch(
     session_id: str,
     envelopes: list[ActionEnvelope],
@@ -114,7 +123,7 @@ async def submit_action_batch(
     return results
 
 
-@router.post("/validate", response_model=ActionResult)
+@participant_router.post("/validate", response_model=ActionResult)
 async def validate_action(session_id: str, envelope: ActionEnvelope) -> ActionResult:
     """Validate an action without executing it."""
     deps.get_runtime(session_id)  # verify session is running
@@ -127,7 +136,7 @@ async def validate_action(session_id: str, envelope: ActionEnvelope) -> ActionRe
     return ActionResult(action_id=envelope.action_id, status=ActionStatus.VALIDATED)
 
 
-@router.get("/{action_id}/status", response_model=ActionResult)
+@participant_router.get("/{action_id}/status", response_model=ActionResult)
 def get_action_status(session_id: str, action_id: str) -> ActionResult:
     runtime = deps.get_runtime(session_id)
     result = runtime.action_tracker.get_result(action_id)
@@ -136,13 +145,13 @@ def get_action_status(session_id: str, action_id: str) -> ActionResult:
     return result
 
 
-@router.get("/recent", response_model=list[ActionResult])
+@participant_router.get("/recent", response_model=list[ActionResult])
 def get_recent_actions(session_id: str, limit: int = 50) -> list[ActionResult]:
     runtime = deps.get_runtime(session_id)
     return runtime.action_tracker.get_recent(limit)
 
 
-@router.post("/gs/execute")
+@operator_router.post("/gs/execute")
 async def gs_execute(session_id: str, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Execute a raw GS command directly (bypasses action tracking).
 
@@ -172,13 +181,13 @@ async def gs_execute(session_id: str, action: str, params: dict[str, Any] | None
 # plus an interpret endpoint that parses + validates + executes.
 
 
-@router.get("/available")
+@participant_router.get("/available")
 def list_available_actions_endpoint() -> dict[str, list[str]]:
     """List all available action types grouped by category."""
     return ACTION_CATEGORIES
 
 
-@router.post("/interpret/validate")
+@participant_router.post("/interpret/validate")
 async def validate_agent_action_list(
     session_id: str, actions: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -204,7 +213,7 @@ async def validate_agent_action_list(
     }
 
 
-@router.post("/interpret")
+@participant_router.post("/interpret")
 async def interpret_agent_actions(
     session_id: str,
     actions: list[dict[str, Any]],
@@ -247,3 +256,8 @@ async def interpret_agent_actions(
         results.append(result)
 
     return results
+
+
+# Legacy unprefixed paths. New callers should use the /v1/<tier> prefixes.
+router.include_router(participant_router)
+router.include_router(operator_router)
