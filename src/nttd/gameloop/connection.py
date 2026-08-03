@@ -685,6 +685,12 @@ class AgentConnection:
         """Execute validated actions via GS commands through the admin client."""
         results: list[dict[str, Any]] = []
         cycle_num = self.tracker.cycle_count
+
+        # The scored clock starts when a contestant first acts, not when the
+        # session was provisioned. Idempotent, so calling it per cycle is safe.
+        if actions:
+            self.runtime.orchestrator.start_scored_clock()
+
         for i, action in enumerate(actions):
             params = {**action.parameters, "company_id": self.config.company_id}
             action_id = f"{self.connection_id}:{cycle_num}:{i}"
