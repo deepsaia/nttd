@@ -119,3 +119,24 @@ def test_delete_session(client: TestClient) -> None:
 
     resp = client.get(f"/admin/sessions/{sid}")
     assert resp.status_code == 404
+
+
+def test_speed_endpoint_is_rejected(client: TestClient) -> None:
+    """POST /speed must refuse, not silently pretend to change the pace.
+
+    OpenTTD 15.3 has no game_speed setting. This endpoint used to issue a
+    failing rcon and still return {"speed": n}, so callers believed the game had
+    sped up -- including the integration suite, which thought it ran at 16x.
+    """
+    sid = _create_session(client, "speed_test")
+    resp = client.post(f"/sessions/{sid}/speed", params={"speed": 8})
+    assert resp.status_code == 501, "unsupported operation, not a bad request"
+    detail = resp.json()["detail"]
+    assert "no runtime game-speed" in detail
+    assert "minutes_per_calendar_year" in detail
+
+
+def test_speed_endpoint_rejects_regardless_of_session_state(client: TestClient) -> None:
+    """501 is unconditional: the operation does not exist in OpenTTD at all."""
+    resp = client.post("/sessions/nonexistent_session_xyz/speed", params={"speed": 8})
+    assert resp.status_code == 501

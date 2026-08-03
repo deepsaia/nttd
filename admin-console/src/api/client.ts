@@ -77,9 +77,9 @@ export function unpauseGame(sessionId: string) {
   return post<{ paused: boolean }>(`/sessions/${sessionId}/unpause`);
 }
 
-export function setGameSpeed(sessionId: string, speed: number) {
-  return post<{ speed: number }>(`/sessions/${sessionId}/speed?speed=${speed}`);
-}
+// setGameSpeed was removed: OpenTTD 15.3 has no runtime game-speed setting.
+// The endpoint now returns 400. The economy clock is fixed at 1 wall-minute per
+// economy month; the calendar pace is a generation-time scenario setting.
 
 export function sendRcon(sessionId: string, command: string) {
   return post<{ response: string[] }>(`/sessions/${sessionId}/rcon?command=${encodeURIComponent(command)}`);

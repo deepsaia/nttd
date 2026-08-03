@@ -60,14 +60,17 @@ def session_create(
     map_x = 2 ** int(settings.get("game_creation.map_x", "8"))
     map_y = 2 ** int(settings.get("game_creation.map_y", "8"))
     ai_count = settings.get("difficulty.max_no_competitors", "0")
+    seed = settings.get("_map_seed")
 
     console.print(Panel(
         f"[bold]Session ID:[/]  [cyan]{session_id}[/]\n"
         f"[bold]Name:[/]        {session_name}\n"
         f"[bold]Config:[/]      {config or 'defaults'}\n"
         f"[bold]Map:[/]         {map_x}x{map_y}\n"
+        f"[bold]Seed:[/]        "
+        + (f"[cyan]{seed}[/]" if seed else "[yellow]random (not reproducible)[/]") + "\n"
         f"[bold]AI opponents:[/] {ai_count}\n"
-        f"[bold]Runtime:[/]     {cfg.runtime.mode} @ {cfg.runtime.game_speed}x\n"
+        f"[bold]Runtime:[/]     {cfg.runtime.mode}\n"
         + format_end_conditions_brief(cfg.end_conditions),
         title="Session created",
     ))
@@ -243,7 +246,7 @@ def session_status(
                 console.print(Panel(
                     f"[bold]Date:[/]   {game.get('game_date', '?')}\n"
                     f"[bold]Paused:[/] {game.get('paused', '?')}\n"
-                    f"[bold]Speed:[/]  {game.get('speed', '?')}x\n"
+                    f"[bold]Mode:[/]   {game.get('mode', '?')}\n"
                     f"[bold]Map:[/]    {game.get('map_width', '?')}x{game.get('map_height', '?')}",
                     title="Game State",
                 ))

@@ -40,11 +40,32 @@ async def unpause(session_id: str) -> dict[str, bool]:
 
 @router.post("/speed")
 async def set_speed(session_id: str, speed: int) -> dict[str, int]:
-    runtime = deps.get_runtime(session_id)
-    if runtime.admin_client.connected:
-        await runtime.admin_client.send_rcon(f"setting game_speed {speed}")
-    runtime.world.set_speed(speed)
-    return {"speed": speed}
+    """Rejected: OpenTTD has no runtime game-speed control.
+
+    This endpoint previously issued ``setting game_speed <n>``, which does not
+    exist in OpenTTD 15.3 -- the rcon call failed while the endpoint still
+    returned ``{"speed": n}``, so callers believed they had changed the pace.
+
+    OpenTTD keeps two clocks. The ECONOMY clock (cargo, payments, finances, and
+    everything GSDate reports) is fixed at 1 wall-minute per economy month and
+    cannot be changed at all. The CALENDAR clock, which governs vehicle and house
+    introduction dates, is set by ``economy.minutes_per_calendar_year`` -- but
+    only in wallclock timekeeping and only at map generation, so it belongs in
+    the scenario config, not here.
+    """
+    # Unconditional: the operation does not exist in OpenTTD at all, so session
+    # state is irrelevant and resolving it first would only obscure the reason.
+    _ = session_id, speed
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "OpenTTD 15.3 has no runtime game-speed setting. The economy clock is "
+            "fixed at 1 wall-minute per economy month. To change the calendar pace "
+            "(vehicle/house introduction dates), set runtime.timekeeping_units = "
+            "'wallclock' and runtime.minutes_per_calendar_year in the scenario "
+            "config -- both apply at map generation only."
+        ),
+    )
 
 
 @router.post("/mode")
