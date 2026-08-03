@@ -139,9 +139,14 @@ async def get_session_leaderboard(session_id: str) -> dict[str, Any]:
     return {"session_id": session_id, "leaderboard": entries}
 
 
-@router.post("/leaderboard/compute/{session_id}")
+@router.get("/leaderboard/compute/{session_id}")
 async def compute_leaderboard(session_id: str) -> dict[str, Any]:
-    """Same as GET -- leaderboard is always computed on-the-fly from Parquet."""
+    """Row count for a session's leaderboard.
+
+    A GET because it mutates nothing: the leaderboard is derived from Parquet on
+    every request, so there is no stored ranking to recompute. It was a POST,
+    which put a write-shaped route in the read-only public tier.
+    """
     result = await get_session_leaderboard(session_id)
     return {"session_id": session_id, "ranked": len(result["leaderboard"])}
 

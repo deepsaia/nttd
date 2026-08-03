@@ -449,7 +449,7 @@ All session-specific endpoints require a `{session_id}` path parameter.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/leaderboard/compute/{session_id}` | Compute session leaderboard |
+| GET | `/leaderboard/compute/{session_id}` | Session leaderboard row count |
 | GET | `/leaderboard/session/{session_id}` | Get session rankings |
 | GET | `/leaderboard/global` | Global rankings across sessions |
 
