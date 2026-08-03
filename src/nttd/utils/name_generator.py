@@ -1,8 +1,10 @@
-"""Human-readable session name generator.
+"""Human-readable name generators for sessions and companies.
 
-Produces names like: crimson-falcon-blaze-06apr2026-160734pdt
+Sessions: crimson-falcon-blaze-06apr2026-160734pdt
+Companies: jade-heron-4f2a
 """
 import random
+import uuid
 from datetime import datetime
 
 _ADJECTIVES = [
@@ -71,3 +73,17 @@ def generate_session_name() -> str:
     noun = random.choice(_NOUNS)
     verb = random.choice(_VERBS)
     return f"{adj}-{noun}-{verb}-{generate_timestamp()}"
+
+
+def generate_company_name() -> str:
+    """Generate a company name like 'jade-heron-4f2a'.
+
+    Format: <adj>-<noun>-<4 hex chars>. Companies default to "Unnamed" in
+    OpenTTD, which makes a leaderboard row unable to identify who played, so
+    every contestant company gets a readable name it can still override.
+
+    The hex suffix keeps names distinct when two companies draw the same pair.
+    """
+    adj = random.choice(_ADJECTIVES)
+    noun = random.choice(_NOUNS)
+    return f"{adj}-{noun}-{uuid.uuid4().hex[:4]}"
