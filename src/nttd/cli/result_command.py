@@ -79,6 +79,16 @@ def result(
     provenance = Table(title="Provenance", show_header=False)
     provenance.add_column("Field", style="bold")
     provenance.add_column("Value")
+    provenance.add_row(
+        "scored session",
+        "[green]yes[/]" if first["scored_session"] else "[yellow]no (unscored)[/]",
+    )
+    provenance.add_row(
+        "clean run",
+        "[green]yes[/]" if first["clean_run"]
+        else f"[red]no[/] ({first['blocked_attempts']} blocked: {first['blocked_operations']})",
+    )
+    provenance.add_row("capability set", first["capability_digest"] or "[yellow]none[/]")
     provenance.add_row("task_id", first["task_id"] or "[yellow]none[/]")
     provenance.add_row(
         "scenario", f"{first['scenario_id'] or '?'} v{first['scenario_version'] or '?'}"
@@ -102,6 +112,17 @@ def result(
 
     # Flag what would block verification, so gaps are visible before submission.
     gaps: list[str] = []
+    if not first["scored_session"]:
+        gaps.append(
+            "session was not scored -- operator powers were available throughout, "
+            "so the run is not a benchmark result"
+        )
+    if not first["clean_run"]:
+        gaps.append(
+            f"{first['blocked_attempts']} operator operation(s) attempted and refused "
+            f"({first['blocked_operations']}) -- nothing took effect, but the run is "
+            f"not clean"
+        )
     if seed < 0:
         gaps.append("no map seed -- the world cannot be regenerated")
     if not first["task_id"]:

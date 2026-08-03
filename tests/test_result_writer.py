@@ -155,3 +155,64 @@ def test_no_scores_writes_nothing(tmp_path: Path) -> None:
 
 def test_read_result_of_missing_file_is_empty(tmp_path: Path) -> None:
     assert read_result(tmp_path / "nonexistent") == []
+
+
+# ---------------------------------------------------------------------------
+# Capability attestation
+# ---------------------------------------------------------------------------
+
+
+def test_clean_scored_run_is_attested(tmp_path: Path) -> None:
+    """A scored run that stayed in the participant tier records that fact."""
+    row = _write(tmp_path, capability={
+        "scored": True, "clean_run": True,
+        "blocked_attempts": 0, "blocked_operations": [],
+    })[0]
+    assert row["scored_session"] is True
+    assert row["clean_run"] is True
+    assert row["blocked_attempts"] == 0
+    assert row["blocked_operations"] == ""
+
+
+def test_blocked_attempt_is_recorded_without_voiding_the_score(tmp_path: Path) -> None:
+    """The refusal means nothing happened, so the score stands and is flagged."""
+    row = _write(tmp_path, capability={
+        "scored": True, "clean_run": False,
+        "blocked_attempts": 2,
+        "blocked_operations": ["deity/change_balance", "rcon"],
+    })[0]
+    assert row["clean_run"] is False
+    assert row["blocked_attempts"] == 2
+    assert "deity/change_balance" in row["blocked_operations"]
+    assert row["primary_score"] == 740, "the score is still recorded"
+
+
+def test_unscored_run_is_marked_as_such(tmp_path: Path) -> None:
+    """An unscored session had operator powers available all along."""
+    row = _write(tmp_path, capability={
+        "scored": False, "clean_run": True,
+        "blocked_attempts": 0, "blocked_operations": [],
+    })[0]
+    assert row["scored_session"] is False
+
+
+def test_missing_attestation_defaults_to_unscored(tmp_path: Path) -> None:
+    """Absent information must not read as a stronger claim than was made."""
+    row = _write(tmp_path)[0]
+    assert row["scored_session"] is False
+
+
+def test_capability_digest_reflects_the_vocabulary(tmp_path: Path) -> None:
+    """Reclassifying an action must change the digest, so a verifier can tell
+    that two results were not scored under the same rules.
+    """
+    from unittest.mock import patch
+
+    from nttd.db import result_writer
+
+    baseline = _write(tmp_path)[0]["capability_digest"]
+    assert baseline
+
+    with patch.object(result_writer, "KNOWN_ACTIONS", {"build_road_stop"}):
+        changed = result_writer.capability_digest()
+    assert changed != baseline

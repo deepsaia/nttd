@@ -15,6 +15,8 @@ visibly partial instead of quietly wrong.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import subprocess
 from datetime import datetime, timezone
@@ -26,6 +28,7 @@ import pyarrow.parquet as pq
 
 from nttd.analysis.score import SCORE_VERSION, CompanyScore
 from nttd.config.task_instance import TaskInstance, file_digest
+from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,15 @@ _SCHEMA = pa.schema([
     ("completion_tokens", pa.int64()),
     ("total_cost_usd", pa.float64()),
     ("cost_is_estimated", pa.bool_()),
+    # Capability attestation. Self-hosting means auth cannot prevent cheating, so
+    # the record states what the run actually stayed within. A scored run that
+    # attempted an operator power is still scored -- the attempt was refused -- but
+    # it is no longer a clean run, which is what makes an accident visible.
+    ("scored_session", pa.bool_()),
+    ("clean_run", pa.bool_()),
+    ("blocked_attempts", pa.int32()),
+    ("blocked_operations", pa.string()),
+    ("capability_digest", pa.string()),
     # Provenance of the code that ran
     ("nttd_git_sha", pa.string()),
     ("nttd_git_dirty", pa.bool_()),
@@ -97,6 +109,23 @@ def _git_revision(repo_root: Path) -> tuple[str, bool]:
     except (subprocess.SubprocessError, OSError):
         logger.debug("Could not read git revision at %s", repo_root)
         return "", False
+
+
+def capability_digest() -> str:
+    """Digest of the action vocabulary a contestant was permitted.
+
+    Lets a verifier tell whether two results were scored under the same rules.
+    Exposing a new action or reclassifying one changes this, so a leaderboard can
+    detect that entries are no longer directly comparable.
+    """
+    payload = json.dumps(
+        {
+            "participant": sorted(KNOWN_ACTIONS),
+            "operator": sorted(OPERATOR_ACTIONS),
+        },
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 def openttd_version(binary: str) -> str:
@@ -132,6 +161,7 @@ class ResultWriter:
         participants: dict[int, dict[str, Any]] | None = None,
         gamescript_path: Path | None = None,
         openttd_binary: str = "",
+        capability: dict[str, Any] | None = None,
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
 
@@ -141,6 +171,8 @@ class ResultWriter:
             participants: Per-company contestant detail, keyed by company_id.
             gamescript_path: The GameScript that ran, hashed for provenance.
             openttd_binary: Path to the OpenTTD binary, queried for its version.
+            capability: Attestation from the session's scored lock -- whether the
+                run was scored and whether it stayed within the participant tier.
         """
         if not scores:
             logger.warning("Session %s: no company scores, result.parquet not written", session_id)
@@ -152,6 +184,11 @@ class ResultWriter:
         version = openttd_version(openttd_binary) if openttd_binary else ""
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         people = participants or {}
+
+        # The capability set the run was allowed, hashed so a verifier can tell
+        # whether two results were scored under the same rules.
+        attest = capability or {}
+        blocked_ops = attest.get("blocked_operations") or []
 
         rows: list[dict[str, Any]] = []
         for score in scores:
@@ -188,6 +225,11 @@ class ResultWriter:
                 "completion_tokens": int(who.get("completion_tokens", 0)),
                 "total_cost_usd": float(who.get("total_cost", 0.0)),
                 "cost_is_estimated": bool(who.get("cost_is_estimated", False)),
+                "scored_session": bool(attest.get("scored", False)),
+                "clean_run": bool(attest.get("clean_run", True)),
+                "blocked_attempts": int(attest.get("blocked_attempts", 0)),
+                "blocked_operations": ",".join(blocked_ops),
+                "capability_digest": capability_digest(),
                 "nttd_git_sha": git_sha,
                 "nttd_git_dirty": git_dirty,
                 "gamescript_digest": gs_digest or "",
