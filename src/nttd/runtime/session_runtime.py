@@ -67,6 +67,12 @@ class SessionRuntime:
         self.runtime_mode: str = ""
         self.started_at: float = 0.0
         self.start_game_date: int = 0
+        # The world settings a scored scenario is allowed to vary, in readable form
+        # (``{"landscape": "temperate", ...}``). Held here so the result record can
+        # publish them as leaderboard columns: they may differ between scored runs
+        # only on condition of being disclosed, since disclosure is what lets a
+        # reader judge whether two rows are comparable.
+        self.dimensions: dict[str, str] = {}
 
         self.world = WorldState()
         self.admin_client = AdminClient(host="127.0.0.1", port=admin_port)

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nttd.runtime.orchestrator import Orchestrator
 
 from nttd.analysis.score import rank_companies
+from nttd.config.benchmark_profile import dimensions_from_settings
 from nttd.config.fairness import from_settings as fairness_from_settings
 from nttd.config.scenario_config import (
     BankruptcyConfig,
@@ -190,6 +191,7 @@ class SessionManager:
         runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
         runtime.fairness = fairness_from_settings(effective_settings)
         runtime.action_budget = budget_from_fairness(runtime.fairness)
+        runtime.dimensions = dimensions_from_settings(effective_settings)
         if runtime.scored_lock.scored:
             logger.info(
                 "Session %s is SCORED: game-mutating operator operations are refused",
@@ -325,6 +327,7 @@ class SessionManager:
             capability=runtime.scored_lock.summary(),
             fairness=runtime.fairness.as_dict(),
             budget=runtime.action_budget.usage(),
+            dimensions=runtime.dimensions,
         )
 
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:
@@ -469,6 +472,7 @@ class SessionManager:
             runtime.scored_lock.scored = stored.get("_scored") == "1"
             runtime.fairness = fairness_from_settings(stored)
             runtime.action_budget = budget_from_fairness(runtime.fairness)
+            runtime.dimensions = dimensions_from_settings(stored)
             if runtime.scored_lock.scored:
                 logger.info("Recovered session %s is SCORED: lock restored", sid)
             if stored:
