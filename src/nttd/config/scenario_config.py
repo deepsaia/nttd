@@ -26,8 +26,19 @@ _LANDSCAPE_MAP: dict[str, str] = {
     "arctic": "1", "tropic": "2",
 }
 
+# difficulty.terrain_type indexes GenworldMaxHeight (OpenTTD src/settings_type.h):
+# VeryFlat=0, Flat=1, Hilly=2, Mountainous=3, Alpinist=4, Custom=5.
+#
+# nttd previously mapped flat=0/hilly=1/mountainous=2/alpinist=3/custom=4, which
+# was off by one against every value: "hilly" generated Flat terrain. Verified
+# empirically against OpenTTD 15.3 by sampling tile heights -- mean height rises
+# 1.42, 2.42, 4.52, 6.26 for values 0..3.
+#
+# NOTE: correcting this changes the terrain of every previously generated map, so
+# results produced before this fix are not comparable with results after it.
 _TERRAIN_MAP: dict[str, str] = {
-    "flat": "0", "hilly": "1", "mountainous": "2", "alpinist": "3", "custom": "4",
+    "very_flat": "0", "flat": "1", "hilly": "2",
+    "mountainous": "3", "alpinist": "4", "custom": "5",
 }
 
 _VARIETY_MAP: dict[str, str] = {
@@ -109,8 +120,21 @@ class CargoThresholdConfig:
 
 @dataclass
 class MaxHeartbeatsConfig:
+    """Bound a run in steps rather than wall time.
+
+    This is the natural bound for stepped mode, where deliberation is unbounded
+    and wall time therefore says nothing about how much of the game was played.
+    """
+
     enabled: bool = False
     count: int = 1000
+
+
+@dataclass
+class BankruptcyConfig:
+    """End the run when a scored company goes bankrupt or is removed."""
+
+    enabled: bool = False
 
 
 @dataclass
@@ -121,20 +145,47 @@ class EndConditionsConfig:
     revenue_threshold: RevenueThresholdConfig = field(default_factory=RevenueThresholdConfig)
     cargo_threshold: CargoThresholdConfig = field(default_factory=CargoThresholdConfig)
     max_heartbeats: MaxHeartbeatsConfig = field(default_factory=MaxHeartbeatsConfig)
+    bankruptcy: BankruptcyConfig = field(default_factory=BankruptcyConfig)
 
 
 @dataclass
 class RuntimeConfig:
+    """Runtime settings.
+
+    ``game_speed`` is retained for config compatibility but has NO effect:
+    OpenTTD 15.3 has no runtime speed control, and the economy clock is fixed at
+    1 wall-minute per economy month.
+
+    ``timekeeping_units`` and ``minutes_per_calendar_year`` are the real pacing
+    knobs, and they apply at map generation only. They move the CALENDAR clock
+    (vehicle and house introduction dates, inflation), not the economy. In
+    "calendar" mode minutes_per_calendar_year is clamped to 12; "wallclock" opens
+    the range to 0..10080, so a long calendar year effectively freezes the tech
+    tree -- useful for making every contestant in a tier face the same available
+    vehicles.
+    """
+
     mode: str = "async_realtime"
     game_speed: int = 1
     snapshot_interval_days: int = 1
+    timekeeping_units: str = "calendar"
+    minutes_per_calendar_year: int = 12
 
 
 @dataclass
 class ScenarioConfig:
-    """Top-level scenario config. Map/company settings live in _raw (ConfigTree)."""
+    """Top-level scenario config. Map/company settings live in _raw (ConfigTree).
+
+    ``id`` and ``version`` identify the task instance independently of the file
+    path, so a result stays traceable to the exact problem it was scored on.
+    ``id`` defaults to ``name``; bump ``version`` on any change that should
+    invalidate comparison with earlier results.
+    """
+
     name: str = "default"
     description: str = ""
+    id: str = ""
+    version: str = "1"
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     end_conditions: EndConditionsConfig = field(default_factory=EndConditionsConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
@@ -185,15 +236,46 @@ def _compute_water_borders(map_cfg: Any) -> str:
     return str(bitmask)
 
 
-def _validate_config(m: Any, co: Any) -> None:
-    """Validate map and company config values, logging warnings for issues.
+class ScenarioConfigError(ValueError):
+    """A scenario config is invalid and must not be used for a scored run."""
+
+
+def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None:
+    """Record a config problem: collect it in strict mode, log it otherwise.
+
+    In lenient mode the caller falls back to a default, so the log says so. In
+    strict mode nothing falls back -- the collected problems become an error.
+    """
+    formatted = message % args
+    if strict:
+        problems.append(formatted)
+    else:
+        logger.warning("%s -- falling back to default", formatted)
+
+
+def _validate_config(m: Any, co: Any, strict: bool = False, rt: Any = None) -> None:
+    """Validate map, company, and runtime config values.
 
     Checks for: unknown enum values, out-of-range numbers, conflicting combos.
+
+    Args:
+        m: The ``map`` config tree.
+        co: The ``companies`` config tree.
+        strict: When True, collect every problem and raise ScenarioConfigError
+            instead of falling back to defaults. Scored runs use strict mode so
+            an ill-specified task instance is refused rather than silently
+            substituted -- a typo must not quietly produce a different world.
+        rt: The ``runtime`` config tree, if present.
+
+    Raises:
+        ScenarioConfigError: In strict mode, if any problem was found.
     """
-    # --- Enum validation: warn on unknown values ---
+    problems: list[str] = []
+
+    # --- Enum validation ---
     _enum_checks: list[tuple[str, dict[str, str], Any]] = [
         ("landscape", _LANDSCAPE_MAP, _get(m, "landscape", "temperate")),
-        ("terrain_type", _TERRAIN_MAP, _get(m, "terrain_type", "hilly")),
+        ("terrain_type", _TERRAIN_MAP, _get(m, "terrain_type", "flat")),
         ("variety", _VARIETY_MAP, _get(m, "variety", "none")),
         ("smoothness", _SMOOTHNESS_MAP, _get(m, "smoothness", "smooth")),
         ("rivers", _RIVERS_MAP, _get(m, "rivers", "medium")),
@@ -204,8 +286,9 @@ def _validate_config(m: Any, co: Any) -> None:
     ]
     for field_name, valid_map, value in _enum_checks:
         if value not in valid_map:
-            logger.warning(
-                "Unknown %s value %r -- falling back to default. Valid: %s",
+            _report(
+                strict, problems,
+                "Unknown %s value %r. Valid: %s",
                 field_name, value, ", ".join(valid_map.keys()),
             )
 
@@ -213,36 +296,39 @@ def _validate_config(m: Any, co: Any) -> None:
     for dim in ("size_x", "size_y"):
         val = int(_get(m, dim, 256))
         if val < 64 or val > 4096:
-            logger.warning("map.%s = %d is outside OpenTTD range [64, 4096]", dim, val)
+            _report(strict, problems, "map.%s = %d is outside OpenTTD range [64, 4096]", dim, val)
         elif val & (val - 1) != 0:
-            logger.warning("map.%s = %d is not a power of 2 -- OpenTTD requires powers of 2", dim, val)
+            _report(
+                strict, problems,
+                "map.%s = %d is not a power of 2 -- OpenTTD requires powers of 2", dim, val,
+            )
 
     # --- Custom terrain height: 1..255 ---
-    terrain = _get(m, "terrain_type", "hilly")
+    terrain = _get(m, "terrain_type", "flat")
     if terrain == "custom":
         h = int(_get(m, "custom_terrain_height", 30))
         if h < 1 or h > 255:
-            logger.warning("custom_terrain_height = %d is outside range [1, 255]", h)
+            _report(strict, problems, "custom_terrain_height = %d is outside range [1, 255]", h)
 
     # --- Custom sea level: 1..90 ---
     sea = _get(m, "sea_level", "medium")
     if sea == "custom":
         sl = int(_get(m, "custom_sea_level", 1))
         if sl < 1 or sl > 90:
-            logger.warning("custom_sea_level = %d is outside range [1, 90]", sl)
+            _report(strict, problems, "custom_sea_level = %d is outside range [1, 90]", sl)
 
     # --- Custom town/industry numbers: must be >= 1 ---
     towns = _get(m, "number_towns", "normal")
     if towns == "custom":
         tn = int(_get(m, "custom_town_number", 1))
         if tn < 1:
-            logger.warning("custom_town_number = %d must be >= 1", tn)
+            _report(strict, problems, "custom_town_number = %d must be >= 1", tn)
 
     industry = _get(m, "industry_density", "normal")
     if industry == "custom":
         ind = int(_get(m, "custom_industry_number", 1))
         if ind < 1:
-            logger.warning("custom_industry_number = %d must be >= 1", ind)
+            _report(strict, problems, "custom_industry_number = %d must be >= 1", ind)
 
     # --- Water borders: individual flags ignored unless map_edges = "manual" ---
     edges = _get(m, "map_edges", "random")
@@ -250,7 +336,8 @@ def _validate_config(m: Any, co: Any) -> None:
         _get(m, f"water_borders_{d}", 0) for d in ("ne", "se", "sw", "nw")
     )
     if edges != "manual" and has_individual:
-        logger.warning(
+        _report(
+            strict, problems,
             "water_borders_ne/se/sw/nw are set but map_edges = %r (not 'manual') -- "
             "individual border flags will be ignored",
             edges,
@@ -259,36 +346,80 @@ def _validate_config(m: Any, co: Any) -> None:
     # --- Starting year: OpenTTD range ---
     year = int(_get(m, "starting_year", 1960))
     if year < 0 or year > 5000000:
-        logger.warning("starting_year = %d is outside reasonable range", year)
+        _report(strict, problems, "starting_year = %d is outside reasonable range", year)
 
     # --- AI companies: 0..14 ---
     num_ai = int(_get(co, "num_ai_companies", 2))
     if num_ai < 0 or num_ai > 14:
-        logger.warning("num_ai_companies = %d is outside range [0, 14]", num_ai)
+        _report(strict, problems, "num_ai_companies = %d is outside range [0, 14]", num_ai)
 
     # --- Max loan: must be positive ---
     max_loan = int(_get(co, "max_loan", 300000))
     if max_loan < 0:
-        logger.warning("max_loan = %d must be non-negative", max_loan)
+        _report(strict, problems, "max_loan = %d must be non-negative", max_loan)
+
+    # --- Timekeeping: units enum, and the mode-dependent range on the year ---
+    if rt is not None:
+        units = str(_get(rt, "timekeeping_units", "calendar"))
+        if units not in ("calendar", "wallclock"):
+            _report(
+                strict, problems,
+                "Unknown timekeeping_units value %r. Valid: calendar, wallclock", units,
+            )
+        minutes = int(_get(rt, "minutes_per_calendar_year", 12))
+        # OpenTTD clamps this to exactly 12 in calendar mode; wallclock allows 0..10080.
+        if units == "wallclock":
+            if minutes < 0 or minutes > 10080:
+                _report(
+                    strict, problems,
+                    "minutes_per_calendar_year = %d is outside the wallclock range [0, 10080]",
+                    minutes,
+                )
+        elif minutes != 12:
+            _report(
+                strict, problems,
+                "minutes_per_calendar_year = %d requires timekeeping_units = 'wallclock' "
+                "(calendar mode is fixed at 12)", minutes,
+            )
+
+    if problems:
+        raise ScenarioConfigError(
+            f"{len(problems)} problem(s) in scenario config (strict mode): "
+            + "; ".join(problems)
+        )
 
 
-def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
+def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str, str]:
     """Convert a ScenarioConfig to OpenTTD INI settings dict.
 
     Map and company values are read from the raw pyhocon ConfigTree.
     Returns key-value pairs baked into the per-session openttd.cfg.
+
+    Args:
+        cfg: The loaded scenario config.
+        strict: Refuse an ill-specified config instead of substituting defaults.
+            Use for scored runs -- see ``_validate_config``.
+
+    Raises:
+        ScenarioConfigError: In strict mode, if the config has no parsed tree or
+            any value fails validation.
     """
     settings: dict[str, str] = {}
     raw = cfg._raw
 
     # If no raw config (defaults only), produce minimal settings
     if raw is None:
+        if strict:
+            raise ScenarioConfigError(
+                "Scenario config has no parsed tree -- the file was missing or "
+                "unparseable, so a scored run would silently use defaults"
+            )
         return settings
 
     m = _get(raw, "map", {})
     co = _get(raw, "companies", {})
 
-    _validate_config(m, co)
+    _validate_config(m, co, strict=strict, rt=_get(raw, "runtime", {}))
 
     # Map dimensions (log2)
     settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", 256))))
@@ -298,7 +429,7 @@ def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
     settings["game_creation.landscape"] = _LANDSCAPE_MAP.get(_get(m, "landscape", "temperate"), "0")
 
     # Terrain
-    terrain = _get(m, "terrain_type", "hilly")
+    terrain = _get(m, "terrain_type", "flat")
     settings["difficulty.terrain_type"] = _TERRAIN_MAP.get(terrain, "1")
     if terrain == "custom":
         settings["game_creation.custom_terrain_type"] = str(int(_get(m, "custom_terrain_height", 30)))
@@ -331,6 +462,17 @@ def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
     # Start date
     settings["game_creation.starting_year"] = str(int(_get(m, "starting_year", 1960)))
 
+    # Map generation seed.
+    #
+    # This is written to the cfg for the record, but OpenTTD 15.3 does NOT pin
+    # generation from the cfg key alone -- two servers sharing this value still
+    # generate different maps. Reproducibility requires the -G flag at spawn,
+    # which SessionRuntime.start_server reads from the _map_seed key below.
+    seed = _get(m, "seed", None)
+    if seed is not None:
+        settings["game_creation.generation_seed"] = str(int(seed))
+        settings["_map_seed"] = str(int(seed))
+
     # AI / company settings
     num_ai = int(_get(co, "num_ai_companies", 2))
     settings["difficulty.max_no_competitors"] = str(num_ai)
@@ -339,12 +481,25 @@ def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
     if max_loan != 300000:
         settings["difficulty.max_loan"] = str(max_loan)
 
-    # nttd-internal runtime metadata (prefixed with _)
+    # Timekeeping. These are the only real pacing knobs and they apply at map
+    # generation only -- see RuntimeConfig. They move the calendar clock, not the
+    # economy clock, so they change when vehicles become available rather than how
+    # fast cargo and money move.
     rt = _get(raw, "runtime", {})
+    timekeeping = str(_get(rt, "timekeeping_units", "calendar"))
+    settings["economy.timekeeping_units"] = "1" if timekeeping == "wallclock" else "0"
+    settings["economy.minutes_per_calendar_year"] = str(
+        int(_get(rt, "minutes_per_calendar_year", 12))
+    )
+
+    # Scenario identity. Carried through so the session can compute a task_id
+    # without re-reading the config file.
+    scenario_name = str(_get(raw, "name", "default"))
+    settings["_scenario_id"] = str(_get(raw, "id", scenario_name))
+    settings["_scenario_version"] = str(_get(raw, "version", "1"))
+
+    # nttd-internal runtime metadata (prefixed with _)
     settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))
-    game_speed = int(_get(rt, "game_speed", 1))
-    if game_speed != 1:
-        settings["_game_speed"] = str(game_speed)
     snapshot_interval = int(_get(rt, "snapshot_interval_days", 1))
     if snapshot_interval != 1:
         settings["_snapshot_interval_days"] = str(snapshot_interval)
@@ -368,6 +523,12 @@ def scenario_to_settings(cfg: ScenarioConfig) -> dict[str, str]:
         ct = _get(ec, "cargo_threshold", {})
         if _get(ct, "enabled", False):
             settings["_ec_cargo"] = str(int(_get(ct, "total_cargo_delivered", 50000)))
+        mh = _get(ec, "max_heartbeats", {})
+        if _get(mh, "enabled", False):
+            settings["_ec_max_heartbeats"] = str(int(_get(mh, "count", 1000)))
+        bk = _get(ec, "bankruptcy", {})
+        if _get(bk, "enabled", False):
+            settings["_ec_bankruptcy"] = "1"
 
     return settings
 
@@ -415,6 +576,9 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
             enabled=_get(ec_raw, "cargo_threshold.enabled", False),
             total_cargo_delivered=int(_get(ec_raw, "cargo_threshold.total_cargo_delivered", 50_000)),
         ),
+        bankruptcy=BankruptcyConfig(
+            enabled=_get(ec_raw, "bankruptcy.enabled", False),
+        ),
         max_heartbeats=MaxHeartbeatsConfig(
             enabled=_get(ec_raw, "max_heartbeats.enabled", False),
             count=int(_get(ec_raw, "max_heartbeats.count", 1000)),
@@ -428,11 +592,18 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
         mode=_get(rt_raw, "mode", "async_realtime"),
         game_speed=int(_get(rt_raw, "game_speed", _get(hb_raw, "game_speed", 1))),
         snapshot_interval_days=int(_get(rt_raw, "snapshot_interval_days", 1)),
+        timekeeping_units=str(_get(rt_raw, "timekeeping_units", "calendar")),
+        minutes_per_calendar_year=int(_get(rt_raw, "minutes_per_calendar_year", 12)),
     )
 
+    scenario_name = _get(s, "name", "default")
     return ScenarioConfig(
-        name=_get(s, "name", "default"),
+        name=scenario_name,
         description=_get(s, "description", ""),
+        # id falls back to name so existing scenarios keep a stable identity
+        # without every file needing an explicit id.
+        id=str(_get(s, "id", scenario_name)),
+        version=str(_get(s, "version", "1")),
         heartbeat=HeartbeatConfig(
             interval_days=int(_get(hb_raw, "interval_days", 30)),
             action_window_seconds=float(_get(hb_raw, "action_window_seconds", 5.0)),
