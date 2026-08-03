@@ -194,6 +194,58 @@ class GameloopManager:
             "total_actions": total_actions,
         }
 
+    def participant_summary(self) -> dict[int, dict[str, Any]]:
+        """Aggregate each company's contestant detail for the result record.
+
+        Keyed by company_id. Token counts and cost are summed from the tracker's
+        retained cycle records, so a long run whose early cycles have aged out of
+        the ring buffer reports a partial total -- flagged as estimated rather
+        than presented as exact.
+
+        When several agents share a company (the multi-agent shape) their actions
+        and spend are combined, since the company is what gets scored.
+        """
+        summary: dict[int, dict[str, Any]] = {}
+        for conn in self.connections.values():
+            cid = conn.config.company_id
+            entry = summary.setdefault(cid, {
+                "participant_type": "agent",
+                "agent_id": "",
+                "nttd_framework": "",
+                "model": "",
+                "total_actions": 0,
+                "successful_actions": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_cost": 0.0,
+                "cost_is_estimated": False,
+            })
+
+            # Join ids and models so a shared company shows every contributor.
+            entry["agent_id"] = "+".join(
+                filter(None, [entry["agent_id"], conn.config.agent_id])
+            )
+            if conn.config.nttd_framework not in entry["nttd_framework"]:
+                entry["nttd_framework"] = "+".join(
+                    filter(None, [entry["nttd_framework"], conn.config.nttd_framework])
+                )
+            if conn.config.model not in entry["model"]:
+                entry["model"] = "+".join(filter(None, [entry["model"], conn.config.model]))
+
+            entry["total_actions"] += conn.tracker.total_actions
+            entry["successful_actions"] += conn.tracker.successful_actions
+
+            cycles = list(conn.tracker.recent_cycles)
+            entry["prompt_tokens"] += sum(c.prompt_tokens for c in cycles)
+            entry["completion_tokens"] += sum(c.completion_tokens for c in cycles)
+            entry["total_cost"] += sum(c.total_cost for c in cycles)
+            # The ring buffer caps retained cycles, so totals are only exact when
+            # every cycle of the run is still held.
+            if conn.tracker.cycle_count > len(cycles):
+                entry["cost_is_estimated"] = True
+
+        return summary
+
     def _get_connection(self, agent_id: str) -> AgentConnection:
         connection_id = self._agent_to_connection.get(agent_id)
         if connection_id is None or connection_id not in self.connections:
