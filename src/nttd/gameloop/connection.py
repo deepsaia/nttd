@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 # fairness block, so one stalled contestant cannot hold a session open.
 _LLM_TIMEOUT_SECONDS = 120.0  # Multi-turn tool calling can take several rounds
 
+# Floor on the inter-cycle sleep, so an overrunning or fast-failing cycle cannot
+# spin the event loop.
+_MIN_CYCLE_SLEEP = 0.1
+
 
 def _nearest_town(sx: int, sy: int, towns: dict[int, Any]) -> tuple[int, str]:
     """Return (town_id, town_name) of the nearest town to station coords."""
@@ -239,8 +243,12 @@ class AgentConnection:
             # 10s sleep gives a 1.52x decision-rate spread; treating it as a
             # period narrows that to 1.12x.
             elapsed = time.monotonic() - cycle_started
-            wait = max(0.0, self.config.poll_interval - elapsed)
-            if wait <= 0:
+            # A small floor even when the cycle overran its period: yielding zero
+            # would let a fast-failing cycle spin the event loop, and the old
+            # max(0.5, poll_interval) form guaranteed a floor that the period form
+            # otherwise loses.
+            wait = max(_MIN_CYCLE_SLEEP, self.config.poll_interval - elapsed)
+            if self.config.poll_interval - elapsed <= 0:
                 logger.debug(
                     "Agent %s cycle took %.1fs, exceeding the %.1fs period",
                     self.config.agent_id, elapsed, self.config.poll_interval,
@@ -307,12 +315,20 @@ class AgentConnection:
 
         # 3. Parse & Validate
         actions = parse_action_list(raw_output)
-        if len(actions) > self.config.max_actions_per_cycle:
+
+        # The ceiling belongs to the COMPANY, not to this agent. Truncating per
+        # agent gave a 3-agent entry three times the actions of a 1-agent entry on
+        # the same scenario, and the shipped 3-agent scenario puts road, air, and
+        # water all on company 0. The session's budget is shared, so ask it how much
+        # room is left rather than assuming the whole per-cycle allowance.
+        allowed = self._company_action_allowance(len(actions))
+        if len(actions) > allowed:
             logger.warning(
-                "Agent %s proposed %d actions, truncating to %d",
-                self.config.agent_id, len(actions), self.config.max_actions_per_cycle,
+                "Agent %s proposed %d actions, truncating to %d "
+                "(company %d budget)",
+                self.config.agent_id, len(actions), allowed, self.config.company_id,
             )
-            actions = actions[: self.config.max_actions_per_cycle]
+            actions = actions[:allowed]
 
         errors = validate_actions(actions)
         valid_actions = [a for i, a in enumerate(actions) if i not in errors]
@@ -710,6 +726,24 @@ class AgentConnection:
         # of the places a name is copied out of game state.
         return sanitise_observation(obs)  # type: ignore[return-value]
 
+    def _company_action_allowance(self, wanted: int) -> int:
+        """How many of ``wanted`` actions this agent's company may still take.
+
+        Falls back to the per-agent ceiling when the session has no enforced budget,
+        so an unscored run behaves as before.
+        """
+        budget = getattr(self.runtime, "action_budget", None)
+        ceiling = self.config.max_actions_per_cycle
+        if budget is None or not getattr(budget, "enforced", False):
+            return min(wanted, ceiling)
+
+        # Binary search would be overkill: the ceiling is small, so walk down from
+        # what the agent asked for until the shared budget accepts the count.
+        for count in range(min(wanted, ceiling), 0, -1):
+            if budget.check(self.config.company_id, count=count).allowed:
+                return count
+        return 0
+
     async def _execute(self, actions: list[Any], game_date: int = 0) -> list[dict[str, Any]]:
         """Execute validated actions via GS commands through the admin client."""
         results: list[dict[str, Any]] = []
@@ -719,6 +753,12 @@ class AgentConnection:
         # session was provisioned. Idempotent, so calling it per cycle is safe.
         if actions:
             self.runtime.orchestrator.start_scored_clock()
+            # Draw from the company's shared budget so gameloop and REST actions
+            # count against the same ceiling. Without this an agent could take its
+            # per-cycle allowance and then post more over REST.
+            budget = getattr(self.runtime, "action_budget", None)
+            if budget is not None:
+                budget.consume(self.config.company_id, count=len(actions))
 
         for i, action in enumerate(actions):
             params = {**action.parameters, "company_id": self.config.company_id}
