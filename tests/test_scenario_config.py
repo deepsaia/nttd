@@ -152,6 +152,163 @@ def test_settings_custom_values_conditional() -> None:
         assert "game_creation.custom_industry_number" not in settings
 
 
+def test_terrain_type_matches_openttd_enum() -> None:
+    """terrain_type must index GenworldMaxHeight, not an off-by-one of it.
+
+    OpenTTD src/settings_type.h: VeryFlat=0, Flat=1, Hilly=2, Mountainous=3,
+    Alpinist=4, Custom=5. nttd previously mapped flat=0/hilly=1/..., so "hilly"
+    silently generated Flat terrain. Verified against OpenTTD 15.3 by sampling
+    tile heights (mean 1.42 / 2.42 / 4.52 / 6.26 for values 0..3).
+    """
+    from nttd.config.scenario_config import _TERRAIN_MAP
+
+    assert _TERRAIN_MAP == {
+        "very_flat": "0", "flat": "1", "hilly": "2",
+        "mountainous": "3", "alpinist": "4", "custom": "5",
+    }
+
+
+def test_strict_mode_rejects_unknown_enum(tmp_path: Any) -> None:
+    """A typo in a scored run must raise, not silently pick a different world."""
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "typo.conf"
+    path.write_text('scenario { map { size_x = 256, size_y = 256, terrain_type = "hily" } }')
+    cfg = load(path)
+
+    # Lenient mode (the default) falls back and keeps going.
+    assert scenario_to_settings(cfg)["difficulty.terrain_type"] == "1"
+
+    with pytest.raises(ScenarioConfigError, match="terrain_type"):
+        scenario_to_settings(cfg, strict=True)
+
+
+def test_strict_mode_rejects_bad_map_size(tmp_path: Any) -> None:
+    """Non-power-of-2 map dimensions must be refused in strict mode."""
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "badsize.conf"
+    path.write_text("scenario { map { size_x = 300, size_y = 256 } }")
+    with pytest.raises(ScenarioConfigError, match="power of 2"):
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_strict_mode_rejects_missing_config() -> None:
+    """A missing/unparseable file must not silently become a defaults run."""
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    cfg = load("/tmp/nonexistent_scenario_for_strict_test.conf")
+    assert scenario_to_settings(cfg) == {}  # lenient: empty settings
+    with pytest.raises(ScenarioConfigError, match="no parsed tree"):
+        scenario_to_settings(cfg, strict=True)
+
+
+def test_strict_mode_reports_every_problem(tmp_path: Any) -> None:
+    """Strict mode collects all problems, so one run surfaces the whole list."""
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "multi.conf"
+    path.write_text(
+        'scenario { map { size_x = 300, size_y = 256, terrain_type = "nope", '
+        'rivers = "loads" }, companies { num_ai_companies = 99 } }'
+    )
+    with pytest.raises(ScenarioConfigError) as exc:
+        scenario_to_settings(load(path), strict=True)
+    message = str(exc.value)
+    for expected in ("terrain_type", "rivers", "power of 2", "num_ai_companies"):
+        assert expected in message
+
+
+def test_shipped_configs_are_strict_clean() -> None:
+    """Every shipped scenario must pass strict validation."""
+    from pathlib import Path
+
+    configs = sorted(Path("config").glob("*.conf"))
+    assert configs, "expected shipped scenario configs"
+    for path in configs:
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_shipped_configs_are_seeded() -> None:
+    """Every shipped scenario must pin a seed, or its runs are not comparable."""
+    from pathlib import Path
+
+    for path in sorted(Path("config").glob("*.conf")):
+        settings = scenario_to_settings(load(path), strict=True)
+        assert settings.get("_map_seed"), f"{path.name} has no map.seed"
+
+
+def test_timekeeping_defaults_to_calendar() -> None:
+    """Absent config, timekeeping is OpenTTD's default calendar mode at 12 min/yr."""
+    cfg = load()
+    settings = scenario_to_settings(cfg)
+    assert settings["economy.timekeeping_units"] == "0"
+    assert settings["economy.minutes_per_calendar_year"] == "12"
+    assert cfg.runtime.timekeeping_units == "calendar"
+
+
+def test_wallclock_unlocks_minutes_per_calendar_year(tmp_path: Any) -> None:
+    """Wallclock mode allows a long calendar year, which freezes the tech tree."""
+    path = tmp_path / "wallclock.conf"
+    path.write_text(
+        'scenario { map { size_x = 256, size_y = 256 }, '
+        'runtime { timekeeping_units = "wallclock", minutes_per_calendar_year = 600 } }'
+    )
+    settings = scenario_to_settings(load(path), strict=True)
+    assert settings["economy.timekeeping_units"] == "1"
+    assert settings["economy.minutes_per_calendar_year"] == "600"
+
+
+def test_strict_rejects_nondefault_minutes_in_calendar_mode(tmp_path: Any) -> None:
+    """OpenTTD clamps the calendar year to 12 outside wallclock mode -- refuse it."""
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "clamped.conf"
+    path.write_text(
+        'scenario { map { size_x = 256, size_y = 256 }, '
+        'runtime { minutes_per_calendar_year = 3 } }'
+    )
+    with pytest.raises(ScenarioConfigError, match="wallclock"):
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_strict_rejects_out_of_range_wallclock_minutes(tmp_path: Any) -> None:
+    """Wallclock allows 0..10080; anything beyond is refused."""
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "toobig.conf"
+    path.write_text(
+        'scenario { map { size_x = 256, size_y = 256 }, '
+        'runtime { timekeeping_units = "wallclock", minutes_per_calendar_year = 99999 } }'
+    )
+    with pytest.raises(ScenarioConfigError, match=r"\[0, 10080\]"):
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_settings_seed_emits_both_cfg_key_and_spawn_key(tmp_path: Any) -> None:
+    """A configured seed must produce the cfg key AND the _map_seed spawn key.
+
+    OpenTTD 15.3 does not pin map generation from game_creation.generation_seed
+    in the config alone -- only the -G command-line flag does. _map_seed is what
+    SessionManager threads to that flag, so emitting only the cfg key would give
+    every contestant a different world while appearing seeded.
+    """
+    path = tmp_path / "seeded.conf"
+    path.write_text('scenario { name = "s", map { size_x = 256, size_y = 256, seed = 4242 } }')
+    settings = scenario_to_settings(load(path))
+    assert settings["game_creation.generation_seed"] == "4242"
+    assert settings["_map_seed"] == "4242", "seed must reach the spawn, not just the cfg"
+
+
+def test_settings_seed_absent_when_unset(tmp_path: Any) -> None:
+    """No seed configured means no seed keys -- the map is explicitly random."""
+    path = tmp_path / "unseeded.conf"
+    path.write_text('scenario { name = "s", map { size_x = 256, size_y = 256 } }')
+    settings = scenario_to_settings(load(path))
+    assert "game_creation.generation_seed" not in settings
+    assert "_map_seed" not in settings
+
+
 def test_settings_water_borders() -> None:
     """Water borders should be a valid integer bitmask string."""
     cfg = load()

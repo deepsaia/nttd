@@ -3,7 +3,6 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
-import Slider from '@mui/material/Slider';
 import Tooltip from '@mui/material/Tooltip';
 import Box from '@mui/material/Box';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -45,16 +44,6 @@ export default function TopBar() {
     }
   }
 
-  async function handleSpeedChange(_: unknown, value: number | number[]) {
-    if (!activeSessionId) return;
-    const speed = Array.isArray(value) ? value[0] : value;
-    try {
-      await api.setGameSpeed(activeSessionId, speed);
-    } catch {
-      // ignore
-    }
-  }
-
   return (
     <AppBar position="static" color="default" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
       <Toolbar sx={{ gap: 2 }}>
@@ -82,19 +71,12 @@ export default function TopBar() {
               </IconButton>
             </Tooltip>
 
-            <Box sx={{ width: 120, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                Speed
-              </Typography>
-              <Slider
-                size="small"
-                min={1}
-                max={10}
-                value={status.speed || 1}
-                onChange={handleSpeedChange}
-                valueLabelDisplay="auto"
-              />
-            </Box>
+            {/*
+              A speed slider used to live here. OpenTTD 15.3 has no runtime
+              game-speed setting, so it never did anything: the rcon call failed
+              while the API reported success. The economy clock is fixed at
+              1 wall-minute per economy month.
+            */}
           </>
         )}
 

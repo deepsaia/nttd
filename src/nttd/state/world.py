@@ -258,15 +258,24 @@ class WorldState:
             company.color = r.get("color", company.color)
             company.is_ai = r.get("is_ai", company.is_ai)
             company.is_active = True
-            # Financial fields — present in some GS builds
-            if "balance" in r:
-                company.money = r["balance"]
-            if "loan" in r:
-                company.loan = r["loan"]
-            if "income" in r:
-                company.income = r["income"]
-            if "value" in r:
-                company.value = r["value"]
+            # Financial fields. The GS emits "money" and "company_value"; the
+            # admin port uses "balance" and "value", so both spellings are
+            # accepted and whichever arrives wins.
+            for field, keys in (
+                ("money", ("money", "balance")),
+                ("loan", ("loan",)),
+                ("max_loan", ("max_loan",)),
+                ("income", ("income",)),
+                ("value", ("company_value", "value")),
+                ("performance_rating", ("performance_rating",)),
+                ("q0_income", ("q0_income",)),
+                ("q0_expenses", ("q0_expenses",)),
+                ("q0_cargo", ("q0_cargo",)),
+            ):
+                for key in keys:
+                    if key in r and r[key] is not None:
+                        setattr(company, field, r[key])
+                        break
             self.companies[cid] = company
         for cid in list(self.companies.keys()):
             if cid not in seen:

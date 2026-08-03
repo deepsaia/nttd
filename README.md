@@ -22,6 +22,13 @@ cd nttd
 uv sync --extra agents    # includes LangChain + OpenAI adapters
 ```
 
+To install Openttd game on your system, follow the instructions at: https://www.openttd.org/downloads/openttd-releases/latest
+After installation, run the game.  
+You might want to install `OpenGFX2 Classic`, `OpenSFX (sound)` and `OpenMSX (music)` from the Online Content explorer when you
+run the game for the first time. `OpenSFX (sound)` and `OpenMSX (music)` are optional and not required for gameplay.  
+Quick check: When you restart the game -> Online Content -> Search for the keyword `Open`,
+you should see a green dot in front of your installed content.
+
 ### Run Benchmarks
 
 You can follow [cli_guide.md](docs/cli_guide.md) for detailed CLI guide.

@@ -82,7 +82,7 @@ def _parse_agents(raw: Any) -> list[dict[str, Any]]:
 
 def benchmark(
     config: Annotated[str, typer.Option("--config", "-c", help="Path to HOCON scenario config")],
-    speed: Annotated[int, typer.Option("--speed", help="Override game speed")] = -1,
+    seed: Annotated[int, typer.Option("--seed", help="Override map generation seed")] = -1,
     ai_opponents: Annotated[int, typer.Option("--ai-opponents", help="Override AI opponent count")] = -1,
     output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output directory for results")] = None,
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
@@ -92,37 +92,63 @@ def benchmark(
     Creates a session, starts OpenTTD, registers agents from config,
     starts all agent loops, waits for end condition, and exports results.
 
+    Config validation is strict: an ill-specified scenario is refused rather than
+    silently run with substituted defaults.
+
     Examples:
       nttd benchmark --config config/scenario.conf
-      nttd benchmark --config config/scenario.conf --speed 3 --output results/
+      nttd benchmark --config config/scenario.conf --seed 1001 --output results/
     """
     import requests
 
+    from nttd.config.scenario_config import ScenarioConfigError, scenario_to_settings
     from nttd.config.scenario_config import load as load_scenario
-    from nttd.config.scenario_config import scenario_to_settings
 
     url = base_url or get_base_url()
     check_server(url)
 
-    # 1. Load config
+    # 1. Load config.
+    #
+    # Benchmarks are scored runs, so validation is strict: an ill-specified
+    # scenario is refused rather than silently substituted with defaults. A typo
+    # must not quietly produce a run on a different world than the one claimed.
     cfg = load_scenario(config)
-    if speed >= 0:
-        cfg.runtime.game_speed = speed
-    settings = scenario_to_settings(cfg)
+    try:
+        settings = scenario_to_settings(cfg, strict=True)
+    except ScenarioConfigError as exc:
+        console.print(f"[red]Invalid scenario config:[/] {config}")
+        for problem in str(exc).split("; "):
+            console.print(f"  [red]-[/] {problem}")
+        raise typer.Exit(code=1) from exc
+
+    # --seed overrides the scenario. Both keys must be set: the cfg key is the
+    # record, while _map_seed is what reaches OpenTTD's -G flag and actually pins
+    # generation.
+    if seed >= 0:
+        settings["game_creation.generation_seed"] = str(seed)
+        settings["_map_seed"] = str(seed)
 
     # Read display values from flattened settings (same pattern as session create)
     map_x = 2 ** int(settings.get("game_creation.map_x", "8"))
     map_y = 2 ** int(settings.get("game_creation.map_y", "8"))
     ai_count = ai_opponents if ai_opponents >= 0 else int(settings.get("difficulty.max_no_competitors", "0"))
+    effective_seed = settings.get("_map_seed")
 
     # Parse agents from raw ConfigTree
     raw = cfg._raw or {}
     agents_list = _parse_agents(raw)
 
+    if not effective_seed:
+        console.print(
+            "[yellow]No map seed set:[/] this run is not reproducible and cannot be "
+            "compared against other runs. Set map.seed in the config or pass --seed."
+        )
+
     console.print(Panel(
         f"[bold]Config:[/]       {config}\n"
         f"[bold]Map:[/]          {map_x}x{map_y}\n"
-        f"[bold]Speed:[/]        {cfg.runtime.game_speed}x\n"
+        f"[bold]Seed:[/]         "
+        + (f"[cyan]{effective_seed}[/]" if effective_seed else "[yellow]random[/]") + "\n"
         f"[bold]AI opponents:[/] {ai_count}\n"
         f"[bold]Agents:[/]       {len(agents_list)}\n"
         + format_end_conditions_brief(cfg.end_conditions),
@@ -167,12 +193,13 @@ def benchmark(
         )
         resp.raise_for_status()
 
-    # 5. Set game speed
+    # 5. A scenario may still carry runtime.game_speed from before it was known
+    #    that OpenTTD has no such setting. Say so rather than appear to honour it.
     if cfg.runtime.game_speed > 1:
-        requests.post(
-            f"{url}/sessions/{session_id}/speed",
-            params={"speed": cfg.runtime.game_speed},
-            timeout=5,
+        console.print(
+            f"[yellow]Ignoring runtime.game_speed = {cfg.runtime.game_speed}:[/] OpenTTD 15.3 "
+            "has no speed control. The economy clock is fixed at 1 wall-minute per economy "
+            "month, so session length is set by the end conditions alone."
         )
 
     # 6. Set runtime mode
@@ -278,7 +305,6 @@ def _monitor_loop(base_url: str, session_id: str) -> None:
                 table.add_row("Status", f"[green]{status}[/]")
                 table.add_row("Game date", str(game.get("game_date", "?")))
                 table.add_row("Paused", str(game.get("paused", "?")))
-                table.add_row("Speed", f"{game.get('speed', '?')}x")
                 live.update(table)
                 cycle += 1
 
@@ -330,3 +356,61 @@ def _export_results(base_url: str, session_id: str, output_dir: str | None) -> N
 
     except Exception as exc:
         console.print(f"[yellow]Could not export results: {exc}[/]")
+
+    _show_scored_result(session_id)
+
+
+def _show_scored_result(session_id: str) -> None:
+    """Display the scored, provenanced result record written at session end.
+
+    This is the artifact a leaderboard ingests, so surfacing it here lets an
+    operator see the actual score and confirm the run is traceable.
+    """
+    import os
+
+    from nttd.db.result_writer import read_result
+
+    sessions_dir = Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
+    rows = read_result(sessions_dir / session_id)
+    if not rows:
+        console.print(
+            "[yellow]No result record found.[/] It is written when the session stops -- "
+            "run [cyan]nttd session stop[/] if the session is still active."
+        )
+        return
+
+    first = rows[0]
+    table = Table(title=f"Scored result ({first['score_version']})")
+    table.add_column("Rank", justify="right")
+    table.add_column("Company")
+    table.add_column("Score", justify="right")
+    table.add_column("Cargo", justify="right")
+    table.add_column("Value", justify="right")
+    table.add_column("Model")
+    table.add_column("Cost", justify="right")
+
+    for rank, row in enumerate(rows, 1):
+        score = str(row["primary_score"])
+        if not row["rating_available"]:
+            score = "[yellow]unrated[/]"
+        table.add_row(
+            str(rank),
+            row["company_name"] or str(row["company_id"]),
+            score,
+            f"{row['tiebreak_cargo']:,}",
+            f"{row['company_value']:,}",
+            row["model"] or "-",
+            f"${row['total_cost_usd']:.2f}" if row["total_cost_usd"] else "-",
+        )
+    console.print(table)
+
+    seed = first["map_seed"]
+    dirty = " [yellow](uncommitted changes)[/]" if first["nttd_git_dirty"] else ""
+    console.print(
+        f"[bold]task_id:[/] {first['task_id'] or '[yellow]none[/]'}  "
+        f"[bold]seed:[/] {seed if seed >= 0 else '[yellow]random[/]'}  "
+        f"[bold]nttd:[/] {first['nttd_git_sha'] or '?'}{dirty}\n"
+        f"[bold]end reason:[/] {first['end_reason']}  "
+        f"[bold]game days:[/] {first['game_days']}  "
+        f"[bold]wall:[/] {first['wall_seconds']:.0f}s"
+    )

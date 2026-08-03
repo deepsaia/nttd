@@ -10,20 +10,26 @@ import logging
 import os
 import shutil
 import socket
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nttd.runtime.orchestrator import Orchestrator
 
+from nttd.analysis.score import rank_companies
 from nttd.config.scenario_config import (
+    BankruptcyConfig,
     CargoThresholdConfig,
     EndConditionsConfig,
     GameDateLimitConfig,
+    MaxHeartbeatsConfig,
     RevenueThresholdConfig,
     TimeLimitConfig,
 )
+from nttd.config.task_instance import compute_task_instance
 from nttd.db.repositories import session_repo
+from nttd.db.result_writer import ResultWriter
 from nttd.runtime.config_builder import build_session_config
 from nttd.runtime.session_runtime import SessionRuntime
 
@@ -115,6 +121,12 @@ class SessionManager:
         ai_count_from_settings = int(effective_settings.get("difficulty.max_no_competitors", "0"))
         ai_count = max(ai_opponents, ai_count_from_settings)
 
+        # The scenario file this session was created from, recorded at create
+        # time. Snapshotted into the session dir so a later edit to the source
+        # cannot change what a completed run claims to have played.
+        session_row = await session_repo.get_session_by_id(session_id)
+        scenario_path = (session_row or {}).get("meta", {}).get("config_path")
+
         # Build per-session config directory — settings baked into openttd.cfg
         # so the initial map generation uses them (no newgame RCON needed).
         session_dir = self.sessions_dir / session_id
@@ -127,12 +139,32 @@ class SessionManager:
             settings=effective_settings,
             ai_opponents=ai_count,
             agent_companies=agent_companies,
+            scenario_path=scenario_path,
+        )
+
+        # Map seed: the cfg key is written for the record, but only the -G flag
+        # actually pins generation, so it is threaded to the spawn separately.
+        raw_seed = effective_settings.get("_map_seed")
+        map_seed = int(raw_seed) if raw_seed not in (None, "") else None
+
+        # Task instance identity -- computed from the settings that define the
+        # problem, so a result stays traceable to the exact world and rules.
+        task = compute_task_instance(
+            effective_settings,
+            scenario_id=effective_settings.get("_scenario_id", "unknown"),
+            scenario_version=effective_settings.get("_scenario_version", "1"),
+        )
+        logger.info(
+            "Session %s task instance: task_id=%s scenario=%s v%s seed=%s",
+            session_id, task.task_id, task.scenario_id, task.scenario_version, task.seed,
         )
 
         # Persist effective settings to DB for reproducibility
         persist_settings = dict(effective_settings)
         persist_settings["_agent_companies"] = str(agent_companies)
         persist_settings["_ai_opponents"] = str(ai_count)
+        persist_settings["_task_id"] = task.task_id
+        persist_settings["_settings_digest"] = task.settings_digest
         await session_repo.upsert_settings(session_id, persist_settings)
 
         # Create runtime and start server
@@ -142,8 +174,12 @@ class SessionManager:
             admin_port=admin_port,
             config_dir=session_dir,
         )
+        runtime.map_seed = map_seed
+        runtime.task_instance = task
 
-        ok = await runtime.start_server(self.openttd_binary, self.admin_password)
+        ok = await runtime.start_server(
+            self.openttd_binary, self.admin_password, map_seed=map_seed,
+        )
         if not ok:
             raise RuntimeError(f"Failed to start OpenTTD for session {session_id}")
 
@@ -179,6 +215,13 @@ class SessionManager:
 
         # Auto-start the orchestrator loop for snapshot capture
         runtime_mode = effective_settings.get("_runtime_mode", "async_realtime")
+
+        # Capture the run's starting point for the result record. The game date is
+        # read after the initial world refresh, so it reflects the generated map.
+        runtime.runtime_mode = runtime_mode
+        runtime.started_at = time.time()
+        runtime.start_game_date = runtime.world.game.game_date
+
         runtime.start_orchestrator(mode=runtime_mode)
 
         self.runtimes[session_id] = runtime
@@ -196,6 +239,12 @@ class SessionManager:
         """
         runtime = self.runtimes.pop(session_id, None)
         if runtime:
+            # Score before shutting down -- the world state is needed, and a
+            # failure here must not prevent the process from being stopped.
+            try:
+                self._write_result(session_id, runtime, end_reason)
+            except Exception:
+                logger.exception("Session %s: failed to write result record", session_id)
             await runtime.shutdown()
 
         await session_repo.end_session(session_id, end_reason=end_reason)
@@ -208,15 +257,57 @@ class SessionManager:
 
         logger.info("Session %s stopped (reason=%s)", session_id, end_reason)
 
+    def _write_result(
+        self, session_id: str, runtime: SessionRuntime, end_reason: str,
+    ) -> None:
+        """Score the finished session and write its immutable result record."""
+        scores = rank_companies(list(runtime.world.companies.values()))
+        if not scores:
+            logger.warning("Session %s: no active companies to score", session_id)
+            return
+
+        # Report the SCORED clock, which starts at the first contestant action,
+        # not session provisioning. If no action was ever taken the run has no
+        # scored duration, so it reports 0 rather than the provisioning time.
+        checker = runtime.orchestrator._end_checker
+        clock_start = checker.start_time
+        scored_seconds = (time.time() - clock_start) if clock_start else 0.0
+        start_date = (
+            checker.start_game_date
+            if checker.start_game_date is not None
+            else runtime.start_game_date
+        )
+
+        writer = ResultWriter(self.sessions_dir / session_id)
+        writer.write(
+            session_id=session_id,
+            scores=scores,
+            task=runtime.task_instance,
+            runtime_mode=runtime.runtime_mode,
+            end_reason=end_reason,
+            wall_seconds=scored_seconds,
+            start_game_date=start_date,
+            end_game_date=runtime.world.game.game_date,
+            participants=runtime.gameloop_manager.participant_summary(),
+            gamescript_path=self.base_config_dir / "game" / "nttd-gs" / "main.nut",
+            openttd_binary=self.openttd_binary,
+        )
+
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:
         """Remove OpenTTD config files and symlinks, keep session data.
 
         Preserves: session.parquet, agents.parquet, _fragments/, *.parquet,
-                   save/ (game saves), screenshot/ (minimap captures).
+                   save/ (game saves), screenshot/ (minimap captures),
+                   openttd.cfg (the provenance record of the world played).
+
+        openttd.cfg is deliberately kept: it is the only complete record of the
+        settings the map was generated from, so deleting it would make a scored
+        run unverifiable.
         """
-        # Files created by config_builder or OpenTTD runtime
+        # Files created by config_builder or OpenTTD runtime. secrets.cfg is
+        # removed because it holds the admin password.
         config_files = [
-            "openttd.cfg", "secrets.cfg", "private.cfg",
+            "secrets.cfg", "private.cfg",
             "favs.cfg", "hotkeys.cfg", "hs.dat", "windows.cfg",
         ]
         for name in config_files:
@@ -256,22 +347,44 @@ class SessionManager:
         if not logic:
             return
 
-        config = EndConditionsConfig(logic=logic)
+        # EndConditionsConfig enables time_limit by default, which would silently
+        # impose a 60-minute cap on a scenario that deliberately set none. Only
+        # the conditions actually serialised are enabled here.
+        config = EndConditionsConfig(
+            logic=logic,
+            time_limit=TimeLimitConfig(enabled=False),
+        )
+        enabled: list[str] = []
+
         wall_min = settings.get("_ec_wall_minutes")
         if wall_min:
             config.time_limit = TimeLimitConfig(enabled=True, wall_minutes=float(wall_min))
+            enabled.append(f"time={wall_min}min")
         end_year = settings.get("_ec_end_year")
         if end_year:
             config.game_date_limit = GameDateLimitConfig(enabled=True, end_year=int(end_year))
+            enabled.append(f"year={end_year}")
         revenue = settings.get("_ec_revenue")
         if revenue:
             config.revenue_threshold = RevenueThresholdConfig(enabled=True, total_revenue=int(revenue))
+            enabled.append(f"revenue={revenue}")
         cargo = settings.get("_ec_cargo")
         if cargo:
             config.cargo_threshold = CargoThresholdConfig(enabled=True, total_cargo_delivered=int(cargo))
+            enabled.append(f"cargo={cargo}")
+        beats = settings.get("_ec_max_heartbeats")
+        if beats:
+            config.max_heartbeats = MaxHeartbeatsConfig(enabled=True, count=int(beats))
+            enabled.append(f"steps={beats}")
+        if settings.get("_ec_bankruptcy"):
+            config.bankruptcy = BankruptcyConfig(enabled=True)
+            enabled.append("bankruptcy")
 
         orch.configure_end_conditions(config)
-        logger.info("End conditions applied: logic=%s, time=%s, year=%s", logic, wall_min, end_year)
+        logger.info(
+            "End conditions applied: logic=%s, %s",
+            logic, ", ".join(enabled) if enabled else "none enabled",
+        )
 
     async def recover_orphans(self) -> None:
         """On nttd restart, try to reconnect to still-running OpenTTD servers."""
@@ -302,6 +415,21 @@ class SessionManager:
                 admin_port=admin_port,
                 config_dir=session_dir,
             )
+
+            # Restore provenance -- the map already exists, so the seed and task
+            # identity are a record of what it was generated from, not spawn
+            # arguments. Recomputed from the persisted settings so a recovered
+            # session still produces a complete result record.
+            stored = await session_repo.get_settings(sid) or {}
+            raw_seed = stored.get("_map_seed")
+            if raw_seed not in (None, ""):
+                runtime.map_seed = int(raw_seed)
+            if stored:
+                runtime.task_instance = compute_task_instance(
+                    stored,
+                    scenario_id=stored.get("_scenario_id", "unknown"),
+                    scenario_version=stored.get("_scenario_version", "1"),
+                )
 
             ok = await runtime.connect_to_existing(self.admin_password)
             if ok:

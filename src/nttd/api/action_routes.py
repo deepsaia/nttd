@@ -41,6 +41,10 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
     params = dict(envelope.parameters)
     params.setdefault("company_id", envelope.company_id)
 
+    # The scored clock starts on the first contestant action, so provisioning
+    # time is not charged against the wall-clock budget. Idempotent.
+    runtime.orchestrator.start_scored_clock()
+
     runtime.action_tracker.update_result(envelope.action_id, ActionStatus.EXECUTING)
     try:
         # Pathfinding commands (connect_road, connect_rail) run A* in the GS

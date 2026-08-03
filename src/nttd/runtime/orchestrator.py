@@ -30,10 +30,14 @@ logger = logging.getLogger(__name__)
 _GS_REFRESH_INTERVAL_REALTIME = 10.0   # seconds between GS refreshes in async_realtime mode
 _STAGGER_INTERVAL = 5                  # refresh towns/industries every N cycles
 
-# OpenTTD at default tick rate (30 fps) with minutes_per_calendar_year=12:
-#   1 game-year = 12 real minutes → 1 game-day ≈ 1.97s.
-# We use 3.0 to be conservative, and multiply by a 3× safety factor.
-_SECS_PER_GAME_DAY = 3.0
+# OpenTTD's ECONOMY clock advances 1 month per real minute, which is what GSDate
+# reports and what every date in nttd refers to. That gives 1 game-day ≈ 1.97s,
+# measured on OpenTTD 15.3 as 10 game-days per 20.0s (2.00 s/day).
+#
+# This rate is FIXED. OpenTTD 15.3 has no game_speed setting, and
+# economy.minutes_per_calendar_year only moves the separate CALENDAR clock
+# (vehicle/house introduction dates), not the economy.
+_SECS_PER_GAME_DAY = 1.97
 _TIMEOUT_MULTIPLIER = 3.0
 
 
@@ -121,11 +125,10 @@ class Orchestrator:
         self._action_window_seconds = config.heartbeat.action_window_seconds
         self._snapshot_interval_days = config.runtime.snapshot_interval_days
         self._end_checker = EndConditionChecker(config.end_conditions)
-        # At game_speed > 1 (fast-forward) the game runs faster; scale timeout down.
-        if config.heartbeat.game_speed > 1:
-            self._secs_per_game_day = _SECS_PER_GAME_DAY / config.heartbeat.game_speed
-        else:
-            self._secs_per_game_day = _SECS_PER_GAME_DAY
+        # The economy clock rate is fixed -- there is no game-speed multiplier to
+        # scale this by. config.heartbeat.game_speed is retained for config
+        # compatibility but has no effect on timing.
+        self._secs_per_game_day = _SECS_PER_GAME_DAY
         logger.info(
             "Scenario loaded: %s | heartbeat=%d days | action_window=%.1fs | snapshot_interval=%d days | end_logic=%s",
             config.name,
@@ -258,11 +261,24 @@ class Orchestrator:
         except Exception:
             logger.exception("GS world refresh failed")
 
+    def start_scored_clock(self) -> bool:
+        """Start the scored wall-clock. Returns True if this call started it.
+
+        Idempotent, so every action path can call it without checking first. The
+        clock deliberately excludes provisioning (map generation, tile capture,
+        agent registration), which varies run to run and would otherwise eat
+        different amounts of a contestant's budget.
+        """
+        return self._end_checker.start_clock(self.world.game.game_date)
+
     async def _execute_actions(self, actions: list[dict[str, Any]]) -> None:
         """Execute a list of GS action dicts, tracking each in ActionTracker.
 
         Uses per-company locks to serialize same-company actions.
         """
+        # The run is under way once a contestant acts.
+        self.start_scored_clock()
+
         for action in actions:
             gs_action = action.get("action")
             gs_params = action.get("params", {})
@@ -543,10 +559,14 @@ class Orchestrator:
     async def _wait_game_days(self, days: int) -> None:
         """Wait until world.game.game_date has advanced by `days`.
 
-        Timeout is calculated as days * _SECS_PER_GAME_DAY * _TIMEOUT_MULTIPLIER.
-        At OpenTTD default tick rate with minutes_per_calendar_year=12:
-          1 game-day ≈ 2.5 real seconds → 30 days ≈ 75s.
-        The 3× multiplier gives 225s of headroom.
+        Timeout is days * _SECS_PER_GAME_DAY * _TIMEOUT_MULTIPLIER. At the fixed
+        economy rate of 1.97 s/game-day, 30 days ≈ 59s and the 3× multiplier
+        gives ~177s of headroom.
+
+        Note this measures from the CURRENT date, so any game time consumed
+        before it is called (for example by executing actions) is not counted.
+        A stepped mode that must land on an exact horizon should compute its
+        target date before acting rather than rely on this helper.
         """
         start_date = self.world.game.game_date
         target_date = start_date + days

@@ -115,9 +115,12 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
     assert gs_ready, f"GS did not become ready within {_GS_READY_TIMEOUT}s"
     log.info("GS ready for session %s", sid)
 
-    # Speed up game for faster test execution (16x to ensure vehicles reach stations)
-    resp = client.post(f"/sessions/{sid}/speed", params={"speed": 16})
-    log.info("Game speed set to 16x for session %s (status=%d)", sid, resp.status_code)
+    # Note: there is no way to speed the game up. This fixture used to POST
+    # /speed expecting 16x, but OpenTTD 15.3 has no game_speed setting -- the
+    # rcon failed silently while the endpoint reported success, so these tests
+    # were always running at 1x (1 wall-minute per economy month). Tests that
+    # need vehicles to reach stations must budget real time accordingly.
+    log.info("Session %s runs at normal speed (no speed control exists)", sid)
 
     yield sid
 
@@ -225,6 +228,48 @@ class TestGSQueries:
 
 class TestFindSpots:
     """Test that find-spots commands return valid data with direction fields."""
+
+    def test_road_finders_work_without_a_prior_build(
+        self, client: httpx.Client, session_id: str, company_id: int
+    ) -> None:
+        """Road finders must not depend on an earlier command selecting a road type.
+
+        GSRoad.SetCurrentRoadType is script-global and unset on a fresh session.
+        The road finders' GSTestMode dry-runs previously ran with no road type
+        selected and rejected every candidate tile, so both finders returned 0
+        results until some other command (any build, or estimate_cost) happened
+        to set one. Regression guard: compare each finder against the raw tile
+        classification from scan_town_area, which needs no road type at all.
+        """
+        towns = gs_query(client, session_id, "get_towns")
+        deltas = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+
+        for town in towns[:6]:
+            scan = gs_query(client, session_id, "scan_town_area", {
+                "town_id": town["id"], "radius": 8,
+            })
+            buildable = {(t["x"], t["y"]) for t in scan.get("buildable", []) if "x" in t}
+            roads = {(t["x"], t["y"]) for t in scan.get("roads", []) if "x" in t}
+            has_candidate = any(
+                (bx + dx, by + dy) in roads
+                for (bx, by) in buildable
+                for (dx, dy) in deltas
+            )
+            if not has_candidate:
+                continue
+
+            for action in ("find_bus_stop_spots", "find_depot_spots"):
+                spots = gs_query(client, session_id, action, {
+                    "town_id": town["id"], "company_id": company_id, "max_results": 5,
+                })
+                assert len(spots) >= 1, (
+                    f"{action} returned 0 spots for town {town['id']} "
+                    f"({town.get('name')}) although scan_town_area found a "
+                    f"road-adjacent buildable tile -- the road type is likely unset"
+                )
+            return
+
+        pytest.skip("No town had a road-adjacent buildable tile to test against")
 
     def test_find_bus_stop_spots_has_direction(
         self, client: httpx.Client, session_id: str, company_id: int

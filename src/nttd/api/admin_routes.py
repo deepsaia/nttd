@@ -42,11 +42,18 @@ class StartSessionRequest(BaseModel):
 
 
 class EndConditionsRequest(BaseModel):
+    """End conditions for a session. Only the fields supplied are enabled."""
+
     logic: str = "any"
     wall_minutes: float | None = None
     end_year: int | None = None
     revenue_threshold: int | None = None
     cargo_threshold: int | None = None
+    # Bounds a run in steps rather than wall time -- the natural bound for
+    # stepped mode, where deliberation time is unbounded.
+    max_heartbeats: int | None = None
+    # Ends the run if a scored company goes bankrupt or is removed.
+    bankruptcy: bool = False
 
 
 class DeityBalanceRequest(BaseModel):
@@ -456,16 +463,20 @@ async def run_pathfind(session_id: str, request: PathfindRequest) -> dict[str, A
 async def set_end_conditions(session_id: str, request: EndConditionsRequest) -> dict[str, Any]:
     """Configure end conditions on a running session's orchestrator."""
     from nttd.config.scenario_config import (  # noqa: PLC0415
+        BankruptcyConfig,
         CargoThresholdConfig,
         EndConditionsConfig,
         GameDateLimitConfig,
+        MaxHeartbeatsConfig,
         RevenueThresholdConfig,
         TimeLimitConfig,
     )
 
     runtime = deps.get_runtime(session_id)
 
-    config = EndConditionsConfig(logic=request.logic)
+    # time_limit defaults to enabled, so it is explicitly disabled first: a
+    # caller that omits wall_minutes must not silently get a 60-minute cap.
+    config = EndConditionsConfig(logic=request.logic, time_limit=TimeLimitConfig(enabled=False))
     if request.wall_minutes is not None:
         config.time_limit = TimeLimitConfig(enabled=True, wall_minutes=request.wall_minutes)
     if request.end_year is not None:
@@ -474,6 +485,10 @@ async def set_end_conditions(session_id: str, request: EndConditionsRequest) -> 
         config.revenue_threshold = RevenueThresholdConfig(enabled=True, total_revenue=request.revenue_threshold)
     if request.cargo_threshold is not None:
         config.cargo_threshold = CargoThresholdConfig(enabled=True, total_cargo_delivered=request.cargo_threshold)
+    if request.max_heartbeats is not None:
+        config.max_heartbeats = MaxHeartbeatsConfig(enabled=True, count=request.max_heartbeats)
+    if request.bankruptcy:
+        config.bankruptcy = BankruptcyConfig(enabled=True)
 
     runtime.orchestrator.configure_end_conditions(config)
 

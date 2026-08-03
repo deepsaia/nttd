@@ -11,6 +11,7 @@ from pathlib import Path
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.bridge import Bridge
+from nttd.config.task_instance import TaskInstance
 from nttd.db.recorder import SessionRecorder
 from nttd.db.tile_writer import TileWriter
 from nttd.gameloop.manager import GameloopManager
@@ -41,6 +42,17 @@ class SessionRuntime:
         self.game_port = game_port
         self.admin_port = admin_port
         self.config_dir = config_dir
+        # Seed this session's map was generated from, for provenance. Set by
+        # SessionManager; None means the map was generated randomly.
+        self.map_seed: int | None = None
+        # Identity of the problem being played, for the result record. Set by
+        # SessionManager; None if the session was created without a scenario.
+        self.task_instance: TaskInstance | None = None
+        # Run shape, captured at start so the result record can report what was
+        # actually played rather than inferring it afterwards.
+        self.runtime_mode: str = ""
+        self.started_at: float = 0.0
+        self.start_game_date: int = 0
 
         self.world = WorldState()
         self.admin_client = AdminClient(host="127.0.0.1", port=admin_port)
@@ -69,20 +81,32 @@ class SessionRuntime:
         self,
         openttd_binary: str,
         admin_password: str,
+        map_seed: int | None = None,
     ) -> bool:
         """Spawn the OpenTTD dedicated server and connect the admin client.
+
+        Args:
+            openttd_binary: Path to the OpenTTD executable.
+            admin_password: Password for admin port authentication.
+            map_seed: Map generation seed. Passed as ``-G`` because OpenTTD 15.3
+                does not pin generation from ``game_creation.generation_seed``
+                in the config alone -- only the command-line flag does. Omitting
+                it yields a random map.
 
         Returns True if server started and admin client connected successfully.
         """
         cfg_path = str(self.config_dir / "openttd.cfg")
+        argv = [openttd_binary, "-D", "-c", cfg_path]
+        if map_seed is not None:
+            argv += ["-G", str(map_seed)]
         logger.info(
-            "Starting OpenTTD for session %s (game=%d, admin=%d): %s -D -c %s",
+            "Starting OpenTTD for session %s (game=%d, admin=%d): %s",
             self.session_id, self.game_port, self.admin_port,
-            openttd_binary, cfg_path,
+            " ".join(argv),
         )
 
         self.process = await asyncio.create_subprocess_exec(
-            openttd_binary, "-D", "-c", cfg_path,
+            *argv,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )

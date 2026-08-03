@@ -107,7 +107,9 @@ def format_end_conditions_brief(ec: EndConditionsConfig) -> str:
     if ec.cargo_threshold.enabled:
         parts.append(f"cargo={ec.cargo_threshold.total_cargo_delivered:,}")
     if ec.max_heartbeats.enabled:
-        parts.append(f"heartbeats={ec.max_heartbeats.count}")
+        parts.append(f"steps={ec.max_heartbeats.count}")
+    if ec.bankruptcy.enabled:
+        parts.append("bankruptcy")
     if not parts:
         return "[bold]End:[/]         [dim]none configured[/]"
     return f"[bold]End:[/]         {', '.join(parts)} (logic={ec.logic})"
@@ -180,7 +182,12 @@ def session_option() -> typer.Option:
 
 
 def build_end_conditions_payload(ec: EndConditionsConfig) -> dict:
-    """Build the end conditions REST payload from config."""
+    """Build the end conditions REST payload from config.
+
+    Every enabled condition must appear here or it silently never reaches the
+    server -- which is how max_heartbeats, the natural bound for stepped mode,
+    came to be unreachable end to end.
+    """
     payload: dict = {"logic": ec.logic}
     if ec.time_limit.enabled:
         payload["wall_minutes"] = ec.time_limit.wall_minutes
@@ -190,6 +197,10 @@ def build_end_conditions_payload(ec: EndConditionsConfig) -> dict:
         payload["revenue_threshold"] = ec.revenue_threshold.total_revenue
     if ec.cargo_threshold.enabled:
         payload["cargo_threshold"] = ec.cargo_threshold.total_cargo_delivered
+    if ec.max_heartbeats.enabled:
+        payload["max_heartbeats"] = ec.max_heartbeats.count
+    if ec.bankruptcy.enabled:
+        payload["bankruptcy"] = True
     return payload
 
 

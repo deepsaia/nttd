@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Agent-agnostic API server wrapping OpenTTD as an AI simulation environment"
 readme = "README.md"
 requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
@@ -61,7 +63,7 @@ mcp = [
 ]
 
 [project.scripts]
-nttd = "nttd.cli:main"
+nttd = "nttd.cli.app:main"
 
 [build-system]
 requires = ["hatchling"]

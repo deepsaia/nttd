@@ -1,0 +1,44 @@
+nttd
+Copyright 2026 deepsaia
+
+This product includes software developed as part of the nttd project.
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+Third-party software and content
+--------------------------------------------------------------------------------
+
+nttd does not bundle or redistribute OpenTTD. It launches a separately installed
+OpenTTD binary as a child process and communicates with it over TCP (the admin
+network protocol). Users must install OpenTTD themselves.
+
+OpenTTD is licensed under the GNU General Public License version 2.0.
+    https://github.com/OpenTTD/OpenTTD
+    https://www.openttd.org/
+
+Base graphics, sound, and music sets (OpenGFX, OpenSFX, OpenMSX) are separate
+works with their own licenses, obtained by the user through OpenTTD's Online
+Content service. nttd does not redistribute them.
+
+--------------------------------------------------------------------------------
+Note on the GameScript
+--------------------------------------------------------------------------------
+
+ottd_config/game/nttd-gs/ contains a GameScript written in Squirrel. Unlike the
+rest of this project, it does not run as a separate process: OpenTTD loads it
+into its own embedded Squirrel VM, where it extends GSController and calls
+OpenTTD's GS* script API in-process.
+
+This project licenses that GameScript under Apache-2.0 along with everything
+else. Two consequences are recorded here deliberately:
+
+  1. Because the GameScript runs inside OpenTTD and against its GPL-2.0 API,
+     whether it constitutes a derivative work of OpenTTD is a question this
+     project does not attempt to settle. Most published GameScripts on OpenTTD's
+     BaNaNaS content service are GPL-2.0.
+
+  2. Apache-2.0 is one-way incompatible with GPL-2.0. An Apache-2.0 GameScript
+     therefore cannot be contributed upstream to OpenTTD or published to
+     BaNaNaS without relicensing.
+
+This is a deliberate, revisitable choice, not an oversight.
