@@ -1,5 +1,10 @@
 // nttd GameScript — bridge between the nttd API server and OpenTTD.
 //
+// Copyright 2026 deepsaia. Licensed under the Apache License, Version 2.0.
+// See LICENSE at the repository root. NOTICE records why this file's license
+// warrants particular attention: it runs inside OpenTTD's Squirrel VM against
+// OpenTTD's GPL-2.0 GS* API.
+//
 // Receives JSON commands from the admin port, executes them in-game,
 // and sends JSON responses back. Large array responses are automatically
 // chunked to stay under the ~1400 byte admin port packet limit.
@@ -1181,6 +1186,10 @@ class NttdGS extends GSController {
     local radius = ("radius" in p) ? p.radius : 15;
     local max_results = ("max_results" in p) ? p.max_results : 10;
     local is_truck = ("is_truck_stop" in p) ? p.is_truck_stop : false;
+    local road_type = ("road_type" in p) ? p.road_type : 0;
+    // The current road type is script-global and unset on a fresh session, so
+    // the dry-run below rejects every tile until some command selects one.
+    GSRoad.SetCurrentRoadType(road_type);
     local loc = GSTown.GetLocation(p.town_id);
     local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
     local stop_type = is_truck ? GSRoad.ROADVEHTYPE_TRUCK : GSRoad.ROADVEHTYPE_BUS;
@@ -1252,6 +1261,10 @@ class NttdGS extends GSController {
     local company_id = ("company_id" in p) ? p.company_id : 0;
     local radius = ("radius" in p) ? p.radius : 15;
     local max_results = ("max_results" in p) ? p.max_results : 5;
+    local road_type = ("road_type" in p) ? p.road_type : 0;
+    // See CmdFindBusStopSpots: the current road type must be selected before
+    // any GSRoad dry-run, or every candidate tile is rejected.
+    GSRoad.SetCurrentRoadType(road_type);
     local loc = GSTown.GetLocation(p.town_id);
     local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
     local spots = [];
