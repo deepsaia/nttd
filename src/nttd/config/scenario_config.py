@@ -75,6 +75,14 @@ _TOWN_NAMES_MAP: dict[str, str] = {
     "catalan": "20", "english_additional": "21",
 }
 
+# Snapshot class names an unscored scenario may give an agent. A scored run always
+# observes fully, so this only guards the per-agent observation_mode in agents[].
+# Kept in sync with _BUILTIN_PRESETS in state/snapshot_class.py by a test, rather
+# than imported, so config validation does not depend on runtime state.
+_KNOWN_OBSERVATION_MODES: frozenset[str] = frozenset({
+    "minimal", "compact", "agent", "mas_rail", "standard", "full",
+})
+
 # OpenTTD water_borders bitmask: NE=1, SE=2, SW=4, NW=8, random=16
 _WATER_BORDER_NE = 1
 _WATER_BORDER_SE = 2
@@ -256,11 +264,15 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
     if strict:
         problems.append(formatted)
     else:
-        logger.warning("%s -- falling back to default", formatted)
+        # Deliberately vague about the remedy: an unknown enum falls back to a
+        # default, while an out-of-range fairness value is clamped by
+        # config/fairness.py. Naming one would be wrong for the other.
+        logger.warning("%s (value not used as given)", formatted)
 
 
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
+    agents: Any = None,
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -275,6 +287,7 @@ def _validate_config(
             substituted -- a typo must not quietly produce a different world.
         rt: The ``runtime`` config tree, if present.
         fair: The ``fairness`` config tree, if present.
+        agents: The ``agents`` list, if present.
 
     Raises:
         ScenarioConfigError: In strict mode, if any problem was found.
@@ -393,20 +406,53 @@ def _validate_config(
 
     # --- Fairness limits: ranges that keep a run comparable -----------------
     if fair is not None:
+        # A floor below ~0.5s is not a pacing limit, it is a busy loop. The measured
+        # slowest decide time is ~11s, so the upper bounds are generous.
+        #
+        # The cast happens inside the loop: doing it while building the checks made a
+        # non-numeric value escape as a raw ValueError, which the CLI does not catch
+        # because it expects ScenarioConfigError.
         checks = (
-            # A floor below ~1s is not a pacing limit, it is a busy loop. The
-            # measured slowest decide time is ~11s, so allow a wide upper range.
-            ("poll_interval", float(_get(fair, "poll_interval", 10.0)), 0.5, 600.0),
-            ("max_actions_per_cycle", int(_get(fair, "max_actions_per_cycle", 15)), 1, 200),
-            ("max_history_cycles", int(_get(fair, "max_history_cycles", 10)), 0, 1000),
-            ("llm_timeout_seconds", float(_get(fair, "llm_timeout_seconds", 120.0)), 1.0, 3600.0),
+            ("poll_interval", float, 10.0, 0.5, 600.0),
+            ("max_actions_per_cycle", int, 15, 1, 200),
+            ("max_history_cycles", int, 10, 0, 1000),
+            ("llm_timeout_seconds", float, 120.0, 1.0, 3600.0),
         )
-        for name, value, low, high in checks:
+        for name, cast, default, low, high in checks:
+            raw = _get(fair, name, default)
+            try:
+                value = cast(raw)
+            except (TypeError, ValueError):
+                _report(
+                    strict, problems,
+                    "fairness.%s = %r is not a %s", name, raw, cast.__name__,
+                )
+                continue
             if not low <= value <= high:
                 _report(
                     strict, problems,
                     "fairness.%s = %s is outside range [%s, %s]", name, value, low, high,
                 )
+
+        # observation_mode is not a fairness knob: a scored run always receives the
+        # complete entitled game state and leaves filtering to the agent. Refuse it
+        # here so an author is told rather than quietly overruled at runtime.
+        if _get(fair, "observation_mode", None) is not None:
+            _report(
+                strict, problems,
+                "fairness.observation_mode is not configurable: a scored run always "
+                "observes fully and the agent filters. Remove the key.",
+            )
+
+    # --- Per-agent observation_mode: must name a real snapshot class ---------
+    for i, agent in enumerate(agents or []):
+        mode = _get(agent, "observation_mode", None) or _get(agent, "snapshot_class", None)
+        if mode is not None and str(mode) not in _KNOWN_OBSERVATION_MODES:
+            _report(
+                strict, problems,
+                "agents[%d].observation_mode = %r is not a known snapshot class. Valid: %s",
+                i, mode, ", ".join(sorted(_KNOWN_OBSERVATION_MODES)),
+            )
 
     if problems:
         raise ScenarioConfigError(
@@ -446,7 +492,8 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     co = _get(raw, "companies", {})
 
     _validate_config(
-        m, co, strict=strict, rt=_get(raw, "runtime", {}), fair=_get(raw, "fairness", None),
+        m, co, strict=strict, rt=_get(raw, "runtime", {}),
+        fair=_get(raw, "fairness", None), agents=_get(raw, "agents", None),
     )
 
     # Map dimensions (log2)
@@ -518,7 +565,6 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         settings["_fair_max_actions"] = str(int(_get(fair, "max_actions_per_cycle", 15)))
         settings["_fair_max_history"] = str(int(_get(fair, "max_history_cycles", 10)))
         settings["_fair_llm_timeout"] = str(float(_get(fair, "llm_timeout_seconds", 120.0)))
-        settings["_fair_observation_mode"] = str(_get(fair, "observation_mode", "compact"))
 
     # Timekeeping. These are the only real pacing knobs and they apply at map
     # generation only -- see RuntimeConfig. They move the calendar clock, not the

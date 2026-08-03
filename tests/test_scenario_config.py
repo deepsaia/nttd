@@ -391,3 +391,59 @@ def test_validation_no_warnings_on_valid_config(caplog: pytest.LogCaptureFixture
     scenario_to_settings(cfg)  # triggers validation internally
     warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert len(warnings) == 0, f"Unexpected warnings: {[r.message for r in warnings]}"
+
+
+def test_strict_rejects_non_numeric_fairness_value(tmp_path: Any) -> None:
+    """It must be a ScenarioConfigError, not a raw ValueError.
+
+    The casts used to run while building the checks tuple, so a non-numeric value
+    escaped as ValueError and `nttd benchmark` did not catch it.
+    """
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "nan.conf"
+    path.write_text(
+        'scenario { map { size_x = 256, size_y = 256 }, '
+        'fairness { poll_interval = "abc" } }'
+    )
+    with pytest.raises(ScenarioConfigError, match="poll_interval"):
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_strict_rejects_configuring_the_observation_mode(tmp_path: Any) -> None:
+    """A scored run always observes fully, so the key is refused rather than
+    silently overruled at runtime.
+    """
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "obs.conf"
+    path.write_text(
+        'scenario { map { size_x = 256, size_y = 256 }, '
+        'fairness { observation_mode = "minimal" } }'
+    )
+    with pytest.raises(ScenarioConfigError, match="not configurable"):
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_strict_rejects_unknown_per_agent_observation_mode(tmp_path: Any) -> None:
+    """An unscored scenario may choose per-agent modes, but only real ones."""
+    from nttd.config.scenario_config import ScenarioConfigError
+
+    path = tmp_path / "agentobs.conf"
+    path.write_text(
+        'scenario { map { size_x = 256, size_y = 256 }, '
+        'agents = [ { agent_id = "a", observation_mode = "typo" } ] }'
+    )
+    with pytest.raises(ScenarioConfigError, match="not a known snapshot class"):
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_known_observation_modes_match_the_runtime_presets() -> None:
+    """Config validation keeps its own copy so it does not import runtime state.
+
+    This is what keeps the two in sync.
+    """
+    from nttd.config.scenario_config import _KNOWN_OBSERVATION_MODES
+    from nttd.state.snapshot_class import _BUILTIN_PRESETS
+
+    assert _KNOWN_OBSERVATION_MODES == {preset.name for preset in _BUILTIN_PRESETS}
