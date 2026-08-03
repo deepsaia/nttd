@@ -7,16 +7,22 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI
 
 import nttd.api.dependencies as deps
+from nttd.api.action_routes import operator_router as action_operator_router
+from nttd.api.action_routes import participant_router as action_participant_router
 from nttd.api.action_routes import router as action_router
 from nttd.api.admin_routes import router as admin_router
 from nttd.api.agent_routes import router as agent_router
 from nttd.api.analysis_routes import router as analysis_router
 from nttd.api.benchmark_routes import router as benchmark_router
+from nttd.api.control_routes import operator_router as control_operator_router
+from nttd.api.control_routes import participant_router as control_participant_router
+from nttd.api.control_routes import public_router as control_public_router
 from nttd.api.control_routes import router as control_router
 from nttd.api.gameloop_routes import router as gameloop_router
 from nttd.api.metrics_routes import router as metrics_router
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.snapshot_routes import router as snapshot_router
+from nttd.api.tiers import TIER_DESCRIPTIONS, Tier
 from nttd.api.ws_routes import router as ws_router
 from nttd.runtime.session_manager import SessionManager
 
@@ -73,19 +79,62 @@ app = FastAPI(
     description="Agent-agnostic API server for OpenTTD AI simulation",
     version="0.2.0",
     lifespan=lifespan,
+    # Documenting the tiers here is the point of splitting them: an agent reading
+    # /docs or the OpenAPI schema can see which surface it is meant to use.
+    openapi_tags=[
+        {"name": tier.tag, "description": TIER_DESCRIPTIONS[tier]}
+        for tier in (Tier.PARTICIPANT, Tier.PUBLIC, Tier.OPERATOR)
+    ],
 )
 
-app.include_router(control_router)
-app.include_router(admin_router)
-app.include_router(agent_router)
-app.include_router(observation_router)
-app.include_router(action_router)
-app.include_router(metrics_router)
+# --- Trust-tiered surface (preferred) -------------------------------------
+#
+# Routes are grouped by how dangerous they are and mounted under a tier prefix, so
+# the boundary is structural and visible in /docs rather than a convention. See
+# nttd.api.tiers -- these are namespacing and accident-avoidance, not an auth
+# boundary: what actually protects a scored run is session state.
+
+app.include_router(control_operator_router, prefix=Tier.OPERATOR.prefix, tags=[Tier.OPERATOR.tag])
+app.include_router(admin_router, prefix=Tier.OPERATOR.prefix, tags=[Tier.OPERATOR.tag])
+app.include_router(gameloop_router, prefix=Tier.OPERATOR.prefix, tags=[Tier.OPERATOR.tag])
+app.include_router(agent_router, prefix=Tier.OPERATOR.prefix, tags=[Tier.OPERATOR.tag])
+app.include_router(snapshot_router, prefix=Tier.OPERATOR.prefix, tags=[Tier.OPERATOR.tag])
+app.include_router(benchmark_router, prefix=Tier.OPERATOR.prefix, tags=[Tier.OPERATOR.tag])
+
+app.include_router(
+    action_operator_router, prefix=Tier.OPERATOR.prefix, tags=[Tier.OPERATOR.tag],
+)
+
+app.include_router(
+    control_participant_router, prefix=Tier.PARTICIPANT.prefix, tags=[Tier.PARTICIPANT.tag],
+)
+app.include_router(
+    action_participant_router, prefix=Tier.PARTICIPANT.prefix, tags=[Tier.PARTICIPANT.tag],
+)
+app.include_router(observation_router, prefix=Tier.PARTICIPANT.prefix, tags=[Tier.PARTICIPANT.tag])
+
+app.include_router(control_public_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
+app.include_router(metrics_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
+app.include_router(analysis_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
+
+# --- Legacy unprefixed paths ----------------------------------------------
+#
+# Kept so existing scenarios, the examples, the admin console, and the CLI keep
+# working. Deprecated: new callers should use the tier prefixes above.
+
+app.include_router(control_router, deprecated=True)
+app.include_router(admin_router, deprecated=True)
+app.include_router(agent_router, deprecated=True)
+app.include_router(observation_router, deprecated=True)
+app.include_router(action_router, deprecated=True)
+app.include_router(metrics_router, deprecated=True)
+app.include_router(benchmark_router, deprecated=True)
+app.include_router(gameloop_router, deprecated=True)
+app.include_router(snapshot_router, deprecated=True)
+app.include_router(analysis_router, deprecated=True)
+
+# WebSockets are mounted once: the OpenAPI/deprecation machinery does not apply.
 app.include_router(ws_router)
-app.include_router(benchmark_router)
-app.include_router(gameloop_router)
-app.include_router(snapshot_router)
-app.include_router(analysis_router)
 
 
 @app.get("/health")

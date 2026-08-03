@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import nttd.api.dependencies as deps
+from nttd.api.scored_guard import require_unscored
 from nttd.db.repositories import session_repo
 from nttd.utils.name_generator import generate_session_name
 
@@ -39,6 +40,9 @@ class StartSessionRequest(BaseModel):
     savefile: str | None = None
     ai_opponents: int = 0
     agent_companies: int = 0
+    # Company names by company_id, as strings since JSON object keys are strings.
+    # Any company omitted here gets a generated name like 'jade-heron-4f2a'.
+    company_names: dict[str, str] | None = None
 
 
 class EndConditionsRequest(BaseModel):
@@ -98,6 +102,35 @@ class DeityTownRatingRequest(BaseModel):
     delta: int
 
 
+# Settings keys a client must never supply. These decide whether a run is scored and
+# what limits bind it, so accepting them from a request body would undo the point of
+# moving the limits off AgentConfig: POST /admin/sessions/new with
+# {"_scored": "0"} disabled the lock outright, and {"_fair_max_actions": "200"}
+# raised the budget. They may only come from scenario_to_settings.
+_PROTECTED_SETTING_PREFIXES = ("_scored", "_fair_", "_task_id", "_settings_digest")
+
+
+def _reject_protected_settings(settings: dict[str, str]) -> None:
+    """Raise 400 if a request tries to set a scenario-owned key.
+
+    Refused rather than ignored: a caller that believes it disabled scoring should
+    be told, not silently overruled.
+    """
+    offenders = sorted(
+        key for key in settings
+        if key.startswith(_PROTECTED_SETTING_PREFIXES)
+    )
+    if offenders:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"These settings are owned by the scenario and cannot be supplied by "
+                f"a client: {', '.join(offenders)}. They decide whether the run is "
+                f"scored and what limits bind it, so set them in the scenario file."
+            ),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Session lifecycle
 # ---------------------------------------------------------------------------
@@ -109,6 +142,7 @@ async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
     session_id = f"ses_{ts}_{uuid.uuid4().hex[:8]}"
 
     # If config_path provided, load and convert to settings
+    _reject_protected_settings(request.settings)
     settings = dict(request.settings)
     if request.config_path:
         from nttd.config.scenario_config import load as load_scenario
@@ -182,6 +216,7 @@ async def update_settings(session_id: str, request: UpdateSettingsRequest) -> di
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    _reject_protected_settings(request.settings)
     await session_repo.upsert_settings(session_id, request.settings)
 
     # Apply live to running session
@@ -189,6 +224,10 @@ async def update_settings(session_id: str, request: UpdateSettingsRequest) -> di
     runtime = mgr.get_runtime(session_id) if mgr else None
     applied = False
     if runtime and runtime.connected:
+        # Rewriting settings mid-run changes the task instance itself, so a scored
+        # session refuses it. Storing them above is harmless: they only take effect
+        # on the next start.
+        require_unscored(runtime, "settings/apply_live")
         for key, value in request.settings.items():
             await runtime.admin_client.send_rcon(f"setting {key} {value}")
         applied = True
@@ -212,12 +251,25 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
     # Get stored settings
     settings = await session_repo.get_settings(session_id)
 
+    # JSON object keys are strings, so company ids arrive as strings.
+    try:
+        company_names = (
+            {int(cid): name for cid, name in request.company_names.items()}
+            if request.company_names else None
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"company_names keys must be integer company ids: {e}",
+        ) from e
+
     # Start the OpenTTD server (spawns process, connects admin client)
     try:
         runtime = await mgr.start_session(
             session_id, settings,
             ai_opponents=request.ai_opponents,
             agent_companies=request.agent_companies,
+            company_names=company_names,
         )
     except Exception as e:
         logger.exception("Failed to start session %s", session_id)
@@ -229,6 +281,14 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
         "game_port": runtime.game_port,
         "admin_port": runtime.admin_port,
         "pid": runtime.process.pid if runtime.process else None,
+        # One token per contestant company. Pass as X-Participant-Token (or
+        # Authorization: Bearer) on action requests; the company acted upon is
+        # derived from the token, never from the request body. Also written to
+        # <session_dir>/participants.json for separately launched agents.
+        "participants": [
+            {"company_id": p.company_id, "token": p.token}
+            for p in runtime.participants.participants()
+        ],
     }
 
 
@@ -308,6 +368,7 @@ async def get_spectators(session_id: str) -> dict[str, Any]:
 @router.post("/sessions/{session_id}/deity/change_balance")
 async def deity_change_balance(session_id: str, request: DeityBalanceRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/change_balance")
     params: dict[str, Any] = {"company_id": request.company_id, "delta": request.delta}
     if request.expense_type is not None:
         params["expense_type"] = request.expense_type
@@ -320,6 +381,7 @@ async def deity_change_balance(session_id: str, request: DeityBalanceRequest) ->
 @router.post("/sessions/{session_id}/deity/set_max_loan")
 async def deity_set_max_loan(session_id: str, request: DeityMaxLoanRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/set_max_loan")
     result = await runtime.admin_client.send_gamescript(
         "set_max_loan", {"company_id": request.company_id, "amount": request.amount}
     )
@@ -331,6 +393,7 @@ async def deity_set_max_loan(session_id: str, request: DeityMaxLoanRequest) -> d
 @router.post("/sessions/{session_id}/deity/set_setting")
 async def deity_set_setting(session_id: str, request: DeitySettingRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/set_setting")
     result = await runtime.admin_client.send_gamescript(
         "set_game_setting", {"key": request.key, "value": request.value}
     )
@@ -342,6 +405,7 @@ async def deity_set_setting(session_id: str, request: DeitySettingRequest) -> di
 @router.post("/sessions/{session_id}/deity/found_town")
 async def deity_found_town(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/found_town")
     params: dict[str, Any] = {}
     if request.x is not None and request.y is not None:
         params["x"] = request.x
@@ -360,6 +424,7 @@ async def deity_found_town(session_id: str, request: DeityTownRequest) -> dict[s
 @router.post("/sessions/{session_id}/deity/expand_town")
 async def deity_expand_town(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/expand_town")
     if request.town_id is None:
         raise HTTPException(status_code=400, detail="town_id required")
     params: dict[str, Any] = {"town_id": request.town_id}
@@ -374,6 +439,7 @@ async def deity_expand_town(session_id: str, request: DeityTownRequest) -> dict[
 @router.post("/sessions/{session_id}/deity/set_town_growth")
 async def deity_set_town_growth(session_id: str, request: DeityTownRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/set_town_growth")
     if request.town_id is None or request.growth_rate is None:
         raise HTTPException(status_code=400, detail="town_id and growth_rate required")
     result = await runtime.admin_client.send_gamescript(
@@ -387,6 +453,7 @@ async def deity_set_town_growth(session_id: str, request: DeityTownRequest) -> d
 @router.post("/sessions/{session_id}/deity/create_subsidy")
 async def deity_create_subsidy(session_id: str, request: DeitySubsidyRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/create_subsidy")
     result = await runtime.admin_client.send_gamescript("create_subsidy", {
         "cargo_id": request.cargo_id,
         "src_type": request.src_type,
@@ -402,6 +469,7 @@ async def deity_create_subsidy(session_id: str, request: DeitySubsidyRequest) ->
 @router.post("/sessions/{session_id}/deity/change_town_rating")
 async def deity_change_town_rating(session_id: str, request: DeityTownRatingRequest) -> dict[str, Any]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "deity/change_town_rating")
     result = await runtime.admin_client.send_gamescript("change_town_rating", {
         "town_id": request.town_id,
         "company_id": request.company_id,

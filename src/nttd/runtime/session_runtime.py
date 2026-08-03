@@ -11,15 +11,20 @@ from pathlib import Path
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.bridge import Bridge
+from nttd.config.fairness import FairnessConfig
 from nttd.config.task_instance import TaskInstance
 from nttd.db.recorder import SessionRecorder
 from nttd.db.tile_writer import TileWriter
 from nttd.gameloop.manager import GameloopManager
+from nttd.runtime.action_budget import ActionBudget
 from nttd.runtime.orchestrator import Orchestrator
+from nttd.runtime.participant_registry import ParticipantRegistry
+from nttd.runtime.scored_lock import ScoredLock
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
 from nttd.state.world import WorldState
+from nttd.utils.name_generator import generate_company_name
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +42,16 @@ class SessionRuntime:
         game_port: int,
         admin_port: int,
         config_dir: Path,
+        data_dir: Path | str | None = None,
     ) -> None:
+        """Bundle the per-session stack.
+
+        Args:
+            data_dir: Where recorded artifacts go. Defaults to the parent of
+                config_dir, which is the session directory, so parquet output lands
+                beside the config and result rather than in a hardcoded path that
+                ignores NTTD_SESSIONS_DIR.
+        """
         self.session_id = session_id
         self.game_port = game_port
         self.admin_port = admin_port
@@ -57,13 +71,31 @@ class SessionRuntime:
         self.world = WorldState()
         self.admin_client = AdminClient(host="127.0.0.1", port=admin_port)
         self.bridge = Bridge(self.world, self.admin_client)
-        self.recorder = SessionRecorder(session_id, data_dir="logs/sessions")
+        # Default to the session directory's parent so artifacts follow
+        # NTTD_SESSIONS_DIR instead of a hardcoded path.
+        self.data_dir = str(data_dir) if data_dir else str(Path(config_dir).parent)
+        self.recorder = SessionRecorder(session_id, data_dir=self.data_dir)
         self.orchestrator = Orchestrator(self.world, self.admin_client, recorder=self.recorder)
         self.action_tracker = ActionTracker()
         self.agent_registry = AgentRegistry()
         self.snapshot_broker_registry: dict[str, AgentSnapshotBroker] = {}
         self.snapshot_class_registry = SnapshotClassRegistry()
-        self.tile_writer = TileWriter(session_id, data_dir="logs/sessions")
+        # Maps participant tokens to the company they may act as. Populated when
+        # the session starts; empty means no company is claimed yet.
+        self.participants = ParticipantRegistry()
+        # Whether this session is scored, and what it refused. This is the real
+        # protection for a benchmark run: session state rather than a credential,
+        # because a self-hosting contestant holds every credential anyway.
+        self.scored_lock = ScoredLock()
+        # Pacing and budget limits imposed by the scenario. Replaced at session
+        # start from the scenario settings; the default is unenforced, so an
+        # ad-hoc session keeps whatever the caller asked for.
+        self.fairness = FairnessConfig()
+        # Per-company action budget for the REST path. FairnessConfig binds at
+        # agent registration, so without this a contestant posting straight to
+        # /actions/submit has no pacing limit -- which every bundled example does.
+        self.action_budget = ActionBudget()
+        self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
         self.gameloop_manager = GameloopManager(self)
 
         # Stop all gameloop agents when the session ends
@@ -192,6 +224,51 @@ class SessionRuntime:
                     "Expected %d companies but found %d for session %s",
                     total, company_count, self.session_id,
                 )
+
+    async def name_companies(
+        self, count: int, names: dict[int, str] | None = None,
+    ) -> dict[int, str]:
+        """Give each contestant company a readable name.
+
+        OpenTTD leaves companies as "Unnamed", which makes a leaderboard row
+        unable to say who played and the company_name column in the result record
+        useless. Generated names look like 'jade-heron-4f2a'.
+
+        Args:
+            count: How many companies to name, starting from company 0.
+            names: Explicit names by company_id, overriding the generated one.
+                Lets a contestant choose their own.
+
+        Returns:
+            The name applied per company_id. Companies that failed to rename are
+            omitted rather than reported optimistically.
+        """
+        supplied = names or {}
+        applied: dict[int, str] = {}
+        for company_id in range(count):
+            name = supplied.get(company_id) or generate_company_name()
+            result = await self.admin_client.send_gamescript(
+                "rename_company", {"company_id": company_id, "name": name}, timeout=10.0,
+            )
+            if result.get("success"):
+                applied[company_id] = name
+                # Reflect it immediately so a snapshot taken before the next GS
+                # refresh does not still say "Unnamed".
+                company = self.world.companies.get(company_id)
+                if company is not None:
+                    company.name = name
+            else:
+                logger.warning(
+                    "Could not name company %d in session %s: %s",
+                    company_id, self.session_id, result.get("error", "unknown"),
+                )
+        if applied:
+            logger.info(
+                "Named %d company(ies) for session %s: %s",
+                len(applied), self.session_id,
+                ", ".join(f"{cid}={name}" for cid, name in sorted(applied.items())),
+            )
+        return applied
 
     async def _capture_tiles(self) -> None:
         """Capture full tile terrain data in the background."""

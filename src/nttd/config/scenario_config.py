@@ -75,6 +75,14 @@ _TOWN_NAMES_MAP: dict[str, str] = {
     "catalan": "20", "english_additional": "21",
 }
 
+# Snapshot class names an unscored scenario may give an agent. A scored run always
+# observes fully, so this only guards the per-agent observation_mode in agents[].
+# Kept in sync with _BUILTIN_PRESETS in state/snapshot_class.py by a test, rather
+# than imported, so config validation does not depend on runtime state.
+_KNOWN_OBSERVATION_MODES: frozenset[str] = frozenset({
+    "minimal", "compact", "agent", "mas_rail", "standard", "full",
+})
+
 # OpenTTD water_borders bitmask: NE=1, SE=2, SW=4, NW=8, random=16
 _WATER_BORDER_NE = 1
 _WATER_BORDER_SE = 2
@@ -186,6 +194,12 @@ class ScenarioConfig:
     description: str = ""
     id: str = ""
     version: str = "1"
+    # When true, the session refuses game-mutating operator operations for its
+    # whole life, for every caller. This is what protects a benchmark result: a
+    # self-hosting contestant holds every credential, so session state is the only
+    # boundary that means anything. Off by default, since scenario authoring and
+    # debugging need the full surface.
+    scored: bool = False
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     end_conditions: EndConditionsConfig = field(default_factory=EndConditionsConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
@@ -250,10 +264,16 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
     if strict:
         problems.append(formatted)
     else:
-        logger.warning("%s -- falling back to default", formatted)
+        # Deliberately vague about the remedy: an unknown enum falls back to a
+        # default, while an out-of-range fairness value is clamped by
+        # config/fairness.py. Naming one would be wrong for the other.
+        logger.warning("%s (value not used as given)", formatted)
 
 
-def _validate_config(m: Any, co: Any, strict: bool = False, rt: Any = None) -> None:
+def _validate_config(
+    m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
+    agents: Any = None,
+) -> None:
     """Validate map, company, and runtime config values.
 
     Checks for: unknown enum values, out-of-range numbers, conflicting combos.
@@ -266,6 +286,8 @@ def _validate_config(m: Any, co: Any, strict: bool = False, rt: Any = None) -> N
             an ill-specified task instance is refused rather than silently
             substituted -- a typo must not quietly produce a different world.
         rt: The ``runtime`` config tree, if present.
+        fair: The ``fairness`` config tree, if present.
+        agents: The ``agents`` list, if present.
 
     Raises:
         ScenarioConfigError: In strict mode, if any problem was found.
@@ -382,6 +404,56 @@ def _validate_config(m: Any, co: Any, strict: bool = False, rt: Any = None) -> N
                 "(calendar mode is fixed at 12)", minutes,
             )
 
+    # --- Fairness limits: ranges that keep a run comparable -----------------
+    if fair is not None:
+        # A floor below ~0.5s is not a pacing limit, it is a busy loop. The measured
+        # slowest decide time is ~11s, so the upper bounds are generous.
+        #
+        # The cast happens inside the loop: doing it while building the checks made a
+        # non-numeric value escape as a raw ValueError, which the CLI does not catch
+        # because it expects ScenarioConfigError.
+        checks = (
+            ("poll_interval", float, 10.0, 0.5, 600.0),
+            ("max_actions_per_cycle", int, 15, 1, 200),
+            ("max_history_cycles", int, 10, 0, 1000),
+            ("llm_timeout_seconds", float, 120.0, 1.0, 3600.0),
+        )
+        for name, cast, default, low, high in checks:
+            raw = _get(fair, name, default)
+            try:
+                value = cast(raw)
+            except (TypeError, ValueError):
+                _report(
+                    strict, problems,
+                    "fairness.%s = %r is not a %s", name, raw, cast.__name__,
+                )
+                continue
+            if not low <= value <= high:
+                _report(
+                    strict, problems,
+                    "fairness.%s = %s is outside range [%s, %s]", name, value, low, high,
+                )
+
+        # observation_mode is not a fairness knob: a scored run always receives the
+        # complete entitled game state and leaves filtering to the agent. Refuse it
+        # here so an author is told rather than quietly overruled at runtime.
+        if _get(fair, "observation_mode", None) is not None:
+            _report(
+                strict, problems,
+                "fairness.observation_mode is not configurable: a scored run always "
+                "observes fully and the agent filters. Remove the key.",
+            )
+
+    # --- Per-agent observation_mode: must name a real snapshot class ---------
+    for i, agent in enumerate(agents or []):
+        mode = _get(agent, "observation_mode", None) or _get(agent, "snapshot_class", None)
+        if mode is not None and str(mode) not in _KNOWN_OBSERVATION_MODES:
+            _report(
+                strict, problems,
+                "agents[%d].observation_mode = %r is not a known snapshot class. Valid: %s",
+                i, mode, ", ".join(sorted(_KNOWN_OBSERVATION_MODES)),
+            )
+
     if problems:
         raise ScenarioConfigError(
             f"{len(problems)} problem(s) in scenario config (strict mode): "
@@ -419,7 +491,10 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     m = _get(raw, "map", {})
     co = _get(raw, "companies", {})
 
-    _validate_config(m, co, strict=strict, rt=_get(raw, "runtime", {}))
+    _validate_config(
+        m, co, strict=strict, rt=_get(raw, "runtime", {}),
+        fair=_get(raw, "fairness", None), agents=_get(raw, "agents", None),
+    )
 
     # Map dimensions (log2)
     settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", 256))))
@@ -481,6 +556,16 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     if max_loan != 300000:
         settings["difficulty.max_loan"] = str(max_loan)
 
+    # Fairness limits. Operator-owned, because they decide how much a contestant
+    # may do: declared on AgentConfig they would let each contestant set their own
+    # budget. Enforced only for a scored session -- see config/fairness.py.
+    fair = _get(raw, "fairness", {})
+    if fair:
+        settings["_fair_poll_interval"] = str(float(_get(fair, "poll_interval", 10.0)))
+        settings["_fair_max_actions"] = str(int(_get(fair, "max_actions_per_cycle", 15)))
+        settings["_fair_max_history"] = str(int(_get(fair, "max_history_cycles", 10)))
+        settings["_fair_llm_timeout"] = str(float(_get(fair, "llm_timeout_seconds", 120.0)))
+
     # Timekeeping. These are the only real pacing knobs and they apply at map
     # generation only -- see RuntimeConfig. They move the calendar clock, not the
     # economy clock, so they change when vehicles become available rather than how
@@ -497,6 +582,8 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     scenario_name = str(_get(raw, "name", "default"))
     settings["_scenario_id"] = str(_get(raw, "id", scenario_name))
     settings["_scenario_version"] = str(_get(raw, "version", "1"))
+    if _get(raw, "scored", False):
+        settings["_scored"] = "1"
 
     # nttd-internal runtime metadata (prefixed with _)
     settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))
@@ -604,6 +691,7 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
         # without every file needing an explicit id.
         id=str(_get(s, "id", scenario_name)),
         version=str(_get(s, "version", "1")),
+        scored=bool(_get(s, "scored", False)),
         heartbeat=HeartbeatConfig(
             interval_days=int(_get(hb_raw, "interval_days", 30)),
             action_window_seconds=float(_get(hb_raw, "action_window_seconds", 5.0)),

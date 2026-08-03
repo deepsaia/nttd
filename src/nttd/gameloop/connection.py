@@ -6,6 +6,7 @@ import asyncio
 import collections
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,13 +31,20 @@ from nttd.interpreter.validator import validate_actions
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.state.route_planner import RoutePlanner
+from nttd.utils.game_text import sanitise_observation
 
 if TYPE_CHECKING:
     from nttd.runtime.session_runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
 
+# Fallback only. A scored session sets this per-session from the scenario's
+# fairness block, so one stalled contestant cannot hold a session open.
 _LLM_TIMEOUT_SECONDS = 120.0  # Multi-turn tool calling can take several rounds
+
+# Floor on the inter-cycle sleep, so an overrunning or fast-failing cycle cannot
+# spin the event loop.
+_MIN_CYCLE_SLEEP = 0.1
 
 
 def _nearest_town(sx: int, sy: int, towns: dict[int, Any]) -> tuple[int, str]:
@@ -79,6 +87,15 @@ class AgentConnection:
         self.tracker = ConnectionTracker(connection_id, runtime.session_id)
         self._task: asyncio.Task[None] | None = None
         self._running: bool = False
+        # Only a scored session imposes a decision timeout. Reading it
+        # unconditionally would apply a scenario's cap to unscored local runs too,
+        # which is the opposite of how the other four fairness limits behave.
+        fairness = getattr(runtime, "fairness", None)
+        self._llm_timeout: float = (
+            fairness.llm_timeout_seconds
+            if fairness is not None and fairness.enforced
+            else _LLM_TIMEOUT_SECONDS
+        )
 
         # Default instructions when none provided — select by agent_type
         if not config.instructions:
@@ -210,6 +227,7 @@ class AgentConnection:
         )
 
         while self._running:
+            cycle_started = time.monotonic()
             try:
                 await self._run_one_cycle()
             except asyncio.CancelledError:
@@ -218,8 +236,23 @@ class AgentConnection:
                 logger.exception("Agent %s cycle error", self.config.agent_id)
                 self.tracker.record_error("cycle_exception")
 
-            # Wait for next cycle
-            wait = max(0.5, self.config.poll_interval)
+            # Sleep until the next cycle is due. poll_interval is a PERIOD, not a
+            # delay added after the work: sleeping a fixed amount after each cycle
+            # would hand a faster model more decisions for reasons unrelated to
+            # policy quality. With measured decide times of 4.0-11.2s, a fixed
+            # 10s sleep gives a 1.52x decision-rate spread; treating it as a
+            # period narrows that to 1.12x.
+            elapsed = time.monotonic() - cycle_started
+            # A small floor even when the cycle overran its period: yielding zero
+            # would let a fast-failing cycle spin the event loop, and the old
+            # max(0.5, poll_interval) form guaranteed a floor that the period form
+            # otherwise loses.
+            wait = max(_MIN_CYCLE_SLEEP, self.config.poll_interval - elapsed)
+            if self.config.poll_interval - elapsed <= 0:
+                logger.debug(
+                    "Agent %s cycle took %.1fs, exceeding the %.1fs period",
+                    self.config.agent_id, elapsed, self.config.poll_interval,
+                )
             try:
                 await asyncio.sleep(wait)
             except asyncio.CancelledError:
@@ -261,7 +294,7 @@ class AgentConnection:
                     tool_executor=tool_executor,
                     message_logger=msg_logger,
                 ),
-                timeout=_LLM_TIMEOUT_SECONDS,
+                timeout=self._llm_timeout,
             )
         except asyncio.TimeoutError:
             self.tracker.record_error("llm_timeout")
@@ -282,12 +315,20 @@ class AgentConnection:
 
         # 3. Parse & Validate
         actions = parse_action_list(raw_output)
-        if len(actions) > self.config.max_actions_per_cycle:
+
+        # The ceiling belongs to the COMPANY, not to this agent. Truncating per
+        # agent gave a 3-agent entry three times the actions of a 1-agent entry on
+        # the same scenario, and the shipped 3-agent scenario puts road, air, and
+        # water all on company 0. The session's budget is shared, so ask it how much
+        # room is left rather than assuming the whole per-cycle allowance.
+        allowed = self._company_action_allowance(len(actions))
+        if len(actions) > allowed:
             logger.warning(
-                "Agent %s proposed %d actions, truncating to %d",
-                self.config.agent_id, len(actions), self.config.max_actions_per_cycle,
+                "Agent %s proposed %d actions, truncating to %d "
+                "(company %d budget)",
+                self.config.agent_id, len(actions), allowed, self.config.company_id,
             )
-            actions = actions[: self.config.max_actions_per_cycle]
+            actions = actions[:allowed]
 
         errors = validate_actions(actions)
         valid_actions = [a for i, a in enumerate(actions) if i not in errors]
@@ -679,7 +720,29 @@ class AgentConnection:
                 "mode": game.mode,
             }
 
-        return obs
+        # Company, vehicle, station, and sign names are all writable by a
+        # contestant, and this observation becomes part of an agent's prompt. Strip
+        # newlines and control codes once here, at the boundary, rather than at each
+        # of the places a name is copied out of game state.
+        return sanitise_observation(obs)  # type: ignore[return-value]
+
+    def _company_action_allowance(self, wanted: int) -> int:
+        """How many of ``wanted`` actions this agent's company may still take.
+
+        Falls back to the per-agent ceiling when the session has no enforced budget,
+        so an unscored run behaves as before.
+        """
+        budget = getattr(self.runtime, "action_budget", None)
+        ceiling = self.config.max_actions_per_cycle
+        if budget is None or not getattr(budget, "enforced", False):
+            return min(wanted, ceiling)
+
+        # Binary search would be overkill: the ceiling is small, so walk down from
+        # what the agent asked for until the shared budget accepts the count.
+        for count in range(min(wanted, ceiling), 0, -1):
+            if budget.check(self.config.company_id, count=count).allowed:
+                return count
+        return 0
 
     async def _execute(self, actions: list[Any], game_date: int = 0) -> list[dict[str, Any]]:
         """Execute validated actions via GS commands through the admin client."""
@@ -690,6 +753,12 @@ class AgentConnection:
         # session was provisioned. Idempotent, so calling it per cycle is safe.
         if actions:
             self.runtime.orchestrator.start_scored_clock()
+            # Draw from the company's shared budget so gameloop and REST actions
+            # count against the same ceiling. Without this an agent could take its
+            # per-cycle allowance and then post more over REST.
+            budget = getattr(self.runtime, "action_budget", None)
+            if budget is not None:
+                budget.consume(self.config.company_id, count=len(actions))
 
         for i, action in enumerate(actions):
             params = {**action.parameters, "company_id": self.config.company_id}

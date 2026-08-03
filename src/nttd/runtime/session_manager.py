@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nttd.runtime.orchestrator import Orchestrator
 
 from nttd.analysis.score import rank_companies
+from nttd.config.fairness import from_settings as fairness_from_settings
 from nttd.config.scenario_config import (
     BankruptcyConfig,
     CargoThresholdConfig,
@@ -30,7 +31,9 @@ from nttd.config.scenario_config import (
 from nttd.config.task_instance import compute_task_instance
 from nttd.db.repositories import session_repo
 from nttd.db.result_writer import ResultWriter
+from nttd.runtime.action_budget import from_fairness as budget_from_fairness
 from nttd.runtime.config_builder import build_session_config
+from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.session_runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -101,11 +104,17 @@ class SessionManager:
         settings: dict[str, str] | None = None,
         ai_opponents: int = 0,
         agent_companies: int = 0,
+        company_names: dict[int, str] | None = None,
     ) -> SessionRuntime:
         """Start an OpenTTD server for a session.
 
         Allocates ports, builds config, spawns the process, connects admin client,
         applies settings, and starts a new game.
+
+        Args:
+            company_names: Names by company_id. Any contestant company omitted
+                gets a generated name, since OpenTTD's default "Unnamed" leaves a
+                result row unable to identify who played.
         """
         if session_id in self.runtimes:
             raise ValueError(f"Session {session_id} is already running")
@@ -176,6 +185,16 @@ class SessionManager:
         )
         runtime.map_seed = map_seed
         runtime.task_instance = task
+        # Lock a scored session before the server is up, so the window between
+        # spawn and lock cannot be used.
+        runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
+        runtime.fairness = fairness_from_settings(effective_settings)
+        runtime.action_budget = budget_from_fairness(runtime.fairness)
+        if runtime.scored_lock.scored:
+            logger.info(
+                "Session %s is SCORED: game-mutating operator operations are refused",
+                session_id,
+            )
 
         ok = await runtime.start_server(
             self.openttd_binary, self.admin_password, map_seed=map_seed,
@@ -189,6 +208,18 @@ class SessionManager:
 
         # Start AI companies (no newgame needed — settings already in config)
         await runtime.start_companies(ai_count, agent_companies)
+
+        # Issue one participant token per contestant company. Companies are
+        # allocated from 0, and AI opponents occupy the slots after the agent
+        # ones, so the first agent_companies ids are the contestant's.
+        #
+        # Tokens are also written to the session directory because a contestant's
+        # agent often runs as a separate process that never saw this response.
+        if agent_companies > 0:
+            for company_id in range(agent_companies):
+                runtime.participants.issue(company_id)
+            runtime.participants.write(session_dir)
+            await runtime.name_companies(agent_companies, names=company_names)
 
         # Configure orchestrator from runtime settings
         orch = runtime.orchestrator
@@ -291,6 +322,9 @@ class SessionManager:
             participants=runtime.gameloop_manager.participant_summary(),
             gamescript_path=self.base_config_dir / "game" / "nttd-gs" / "main.nut",
             openttd_binary=self.openttd_binary,
+            capability=runtime.scored_lock.summary(),
+            fairness=runtime.fairness.as_dict(),
+            budget=runtime.action_budget.usage(),
         )
 
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:
@@ -304,6 +338,9 @@ class SessionManager:
         settings the map was generated from, so deleting it would make a scored
         run unverifiable.
         """
+        # Participant tokens are credentials, so they do not outlive the session.
+        ParticipantRegistry.remove(session_dir)
+
         # Files created by config_builder or OpenTTD runtime. secrets.cfg is
         # removed because it holds the admin password.
         config_files = [
@@ -424,12 +461,28 @@ class SessionManager:
             raw_seed = stored.get("_map_seed")
             if raw_seed not in (None, ""):
                 runtime.map_seed = int(raw_seed)
+
+            # Restore the scored lock and fairness limits BEFORE the session is
+            # reachable again. Without this a recovered scored session would run
+            # unlocked and unbounded, so an nttd restart would silently turn a
+            # scored run into an unprotected one.
+            runtime.scored_lock.scored = stored.get("_scored") == "1"
+            runtime.fairness = fairness_from_settings(stored)
+            runtime.action_budget = budget_from_fairness(runtime.fairness)
+            if runtime.scored_lock.scored:
+                logger.info("Recovered session %s is SCORED: lock restored", sid)
             if stored:
                 runtime.task_instance = compute_task_instance(
                     stored,
                     scenario_id=stored.get("_scenario_id", "unknown"),
                     scenario_version=stored.get("_scenario_version", "1"),
                 )
+
+            # Reload the tokens the session already handed out, so agents that
+            # survived the restart keep working instead of getting 401s.
+            loaded = runtime.participants.load(session_dir)
+            if loaded:
+                logger.info("Session %s: restored %d participant token(s)", sid, loaded)
 
             ok = await runtime.connect_to_existing(self.admin_password)
             if ok:

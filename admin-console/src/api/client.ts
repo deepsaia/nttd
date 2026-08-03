@@ -198,8 +198,10 @@ export function getGlobalLeaderboard() {
   return get<{ leaderboard: GlobalLeaderboardEntry[] }>('/leaderboard/global');
 }
 
+// GET, not POST: the leaderboard is derived from Parquet on every request, so
+// there is nothing to recompute and nothing is mutated.
 export function computeLeaderboard(sessionId: string) {
-  return post<{ ranked: number }>(`/leaderboard/compute/${sessionId}`);
+  return get<{ ranked: number }>(`/leaderboard/compute/${sessionId}`);
 }
 
 // ---------------------------------------------------------------------------

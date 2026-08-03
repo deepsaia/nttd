@@ -1,4 +1,14 @@
-"""Session-scoped control routes: pause, speed, mode, rcon, save/load, assist."""
+"""Session-scoped control routes, split by trust tier.
+
+Three routers because these routes are not equally dangerous:
+
+  ``public_router``       reading session status
+  ``participant_router``  gameplay: stepping and submitting actions
+  ``operator_router``     rcon, save/load, mode, scenario, assist
+
+``router`` aggregates all three so legacy unprefixed paths keep working.
+See ``nttd.api.tiers``.
+"""
 
 import asyncio
 import logging
@@ -8,19 +18,34 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import nttd.api.dependencies as deps
+from nttd.api.participant_auth import (
+    AuthorizationHeader,
+    ParticipantToken,
+    apply_company_scope,
+    extract_token,
+)
+from nttd.api.scored_guard import require_unscored
 from nttd.schemas.game import GameState, RuntimeMode
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/sessions/{session_id}", tags=["control"])
+
+_SESSION_PREFIX = "/sessions/{session_id}"
+
+public_router = APIRouter(prefix=_SESSION_PREFIX, tags=["control"])
+participant_router = APIRouter(prefix=_SESSION_PREFIX, tags=["control"])
+operator_router = APIRouter(prefix=_SESSION_PREFIX, tags=["control"])
+
+# Aggregate view used to serve the legacy unprefixed paths.
+router = APIRouter()
 
 
-@router.get("/status", response_model=GameState)
+@public_router.get("/status", response_model=GameState)
 def get_status(session_id: str) -> GameState:
     runtime = deps.get_runtime(session_id)
     return runtime.world.game
 
 
-@router.post("/pause")
+@participant_router.post("/pause")
 async def pause(session_id: str) -> dict[str, bool]:
     runtime = deps.get_runtime(session_id)
     if runtime.admin_client.connected:
@@ -29,7 +54,7 @@ async def pause(session_id: str) -> dict[str, bool]:
     return {"paused": True}
 
 
-@router.post("/unpause")
+@participant_router.post("/unpause")
 async def unpause(session_id: str) -> dict[str, bool]:
     runtime = deps.get_runtime(session_id)
     if runtime.admin_client.connected:
@@ -38,7 +63,7 @@ async def unpause(session_id: str) -> dict[str, bool]:
     return {"paused": False}
 
 
-@router.post("/speed")
+@operator_router.post("/speed")
 async def set_speed(session_id: str, speed: int) -> dict[str, int]:
     """Rejected: OpenTTD has no runtime game-speed control.
 
@@ -68,7 +93,7 @@ async def set_speed(session_id: str, speed: int) -> dict[str, int]:
     )
 
 
-@router.post("/mode")
+@operator_router.post("/mode")
 async def set_mode(session_id: str, mode: RuntimeMode) -> dict[str, str]:
     runtime = deps.get_runtime(session_id)
 
@@ -87,7 +112,7 @@ async def set_mode(session_id: str, mode: RuntimeMode) -> dict[str, str]:
     return {"mode": mode.value}
 
 
-@router.post("/stop")
+@operator_router.post("/stop")
 async def stop_orchestrator(session_id: str) -> dict[str, str]:
     runtime = deps.get_runtime(session_id)
     runtime.orchestrator.stop()
@@ -101,7 +126,7 @@ async def stop_orchestrator(session_id: str) -> dict[str, str]:
     return {"status": "stopped"}
 
 
-@router.post("/heartbeat/interval")
+@operator_router.post("/heartbeat/interval")
 def set_heartbeat_interval(session_id: str, days: int) -> dict[str, int]:
     runtime = deps.get_runtime(session_id)
     runtime.orchestrator.set_heartbeat_interval(days)
@@ -114,44 +139,58 @@ class HeartbeatActionRequest(BaseModel):
     params: dict[str, Any] = {}
 
 
-@router.post("/heartbeat/action")
+@participant_router.post("/heartbeat/action")
 async def submit_heartbeat_action(
-    session_id: str, request: HeartbeatActionRequest,
+    session_id: str,
+    request: HeartbeatActionRequest,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
 ) -> dict[str, bool]:
     """Submit an action to be executed in the current heartbeat window."""
     runtime = deps.get_runtime(session_id)
+
+    # The company comes from the token. The agent_registry check below predates
+    # tokens and was opt-in -- it only ran when the caller volunteered an
+    # agent_id, so omitting it bypassed the check entirely.
+    params = dict(request.params)
+    token = extract_token(x_participant_token, authorization)
+    apply_company_scope(runtime, params, token)
+
     if request.agent_id is not None:
         status = runtime.agent_registry.get(request.agent_id)
         if status is None:
             raise HTTPException(status_code=404, detail=f"Agent {request.agent_id} not found")
-        if status.company_scope:
-            company_id = request.params.get("company_id")
-            if company_id is not None and company_id not in status.company_scope:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Agent {request.agent_id} not authorized for company {company_id}",
-                )
-    runtime.orchestrator.submit_heartbeat_action({"action": request.action, "params": request.params})
+        if status.company_scope and params["company_id"] not in status.company_scope:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Agent {request.agent_id} not authorized for company "
+                    f"{params['company_id']}"
+                ),
+            )
+
+    runtime.orchestrator.submit_heartbeat_action({"action": request.action, "params": params})
     return {"queued": True}
 
 
-@router.post("/heartbeat/action_window")
+@operator_router.post("/heartbeat/action_window")
 def set_action_window(session_id: str, seconds: float) -> dict[str, float]:
     runtime = deps.get_runtime(session_id)
     runtime.orchestrator.set_action_window(seconds)
     return {"action_window_seconds": seconds}
 
 
-@router.post("/rcon")
+@operator_router.post("/rcon")
 async def send_rcon(session_id: str, command: str) -> dict[str, list[str]]:
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "rcon", detail=command[:120])
     if not runtime.admin_client.connected:
         return {"response": ["Not connected to OpenTTD"]}
     response = await runtime.admin_client.send_rcon(command)
     return {"response": response}
 
 
-@router.post("/save")
+@operator_router.post("/save")
 async def save_game(session_id: str, filename: str = "nttd_save") -> dict[str, Any]:
     """Save the current game to a file."""
     runtime = deps.get_runtime(session_id)
@@ -161,17 +200,18 @@ async def save_game(session_id: str, filename: str = "nttd_save") -> dict[str, A
     return {"filename": filename, "response": response}
 
 
-@router.post("/load")
+@operator_router.post("/load")
 async def load_game(session_id: str, filename: str) -> dict[str, Any]:
     """Load a saved game by filename. This will reset the world state."""
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "load", detail=filename)
     if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
     response = await runtime.admin_client.send_rcon(f"load {filename}")
     return {"filename": filename, "response": response}
 
 
-@router.post("/assist")
+@operator_router.post("/assist")
 async def trigger_assist(session_id: str) -> dict[str, Any]:
     """Pause the game and capture a fresh snapshot for human/agent review."""
     runtime = deps.get_runtime(session_id)
@@ -181,15 +221,16 @@ async def trigger_assist(session_id: str) -> dict[str, Any]:
     return snapshot.model_dump()
 
 
-@router.post("/assist/approve")
+@operator_router.post("/assist/approve")
 async def approve_assist(session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
     """Execute the approved action list and unpause the game."""
     runtime = deps.get_runtime(session_id)
+    require_unscored(runtime, "assist/approve", detail=f"{len(actions)} action(s)")
     results = await runtime.orchestrator.approve_assist(actions)
     return {"executed": len(results), "results": results}
 
 
-@router.post("/assist/cancel")
+@operator_router.post("/assist/cancel")
 async def cancel_assist(session_id: str) -> dict[str, str]:
     """Cancel the assist session and unpause without executing anything."""
     runtime = deps.get_runtime(session_id)
@@ -197,7 +238,7 @@ async def cancel_assist(session_id: str) -> dict[str, str]:
     return {"status": "cancelled"}
 
 
-@router.post("/scenario")
+@operator_router.post("/scenario")
 async def load_scenario(session_id: str, config_path: str | None = None) -> dict[str, Any]:
     """Load scenario from a HOCON config file and apply settings to the orchestrator."""
     from nttd.config import scenario_config  # noqa: PLC0415
@@ -228,3 +269,9 @@ async def load_scenario(session_id: str, config_path: str | None = None) -> dict
             "max_heartbeats": {"enabled": ec.max_heartbeats.enabled, "count": ec.max_heartbeats.count},
         },
     }
+
+# Legacy unprefixed paths (/sessions/{id}/...) are served by aggregating the three
+# tier routers. New callers should use the /v1/<tier> prefixes.
+router.include_router(public_router)
+router.include_router(participant_router)
+router.include_router(operator_router)
