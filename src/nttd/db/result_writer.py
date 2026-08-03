@@ -27,6 +27,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from nttd.analysis.score import SCORE_VERSION, CompanyScore
+from nttd.config.golden_tasks import is_golden
 from nttd.config.task_instance import TaskInstance, file_digest
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
 
@@ -53,6 +54,18 @@ _SCHEMA = pa.schema([
     ("scenario_version", pa.string()),
     ("map_seed", pa.int64()),
     ("settings_digest", pa.string()),
+    # Whether the leaderboard has a column for this exact task. Derived from
+    # task_id, so reproducing a golden world reaches golden status by content
+    # rather than by declaring it.
+    ("is_golden_task", pa.bool_()),
+    # The world settings a scored scenario is allowed to vary. They may differ
+    # between scored runs only because they are disclosed here: a reader comparing
+    # two rows needs to see that one was 512x512 mountainous.
+    ("map_size_x", pa.int32()),
+    ("map_size_y", pa.int32()),
+    ("landscape", pa.string()),
+    ("terrain_type", pa.string()),
+    ("profile_version", pa.string()),
     # Run shape
     ("runtime_mode", pa.string()),
     ("end_reason", pa.string()),
@@ -175,6 +188,7 @@ class ResultWriter:
         capability: dict[str, Any] | None = None,
         fairness: dict[str, Any] | None = None,
         budget: dict[str, Any] | None = None,
+        dimensions: dict[str, str] | None = None,
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
 
@@ -188,6 +202,10 @@ class ResultWriter:
                 run was scored and whether it stayed within the participant tier.
             fairness: The effective pacing and budget limits the run was held to.
             budget: Action-budget usage, including how many actions were refused.
+            dimensions: The world settings a scored scenario is allowed to vary, in
+                readable form. Recorded because they are permitted to differ only on
+                condition of being disclosed: a reader comparing two rows needs to
+                see that one was 512x512 mountainous.
         """
         if not scores:
             logger.warning("Session %s: no company scores, result.parquet not written", session_id)
@@ -205,7 +223,15 @@ class ResultWriter:
         attest = capability or {}
         limits = fairness or {}
         spend = budget or {}
+        dims = dimensions or {}
         blocked_ops = attest.get("blocked_operations") or []
+
+        # Whether the leaderboard has a column for this task at all. Derived from
+        # task_id, so a contestant who reproduces a golden world reaches the golden
+        # id by content and one who alters anything reaches a different id. A False
+        # is not a complaint: local experimentation and private variants are normal
+        # play, they are simply not comparable to other rows.
+        golden = is_golden(task.task_id) if task else False
 
         rows: list[dict[str, Any]] = []
         for score in scores:
@@ -226,6 +252,13 @@ class ResultWriter:
                 "scenario_version": task.scenario_version if task else "",
                 "map_seed": task.seed if (task and task.seed is not None) else -1,
                 "settings_digest": task.settings_digest if task else "",
+                "is_golden_task": golden,
+                # The permitted-to-vary dimensions, as leaderboard columns.
+                "map_size_x": int(dims.get("size_x", 0) or 0),
+                "map_size_y": int(dims.get("size_y", 0) or 0),
+                "landscape": dims.get("landscape", ""),
+                "terrain_type": dims.get("terrain_type", ""),
+                "profile_version": dims.get("profile_version", ""),
                 "runtime_mode": runtime_mode,
                 "end_reason": end_reason,
                 "wall_seconds": round(wall_seconds, 2),
