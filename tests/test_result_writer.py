@@ -216,3 +216,65 @@ def test_capability_digest_reflects_the_vocabulary(tmp_path: Path) -> None:
     with patch.object(result_writer, "KNOWN_ACTIONS", {"build_road_stop"}):
         changed = result_writer.capability_digest()
     assert changed != baseline
+
+
+# ---------------------------------------------------------------------------
+# Golden status and the disclosed world dimensions
+# ---------------------------------------------------------------------------
+
+
+def test_every_written_key_is_in_the_schema(tmp_path: Path) -> None:
+    """pa.Table.from_pylist with an explicit schema DROPS unknown keys silently.
+
+    Adding a column to the row dict without adding it to _SCHEMA therefore produces
+    a result that looks written and is not, which is how is_golden_task first went
+    missing. Comparing the two sets makes that failure loud.
+    """
+    from nttd.db.result_writer import _SCHEMA
+
+    rows = _write(tmp_path)
+    assert set(rows[0]) == set(_SCHEMA.names)
+
+
+def test_a_run_of_an_unregistered_task_is_not_golden(tmp_path: Path) -> None:
+    """The normal case: local experiments and private variants are legitimate play,
+    they simply have no column on the board."""
+    rows = _write(tmp_path)
+    assert rows[0]["is_golden_task"] is False
+
+
+def test_a_run_of_a_golden_task_is_marked_golden(tmp_path: Path) -> None:
+    """Derived from task_id, so reproducing the world is what confers the status."""
+    from nttd.config.golden_tasks import GOLDEN_TASKS
+    from nttd.config.scenario_config import load, scenario_to_settings
+
+    golden = GOLDEN_TASKS[0]
+    settings = scenario_to_settings(
+        load(Path(__file__).parent.parent / golden.config), strict=True,
+    )
+    task = compute_task_instance(
+        settings, settings["_scenario_id"], settings["_scenario_version"],
+    )
+    rows = _write(tmp_path, task=task)
+    assert rows[0]["is_golden_task"] is True
+    assert rows[0]["task_id"] == golden.task_id
+
+
+def test_the_varying_dimensions_are_recorded(tmp_path: Path) -> None:
+    """They are permitted to differ between scored runs only because of this."""
+    rows = _write(tmp_path, dimensions={
+        "size_x": "512", "size_y": "512", "landscape": "sub-arctic",
+        "terrain_type": "mountainous", "profile_version": "1",
+    })
+    assert rows[0]["map_size_x"] == 512
+    assert rows[0]["landscape"] == "sub-arctic"
+    assert rows[0]["terrain_type"] == "mountainous"
+    assert rows[0]["profile_version"] == "1"
+
+
+def test_absent_dimensions_record_as_absent_not_guessed(tmp_path: Path) -> None:
+    """An older session recovered without _dim_ keys must not invent a world."""
+    rows = _write(tmp_path)
+    assert rows[0]["map_size_x"] == 0
+    assert rows[0]["landscape"] == ""
+    assert rows[0]["profile_version"] == ""
