@@ -183,6 +183,14 @@ class SessionManager:
         )
         runtime.map_seed = map_seed
         runtime.task_instance = task
+        # Lock a scored session before the server is up, so the window between
+        # spawn and lock cannot be used.
+        runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
+        if runtime.scored_lock.scored:
+            logger.info(
+                "Session %s is SCORED: game-mutating operator operations are refused",
+                session_id,
+            )
 
         ok = await runtime.start_server(
             self.openttd_binary, self.admin_password, map_seed=map_seed,
@@ -310,6 +318,7 @@ class SessionManager:
             participants=runtime.gameloop_manager.participant_summary(),
             gamescript_path=self.base_config_dir / "game" / "nttd-gs" / "main.nut",
             openttd_binary=self.openttd_binary,
+            capability=runtime.scored_lock.summary(),
         )
 
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:

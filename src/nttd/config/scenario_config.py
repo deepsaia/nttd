@@ -186,6 +186,12 @@ class ScenarioConfig:
     description: str = ""
     id: str = ""
     version: str = "1"
+    # When true, the session refuses game-mutating operator operations for its
+    # whole life, for every caller. This is what protects a benchmark result: a
+    # self-hosting contestant holds every credential, so session state is the only
+    # boundary that means anything. Off by default, since scenario authoring and
+    # debugging need the full surface.
+    scored: bool = False
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     end_conditions: EndConditionsConfig = field(default_factory=EndConditionsConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
@@ -497,6 +503,8 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     scenario_name = str(_get(raw, "name", "default"))
     settings["_scenario_id"] = str(_get(raw, "id", scenario_name))
     settings["_scenario_version"] = str(_get(raw, "version", "1"))
+    if _get(raw, "scored", False):
+        settings["_scored"] = "1"
 
     # nttd-internal runtime metadata (prefixed with _)
     settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))
@@ -604,6 +612,7 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
         # without every file needing an explicit id.
         id=str(_get(s, "id", scenario_name)),
         version=str(_get(s, "version", "1")),
+        scored=bool(_get(s, "scored", False)),
         heartbeat=HeartbeatConfig(
             interval_days=int(_get(hb_raw, "interval_days", 30)),
             action_window_seconds=float(_get(hb_raw, "action_window_seconds", 5.0)),

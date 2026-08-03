@@ -17,6 +17,7 @@ from nttd.db.tile_writer import TileWriter
 from nttd.gameloop.manager import GameloopManager
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.runtime.participant_registry import ParticipantRegistry
+from nttd.runtime.scored_lock import ScoredLock
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
@@ -39,7 +40,16 @@ class SessionRuntime:
         game_port: int,
         admin_port: int,
         config_dir: Path,
+        data_dir: Path | str | None = None,
     ) -> None:
+        """Bundle the per-session stack.
+
+        Args:
+            data_dir: Where recorded artifacts go. Defaults to the parent of
+                config_dir, which is the session directory, so parquet output lands
+                beside the config and result rather than in a hardcoded path that
+                ignores NTTD_SESSIONS_DIR.
+        """
         self.session_id = session_id
         self.game_port = game_port
         self.admin_port = admin_port
@@ -59,7 +69,10 @@ class SessionRuntime:
         self.world = WorldState()
         self.admin_client = AdminClient(host="127.0.0.1", port=admin_port)
         self.bridge = Bridge(self.world, self.admin_client)
-        self.recorder = SessionRecorder(session_id, data_dir="logs/sessions")
+        # Default to the session directory's parent so artifacts follow
+        # NTTD_SESSIONS_DIR instead of a hardcoded path.
+        self.data_dir = str(data_dir) if data_dir else str(Path(config_dir).parent)
+        self.recorder = SessionRecorder(session_id, data_dir=self.data_dir)
         self.orchestrator = Orchestrator(self.world, self.admin_client, recorder=self.recorder)
         self.action_tracker = ActionTracker()
         self.agent_registry = AgentRegistry()
@@ -68,7 +81,11 @@ class SessionRuntime:
         # Maps participant tokens to the company they may act as. Populated when
         # the session starts; empty means no company is claimed yet.
         self.participants = ParticipantRegistry()
-        self.tile_writer = TileWriter(session_id, data_dir="logs/sessions")
+        # Whether this session is scored, and what it refused. This is the real
+        # protection for a benchmark run: session state rather than a credential,
+        # because a self-hosting contestant holds every credential anyway.
+        self.scored_lock = ScoredLock()
+        self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
         self.gameloop_manager = GameloopManager(self)
 
         # Stop all gameloop agents when the session ends
