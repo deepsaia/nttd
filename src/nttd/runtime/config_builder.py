@@ -67,6 +67,40 @@ def _patch_ini_value_in_section(content: str, section: str, key: str, value: str
     return "\n".join(lines)
 
 
+def _snapshot_scenario(source: Path, destination: Path) -> None:
+    """Write the FULLY RESOLVED scenario to the session directory.
+
+    Resolved rather than copied, because benchmark scenarios use HOCON ``include``
+    to share the locked world settings. A plain copy preserves the include LINE but
+    not the included file, so the snapshot became a pointer to something outside the
+    session directory. Reparsing it then failed the include, and ``load`` treats a
+    parse failure as "use defaults" -- which silently reported starting_year 1960 for
+    a run that was actually generated at 2020. The provenance record has to stand
+    alone, since its whole purpose is to survive the source files being edited or
+    moved.
+
+    Falls back to a byte copy when the config cannot be parsed or re-serialised: an
+    unfaithful snapshot is worth more than none, and the caller has already validated
+    the config it is running.
+    """
+    if not source.is_file():
+        logger.warning("Scenario path %s is not a file -- not snapshotted", source)
+        return
+
+    try:
+        from pyhocon import ConfigFactory
+        from pyhocon.converter import HOCONConverter
+
+        resolved = ConfigFactory.parse_file(str(source))
+        destination.write_text(HOCONConverter.to_hocon(resolved) + "\n")
+    except Exception:
+        logger.exception(
+            "Could not resolve scenario %s for the provenance snapshot -- copying it "
+            "verbatim, so any HOCON include it uses will not be captured", source,
+        )
+        shutil.copy2(source, destination)
+
+
 def build_session_config(
     base_config_dir: Path,
     session_dir: Path,
@@ -105,11 +139,7 @@ def build_session_config(
     # Named distinctly from OpenTTD's own scenario/ directory, which is transient
     # and removed on cleanup.
     if scenario_path:
-        src_scenario = Path(scenario_path)
-        if src_scenario.is_file():
-            shutil.copy2(src_scenario, session_dir / "nttd_scenario.conf")
-        else:
-            logger.warning("Scenario path %s is not a file -- not snapshotted", src_scenario)
+        _snapshot_scenario(Path(scenario_path), session_dir / "nttd_scenario.conf")
 
     # --- openttd.cfg: copy and patch ports + game settings ---
     src_cfg = base_config_dir / "openttd.cfg"
