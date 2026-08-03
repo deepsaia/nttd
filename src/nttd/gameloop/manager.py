@@ -78,6 +78,8 @@ class GameloopManager:
     def __init__(self, runtime: SessionRuntime) -> None:
         self.runtime = runtime
         self.connections: dict[str, AgentConnection] = {}
+        # Fairness limits a contestant asked for and did not get, by agent_id.
+        self.fairness_overrides: dict[str, dict[str, tuple[Any, Any]]] = {}
         self._agent_to_connection: dict[str, str] = {}
 
     def _make_connection_id(self, config: AgentConfig) -> str:
@@ -106,9 +108,13 @@ class GameloopManager:
         # contestant would set their own budget.
         changed = self.runtime.fairness.apply_to(config)
         if changed:
+            # Retained so the result record can show what the contestant asked for,
+            # not only what was imposed. After the mutation it exists nowhere else.
+            self.fairness_overrides[config.agent_id] = changed
             logger.info(
                 "Agent %s: scenario fairness limits override %s",
-                config.agent_id, "; ".join(changed),
+                config.agent_id,
+                "; ".join(f"{k}: {req} -> {app}" for k, (req, app) in changed.items()),
             )
 
         # Resolve model name from HOCON for neuro-san MAS agents

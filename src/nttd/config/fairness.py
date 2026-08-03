@@ -63,15 +63,18 @@ class FairnessConfig:
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
 
-    def apply_to(self, config: Any) -> list[str]:
+    def apply_to(self, config: Any) -> dict[str, tuple[Any, Any]]:
         """Overwrite an AgentConfig's fairness fields in place.
 
-        Returns the names of fields actually changed, so the caller can log what a
-        contestant asked for versus what the scenario imposed. Does nothing when
-        not enforced.
+        Returns ``{field: (requested, applied)}`` for the fields actually changed.
+        Structured rather than formatted, because a caller needs the requested
+        values as data: "this contestant asked to run at 0.5s" belongs in the
+        result record, and after the mutation it exists nowhere else.
+
+        Does nothing when not enforced.
         """
         if not self.enforced:
-            return []
+            return {}
 
         overrides = {
             "poll_interval": self.poll_interval,
@@ -79,11 +82,12 @@ class FairnessConfig:
             "max_history_cycles": self.max_history_cycles,
             "observation_mode": self.observation_mode,
         }
-        changed: list[str] = []
-        for field, value in overrides.items():
-            if getattr(config, field, None) != value:
-                changed.append(f"{field}: {getattr(config, field, None)} -> {value}")
-                setattr(config, field, value)
+        changed: dict[str, tuple[Any, Any]] = {}
+        for field, applied in overrides.items():
+            requested = getattr(config, field, None)
+            if requested != applied:
+                changed[field] = (requested, applied)
+                setattr(config, field, applied)
         return changed
 
 

@@ -83,11 +83,14 @@ class AgentConnection:
         self.tracker = ConnectionTracker(connection_id, runtime.session_id)
         self._task: asyncio.Task[None] | None = None
         self._running: bool = False
-        # Read from the session's fairness config so a scored run can cap how long
-        # one decision may take. Falls back to the module default for a session
-        # that has none.
-        self._llm_timeout: float = getattr(
-            runtime.fairness, "llm_timeout_seconds", _LLM_TIMEOUT_SECONDS,
+        # Only a scored session imposes a decision timeout. Reading it
+        # unconditionally would apply a scenario's cap to unscored local runs too,
+        # which is the opposite of how the other four fairness limits behave.
+        fairness = getattr(runtime, "fairness", None)
+        self._llm_timeout: float = (
+            fairness.llm_timeout_seconds
+            if fairness is not None and fairness.enforced
+            else _LLM_TIMEOUT_SECONDS
         )
 
         # Default instructions when none provided — select by agent_type

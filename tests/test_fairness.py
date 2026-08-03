@@ -43,6 +43,9 @@ def test_enforced_config_overrides_contestant_values() -> None:
     assert config.max_actions_per_cycle == 15
     assert config.observation_mode == "compact"
     assert len(changed) == 3, "each override is reported"
+    # The requested value is retained: after the mutation it exists nowhere else,
+    # so the record could not otherwise show what the contestant asked for.
+    assert changed["poll_interval"] == (0.5, 10.0)
 
 
 def test_unenforced_config_leaves_contestant_values_alone() -> None:
@@ -50,7 +53,7 @@ def test_unenforced_config_leaves_contestant_values_alone() -> None:
     config = _agent(poll_interval=0.5, max_actions_per_cycle=50)
     limits = FairnessConfig(poll_interval=10.0, max_actions_per_cycle=15, enforced=False)
 
-    assert limits.apply_to(config) == []
+    assert limits.apply_to(config) == {}
     assert config.poll_interval == 0.5
     assert config.max_actions_per_cycle == 50
 
@@ -62,7 +65,7 @@ def test_matching_values_are_not_reported_as_changes() -> None:
         poll_interval=10.0, max_actions_per_cycle=15,
         max_history_cycles=10, observation_mode="compact", enforced=True,
     )
-    assert limits.apply_to(config) == []
+    assert limits.apply_to(config) == {}
 
 
 def test_change_report_names_the_old_and_new_value() -> None:
@@ -70,9 +73,7 @@ def test_change_report_names_the_old_and_new_value() -> None:
     config = _agent(poll_interval=0.5)
     changed = FairnessConfig(poll_interval=10.0, enforced=True).apply_to(config)
 
-    poll_change = next(c for c in changed if c.startswith("poll_interval"))
-    assert "0.5" in poll_change
-    assert "10.0" in poll_change
+    assert changed["poll_interval"] == (0.5, 10.0)
 
 
 # ---------------------------------------------------------------------------
@@ -157,3 +158,33 @@ def test_default_poll_interval_exceeds_the_slowest_measured_decide() -> None:
 def test_default_max_actions_allows_a_complete_route() -> None:
     """A route needs loan, two stations, a connection, a vehicle, and orders."""
     assert FairnessConfig().max_actions_per_cycle >= 6
+
+
+# ---------------------------------------------------------------------------
+# Regressions found by review
+# ---------------------------------------------------------------------------
+
+
+def test_out_of_range_override_is_rejected_not_silently_applied() -> None:
+    """apply_to writes via setattr, which bypasses field constraints unless the
+    model validates on assignment. A scenario with a nonsensical value must fail
+    loudly rather than impose it.
+    """
+    import pytest
+    from pydantic import ValidationError
+
+    config = _agent()
+    with pytest.raises(ValidationError):
+        FairnessConfig(poll_interval=-5.0, enforced=True).apply_to(config)
+
+
+def test_llm_timeout_only_applies_to_a_scored_session() -> None:
+    """The other four limits respect `enforced`; this one used to be read straight
+    off runtime.fairness, so a scenario cap leaked into unscored local runs.
+    """
+    unscored = from_settings({"_fair_llm_timeout": "5.0"})
+    assert unscored.enforced is False
+
+    scored = from_settings({"_scored": "1", "_fair_llm_timeout": "5.0"})
+    assert scored.enforced is True
+    assert scored.llm_timeout_seconds == 5.0

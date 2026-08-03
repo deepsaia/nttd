@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from nttd.api import dependencies as deps
+from nttd.api.scored_guard import require_unscored
 from nttd.state.snapshot_class import ALL_SECTIONS, SnapshotClass
 
 logger = logging.getLogger(__name__)
@@ -37,8 +38,15 @@ async def list_snapshot_classes(session_id: str) -> dict[str, Any]:
 async def register_snapshot_class(
     session_id: str, request: RegisterSnapshotClassRequest,
 ) -> dict[str, Any]:
-    """Register a custom snapshot class for a session."""
+    """Register a custom snapshot class for a session.
+
+    OPERATOR TIER. Registering overwrites any existing class of the same name, so
+    this could otherwise redefine the observation a scored scenario pinned -- for
+    instance widening "compact" to include every section. A scored session refuses
+    it for that reason.
+    """
     runtime = _get_runtime(session_id)
+    require_unscored(runtime, "snapshot-classes/register", detail=request.name)
 
     invalid = set(request.sections) - ALL_SECTIONS
     if invalid:

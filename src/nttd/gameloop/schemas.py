@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MASAuthConfig(BaseModel):
@@ -37,7 +37,15 @@ class MASTransportConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    """Configuration for registering an agent with the gameloop."""
+    """Configuration for registering an agent with the gameloop.
+
+    validate_assignment is on because FairnessConfig.apply_to overwrites the
+    pacing fields after construction. Without it, setattr bypasses the field
+    constraints declared below, so an out-of-range scenario value would be
+    accepted here even though the constructor would have rejected it.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
 
     agent_id: str
     company_id: int = Field(ge=0, le=14)

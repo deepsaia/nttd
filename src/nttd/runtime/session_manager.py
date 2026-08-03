@@ -458,6 +458,15 @@ class SessionManager:
             raw_seed = stored.get("_map_seed")
             if raw_seed not in (None, ""):
                 runtime.map_seed = int(raw_seed)
+
+            # Restore the scored lock and fairness limits BEFORE the session is
+            # reachable again. Without this a recovered scored session would run
+            # unlocked and unbounded, so an nttd restart would silently turn a
+            # scored run into an unprotected one.
+            runtime.scored_lock.scored = stored.get("_scored") == "1"
+            runtime.fairness = fairness_from_settings(stored)
+            if runtime.scored_lock.scored:
+                logger.info("Recovered session %s is SCORED: lock restored", sid)
             if stored:
                 runtime.task_instance = compute_task_instance(
                     stored,
