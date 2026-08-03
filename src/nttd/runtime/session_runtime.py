@@ -16,6 +16,7 @@ from nttd.config.task_instance import TaskInstance
 from nttd.db.recorder import SessionRecorder
 from nttd.db.tile_writer import TileWriter
 from nttd.gameloop.manager import GameloopManager
+from nttd.runtime.action_budget import ActionBudget
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.scored_lock import ScoredLock
@@ -90,6 +91,10 @@ class SessionRuntime:
         # start from the scenario settings; the default is unenforced, so an
         # ad-hoc session keeps whatever the caller asked for.
         self.fairness = FairnessConfig()
+        # Per-company action budget for the REST path. FairnessConfig binds at
+        # agent registration, so without this a contestant posting straight to
+        # /actions/submit has no pacing limit -- which every bundled example does.
+        self.action_budget = ActionBudget()
         self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
         self.gameloop_manager = GameloopManager(self)
 

@@ -12,6 +12,7 @@ from nttd.api.participant_auth import (
     ParticipantToken,
     apply_company_scope,
     extract_token,
+    resolve_company_id,
 )
 from nttd.api.scored_guard import require_unscored
 from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS, OPERATOR_ACTIONS
@@ -84,7 +85,21 @@ async def submit_action(
     # caller-supplied value won and any client could act as any company.
     params = dict(envelope.parameters)
     token = extract_token(x_participant_token, authorization)
-    apply_company_scope(runtime, params, token, envelope.company_id)
+    company_id = apply_company_scope(runtime, params, token, envelope.company_id)
+
+    # The scenario's action budget applies here, not only to gameloop agents. Every
+    # bundled example posts to this route, so enforcing it only at registration
+    # bound almost nobody.
+    decision = runtime.action_budget.check(company_id)
+    if not decision.allowed:
+        error = f"Action budget exceeded: {decision.reason}"
+        runtime.action_tracker.update_result(envelope.action_id, ActionStatus.BLOCKED, error)
+        result = ActionResult(
+            action_id=envelope.action_id, status=ActionStatus.BLOCKED, error=error,
+        )
+        _record(runtime, envelope, params, result)
+        return result
+    runtime.action_budget.consume(company_id)
 
     # The scored clock starts on the first contestant action, so provisioning
     # time is not charged against the wall-clock budget. Idempotent.
@@ -168,8 +183,28 @@ async def submit_action_batch(
 ) -> list[ActionResult]:
     """Submit a batch of actions. All are executed sequentially under the company lock.
 
-    Returns a result for each envelope in the same order.
+    Returns a result for each envelope in the same order. A batch larger than the
+    scenario's per-window budget is refused whole rather than part-executed, so a
+    contestant cannot use batching to sidestep the ceiling one action at a time.
     """
+    runtime = deps.get_runtime(session_id)
+    token = extract_token(x_participant_token, authorization)
+    if envelopes:
+        company_id = resolve_company_id(runtime, token, envelopes[0].company_id)
+        decision = runtime.action_budget.check(company_id, count=len(envelopes))
+        if not decision.allowed:
+            error = f"Action budget exceeded: {decision.reason}"
+            results = []
+            for envelope in envelopes:
+                result = ActionResult(
+                    action_id=envelope.action_id, status=ActionStatus.BLOCKED, error=error,
+                )
+                # Recorded like any other refusal: an auditor reading the action log
+                # should see the whole attempt, not only the count in the result row.
+                _record(runtime, envelope, dict(envelope.parameters), result)
+                results.append(result)
+            return results
+
     results: list[ActionResult] = []
     for envelope in envelopes:
         # Forward the credential so every envelope is scoped, not just the first.

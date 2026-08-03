@@ -88,6 +88,9 @@ _SCHEMA = pa.schema([
     ("max_actions_per_cycle", pa.int32()),
     ("llm_timeout_seconds", pa.float64()),
     ("observation_mode", pa.string()),
+    # Actions the budget refused. A contestant who ran into the ceiling played a
+    # different run from one who never approached it, so the count is recorded.
+    ("budget_refused_actions", pa.int32()),
     # Provenance of the code that ran
     ("nttd_git_sha", pa.string()),
     ("nttd_git_dirty", pa.bool_()),
@@ -171,6 +174,7 @@ class ResultWriter:
         openttd_binary: str = "",
         capability: dict[str, Any] | None = None,
         fairness: dict[str, Any] | None = None,
+        budget: dict[str, Any] | None = None,
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
 
@@ -183,6 +187,7 @@ class ResultWriter:
             capability: Attestation from the session's scored lock -- whether the
                 run was scored and whether it stayed within the participant tier.
             fairness: The effective pacing and budget limits the run was held to.
+            budget: Action-budget usage, including how many actions were refused.
         """
         if not scores:
             logger.warning("Session %s: no company scores, result.parquet not written", session_id)
@@ -199,6 +204,7 @@ class ResultWriter:
         # whether two results were scored under the same rules.
         attest = capability or {}
         limits = fairness or {}
+        spend = budget or {}
         blocked_ops = attest.get("blocked_operations") or []
 
         rows: list[dict[str, Any]] = []
@@ -246,6 +252,7 @@ class ResultWriter:
                 "max_actions_per_cycle": int(limits.get("max_actions_per_cycle", 0)),
                 "llm_timeout_seconds": float(limits.get("llm_timeout_seconds", 0.0)),
                 "observation_mode": str(limits.get("observation_mode", "")),
+                "budget_refused_actions": int(spend.get("total_refused", 0)),
                 "nttd_git_sha": git_sha,
                 "nttd_git_dirty": git_dirty,
                 "gamescript_digest": gs_digest or "",
