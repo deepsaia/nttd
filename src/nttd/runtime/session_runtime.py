@@ -16,6 +16,7 @@ from nttd.db.recorder import SessionRecorder
 from nttd.db.tile_writer import TileWriter
 from nttd.gameloop.manager import GameloopManager
 from nttd.runtime.orchestrator import Orchestrator
+from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
@@ -63,6 +64,9 @@ class SessionRuntime:
         self.agent_registry = AgentRegistry()
         self.snapshot_broker_registry: dict[str, AgentSnapshotBroker] = {}
         self.snapshot_class_registry = SnapshotClassRegistry()
+        # Maps participant tokens to the company they may act as. Populated when
+        # the session starts; empty means no company is claimed yet.
+        self.participants = ParticipantRegistry()
         self.tile_writer = TileWriter(session_id, data_dir="logs/sessions")
         self.gameloop_manager = GameloopManager(self)
 

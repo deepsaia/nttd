@@ -31,6 +31,7 @@ from nttd.config.task_instance import compute_task_instance
 from nttd.db.repositories import session_repo
 from nttd.db.result_writer import ResultWriter
 from nttd.runtime.config_builder import build_session_config
+from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.session_runtime import SessionRuntime
 
 logger = logging.getLogger(__name__)
@@ -190,6 +191,17 @@ class SessionManager:
         # Start AI companies (no newgame needed — settings already in config)
         await runtime.start_companies(ai_count, agent_companies)
 
+        # Issue one participant token per contestant company. Companies are
+        # allocated from 0, and AI opponents occupy the slots after the agent
+        # ones, so the first agent_companies ids are the contestant's.
+        #
+        # Tokens are also written to the session directory because a contestant's
+        # agent often runs as a separate process that never saw this response.
+        if agent_companies > 0:
+            for company_id in range(agent_companies):
+                runtime.participants.issue(company_id)
+            runtime.participants.write(session_dir)
+
         # Configure orchestrator from runtime settings
         orch = runtime.orchestrator
         orch._screenshot_interval_seconds = float(
@@ -304,6 +316,9 @@ class SessionManager:
         settings the map was generated from, so deleting it would make a scored
         run unverifiable.
         """
+        # Participant tokens are credentials, so they do not outlive the session.
+        ParticipantRegistry.remove(session_dir)
+
         # Files created by config_builder or OpenTTD runtime. secrets.cfg is
         # removed because it holds the admin password.
         config_files = [
@@ -430,6 +445,12 @@ class SessionManager:
                     scenario_id=stored.get("_scenario_id", "unknown"),
                     scenario_version=stored.get("_scenario_version", "1"),
                 )
+
+            # Reload the tokens the session already handed out, so agents that
+            # survived the restart keep working instead of getting 401s.
+            loaded = runtime.participants.load(session_dir)
+            if loaded:
+                logger.info("Session %s: restored %d participant token(s)", sid, loaded)
 
             ok = await runtime.connect_to_existing(self.admin_password)
             if ok:

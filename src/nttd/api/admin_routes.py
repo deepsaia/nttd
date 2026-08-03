@@ -229,6 +229,14 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
         "game_port": runtime.game_port,
         "admin_port": runtime.admin_port,
         "pid": runtime.process.pid if runtime.process else None,
+        # One token per contestant company. Pass as X-Participant-Token (or
+        # Authorization: Bearer) on action requests; the company acted upon is
+        # derived from the token, never from the request body. Also written to
+        # <session_dir>/participants.json for separately launched agents.
+        "participants": [
+            {"company_id": p.company_id, "token": p.token}
+            for p in runtime.participants.participants()
+        ],
     }
 
 
