@@ -102,6 +102,35 @@ class DeityTownRatingRequest(BaseModel):
     delta: int
 
 
+# Settings keys a client must never supply. These decide whether a run is scored and
+# what limits bind it, so accepting them from a request body would undo the point of
+# moving the limits off AgentConfig: POST /admin/sessions/new with
+# {"_scored": "0"} disabled the lock outright, and {"_fair_max_actions": "200"}
+# raised the budget. They may only come from scenario_to_settings.
+_PROTECTED_SETTING_PREFIXES = ("_scored", "_fair_", "_task_id", "_settings_digest")
+
+
+def _reject_protected_settings(settings: dict[str, str]) -> None:
+    """Raise 400 if a request tries to set a scenario-owned key.
+
+    Refused rather than ignored: a caller that believes it disabled scoring should
+    be told, not silently overruled.
+    """
+    offenders = sorted(
+        key for key in settings
+        if key.startswith(_PROTECTED_SETTING_PREFIXES)
+    )
+    if offenders:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"These settings are owned by the scenario and cannot be supplied by "
+                f"a client: {', '.join(offenders)}. They decide whether the run is "
+                f"scored and what limits bind it, so set them in the scenario file."
+            ),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Session lifecycle
 # ---------------------------------------------------------------------------
@@ -113,6 +142,7 @@ async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
     session_id = f"ses_{ts}_{uuid.uuid4().hex[:8]}"
 
     # If config_path provided, load and convert to settings
+    _reject_protected_settings(request.settings)
     settings = dict(request.settings)
     if request.config_path:
         from nttd.config.scenario_config import load as load_scenario
@@ -186,6 +216,7 @@ async def update_settings(session_id: str, request: UpdateSettingsRequest) -> di
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    _reject_protected_settings(request.settings)
     await session_repo.upsert_settings(session_id, request.settings)
 
     # Apply live to running session

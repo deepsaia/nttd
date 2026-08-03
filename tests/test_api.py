@@ -140,3 +140,34 @@ def test_speed_endpoint_rejects_regardless_of_session_state(client: TestClient) 
     """501 is unconditional: the operation does not exist in OpenTTD at all."""
     resp = client.post("/sessions/nonexistent_session_xyz/speed", params={"speed": 8})
     assert resp.status_code == 501
+
+
+def test_protected_settings_are_refused_at_session_creation(client: TestClient) -> None:
+    """A client must not be able to disable scoring or raise its own budget.
+
+    admin_routes does config_settings.update(settings), so explicit request settings
+    win over the scenario: {"_scored": "0"} disabled the lock outright.
+    """
+    for key, value in (
+        ("_scored", "0"),
+        ("_fair_max_actions", "200"),
+        ("_fair_poll_interval", "0.5"),
+        ("_task_id", "forged"),
+    ):
+        resp = client.post("/admin/sessions/new", json={"name": "x", "settings": {key: value}})
+        assert resp.status_code == 400, f"{key} was accepted"
+        assert key in resp.json()["detail"]
+
+
+def test_protected_settings_are_refused_on_update(client: TestClient) -> None:
+    sid = _create_session(client, "protected_update")
+    resp = client.post(f"/admin/sessions/{sid}/settings", json={"settings": {"_scored": "0"}})
+    assert resp.status_code == 400
+
+
+def test_ordinary_settings_are_still_accepted(client: TestClient) -> None:
+    """The guard must not block legitimate OpenTTD settings."""
+    resp = client.post("/admin/sessions/new", json={
+        "name": "ok", "settings": {"game_creation.map_x": "8", "difficulty.terrain_type": "2"},
+    })
+    assert resp.status_code == 200
