@@ -101,6 +101,16 @@ class GameloopManager:
         if connection_id in self.connections:
             raise ValueError(f"Agent {config.agent_id} already registered for company {config.company_id}")
 
+        # A scored session imposes its own pacing and budget limits. These fields
+        # arrive on the contestant-supplied config, so without this every
+        # contestant would set their own budget.
+        changed = self.runtime.fairness.apply_to(config)
+        if changed:
+            logger.info(
+                "Agent %s: scenario fairness limits override %s",
+                config.agent_id, "; ".join(changed),
+            )
+
         # Resolve model name from HOCON for neuro-san MAS agents
         if (
             config.nttd_framework.lower() in _MAS_FRAMEWORKS

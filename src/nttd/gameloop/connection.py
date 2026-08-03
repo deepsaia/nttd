@@ -6,6 +6,7 @@ import asyncio
 import collections
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Fallback only. A scored session sets this per-session from the scenario's
+# fairness block, so one stalled contestant cannot hold a session open.
 _LLM_TIMEOUT_SECONDS = 120.0  # Multi-turn tool calling can take several rounds
 
 
@@ -79,6 +82,12 @@ class AgentConnection:
         self.tracker = ConnectionTracker(connection_id, runtime.session_id)
         self._task: asyncio.Task[None] | None = None
         self._running: bool = False
+        # Read from the session's fairness config so a scored run can cap how long
+        # one decision may take. Falls back to the module default for a session
+        # that has none.
+        self._llm_timeout: float = getattr(
+            runtime.fairness, "llm_timeout_seconds", _LLM_TIMEOUT_SECONDS,
+        )
 
         # Default instructions when none provided — select by agent_type
         if not config.instructions:
@@ -210,6 +219,7 @@ class AgentConnection:
         )
 
         while self._running:
+            cycle_started = time.monotonic()
             try:
                 await self._run_one_cycle()
             except asyncio.CancelledError:
@@ -218,8 +228,19 @@ class AgentConnection:
                 logger.exception("Agent %s cycle error", self.config.agent_id)
                 self.tracker.record_error("cycle_exception")
 
-            # Wait for next cycle
-            wait = max(0.5, self.config.poll_interval)
+            # Sleep until the next cycle is due. poll_interval is a PERIOD, not a
+            # delay added after the work: sleeping a fixed amount after each cycle
+            # would hand a faster model more decisions for reasons unrelated to
+            # policy quality. With measured decide times of 4.0-11.2s, a fixed
+            # 10s sleep gives a 1.52x decision-rate spread; treating it as a
+            # period narrows that to 1.12x.
+            elapsed = time.monotonic() - cycle_started
+            wait = max(0.0, self.config.poll_interval - elapsed)
+            if wait <= 0:
+                logger.debug(
+                    "Agent %s cycle took %.1fs, exceeding the %.1fs period",
+                    self.config.agent_id, elapsed, self.config.poll_interval,
+                )
             try:
                 await asyncio.sleep(wait)
             except asyncio.CancelledError:
@@ -261,7 +282,7 @@ class AgentConnection:
                     tool_executor=tool_executor,
                     message_logger=msg_logger,
                 ),
-                timeout=_LLM_TIMEOUT_SECONDS,
+                timeout=self._llm_timeout,
             )
         except asyncio.TimeoutError:
             self.tracker.record_error("llm_timeout")
