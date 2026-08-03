@@ -16,6 +16,9 @@ from typing import Any
 import pytest
 
 from nttd.config.benchmark_profile import (
+    ALLOWED_MAP_SIZES,
+    ALLOWED_RANGES,
+    DIMENSION_PREFIX,
     LOCKED_SETTINGS,
     VARIABLE_SETTINGS,
     deviations,
@@ -27,7 +30,7 @@ from nttd.config.scenario_config import (
 )
 
 _BENCHMARK_DIR = Path(__file__).parent.parent / "config" / "benchmark"
-_TIERS = ("t1", "t2", "t3", "t4")
+_EXAMPLES = ("t2_example", "t3_subarctic_example")
 
 
 def _get(cfg: Any, path: str, default: Any = None) -> Any:
@@ -130,6 +133,69 @@ def test_a_non_numeric_starting_year_is_a_deviation_not_a_crash() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Allowed ranges on the settings that may vary
+# ---------------------------------------------------------------------------
+
+
+def test_ranges_cover_exactly_the_variable_settings() -> None:
+    """A dimension that may vary but has no range would be unbounded."""
+    assert set(ALLOWED_RANGES) == set(VARIABLE_SETTINGS)
+
+
+def test_map_sizes_are_powers_of_two_within_openttd_limits() -> None:
+    for size in ALLOWED_MAP_SIZES:
+        assert 64 <= size <= 4096
+        assert size & (size - 1) == 0
+
+
+def test_the_largest_openttd_sizes_are_excluded() -> None:
+    """Observation is always the full entitled state, so 2048x2048 is a payload
+    problem (16x the tiles of 1024x1024) rather than a transport one."""
+    assert 2048 not in ALLOWED_MAP_SIZES
+    assert 4096 not in ALLOWED_MAP_SIZES
+
+
+def test_custom_terrain_is_not_an_allowed_value() -> None:
+    """The hole this enumeration closes.
+
+    terrain_type = "custom" unlocks custom_terrain_height over 1..255, an unbounded
+    world axis that no leaderboard column discloses -- so a 240-height world and a
+    flat one would produce rows reading identically.
+    """
+    assert "custom" not in ALLOWED_RANGES["terrain_type"]
+
+
+def test_a_value_outside_its_range_is_a_deviation() -> None:
+    assert len(deviations({"size_x": 2048}, _get)) == 1
+    assert len(deviations({"landscape": "martian"}, _get)) == 1
+    assert len(deviations({"terrain_type": "custom"}, _get)) == 1
+
+
+def test_a_ranged_deviation_lists_the_permitted_values() -> None:
+    """An author should not have to read source to find out what is allowed."""
+    problem = deviations({"terrain_type": "custom"}, _get)[0]
+    assert "map.terrain_type" in problem
+    assert "mountainous" in problem
+
+
+def test_every_in_range_value_is_accepted() -> None:
+    for key, allowed in ALLOWED_RANGES.items():
+        for value in allowed:
+            assert deviations({key: value}, _get) == [], f"{key}={value} refused"
+
+
+def test_a_numeric_size_may_be_written_as_a_string() -> None:
+    """HOCON hands back an int or a str depending on quoting, and both are
+    reasonable to write."""
+    assert deviations({"size_x": "512"}, _get) == []
+
+
+def test_an_omitted_ranged_setting_is_not_a_deviation() -> None:
+    """scenario_to_settings supplies OpenTTD's own default, which is in range."""
+    assert deviations({}, _get) == []
+
+
+# ---------------------------------------------------------------------------
 # Enforcement through scenario validation
 # ---------------------------------------------------------------------------
 
@@ -228,38 +294,54 @@ def test_locked_settings_are_not_emitted_as_map_columns(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The shipped tier scenarios
+# The shipped example scenarios
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("tier", _TIERS)
-def test_shipped_tier_configs_pass_strict_validation(tier: str) -> None:
-    settings = scenario_to_settings(load(_BENCHMARK_DIR / f"{tier}.conf"), strict=True)
+@pytest.mark.parametrize("example", _EXAMPLES)
+def test_shipped_examples_pass_strict_validation(example: str) -> None:
+    settings = scenario_to_settings(load(_BENCHMARK_DIR / f"{example}.conf"), strict=True)
     assert settings["_scored"] == "1"
-    assert settings["_map_seed"] == "1001", "reproducibility requires a pinned seed"
+    assert settings["_map_seed"], "reproducibility requires a pinned seed"
 
 
-@pytest.mark.parametrize(
-    ("tier", "wall_minutes"),
-    [("t1", 15.0), ("t2", 30.0), ("t3", 60.0), ("t4", 120.0)],
-)
-def test_tiers_differ_only_in_time(tier: str, wall_minutes: float) -> None:
-    """A tier fixes the horizon, not the world."""
-    settings = scenario_to_settings(load(_BENCHMARK_DIR / f"{tier}.conf"), strict=True)
-    assert settings["_ec_wall_minutes"] == str(wall_minutes)
+def test_the_examples_differ_on_the_free_dimensions() -> None:
+    """The second example exists to show varying them is legal and disclosed.
 
-
-def test_every_tier_generates_the_same_world() -> None:
-    """Otherwise a tier would be two changes at once, and scores across tiers
-    would not be attributable to the horizon alone."""
+    If both examples described the same world, nothing would demonstrate that a
+    contestant may choose, which is the point the ranges are documented for.
+    """
     worlds = []
-    for tier in _TIERS:
-        settings = scenario_to_settings(load(_BENCHMARK_DIR / f"{tier}.conf"), strict=True)
+    for example in _EXAMPLES:
+        settings = scenario_to_settings(
+            load(_BENCHMARK_DIR / f"{example}.conf"), strict=True,
+        )
         worlds.append({
             key: value for key, value in settings.items()
-            if key.startswith(("game_creation.", "difficulty.", "_map_"))
+            if key.startswith(DIMENSION_PREFIX)
         })
-    assert all(world == worlds[0] for world in worlds)
+    assert worlds[0] != worlds[1]
+
+
+def test_the_examples_agree_on_every_locked_setting() -> None:
+    """Different worlds, same rules. This is what makes them both benchmark runs."""
+    locked_emissions = []
+    for example in _EXAMPLES:
+        settings = scenario_to_settings(
+            load(_BENCHMARK_DIR / f"{example}.conf"), strict=True,
+        )
+        locked_emissions.append({
+            "year": settings["game_creation.starting_year"],
+            "towns": settings["difficulty.number_towns"],
+            "industry": settings["difficulty.industry_density"],
+            "variety": settings["game_creation.variety"],
+            "smoothness": settings["game_creation.tgen_smoothness"],
+            "rivers": settings["game_creation.amount_of_rivers"],
+            "sea": settings["difficulty.quantity_sea_lakes"],
+            "borders": settings["game_creation.water_borders"],
+            "names": settings["game_creation.town_name"],
+        })
+    assert locked_emissions[0] == locked_emissions[1]
 
 
 def test_the_defaults_file_covers_every_locked_setting() -> None:
@@ -269,11 +351,20 @@ def test_the_defaults_file_covers_every_locked_setting() -> None:
         assert f"{key} =" in text, f"benchmark/defaults.conf does not set {key}"
 
 
-def test_the_defaults_file_sets_nothing_variable() -> None:
-    """Pinning a variable dimension there would remove a choice the profile allows."""
+def test_the_defaults_file_sets_nothing_that_may_vary() -> None:
+    """Pinning a ranged dimension there would remove a choice the profile allows."""
     for line in (_BENCHMARK_DIR / "defaults.conf").read_text().splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         key = stripped.split("=")[0].strip()
         assert key not in VARIABLE_SETTINGS, f"{key} may vary; do not fix it in defaults"
+
+
+def test_the_example_documents_every_allowed_range() -> None:
+    """The example is the only place a contestant learns the ranges, so a range
+    added in code without a matching comment leaves them guessing."""
+    text = (_BENCHMARK_DIR / "t2_example.conf").read_text()
+    for key, allowed in ALLOWED_RANGES.items():
+        for value in allowed:
+            assert str(value) in text, f"{key} value {value} is not documented"

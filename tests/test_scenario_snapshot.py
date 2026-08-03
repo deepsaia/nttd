@@ -26,7 +26,7 @@ _BENCHMARK_DIR = Path(__file__).parent.parent / "config" / "benchmark"
 def test_a_snapshot_of_an_including_scenario_stands_alone(tmp_path: Path) -> None:
     """The regression this function exists for."""
     destination = tmp_path / "nttd_scenario.conf"
-    _snapshot_scenario(_BENCHMARK_DIR / "t2.conf", destination)
+    _snapshot_scenario(_BENCHMARK_DIR / "t2_example.conf", destination)
 
     assert "include" not in destination.read_text(), (
         "an include in the snapshot points outside the session directory"
@@ -37,9 +37,9 @@ def test_a_snapshot_yields_the_same_settings_as_the_source(tmp_path: Path) -> No
     """Faithfulness is the whole value: a snapshot that parses to something else
     is worse than no snapshot, because it looks authoritative."""
     destination = tmp_path / "nttd_scenario.conf"
-    _snapshot_scenario(_BENCHMARK_DIR / "t3.conf", destination)
+    _snapshot_scenario(_BENCHMARK_DIR / "t3_subarctic_example.conf", destination)
 
-    source_settings = scenario_to_settings(load(_BENCHMARK_DIR / "t3.conf"), strict=True)
+    source_settings = scenario_to_settings(load(_BENCHMARK_DIR / "t3_subarctic_example.conf"), strict=True)
     snapshot_settings = scenario_to_settings(load(destination), strict=True)
     assert snapshot_settings == source_settings
 
@@ -47,7 +47,7 @@ def test_a_snapshot_yields_the_same_settings_as_the_source(tmp_path: Path) -> No
 def test_the_locked_settings_survive_into_the_snapshot(tmp_path: Path) -> None:
     """Named explicitly, because these are the values that silently reverted."""
     destination = tmp_path / "nttd_scenario.conf"
-    _snapshot_scenario(_BENCHMARK_DIR / "t1.conf", destination)
+    _snapshot_scenario(_BENCHMARK_DIR / "t2_example.conf", destination)
 
     settings = scenario_to_settings(load(destination), strict=True)
     assert settings["game_creation.starting_year"] == "2020"
