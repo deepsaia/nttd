@@ -6,6 +6,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
+from nttd.api.participant_auth import (
+    AuthorizationHeader,
+    ParticipantToken,
+    apply_company_scope,
+    extract_token,
+)
 from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS
 from nttd.interpreter.parser import parse_action_list
 from nttd.interpreter.validator import validate_actions as validate_agent_actions
@@ -17,7 +23,12 @@ router = APIRouter(prefix="/sessions/{session_id}/actions", tags=["actions"])
 
 
 @router.post("/submit", response_model=ActionResult)
-async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResult:
+async def submit_action(
+    session_id: str,
+    envelope: ActionEnvelope,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
+) -> ActionResult:
     """Submit an action. If action_type maps to a GS command, execute it immediately."""
     runtime = deps.get_runtime(session_id)
     runtime.action_tracker.submit(envelope)
@@ -37,9 +48,12 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
             error="Not connected to OpenTTD",
         )
 
-    # Merge company_id into params
+    # The company is decided by the presented token, not by what the caller sent.
+    # This OVERWRITES params['company_id'] -- it previously used setdefault, so a
+    # caller-supplied value won and any client could act as any company.
     params = dict(envelope.parameters)
-    params.setdefault("company_id", envelope.company_id)
+    token = extract_token(x_participant_token, authorization)
+    apply_company_scope(runtime, params, token, envelope.company_id)
 
     # The scored clock starts on the first contestant action, so provisioning
     # time is not charged against the wall-clock budget. Idempotent.
@@ -80,14 +94,22 @@ async def submit_action(session_id: str, envelope: ActionEnvelope) -> ActionResu
 
 
 @router.post("/submit-batch")
-async def submit_action_batch(session_id: str, envelopes: list[ActionEnvelope]) -> list[ActionResult]:
+async def submit_action_batch(
+    session_id: str,
+    envelopes: list[ActionEnvelope],
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
+) -> list[ActionResult]:
     """Submit a batch of actions. All are executed sequentially under the company lock.
 
     Returns a result for each envelope in the same order.
     """
     results: list[ActionResult] = []
     for envelope in envelopes:
-        result = await submit_action(session_id, envelope)
+        # Forward the credential so every envelope is scoped, not just the first.
+        result = await submit_action(
+            session_id, envelope, x_participant_token, authorization,
+        )
         results.append(result)
     return results
 
@@ -122,8 +144,24 @@ def get_recent_actions(session_id: str, limit: int = 50) -> list[ActionResult]:
 
 @router.post("/gs/execute")
 async def gs_execute(session_id: str, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Execute a raw GS command directly (bypasses action tracking)."""
+    """Execute a raw GS command directly (bypasses action tracking).
+
+    OPERATOR TIER. This reaches all GameScript commands, including deity powers a
+    human player has no access to, and it is not recorded in the action log. It
+    exists for scenario authoring and debugging, not for play, so a session with
+    participant tokens issued refuses it.
+    """
     runtime = deps.get_runtime(session_id)
+    if not runtime.participants.is_empty():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "gs/execute is operator-tier and is refused once participant "
+                "tokens are issued: it bypasses the action allowlist and the "
+                "action log, so a run using it would not be scoreable. Use "
+                "/actions/submit for gameplay."
+            ),
+        )
     if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
     return await runtime.admin_client.send_gamescript(action, params)
@@ -168,7 +206,11 @@ async def validate_agent_action_list(
 
 @router.post("/interpret")
 async def interpret_agent_actions(
-    session_id: str, actions: list[dict[str, Any]], company_id: int = 0,
+    session_id: str,
+    actions: list[dict[str, Any]],
+    company_id: int = 0,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
 ) -> list[ActionResult]:
     """Parse, validate, and execute a list of agent-produced actions.
 
@@ -197,7 +239,11 @@ async def interpret_agent_actions(
             action_type=agent_action.action_type,
             parameters=agent_action.parameters,
         )
-        result = await submit_action(session_id, envelope)
+        # submit_action re-derives the company from the token, so the
+        # company_id query param is only a hint for untokenised sessions.
+        result = await submit_action(
+            session_id, envelope, x_participant_token, authorization,
+        )
         results.append(result)
 
     return results

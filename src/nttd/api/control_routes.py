@@ -8,6 +8,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import nttd.api.dependencies as deps
+from nttd.api.participant_auth import (
+    AuthorizationHeader,
+    ParticipantToken,
+    apply_company_scope,
+    extract_token,
+)
 from nttd.schemas.game import GameState, RuntimeMode
 
 logger = logging.getLogger(__name__)
@@ -116,22 +122,35 @@ class HeartbeatActionRequest(BaseModel):
 
 @router.post("/heartbeat/action")
 async def submit_heartbeat_action(
-    session_id: str, request: HeartbeatActionRequest,
+    session_id: str,
+    request: HeartbeatActionRequest,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
 ) -> dict[str, bool]:
     """Submit an action to be executed in the current heartbeat window."""
     runtime = deps.get_runtime(session_id)
+
+    # The company comes from the token. The agent_registry check below predates
+    # tokens and was opt-in -- it only ran when the caller volunteered an
+    # agent_id, so omitting it bypassed the check entirely.
+    params = dict(request.params)
+    token = extract_token(x_participant_token, authorization)
+    apply_company_scope(runtime, params, token)
+
     if request.agent_id is not None:
         status = runtime.agent_registry.get(request.agent_id)
         if status is None:
             raise HTTPException(status_code=404, detail=f"Agent {request.agent_id} not found")
-        if status.company_scope:
-            company_id = request.params.get("company_id")
-            if company_id is not None and company_id not in status.company_scope:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Agent {request.agent_id} not authorized for company {company_id}",
-                )
-    runtime.orchestrator.submit_heartbeat_action({"action": request.action, "params": request.params})
+        if status.company_scope and params["company_id"] not in status.company_scope:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Agent {request.agent_id} not authorized for company "
+                    f"{params['company_id']}"
+                ),
+            )
+
+    runtime.orchestrator.submit_heartbeat_action({"action": request.action, "params": params})
     return {"queued": True}
 
 
