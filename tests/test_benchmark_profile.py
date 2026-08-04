@@ -16,12 +16,14 @@ from typing import Any
 import pytest
 
 from nttd.config.benchmark_profile import (
-    ALLOWED_MAP_SIZES,
     ALLOWED_RANGES,
     DIMENSION_PREFIX,
     LOCKED_SETTINGS,
+    PROFILE_VERSION,
     VARIABLE_SETTINGS,
+    active_profile,
     deviations,
+    load_profile,
 )
 from nttd.config.scenario_config import (
     ScenarioConfigError,
@@ -143,16 +145,19 @@ def test_ranges_cover_exactly_the_variable_settings() -> None:
 
 
 def test_map_sizes_are_powers_of_two_within_openttd_limits() -> None:
-    for size in ALLOWED_MAP_SIZES:
-        assert 64 <= size <= 4096
-        assert size & (size - 1) == 0
+    """A non-power-of-two would be refused by OpenTTD at generation, so the profile
+    must not offer one as a legal choice."""
+    for axis in ("size_x", "size_y"):
+        for size in ALLOWED_RANGES[axis]:
+            assert 64 <= int(size) <= 4096
+            assert int(size) & (int(size) - 1) == 0
 
 
 def test_the_largest_openttd_sizes_are_excluded() -> None:
     """Observation is always the full entitled state, so 2048x2048 is a payload
     problem (16x the tiles of 1024x1024) rather than a transport one."""
-    assert 2048 not in ALLOWED_MAP_SIZES
-    assert 4096 not in ALLOWED_MAP_SIZES
+    assert 2048 not in ALLOWED_RANGES["size_x"]
+    assert 4096 not in ALLOWED_RANGES["size_x"]
 
 
 def test_custom_terrain_is_not_an_allowed_value() -> None:
@@ -368,3 +373,128 @@ def test_the_example_documents_every_allowed_range() -> None:
     for key, allowed in ALLOWED_RANGES.items():
         for value in allowed:
             assert str(value) in text, f"{key} value {value} is not documented"
+
+
+# ---------------------------------------------------------------------------
+# The profile is data, editable by hand
+# ---------------------------------------------------------------------------
+# Which worlds a leaderboard admits is operator policy: it changes without any
+# behaviour changing, so it must be a reviewable file rather than a Python literal.
+
+
+def test_the_active_profile_comes_from_the_shipped_file() -> None:
+    """If this reads "built-in fallback", hand edits to profile.conf do nothing."""
+    profile = active_profile()
+    assert profile.source.endswith("config/benchmark/profile.conf"), (
+        f"profile loaded from {profile.source!r}, so editing profile.conf would "
+        f"have no effect"
+    )
+
+
+def test_the_fallback_matches_the_shipped_file() -> None:
+    """The fallback only exists for a broken or missing file. If it disagrees with
+    the shipped rules, a file problem would silently change what is scoreable."""
+    from nttd.config.benchmark_profile import _FALLBACK_ALLOWED, _FALLBACK_LOCKED
+
+    shipped = load_profile(_BENCHMARK_DIR / "profile.conf")
+    assert shipped.locked == _FALLBACK_LOCKED
+    assert shipped.allowed == _FALLBACK_ALLOWED
+
+
+def test_narrowing_a_range_by_hand_refuses_a_previously_valid_world(
+    tmp_path: Path,
+) -> None:
+    """The operator lever: restrict the board without touching code."""
+    narrowed = tmp_path / "profile.conf"
+    narrowed.write_text(
+        'profile {\n  version = "narrow"\n'
+        "  locked {\n" + "".join(
+            f"    {key} = " + (str(value) if isinstance(value, int) else f'"{value}"') + "\n"
+            for key, value in LOCKED_SETTINGS.items()
+        ) + "  }\n"
+        "  allowed {\n"
+        "    size_x = [256]\n    size_y = [256]\n"
+        '    landscape = ["temperate"]\n    terrain_type = ["flat"]\n'
+        "  }\n  scenario_allowlist = []\n}\n"
+    )
+    profile = load_profile(narrowed)
+    assert profile.version == "narrow"
+
+    # 512x512 sub-arctic hilly was admitted by the shipped profile.
+    problems = profile.deviations(
+        {"size_x": 512, "size_y": 512, "landscape": "sub-arctic", "terrain_type": "hilly"},
+        _get,
+    )
+    assert len(problems) == 4
+    assert profile.deviations(
+        {"size_x": 256, "size_y": 256, "landscape": "temperate", "terrain_type": "flat"},
+        _get,
+    ) == []
+
+
+def test_an_empty_allowlist_admits_any_conforming_scenario() -> None:
+    """The default posture: conformance is the credential."""
+    profile = active_profile()
+    assert profile.scenario_allowlist == ()
+    assert profile.deviations({}, _get, "anything-at-all") == []
+
+
+def test_an_allowlist_restricts_scoring_to_a_fixed_slate(tmp_path: Path) -> None:
+    """For a seasonal competition or a freeze, where the board needs a known slate."""
+    path = tmp_path / "profile.conf"
+    path.write_text(
+        'profile {\n  version = "slate"\n  locked { variety = "none" }\n'
+        '  allowed { landscape = ["temperate"] }\n'
+        '  scenario_allowlist = ["benchmark-t2-example"]\n}\n'
+    )
+    profile = load_profile(path)
+
+    assert profile.deviations({}, _get, "benchmark-t2-example") == []
+    refused = profile.deviations({}, _get, "my-own-variant")
+    assert len(refused) == 1
+    assert "not on the scored allowlist" in refused[0]
+    assert "benchmark-t2-example" in refused[0], "must say what IS admitted"
+
+
+def test_a_missing_profile_falls_back_rather_than_admitting_everything(
+    tmp_path: Path,
+) -> None:
+    """Refusing every scored run over a missing policy file would be a worse
+    failure, but so would admitting every world. Fall back to the known rules."""
+    profile = load_profile(tmp_path / "absent.conf")
+    assert profile.source == "built-in fallback"
+    assert profile.locked
+    assert profile.deviations({"terrain_type": "custom"}, _get) != []
+
+
+def test_an_unparseable_profile_falls_back(tmp_path: Path) -> None:
+    path = tmp_path / "profile.conf"
+    path.write_text("profile { locked { {{{ not = = hocon }\n")
+    profile = load_profile(path)
+    assert profile.source == "built-in fallback"
+    assert profile.locked == LOCKED_SETTINGS
+
+
+def test_a_profile_with_no_rules_falls_back(tmp_path: Path) -> None:
+    """An empty locked/allowed pair would admit every world, which is never the
+    intent of editing the file -- far likelier a truncation or a bad merge."""
+    path = tmp_path / "profile.conf"
+    path.write_text('profile {\n  version = "x"\n  locked {}\n  allowed {}\n}\n')
+    assert load_profile(path).source == "built-in fallback"
+
+
+def test_the_profile_version_is_recorded_from_the_file(tmp_path: Path) -> None:
+    """A rules change that does not bump the version silently mixes incomparable
+    rows, so the version a result carries must come from the file."""
+    assert active_profile().version == PROFILE_VERSION
+
+
+def test_every_allowed_key_is_a_recorded_leaderboard_column() -> None:
+    """Disclosure is the condition on which a setting may vary. An allowed key with
+    no column would let two runs differ invisibly."""
+    from nttd.db.result_writer import _SCHEMA
+
+    columns = set(_SCHEMA.names)
+    for key in active_profile().allowed:
+        column = f"map_{key}" if key.startswith("size_") else key
+        assert column in columns, f"allowed dimension {key} has no result column"
