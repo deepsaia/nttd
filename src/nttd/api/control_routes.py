@@ -25,7 +25,9 @@ from nttd.api.participant_auth import (
     extract_token,
 )
 from nttd.api.scored_guard import require_unscored
+from nttd.runtime.step_errors import StepBatchTooLarge
 from nttd.schemas.game import GameState, RuntimeMode
+from nttd.schemas.step_result import StepRequest, StepResult
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +126,69 @@ async def stop_orchestrator(session_id: str) -> dict[str, str]:
             pass
         runtime.orchestrator_task = None
     return {"status": "stopped"}
+
+
+@participant_router.post("/step/reset", response_model=StepResult)
+async def reset_stepped(session_id: str) -> StepResult:
+    """Enter stepped mode and return the opening observation.
+
+    Idempotent: calling it again re-pauses and re-observes without restarting the
+    world. A Gym ``reset`` that begins a NEW episode needs a new session, because a
+    session is a run -- rewinding one in place would leave the action log describing
+    two episodes as though they were one.
+    """
+    runtime = deps.get_runtime(session_id)
+    snapshot = await runtime.orchestrator.enter_stepped()
+    return StepResult(snapshot=snapshot, step=0, days_advanced=0)
+
+
+@participant_router.post("/step", response_model=StepResult)
+async def take_step(
+    session_id: str,
+    request: StepRequest,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
+) -> StepResult:
+    """Flush a batch of actions, advance the world, and observe.
+
+    The synchronous barrier RL and ES need: the request does not return until the
+    world has moved and been re-observed, so a policy never has to guess when its
+    actions took effect. The heartbeat loop cannot serve this -- it waits a
+    wall-clock window for actions to arrive, which truncates a slow policy and idles
+    for a fast one, when the point of stepping is that deliberation is free.
+
+    Every action passes the same admission check a REST submission does.
+    """
+    runtime = deps.get_runtime(session_id)
+
+    # The company comes from the token, never from the body. Applied to each action
+    # so a batch cannot smuggle a rival's company_id past the scope check.
+    token = extract_token(x_participant_token, authorization)
+    actions: list[dict[str, Any]] = []
+    for entry in request.actions:
+        params = dict(entry.get("params") or {})
+        apply_company_scope(runtime, params, token)
+        actions.append({"action": entry.get("action"), "params": params})
+
+    # The scenario owns the step size for a scored run: letting a contestant pass
+    # `days` would let it choose how much world each decision buys.
+    days = request.days
+    if days is not None and runtime.scored_lock.scored:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "step size is fixed by the scenario in a scored run: passing `days` "
+                "would let a contestant choose how much of the world each decision "
+                "buys. Omit it, or use an unscored session to experiment."
+            ),
+        )
+
+    try:
+        return await runtime.orchestrator.step(actions=actions, days=days)
+    except StepBatchTooLarge as exc:
+        # 400 rather than 403: the batch is malformed for this scenario, not
+        # forbidden. Splitting it across steps is the fix, and the message says so.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @operator_router.post("/heartbeat/interval")
