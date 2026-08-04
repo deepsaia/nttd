@@ -15,6 +15,7 @@ from typing import Any
 
 from nttd.config.benchmark_profile import (
     DIMENSION_PREFIX,
+    LOCKED_SETTINGS,
     PROFILE_VERSION,
     VARIABLE_SETTINGS,
 )
@@ -230,9 +231,14 @@ def _log2(n: int) -> int:
     return result
 
 
-def _compute_water_borders(map_cfg: Any) -> str:
-    """Compute OpenTTD water_borders bitmask from the map config tree."""
-    edges = _get(map_cfg, "map_edges", "random")
+def _compute_water_borders(map_cfg: Any, edges: str = "") -> str:
+    """Compute OpenTTD water_borders bitmask from the map config tree.
+
+    ``edges`` may be passed in when the caller has already resolved it against the
+    benchmark profile, so a scored run that omits map_edges gets the profile value
+    rather than this function's own default.
+    """
+    edges = edges or _get(map_cfg, "map_edges", "random")
     if edges == "random":
         return str(_WATER_BORDER_RANDOM)
     if edges == "all_water":
@@ -411,45 +417,16 @@ def _validate_config(
                 "(calendar mode is fixed at 12)", minutes,
             )
 
-    # --- Fairness limits: ranges that keep a run comparable -----------------
+    # --- fairness: not a scenario concern --------------------------------------
+    # These decide how much a contestant may do, so they belong to the operator, not
+    # to whoever wrote the scenario. They live in config/benchmark/profile.conf.
+    # Refused rather than ignored, so an author is told rather than silently overruled.
     if fair is not None:
-        # A floor below ~0.5s is not a pacing limit, it is a busy loop. The measured
-        # slowest decide time is ~11s, so the upper bounds are generous.
-        #
-        # The cast happens inside the loop: doing it while building the checks made a
-        # non-numeric value escape as a raw ValueError, which the CLI does not catch
-        # because it expects ScenarioConfigError.
-        checks = (
-            ("poll_interval", float, 10.0, 0.5, 600.0),
-            ("max_actions_per_cycle", int, 15, 1, 200),
-            ("max_history_cycles", int, 10, 0, 1000),
-            ("llm_timeout_seconds", float, 120.0, 1.0, 3600.0),
+        _report(
+            strict, problems,
+            "scenario fairness { ... } is not read: how much a contestant may do is "
+            "operator policy, set in config/benchmark/profile.conf. Remove the block.",
         )
-        for name, cast, default, low, high in checks:
-            raw = _get(fair, name, default)
-            try:
-                value = cast(raw)
-            except (TypeError, ValueError):
-                _report(
-                    strict, problems,
-                    "fairness.%s = %r is not a %s", name, raw, cast.__name__,
-                )
-                continue
-            if not low <= value <= high:
-                _report(
-                    strict, problems,
-                    "fairness.%s = %s is outside range [%s, %s]", name, value, low, high,
-                )
-
-        # observation_mode is not a fairness knob: a scored run always receives the
-        # complete entitled game state and leaves filtering to the agent. Refuse it
-        # here so an author is told rather than quietly overruled at runtime.
-        if _get(fair, "observation_mode", None) is not None:
-            _report(
-                strict, problems,
-                "fairness.observation_mode is not configurable: a scored run always "
-                "observes fully and the agent filters. Remove the key.",
-            )
 
     if problems:
         raise ScenarioConfigError(
@@ -499,6 +476,16 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         scored=scored, scenario_id=scenario_id,
     )
 
+    # For a scored run, an omitted locked setting takes the profile's value rather
+    # than this module's own default. Validation already treats omission as
+    # conformance, so without this the two disagreed: a scored scenario that left
+    # out starting_year passed validation and then generated a 1960 world while its
+    # record claimed profile conformance.
+    def _map(key: str, fallback: Any) -> Any:
+        if scored and key in LOCKED_SETTINGS:
+            return _get(m, key, LOCKED_SETTINGS[key])
+        return _get(m, key, fallback)
+
     # Map dimensions (log2)
     settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", 256))))
     settings["game_creation.map_y"] = str(_log2(int(_get(m, "size_y", 256))))
@@ -513,32 +500,38 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         settings["game_creation.custom_terrain_type"] = str(int(_get(m, "custom_terrain_height", 30)))
 
     # Variety and smoothness
-    settings["game_creation.variety"] = _VARIETY_MAP.get(_get(m, "variety", "none"), "0")
-    settings["game_creation.tgen_smoothness"] = _SMOOTHNESS_MAP.get(_get(m, "smoothness", "smooth"), "1")
+    settings["game_creation.variety"] = _VARIETY_MAP.get(_map("variety", "none"), "0")
+    settings["game_creation.tgen_smoothness"] = _SMOOTHNESS_MAP.get(
+        _map("smoothness", "smooth"), "1",
+    )
 
     # Water
-    settings["game_creation.amount_of_rivers"] = _RIVERS_MAP.get(_get(m, "rivers", "medium"), "2")
-    sea_level = _get(m, "sea_level", "medium")
+    settings["game_creation.amount_of_rivers"] = _RIVERS_MAP.get(_map("rivers", "medium"), "2")
+    sea_level = _map("sea_level", "medium")
     settings["difficulty.quantity_sea_lakes"] = _SEA_LEVEL_MAP.get(sea_level, "2")
     if sea_level == "custom":
         settings["game_creation.custom_sea_level"] = str(int(_get(m, "custom_sea_level", 1)))
-    settings["game_creation.water_borders"] = _compute_water_borders(m)
+    settings["game_creation.water_borders"] = _compute_water_borders(
+        m, _map("map_edges", "random"),
+    )
 
     # Towns
-    settings["game_creation.town_name"] = _TOWN_NAMES_MAP.get(_get(m, "town_names", "english"), "0")
-    num_towns = _get(m, "number_towns", "normal")
+    settings["game_creation.town_name"] = _TOWN_NAMES_MAP.get(
+        _map("town_names", "english"), "0",
+    )
+    num_towns = _map("number_towns", "normal")
     settings["difficulty.number_towns"] = _TOWNS_MAP.get(num_towns, "2")
     if num_towns == "custom":
         settings["game_creation.custom_town_number"] = str(int(_get(m, "custom_town_number", 1)))
 
     # Industries
-    industry = _get(m, "industry_density", "normal")
+    industry = _map("industry_density", "normal")
     settings["difficulty.industry_density"] = _INDUSTRY_MAP.get(industry, "4")
     if industry == "custom":
         settings["game_creation.custom_industry_number"] = str(int(_get(m, "custom_industry_number", 1)))
 
     # Start date
-    settings["game_creation.starting_year"] = str(int(_get(m, "starting_year", 1960)))
+    settings["game_creation.starting_year"] = str(int(_map("starting_year", 1960)))
 
     # Map generation seed.
     #
@@ -562,13 +555,6 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     # Fairness limits. Operator-owned, because they decide how much a contestant
     # may do: declared on AgentConfig they would let each contestant set their own
     # budget. Enforced only for a scored session -- see config/fairness.py.
-    fair = _get(raw, "fairness", {})
-    if fair:
-        settings["_fair_poll_interval"] = str(float(_get(fair, "poll_interval", 10.0)))
-        settings["_fair_max_actions"] = str(int(_get(fair, "max_actions_per_cycle", 15)))
-        settings["_fair_max_history"] = str(int(_get(fair, "max_history_cycles", 10)))
-        settings["_fair_llm_timeout"] = str(float(_get(fair, "llm_timeout_seconds", 120.0)))
-
     # Timekeeping. These are the only real pacing knobs and they apply at map
     # generation only -- see RuntimeConfig. They move the calendar clock, not the
     # economy clock, so they change when vehicles become available rather than how
