@@ -321,7 +321,11 @@ class SessionManager:
             wall_seconds=scored_seconds,
             start_game_date=start_date,
             end_game_date=runtime.world.game.game_date,
-            participants=runtime.gameloop_manager.participant_summary(),
+            # Action counts come from nttd's own log; model and spend only from
+            # what the contestant declared. See runtime/participant_report.py.
+            participants=runtime.participant_report.build(
+                action_counts=runtime.recorder.action_counts(),
+            ),
             gamescript_path=self.base_config_dir / "game" / "nttd-gs" / "main.nut",
             openttd_binary=self.openttd_binary,
             capability=runtime.scored_lock.summary(),

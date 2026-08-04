@@ -15,10 +15,10 @@ from nttd.config.fairness import FairnessConfig
 from nttd.config.task_instance import TaskInstance
 from nttd.db.recorder import SessionRecorder
 from nttd.db.tile_writer import TileWriter
-from nttd.gameloop.manager import GameloopManager
 from nttd.runtime.action_budget import ActionBudget
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.runtime.participant_registry import ParticipantRegistry
+from nttd.runtime.participant_report import ParticipantReport
 from nttd.runtime.scored_lock import ScoredLock
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
@@ -102,10 +102,10 @@ class SessionRuntime:
         # /actions/submit has no pacing limit -- which every bundled example does.
         self.action_budget = ActionBudget()
         self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
-        self.gameloop_manager = GameloopManager(self)
-
-        # Stop all gameloop agents when the session ends
-        self.orchestrator.on_end.append(lambda _reason: self.gameloop_manager.stop_all())
+        # Per-company contestant detail for the result record. The contestant runs
+        # its own loop, so nttd tallies action counts from its own action log and
+        # records model and spend only as declared. See participant_report.
+        self.participant_report = ParticipantReport()
 
         self.process: asyncio.subprocess.Process | None = None
         self.poll_task: asyncio.Task[None] | None = None
@@ -206,7 +206,7 @@ class SessionRuntime:
             logger.warning("GameScript not responding for session %s: %s", self.session_id, ping_result)
 
         # Initial world state refresh — populate towns, industries, companies
-        # so gameloop agents and state endpoints have data immediately.
+        # so a contestant's first observation has data immediately.
         await self.orchestrator._refresh_world_from_gs()
         logger.info(
             "Initial world refresh for session %s: %d towns, %d companies",
@@ -330,9 +330,6 @@ class SessionRuntime:
             except asyncio.CancelledError:
                 pass
             self.orchestrator_task = None
-
-        # Stop all gameloop agents first
-        await self.gameloop_manager.stop_all()
 
         # Stop the DB recorder (flushes remaining buffers)
         await self.recorder.stop()
