@@ -482,12 +482,22 @@ class Orchestrator:
         start_date = await self._authoritative_game_date()
         target_date = start_date + advance_days
 
-        # Actions run with the game RUNNING, not paused. A GameScript DoCommand
-        # completes on a game tick, so while the game is paused it never completes
-        # and every build times out after 10s -- verified against OpenTTD 15.3: the
-        # same build_road_stop timed out paused and succeeded in 0.04s unpaused.
-        # (command_pause_level does not change this; it governs what a human client
-        # may issue, not whether the script's command queue drains.)
+        # Actions run with the game RUNNING, not paused.
+        #
+        # Not because single-tile builds need it: at construction.command_pause_level
+        # = 3 a paused build_road_stop returns success in 0.1s. It is the PATHFINDING
+        # actions. The A* loop in the GameScript yields every 500 iterations through
+        # _YieldAndProcessEvents (main.nut:1912, :2414), whose first statement is
+        # Sleep(1) -- and Sleep counts GAME TICKS, of which a paused game delivers
+        # none. So connect_road and connect_rail deadlock while paused at ANY pause
+        # level: verified at 180s with the GS still answering ping. They are the
+        # workhorse actions, so the flush has to sit between the unpause and the
+        # advance.
+        #
+        # This also keeps the flush safe if the pause level is ever lowered: at
+        # level 1 a paused build times out AND wedges the GameScript, while having
+        # actually executed -- so nttd would record a failure for an action that
+        # mutated the world.
         await self._unpause()
         if batch:
             await self._execute_actions(batch)
