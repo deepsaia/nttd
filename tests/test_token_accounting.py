@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 import polars as pl
 
 from nttd.analysis.reports.token_accounting import generate
-from nttd.gameloop.schemas import TokenUsage
-from nttd.gameloop.token_costs import estimate_cost
+from nttd.analysis.token_costs import estimate_cost
+from nttd.schemas.cycle_record import TokenUsage
 
 
 class TestTokenUsage:

@@ -425,25 +425,43 @@ def test_strict_rejects_configuring_the_observation_mode(tmp_path: Any) -> None:
         scenario_to_settings(load(path), strict=True)
 
 
-def test_strict_rejects_unknown_per_agent_observation_mode(tmp_path: Any) -> None:
-    """An unscored scenario may choose per-agent modes, but only real ones."""
+def test_strict_refuses_an_agents_block(tmp_path: Any) -> None:
+    """A scenario defines the world; which agents play it belongs to the runner.
+
+    The block used to name a model, a framework, and a path to a prompt function
+    inside examples/, which made the task definition depend on the contestant's own
+    code -- so a contestant running their own system could not use the scenario as
+    written.
+    """
     from nttd.config.scenario_config import ScenarioConfigError
 
-    path = tmp_path / "agentobs.conf"
+    path = tmp_path / "withagents.conf"
     path.write_text(
         'scenario { map { size_x = 256, size_y = 256 }, '
-        'agents = [ { agent_id = "a", observation_mode = "typo" } ] }'
+        'agents = [ { agent_id = "a", model = "gpt-5.2" } ] }'
     )
-    with pytest.raises(ScenarioConfigError, match="not a known snapshot class"):
+    with pytest.raises(ScenarioConfigError, match="not part of a scenario"):
         scenario_to_settings(load(path), strict=True)
 
 
-def test_known_observation_modes_match_the_runtime_presets() -> None:
-    """Config validation keeps its own copy so it does not import runtime state.
+def test_the_refusal_says_where_agents_belong(tmp_path: Any) -> None:
+    """An author copying an old scenario should be told, not silently run without
+    the agents they configured."""
+    from nttd.config.scenario_config import ScenarioConfigError
 
-    This is what keeps the two in sync.
-    """
-    from nttd.config.scenario_config import _KNOWN_OBSERVATION_MODES
-    from nttd.state.snapshot_class import _BUILTIN_PRESETS
+    path = tmp_path / "withagents.conf"
+    path.write_text(
+        'scenario { map { size_x = 256 }, agents = [ { agent_id = "a" } ] }'
+    )
+    with pytest.raises(ScenarioConfigError) as excinfo:
+        scenario_to_settings(load(path), strict=True)
+    message = str(excinfo.value)
+    assert "runner" in message
+    assert "participant routes" in message
 
-    assert _KNOWN_OBSERVATION_MODES == {preset.name for preset in _BUILTIN_PRESETS}
+
+def test_a_scenario_without_agents_is_unaffected(tmp_path: Any) -> None:
+    path = tmp_path / "clean.conf"
+    path.write_text('scenario { map { size_x = 256, size_y = 256 } }')
+    settings = scenario_to_settings(load(path), strict=True)
+    assert settings["game_creation.map_x"] == "8"

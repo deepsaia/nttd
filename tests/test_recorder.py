@@ -10,9 +10,9 @@ import pyarrow.parquet as pq
 import pytest
 
 from nttd.db.recorder import SessionRecorder
-from nttd.gameloop.schemas import CycleRecord
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult
+from nttd.schemas.cycle_record import CycleRecord
 
 # ---------------------------------------------------------------------------
 # Helpers

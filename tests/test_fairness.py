@@ -1,7 +1,7 @@
 """Tests for operator-owned fairness limits.
 
 These parameters decide how much a contestant may do, so a contestant must not be
-able to set them. They arrived on AgentConfig, which an agent supplies at
+able to set them. They were once fields on the agent config an agent supplied at
 registration, so every contestant was choosing their own budget: poll_interval has
 a floor of 0.5s, and the bundled configs shipped max_actions_per_cycle as 5, 10,
 and 50.
@@ -15,82 +15,6 @@ Run with: uv run pytest tests/test_fairness.py -v
 from __future__ import annotations
 
 from nttd.config.fairness import FairnessConfig, from_settings
-from nttd.gameloop.schemas import AgentConfig
-
-
-def _agent(**kwargs: object) -> AgentConfig:
-    base: dict = {"agent_id": "a1", "company_id": 0}
-    base.update(kwargs)
-    return AgentConfig(**base)  # type: ignore[arg-type]
-
-
-# ---------------------------------------------------------------------------
-# Enforcement
-# ---------------------------------------------------------------------------
-
-
-def test_enforced_config_overrides_contestant_values() -> None:
-    """The core property: the scenario decides, not the contestant."""
-    config = _agent(poll_interval=0.5, max_actions_per_cycle=50, observation_mode="minimal")
-    limits = FairnessConfig(
-        poll_interval=10.0, max_actions_per_cycle=15,
-        observation_mode="full", enforced=True,
-    )
-
-    changed = limits.apply_to(config)
-
-    assert config.poll_interval == 10.0
-    assert config.max_actions_per_cycle == 15
-    assert config.observation_mode == "full"
-    assert len(changed) == 3, "each override is reported"
-    # The requested value is retained: after the mutation it exists nowhere else,
-    # so the record could not otherwise show what the contestant asked for.
-    assert changed["poll_interval"] == (0.5, 10.0)
-
-
-def test_unenforced_config_leaves_contestant_values_alone() -> None:
-    """Scenario authoring and local experiments need the knobs."""
-    config = _agent(poll_interval=0.5, max_actions_per_cycle=50)
-    limits = FairnessConfig(poll_interval=10.0, max_actions_per_cycle=15, enforced=False)
-
-    assert limits.apply_to(config) == {}
-    assert config.poll_interval == 0.5
-    assert config.max_actions_per_cycle == 50
-
-
-def test_matching_values_are_not_reported_as_changes() -> None:
-    """A contestant who already asked for the limit changed nothing."""
-    config = _agent(
-        poll_interval=10.0, max_actions_per_cycle=15,
-        max_history_cycles=10, observation_mode="full",
-    )
-    limits = FairnessConfig(
-        poll_interval=10.0, max_actions_per_cycle=15,
-        max_history_cycles=10, observation_mode="full", enforced=True,
-    )
-    assert limits.apply_to(config) == {}
-
-
-def test_change_report_names_the_old_and_new_value() -> None:
-    """An operator needs to see what a contestant asked for versus what applied."""
-    config = _agent(poll_interval=0.5)
-    changed = FairnessConfig(poll_interval=10.0, enforced=True).apply_to(config)
-
-    assert changed["poll_interval"] == (0.5, 10.0)
-
-
-# ---------------------------------------------------------------------------
-# Construction from settings
-# ---------------------------------------------------------------------------
-
-
-def test_enforcement_follows_the_scored_flag() -> None:
-    """A scored run must be bounded by its task; an unscored one has nothing to
-    protect, so there is no separate switch to forget to set.
-    """
-    assert from_settings({"_scored": "1"}).enforced is True
-    assert from_settings({}).enforced is False
-    assert from_settings({"_scored": "0"}).enforced is False
 
 
 def test_settings_are_parsed_into_limits() -> None:
@@ -171,17 +95,23 @@ def test_default_max_actions_allows_a_complete_route() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_out_of_range_override_is_rejected_not_silently_applied() -> None:
-    """apply_to writes via setattr, which bypasses field constraints unless the
-    model validates on assignment. A scenario with a nonsensical value must fail
-    loudly rather than impose it.
-    """
-    import pytest
-    from pydantic import ValidationError
+def test_a_nonsensical_value_cannot_reach_the_action_budget() -> None:
+    """Was: apply_to bypassed pydantic constraints via setattr, so an out-of-range
+    scenario value was imposed on an agent config.
 
-    config = _agent()
-    with pytest.raises(ValidationError):
-        FairnessConfig(poll_interval=-5.0, enforced=True).apply_to(config)
+    apply_to is gone with the server-driven gameloop, but the underlying risk moved
+    rather than vanished: the budget is now built straight from these limits, and a
+    negative poll_interval would give a zero-length window -- a budget that refuses
+    nothing. Clamping is what stops that, so this asserts it at the new boundary.
+    """
+    from nttd.runtime.action_budget import from_fairness
+
+    limits = from_settings({"_fair_poll_interval": "-5.0", "_scored": "1"})
+    assert limits.poll_interval >= 0.5, "a negative interval must be clamped"
+
+    budget = from_fairness(limits)
+    assert budget.window_seconds >= 0.5
+    assert budget.enforced is True
 
 
 def test_llm_timeout_only_applies_to_a_scored_session() -> None:
