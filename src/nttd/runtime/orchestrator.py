@@ -482,12 +482,28 @@ class Orchestrator:
         start_date = await self._authoritative_game_date()
         target_date = start_date + advance_days
 
-        # Actions run with the game RUNNING, not paused. A GameScript DoCommand
-        # completes on a game tick, so while the game is paused it never completes
-        # and every build times out after 10s -- verified against OpenTTD 15.3: the
-        # same build_road_stop timed out paused and succeeded in 0.04s unpaused.
-        # (command_pause_level does not change this; it governs what a human client
-        # may issue, not whether the script's command queue drains.)
+        # Actions run with the game RUNNING, not paused.
+        #
+        # Not because single-tile builds need it: at construction.command_pause_level
+        # = 3 a paused build_road_stop returns success in 0.1s. It is the PATHFINDING
+        # actions. The A* loop yields every 500 iterations through
+        # _YieldAndProcessEvents (main.nut:1912, :2414), whose first statement is
+        # Sleep(1) -- and Sleep counts GAME TICKS, of which a paused game delivers
+        # none. So connect_road and connect_rail hang while paused, at any pause
+        # level, once the search is long enough to reach that yield.
+        #
+        # Length is what decides it, which is why this cannot be worked around by
+        # inspecting the action: a SHORT connection never yields and succeeds while
+        # paused in 0.0s, while a cross-map one times out. Whether a given
+        # connect_road deadlocks is not knowable before running it, so the flush
+        # simply always sits between the unpause and the advance. These are the
+        # workhorse actions; a design that could not issue them would not be a
+        # design.
+        #
+        # This also keeps the flush safe if the pause level is ever lowered: at
+        # level 1 a paused build times out AND wedges the GameScript, while having
+        # actually executed -- so nttd would record a failure for an action that
+        # mutated the world.
         await self._unpause()
         if batch:
             await self._execute_actions(batch)

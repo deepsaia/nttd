@@ -49,5 +49,6 @@ logs/
 *.db
 *.db-*
 .experiment_runs/
+.verify_runs/
 docs/superpowers/
 .playwright-mcp/
