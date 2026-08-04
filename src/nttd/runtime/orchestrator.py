@@ -8,15 +8,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from nttd.actions.gate import admit
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
 from nttd.runtime.company_lock import CompanyLockManager
 from nttd.runtime.end_conditions import EndConditionChecker
 from nttd.schemas.action_envelope import ActionEnvelope, ActionMode
-from nttd.schemas.action_result import ActionStatus
+from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.game import RuntimeMode
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.state.world import WorldState
@@ -53,6 +55,9 @@ class Orchestrator:
         self.world = world
         self.client = client
         self.recorder = recorder
+        # The session's action budget, set by SessionRuntime. None means unbounded,
+        # which is what an orchestrator built without a session should get.
+        self.action_budget: Any = None
         self._running = False
         self._heartbeat_interval_days: int = 30
         self._action_window_seconds: float = 5.0
@@ -271,6 +276,45 @@ class Orchestrator:
         """
         return self._end_checker.start_clock(self.world.game.game_date)
 
+    def _record_action(
+        self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",
+        changed: dict[str, Any] | None = None,
+    ) -> None:
+        """Write an action to the session's audit log.
+
+        The stepped path recorded nothing, so a run driven by steps produced no
+        actions.parquet -- and a benchmark cannot be verified from an action log that
+        is missing the actions. Refusals are recorded too: reaching for a superhuman
+        power is exactly what an auditor wants to see, even though it did not happen.
+        """
+        if self.recorder is None:
+            return
+        try:
+            self.recorder.record_action(
+                envelope=ActionEnvelope(
+                    action_id=envelope.action_id,
+                    action_type=envelope.action_type,
+                    parameters=envelope.parameters,
+                    company_id=envelope.company_id,
+                    mode=envelope.mode,
+                    metadata={
+                        **envelope.metadata,
+                        "participant_type": "agent",
+                        "game_date": self.world.game.game_date,
+                        "submitted_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                ),
+                result=ActionResult(
+                    action_id=envelope.action_id,
+                    status=status,
+                    error=error or None,
+                    changed_entities=changed or {},
+                ),
+            )
+        except Exception:
+            # The audit trail must not be able to fail the action it describes.
+            logger.exception("Could not record action %s", envelope.action_id)
+
     async def _execute_actions(self, actions: list[dict[str, Any]]) -> None:
         """Execute a list of GS action dicts, tracking each in ActionTracker.
 
@@ -295,6 +339,21 @@ class Orchestrator:
             )
             if self.action_tracker:
                 self.action_tracker.submit(envelope)
+
+            # The same admission check the REST path uses. This path previously
+            # called send_gamescript directly, so operator-tier commands were
+            # reachable in a scored session and left no row in actions.parquet.
+            admission = admit(gs_action, company_id, budget=self.action_budget)
+            if not admission.allowed:
+                if self.action_tracker:
+                    self.action_tracker.update_result(
+                        envelope.action_id, admission.status, admission.error,
+                    )
+                self._record_action(envelope, admission.status, admission.error)
+                logger.info("Action %s refused: %s", gs_action, admission.error)
+                continue
+            if self.action_budget is not None:
+                self.action_budget.consume(company_id)
 
             if not self.client.connected:
                 if self.action_tracker:
