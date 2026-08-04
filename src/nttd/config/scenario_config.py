@@ -82,14 +82,6 @@ _TOWN_NAMES_MAP: dict[str, str] = {
     "catalan": "20", "english_additional": "21",
 }
 
-# Snapshot class names an unscored scenario may give an agent. A scored run always
-# observes fully, so this only guards the per-agent observation_mode in agents[].
-# Kept in sync with _BUILTIN_PRESETS in state/snapshot_class.py by a test, rather
-# than imported, so config validation does not depend on runtime state.
-_KNOWN_OBSERVATION_MODES: frozenset[str] = frozenset({
-    "minimal", "compact", "agent", "mas_rail", "standard", "full",
-})
-
 # OpenTTD water_borders bitmask: NE=1, SE=2, SW=4, NW=8, random=16
 _WATER_BORDER_NE = 1
 _WATER_BORDER_SE = 2
@@ -460,15 +452,22 @@ def _validate_config(
                 "observes fully and the agent filters. Remove the key.",
             )
 
-    # --- Per-agent observation_mode: must name a real snapshot class ---------
-    for i, agent in enumerate(agents or []):
-        mode = _get(agent, "observation_mode", None) or _get(agent, "snapshot_class", None)
-        if mode is not None and str(mode) not in _KNOWN_OBSERVATION_MODES:
-            _report(
-                strict, problems,
-                "agents[%d].observation_mode = %r is not a known snapshot class. Valid: %s",
-                i, mode, ", ".join(sorted(_KNOWN_OBSERVATION_MODES)),
-            )
+    # --- agents[]: belongs to the runner, not the task -----------------------
+    # A scenario defines the WORLD. It used to also carry an agents list naming a
+    # model, a framework, and a path to a prompt function inside examples/ -- which
+    # made the task definition depend on the contestant's code, and meant a
+    # contestant running their own system could not use the scenario as written.
+    #
+    # Refused rather than ignored, so an author who copies an old scenario is told
+    # where the block went instead of quietly running without their agents.
+    if agents:
+        _report(
+            strict, problems,
+            "agents = [...] is not part of a scenario: a scenario defines the world, "
+            "and which agents play it belongs to your runner's own config. nttd does "
+            "not run agents -- your loop connects over the participant routes. "
+            "Remove the block.",
+        )
 
     if problems:
         raise ScenarioConfigError(

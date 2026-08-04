@@ -1,28 +1,26 @@
 """Fairness parameters: the pacing and budget limits a scenario imposes.
 
 These decide how much a contestant is allowed to do, so they cannot be declared by
-the contestant. They arrived on ``AgentConfig``, which an agent supplies at
-registration, meaning every contestant set their own budget:
+the contestant. They were once fields on the agent config an agent supplied at
+registration, which meant every contestant set its own budget -- ``poll_interval``
+had a 0.5s floor, so one agent could take 20x the decisions of another and still be
+"playing the same scenario", and the bundled configs shipped
+``max_actions_per_cycle`` as 5, 10, and 50.
 
-  * ``poll_interval`` has a floor of 0.5s, so one agent could take 20x the
-    decisions of another polling at 10s and still be "playing the same scenario".
-  * ``max_actions_per_cycle`` shipped as 5, 10, and 50 across the bundled configs.
-  * ``observation_mode`` selected a snapshot class spanning roughly 0.5 KB to 80 KB.
+They are now owned by the scenario. Since nttd no longer runs anybody's agent, the
+limits bind at the only place a contestant can reach: the sliding-window
+``ActionBudget`` on the REST path, built from ``poll_interval`` and
+``max_actions_per_cycle`` here. The effective values are recorded in the result, so a
+reader can see what the run was actually held to.
 
-A scored session overrides all of them from the scenario, so the run is bounded by
-the task rather than by what the contestant asked for. The effective values are
-recorded in the result, so a reader can see what the run was actually held to.
+Enforced only for a scored session. Local experimentation and scenario authoring have
+nothing to protect.
 
-An unscored session leaves contestant values alone: local experimentation and
-scenario authoring need to be able to turn the knobs.
-
-On observation, note the design deliberately does NOT bound information. A scored
-run receives the complete entitled game state and the agent decides what matters,
-because filtering is part of the task. That is why ``observation_mode`` is pinned to
-``full`` rather than being configurable, and why observation TOOLS are left
-available: an agent that pulls the whole map through them is doing something a
-narrower pushed payload would not have prevented anyway. What is bounded is the RATE
-and the ACTION budget, which is what a human is bounded by.
+Note what is deliberately NOT bounded: information. A scored run receives the
+complete entitled game state and the contestant decides what matters, because
+filtering is part of the task. That is why ``observation_mode`` is pinned to ``full``
+rather than being configurable. What is bounded is the RATE and the ACTION budget,
+which is what a human is bounded by.
 """
 
 from __future__ import annotations
@@ -73,17 +71,21 @@ class FairnessConfig:
             out-act a slow one for reasons unrelated to policy quality.
         max_actions_per_cycle: Soft ceiling on actions per decision. Agents need
             not spend it.
-        max_history_cycles: How many past cycles an agent may carry as context.
-        llm_timeout_seconds: Hard cap on a single decision. Prevents one stalled
-            contestant holding a session open indefinitely.
+        max_history_cycles: How many past cycles a contestant should carry as
+            context. Declared rather than enforced: the contestant's loop runs in
+            its own process, so nttd cannot police what it remembers. Recorded so a
+            reader knows the intended limit.
+        llm_timeout_seconds: Intended cap on a single decision, likewise declared
+            rather than enforced. What actually bounds a run is its end condition.
         observation_mode: Which snapshot class a scored agent receives. Always
             ``full``: a scored run hands over the complete entitled game state and
             leaves filtering to the agent, because deciding what matters is part of
             the task rather than something the platform should pre-empt. Pinning a
             narrower class would also make two runs incomparable on information
             while looking comparable.
-        enforced: Whether these override contestant-supplied values. True for a
-            scored session; False leaves contestant values alone.
+        enforced: Whether the limits actually bind. True for a scored session;
+            False for local experimentation and scenario authoring, which have no
+            comparability to protect.
     """
 
     poll_interval: float = _DEFAULT_POLL_INTERVAL
@@ -95,33 +97,6 @@ class FairnessConfig:
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
-
-    def apply_to(self, config: Any) -> dict[str, tuple[Any, Any]]:
-        """Overwrite an AgentConfig's fairness fields in place.
-
-        Returns ``{field: (requested, applied)}`` for the fields actually changed.
-        Structured rather than formatted, because a caller needs the requested
-        values as data: "this contestant asked to run at 0.5s" belongs in the
-        result record, and after the mutation it exists nowhere else.
-
-        Does nothing when not enforced.
-        """
-        if not self.enforced:
-            return {}
-
-        overrides = {
-            "poll_interval": self.poll_interval,
-            "max_actions_per_cycle": self.max_actions_per_cycle,
-            "max_history_cycles": self.max_history_cycles,
-            "observation_mode": self.observation_mode,
-        }
-        changed: dict[str, tuple[Any, Any]] = {}
-        for field, applied in overrides.items():
-            requested = getattr(config, field, None)
-            if requested != applied:
-                changed[field] = (requested, applied)
-                setattr(config, field, applied)
-        return changed
 
 
 def from_settings(settings: dict[str, str]) -> FairnessConfig:
