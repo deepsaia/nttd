@@ -1,166 +1,100 @@
-"""Tests for operator-owned fairness limits.
+"""Tests for the operator-owned fairness limit.
 
-These parameters decide how much a contestant may do, so a contestant must not be
-able to set them. They were once fields on the agent config an agent supplied at
-registration, so every contestant was choosing their own budget: poll_interval has
-a floor of 0.5s, and the bundled configs shipped max_actions_per_cycle as 5, 10,
-and 50.
+One knob, ``max_actions_per_decision``: the ceiling on a single submission. A
+contestant must not be able to set it, since it decides how much they may do -- it was
+once a field on the agent config an agent supplied at registration, so every
+contestant was choosing their own budget.
 
-A scored session overrides them from the scenario. An unscored one leaves them
-alone, because local experimentation needs the knobs.
+Three things it deliberately is not:
+
+  * A RATE limit. There was one, a sliding wall-clock window, removed because at 15
+    actions per 10s a 30-minute real-time run allowed about 2,700 actions against
+    about 900 for the same task played stepped -- threefold incomparable, while
+    presenting itself as a fairness guarantee.
+  * A TOTAL for the run. Stepped mode is bounded by its step count; how many of the
+    15 a policy spends per step is what an RL or ES entry is being scored on.
+  * An LLM timeout or history depth. Both are client concerns and unenforceable.
 
 Run with: uv run pytest tests/test_fairness.py -v
 """
 
 from __future__ import annotations
 
-from nttd.config.fairness import FairnessConfig, from_settings
+from nttd.config.fairness import SCORED_OBSERVATION_MODE, FairnessConfig, from_settings
 
 
-def test_settings_are_parsed_into_limits() -> None:
-    limits = from_settings({
-        "_scored": "1",
-        "_fair_poll_interval": "7.5",
-        "_fair_max_actions": "20",
-        "_fair_max_history": "3",
-        "_fair_llm_timeout": "45.0",
-        "_fair_observation_mode": "minimal",
-    })
-    assert limits.poll_interval == 7.5
-    assert limits.max_actions_per_cycle == 20
-    assert limits.max_history_cycles == 3
-    assert limits.llm_timeout_seconds == 45.0
-    # A scored run always observes fully: the scenario asked for "minimal" and does
-    # not get it, because filtering is the agent's job and pinning a narrower class
-    # would make two runs in a tier incomparable on information.
-    assert limits.observation_mode == "full"
+def test_enforcement_follows_the_scored_flag() -> None:
+    """Tied to the session being scored rather than a separate switch: a scored run
+    must be bounded by its task, and an unscored one has nothing to protect."""
+    assert from_settings({"_scored": "1"}).enforced is True
+    assert from_settings({}).enforced is False
+    assert from_settings({"_scored": "0"}).enforced is False
 
 
-def test_absent_settings_use_defaults() -> None:
-    limits = from_settings({})
-    assert limits.poll_interval == 10.0
-    assert limits.max_actions_per_cycle == 15
-    assert limits.llm_timeout_seconds == 120.0
-    assert limits.observation_mode == "full"
+def test_the_limit_comes_from_the_profile_not_the_session() -> None:
+    """A scenario cannot set its own budget, so the value must not be readable from
+    session settings. Passing one has no effect."""
+    from nttd.config.benchmark_profile import active_profile
+
+    expected = int(active_profile().fairness["max_actions_per_decision"])
+    limits = from_settings({"_scored": "1", "_fair_max_actions": "200"})
+    assert limits.max_actions_per_decision == expected
 
 
-def test_malformed_settings_fall_back_rather_than_crash() -> None:
-    """A bad value must not take down session start; it is logged and ignored."""
-    limits = from_settings({
-        "_fair_poll_interval": "not-a-number",
-        "_fair_max_actions": "",
-    })
-    assert limits.poll_interval == 10.0
-    assert limits.max_actions_per_cycle == 15
+def test_the_default_allows_a_complete_route() -> None:
+    """A route needs loan, two stations, a connection, a vehicle, and orders."""
+    assert FairnessConfig().max_actions_per_decision >= 6
+
+
+def test_a_scored_run_always_observes_fully() -> None:
+    """Observation is deliberately NOT bounded.
+
+    A scored run hands over the complete entitled game state and the contestant
+    decides what matters, because filtering is part of the task. Narrowing it would
+    make two runs in a tier incomparable on information while appearing comparable,
+    and would not stop a contestant pulling the same data through queries anyway.
+    """
+    assert from_settings({"_scored": "1"}).observation_mode == "full"
+    assert SCORED_OBSERVATION_MODE == "full"
+
+
+def test_no_rate_or_timeout_fields_remain() -> None:
+    """Guards against them creeping back.
+
+    Each was removed for a stated reason: a wall-clock window made the two modes
+    threefold incomparable, and an LLM timeout or history depth cannot be enforced
+    against a loop running in the contestant's own process. Restating an
+    unenforceable suggestion as a limit misleads a reader of the result.
+    """
+    fields = FairnessConfig().as_dict()
+    for gone in (
+        "poll_interval", "window_seconds", "realtime_window_seconds",
+        "llm_timeout_seconds", "max_history_cycles", "max_actions_per_cycle",
+        "total_actions",
+    ):
+        assert gone not in fields, f"{gone} is back; see the module docstring"
 
 
 def test_as_dict_is_recordable() -> None:
-    """The effective limits go into result.parquet, so they must serialise."""
+    """The effective limit goes into result.parquet, so it must serialise."""
     import json
 
     payload = json.loads(json.dumps(FairnessConfig(enforced=True).as_dict()))
     assert payload["enforced"] is True
-    assert payload["poll_interval"] == 10.0
+    assert payload["max_actions_per_decision"] == 15
 
 
-# ---------------------------------------------------------------------------
-# The defaults themselves
-# ---------------------------------------------------------------------------
+def test_a_non_numeric_profile_value_falls_back_rather_than_crashing(
+    monkeypatch: object,
+) -> None:
+    """A typo in operator policy must not take down session start."""
+    from nttd.config import fairness as fairness_module
+    from nttd.config.benchmark_profile import BenchmarkProfile
 
-
-def test_default_poll_interval_exceeds_the_slowest_measured_decide() -> None:
-    """poll_interval is a PERIOD, so it only paces agents if it exceeds their
-    decide time. The slowest measured role is rail at ~11.2s
-    (docs/rail_agent_report.md), which the 10.0s default does NOT cover.
-
-    This is deliberate and documented rather than accidental: raising the default
-    above the slowest role would slow every other role for the sake of one. The
-    test pins the relationship so a future change is a decision, not a drift.
-    """
-    limits = FairnessConfig()
-    slowest_measured_decide = 11.242
-    assert limits.poll_interval < slowest_measured_decide, (
-        "if this now passes, the default was raised above the slowest decide time "
-        "and every role is fully paced -- update this test deliberately"
+    broken = BenchmarkProfile(
+        locked={}, allowed={}, fairness={"max_actions_per_decision": "many"},
     )
-
-
-def test_default_max_actions_allows_a_complete_route() -> None:
-    """A route needs loan, two stations, a connection, a vehicle, and orders."""
-    assert FairnessConfig().max_actions_per_cycle >= 6
-
-
-# ---------------------------------------------------------------------------
-# Regressions found by review
-# ---------------------------------------------------------------------------
-
-
-def test_a_nonsensical_value_cannot_reach_the_action_budget() -> None:
-    """Was: apply_to bypassed pydantic constraints via setattr, so an out-of-range
-    scenario value was imposed on an agent config.
-
-    apply_to is gone with the server-driven gameloop, but the underlying risk moved
-    rather than vanished: the budget is now built straight from these limits, and a
-    negative poll_interval would give a zero-length window -- a budget that refuses
-    nothing. Clamping is what stops that, so this asserts it at the new boundary.
-    """
-    from nttd.runtime.action_budget import from_fairness
-
-    limits = from_settings({"_fair_poll_interval": "-5.0", "_scored": "1"})
-    assert limits.poll_interval >= 0.5, "a negative interval must be clamped"
-
-    budget = from_fairness(limits)
-    assert budget.window_seconds >= 0.5
-    assert budget.enforced is True
-
-
-def test_llm_timeout_only_applies_to_a_scored_session() -> None:
-    """The other four limits respect `enforced`; this one used to be read straight
-    off runtime.fairness, so a scenario cap leaked into unscored local runs.
-    """
-    unscored = from_settings({"_fair_llm_timeout": "5.0"})
-    assert unscored.enforced is False
-
-    scored = from_settings({"_scored": "1", "_fair_llm_timeout": "5.0"})
-    assert scored.enforced is True
-    assert scored.llm_timeout_seconds == 5.0
-
-
-def test_scored_run_always_observes_fully() -> None:
-    """Observation is deliberately NOT bounded.
-
-    A scored run hands over the complete entitled game state and the agent decides
-    what matters, because filtering is part of the task. A scenario cannot narrow it:
-    doing so would make two runs in the same tier incomparable on information while
-    appearing comparable, and would not stop an agent pulling the same data through
-    observation tools anyway.
-    """
-    limits = from_settings({"_scored": "1", "_fair_observation_mode": "minimal"})
-    assert limits.observation_mode == "full"
-
-
-def test_out_of_range_values_are_clamped_not_used_verbatim() -> None:
-    """The lenient config path only warns, then emitted the raw value.
-
-    Unclamped, poll_interval = 0.0 gave a sleepless loop and max_history_cycles = -1
-    raised ValueError from collections.deque(maxlen=-1) at registration.
-    """
-    limits = from_settings({
-        "_scored": "1",
-        "_fair_poll_interval": "0.0",
-        "_fair_max_actions": "500",
-        "_fair_max_history": "-1",
-        "_fair_llm_timeout": "0.1",
-    })
-    assert limits.poll_interval == 0.5
-    assert limits.max_actions_per_cycle == 200
-    assert limits.max_history_cycles == 0
-    assert limits.llm_timeout_seconds == 1.0
-
-
-def test_clamped_history_is_usable_as_a_deque_maxlen() -> None:
-    """The concrete failure clamping prevents."""
-    import collections
-
-    limits = from_settings({"_fair_max_history": "-1"})
-    collections.deque(maxlen=limits.max_history_cycles)
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        fairness_module, "active_profile", lambda: broken,
+    )
+    assert from_settings({"_scored": "1"}).max_actions_per_decision == 15

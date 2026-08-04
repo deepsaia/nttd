@@ -272,7 +272,11 @@ def test_the_lenient_path_warns_rather_than_refusing(tmp_path: Path) -> None:
 def test_a_scored_run_records_the_profile_version(tmp_path: Path) -> None:
     """Two runs under different profiles are not comparable, so the record says."""
     settings = scenario_to_settings(load(_write(tmp_path, scored=True)), strict=True)
-    assert settings["_profile_version"] == "1"
+    # Derived from the rules rather than hand-written, so it cannot be forgotten when
+    # they change. Its value is a digest; what matters is that it is present and
+    # tracks the active profile.
+    assert settings["_profile_version"] == active_profile().version
+    assert len(settings["_profile_version"]) == 12
 
 
 def test_free_play_records_no_profile_version(tmp_path: Path) -> None:
@@ -349,21 +353,28 @@ def test_the_examples_agree_on_every_locked_setting() -> None:
     assert locked_emissions[0] == locked_emissions[1]
 
 
-def test_the_defaults_file_covers_every_locked_setting() -> None:
-    """An author who includes it must inherit conformance, not partial conformance."""
-    text = (_BENCHMARK_DIR / "defaults.conf").read_text()
-    for key in LOCKED_SETTINGS:
-        assert f"{key} =" in text, f"benchmark/defaults.conf does not set {key}"
+def test_the_profile_is_the_only_copy_of_the_locked_values() -> None:
+    """There was a second copy, config/benchmark/defaults.conf, which scenarios
+    included. It was byte-identical to the locked block and kept in sync only by a
+    test, so it was deleted: omitting a locked key now inherits the profile, and
+    scenario_to_settings emits the profile's value.
+    """
+    assert not (_BENCHMARK_DIR / "defaults.conf").exists(), (
+        "a second copy of the locked values is back; the profile is the authority"
+    )
 
 
-def test_the_defaults_file_sets_nothing_that_may_vary() -> None:
-    """Pinning a ranged dimension there would remove a choice the profile allows."""
-    for line in (_BENCHMARK_DIR / "defaults.conf").read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        key = stripped.split("=")[0].strip()
-        assert key not in VARIABLE_SETTINGS, f"{key} may vary; do not fix it in defaults"
+def test_an_example_scenario_restates_no_locked_value() -> None:
+    """An example that restated them would teach authors to duplicate the rules."""
+    for example in _EXAMPLES:
+        text = (_BENCHMARK_DIR / f"{example}.conf").read_text()
+        body = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("#")
+        )
+        for key in LOCKED_SETTINGS:
+            assert f"{key} " not in body and f"{key}=" not in body, (
+                f"{example}.conf sets locked value {key}; remove it to inherit"
+            )
 
 
 def test_the_example_documents_every_allowed_range() -> None:
@@ -407,7 +418,7 @@ def test_narrowing_a_range_by_hand_refuses_a_previously_valid_world(
     """The operator lever: restrict the board without touching code."""
     narrowed = tmp_path / "profile.conf"
     narrowed.write_text(
-        'profile {\n  version = "narrow"\n'
+        "profile {\n"
         "  locked {\n" + "".join(
             f"    {key} = " + (str(value) if isinstance(value, int) else f'"{value}"') + "\n"
             for key, value in LOCKED_SETTINGS.items()
@@ -418,7 +429,9 @@ def test_narrowing_a_range_by_hand_refuses_a_previously_valid_world(
         "  }\n  scenario_allowlist = []\n}\n"
     )
     profile = load_profile(narrowed)
-    assert profile.version == "narrow"
+    assert profile.version != active_profile().version, (
+        "narrowing the rules must change the recorded version"
+    )
 
     # 512x512 sub-arctic hilly was admitted by the shipped profile.
     problems = profile.deviations(
@@ -443,7 +456,7 @@ def test_an_allowlist_restricts_scoring_to_a_fixed_slate(tmp_path: Path) -> None
     """For a seasonal competition or a freeze, where the board needs a known slate."""
     path = tmp_path / "profile.conf"
     path.write_text(
-        'profile {\n  version = "slate"\n  locked { variety = "none" }\n'
+        'profile {\n  locked { variety = "none" }\n'
         '  allowed { landscape = ["temperate"] }\n'
         '  scenario_allowlist = ["benchmark-t2-example"]\n}\n'
     )
@@ -479,14 +492,19 @@ def test_a_profile_with_no_rules_falls_back(tmp_path: Path) -> None:
     """An empty locked/allowed pair would admit every world, which is never the
     intent of editing the file -- far likelier a truncation or a bad merge."""
     path = tmp_path / "profile.conf"
-    path.write_text('profile {\n  version = "x"\n  locked {}\n  allowed {}\n}\n')
+    path.write_text("profile {\n  locked {}\n  allowed {}\n}\n")
     assert load_profile(path).source == "built-in fallback"
 
 
-def test_the_profile_version_is_recorded_from_the_file(tmp_path: Path) -> None:
-    """A rules change that does not bump the version silently mixes incomparable
-    rows, so the version a result carries must come from the file."""
+def test_the_profile_version_is_derived_from_the_rules(tmp_path: Path) -> None:
+    """A hand-written version has to be remembered, and the one time it is not, two
+    runs admitted under different rules look equally comparable. Hashing the rules
+    means the recorded version changes exactly when they do."""
     assert active_profile().version == PROFILE_VERSION
+
+    changed = load_profile(tmp_path / "absent.conf")
+    changed.locked["starting_year"] = 1960
+    assert changed.version != PROFILE_VERSION
 
 
 def test_every_allowed_key_is_a_recorded_leaderboard_column() -> None:

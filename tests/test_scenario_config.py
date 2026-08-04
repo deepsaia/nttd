@@ -393,36 +393,44 @@ def test_validation_no_warnings_on_valid_config(caplog: pytest.LogCaptureFixture
     assert len(warnings) == 0, f"Unexpected warnings: {[r.message for r in warnings]}"
 
 
-def test_strict_rejects_non_numeric_fairness_value(tmp_path: Any) -> None:
-    """It must be a ScenarioConfigError, not a raw ValueError.
+def test_strict_refuses_a_scenario_fairness_block(tmp_path: Any) -> None:
+    """How much a contestant may do is operator policy, not a scenario's choice.
 
-    The casts used to run while building the checks tuple, so a non-numeric value
-    escaped as ValueError and `nttd benchmark` did not catch it.
+    Left in the scenario it would vary between tasks that are otherwise identical,
+    and a contestant writing their own conforming scenario would be setting their own
+    budget. Refused rather than ignored, so an author is told where it went.
     """
     from nttd.config.scenario_config import ScenarioConfigError
 
-    path = tmp_path / "nan.conf"
+    path = tmp_path / "fair.conf"
     path.write_text(
         'scenario { map { size_x = 256, size_y = 256 }, '
-        'fairness { poll_interval = "abc" } }'
+        'fairness { max_actions_per_decision = 200 } }'
     )
-    with pytest.raises(ScenarioConfigError, match="poll_interval"):
+    with pytest.raises(ScenarioConfigError, match="operator policy"):
         scenario_to_settings(load(path), strict=True)
 
 
-def test_strict_rejects_configuring_the_observation_mode(tmp_path: Any) -> None:
-    """A scored run always observes fully, so the key is refused rather than
-    silently overruled at runtime.
-    """
+def test_the_refusal_points_at_the_profile(tmp_path: Any) -> None:
     from nttd.config.scenario_config import ScenarioConfigError
 
-    path = tmp_path / "obs.conf"
+    path = tmp_path / "fair.conf"
     path.write_text(
-        'scenario { map { size_x = 256, size_y = 256 }, '
-        'fairness { observation_mode = "minimal" } }'
+        'scenario { map { size_x = 256 }, fairness { poll_interval = 0.5 } }'
     )
-    with pytest.raises(ScenarioConfigError, match="not configurable"):
+    with pytest.raises(ScenarioConfigError) as excinfo:
         scenario_to_settings(load(path), strict=True)
+    assert "config/benchmark/profile.conf" in str(excinfo.value)
+
+
+def test_no_fairness_keys_are_emitted(tmp_path: Any) -> None:
+    """The _fair_* settings are gone: the limit is read from the profile at session
+    start, so carrying it through session settings would be a second copy a client
+    could try to supply."""
+    path = tmp_path / "plain.conf"
+    path.write_text('scenario { map { size_x = 256, size_y = 256 } }')
+    settings = scenario_to_settings(load(path), strict=True)
+    assert not [key for key in settings if key.startswith("_fair_")]
 
 
 def test_an_unknown_top_level_key_is_ignored(tmp_path: Any) -> None:
