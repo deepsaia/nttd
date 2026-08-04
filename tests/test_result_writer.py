@@ -216,3 +216,41 @@ def test_capability_digest_reflects_the_vocabulary(tmp_path: Path) -> None:
     with patch.object(result_writer, "KNOWN_ACTIONS", {"build_road_stop"}):
         changed = result_writer.capability_digest()
     assert changed != baseline
+
+
+# ---------------------------------------------------------------------------
+# Golden status and the disclosed world dimensions
+# ---------------------------------------------------------------------------
+
+
+def test_every_written_key_is_in_the_schema(tmp_path: Path) -> None:
+    """pa.Table.from_pylist with an explicit schema DROPS unknown keys silently.
+
+    Adding a column to the row dict without adding it to _SCHEMA therefore produces
+    a result that looks written and is not, which is how a newly added column first
+    went missing. Comparing the two sets makes that failure loud.
+    """
+    from nttd.db.result_writer import _SCHEMA
+
+    rows = _write(tmp_path)
+    assert set(rows[0]) == set(_SCHEMA.names)
+
+
+def test_the_varying_dimensions_are_recorded(tmp_path: Path) -> None:
+    """They are permitted to differ between scored runs only because of this."""
+    rows = _write(tmp_path, dimensions={
+        "size_x": "512", "size_y": "512", "landscape": "sub-arctic",
+        "terrain_type": "mountainous", "profile_version": "1",
+    })
+    assert rows[0]["map_size_x"] == 512
+    assert rows[0]["landscape"] == "sub-arctic"
+    assert rows[0]["terrain_type"] == "mountainous"
+    assert rows[0]["profile_version"] == "1"
+
+
+def test_absent_dimensions_record_as_absent_not_guessed(tmp_path: Path) -> None:
+    """An older session recovered without _dim_ keys must not invent a world."""
+    rows = _write(tmp_path)
+    assert rows[0]["map_size_x"] == 0
+    assert rows[0]["landscape"] == ""
+    assert rows[0]["profile_version"] == ""

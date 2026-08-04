@@ -53,6 +53,14 @@ _SCHEMA = pa.schema([
     ("scenario_version", pa.string()),
     ("map_seed", pa.int64()),
     ("settings_digest", pa.string()),
+    # The world settings a scored scenario is allowed to vary. They may differ
+    # between scored runs only because they are disclosed here: a reader comparing
+    # two rows needs to see that one was 512x512 mountainous.
+    ("map_size_x", pa.int32()),
+    ("map_size_y", pa.int32()),
+    ("landscape", pa.string()),
+    ("terrain_type", pa.string()),
+    ("profile_version", pa.string()),
     # Run shape
     ("runtime_mode", pa.string()),
     ("end_reason", pa.string()),
@@ -84,9 +92,7 @@ _SCHEMA = pa.schema([
     # contestant was allowed to do, so a reader cannot compare two results without
     # knowing them.
     ("fairness_enforced", pa.bool_()),
-    ("poll_interval", pa.float64()),
-    ("max_actions_per_cycle", pa.int32()),
-    ("llm_timeout_seconds", pa.float64()),
+    ("max_actions_per_decision", pa.int32()),
     ("observation_mode", pa.string()),
     # Actions the budget refused. A contestant who ran into the ceiling played a
     # different run from one who never approached it, so the count is recorded.
@@ -175,6 +181,7 @@ class ResultWriter:
         capability: dict[str, Any] | None = None,
         fairness: dict[str, Any] | None = None,
         budget: dict[str, Any] | None = None,
+        dimensions: dict[str, str] | None = None,
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
 
@@ -188,6 +195,10 @@ class ResultWriter:
                 run was scored and whether it stayed within the participant tier.
             fairness: The effective pacing and budget limits the run was held to.
             budget: Action-budget usage, including how many actions were refused.
+            dimensions: The world settings a scored scenario is allowed to vary, in
+                readable form. Recorded because they are permitted to differ only on
+                condition of being disclosed: a reader comparing two rows needs to
+                see that one was 512x512 mountainous.
         """
         if not scores:
             logger.warning("Session %s: no company scores, result.parquet not written", session_id)
@@ -205,6 +216,7 @@ class ResultWriter:
         attest = capability or {}
         limits = fairness or {}
         spend = budget or {}
+        dims = dimensions or {}
         blocked_ops = attest.get("blocked_operations") or []
 
         rows: list[dict[str, Any]] = []
@@ -226,6 +238,12 @@ class ResultWriter:
                 "scenario_version": task.scenario_version if task else "",
                 "map_seed": task.seed if (task and task.seed is not None) else -1,
                 "settings_digest": task.settings_digest if task else "",
+                # The permitted-to-vary dimensions, as leaderboard columns.
+                "map_size_x": int(dims.get("size_x", 0) or 0),
+                "map_size_y": int(dims.get("size_y", 0) or 0),
+                "landscape": dims.get("landscape", ""),
+                "terrain_type": dims.get("terrain_type", ""),
+                "profile_version": dims.get("profile_version", ""),
                 "runtime_mode": runtime_mode,
                 "end_reason": end_reason,
                 "wall_seconds": round(wall_seconds, 2),
@@ -248,9 +266,9 @@ class ResultWriter:
                 "blocked_operations": ",".join(blocked_ops),
                 "capability_digest": capability_digest(),
                 "fairness_enforced": bool(limits.get("enforced", False)),
-                "poll_interval": float(limits.get("poll_interval", 0.0)),
-                "max_actions_per_cycle": int(limits.get("max_actions_per_cycle", 0)),
-                "llm_timeout_seconds": float(limits.get("llm_timeout_seconds", 0.0)),
+                "max_actions_per_decision": int(
+                    limits.get("max_actions_per_decision", 0)
+                ),
                 "observation_mode": str(limits.get("observation_mode", "")),
                 "budget_refused_actions": int(spend.get("total_refused", 0)),
                 "nttd_git_sha": git_sha,

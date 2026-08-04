@@ -1,29 +1,37 @@
-"""Per-company action budget for the REST path.
+"""Per-company action budget: a ceiling on one submission.
 
-``FairnessConfig`` binds at agent registration, so it only limits contestants who
-drive the gameloop. A contestant posting straight to ``/actions/submit`` had no
-pacing limit and no per-cycle ceiling, and ``submit-batch`` and ``interpret``
-accepted unbounded lists. Every bundled example uses that path, so in practice the
-budget bound almost nobody.
+A ceiling on how many actions one submission may carry: 15 by default, enough for a
+route -- loan, two stations, a connection, a vehicle, orders -- with room to spare.
 
-This enforces the same limits where actions enter the server.
+That is the whole rule, and it applies to both modes. A submission is variable-length
+in either: real-time, a contestant posts whatever batch it has decided on; stepped, it
+accumulates actions while paused and flushes them when it steps. The ceiling bounds
+the batch; it does not dictate its size.
 
-Why per COMPANY rather than per agent: scoring is per company, and several agents
-legitimately share one -- the shipped 3-agent scenario puts road, air, and water all
-on company 0. A per-agent budget would hand a 3-agent entry three times the actions
-of a 1-agent entry on the same scenario.
+Two other bounds were tried and dropped:
 
-The window is a sliding count rather than a token bucket: the question a benchmark
-needs answered is "how many actions did this company take in the last
-poll_interval", which is what a per-cycle ceiling means once cycles are not the unit
-of submission.
+  * A RATE limit, as a sliding wall-clock window of N actions per interval. At 15 per
+    10s a 30-minute real-time run allowed about 2,700 actions against about 900 for
+    the same task played stepped, so it made the two modes threefold incomparable
+    while presenting itself as a fairness guarantee. It also bounded rhythm rather
+    than work: an agent that idled nine seconds and burst fifteen passed, while one
+    that paced evenly hit the same ceiling.
+
+  * A TOTAL for the run. Stepped mode already has a natural denominator -- the step --
+    and ``max_heartbeats`` bounds how many there are, so the run is bounded without
+    one. How many of its 15 a policy actually spends per step is then the policy's own
+    optimisation problem, which is exactly what an RL or ES entry is being scored on.
+    Imposing a second total would score the platform's guess at the answer instead.
+
+Per COMPANY rather than per agent, because scoring is per company and several
+contestant loops legitimately share one. A per-loop ceiling would hand a 3-loop entry
+three times the actions of a single-loop entry on the same task.
 """
 
 from __future__ import annotations
 
 import logging
-import time
-from collections import defaultdict, deque
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -41,81 +49,62 @@ class BudgetDecision:
 
 @dataclass
 class ActionBudget:
-    """Sliding-window action budget, keyed by company.
+    """Per-submission action ceiling, with usage tracked per company.
 
     Attributes:
-        max_actions: Actions permitted per window. 0 disables the limit.
-        window_seconds: Length of the sliding window, normally poll_interval.
+        max_per_submission: Ceiling on a single submit or batch. 0 disables it.
         enforced: Whether to refuse. False records usage without blocking, so an
             unscored session still reports what a contestant did.
     """
 
-    max_actions: int = 0
-    window_seconds: float = 0.0
+    max_per_submission: int = 0
     enforced: bool = False
-    _timestamps: dict[int, deque[float]] = field(
-        default_factory=lambda: defaultdict(deque), repr=False,
-    )
+    _used: dict[int, int] = field(default_factory=lambda: defaultdict(int), repr=False)
     _refused: dict[int, int] = field(default_factory=lambda: defaultdict(int), repr=False)
 
-    def _prune(self, company_id: int, now: float) -> deque[float]:
-        """Drop timestamps that have fallen out of the window."""
-        stamps = self._timestamps[company_id]
-        cutoff = now - self.window_seconds
-        while stamps and stamps[0] < cutoff:
-            stamps.popleft()
-        return stamps
-
     def check(self, company_id: int, count: int = 1) -> BudgetDecision:
-        """Test whether ``count`` more actions fit, without consuming budget."""
-        if not self.enforced or self.max_actions <= 0 or self.window_seconds <= 0:
-            return BudgetDecision(allowed=True)
+        """Test whether a submission of ``count`` actions is permitted."""
+        used = self._used[company_id]
+        if not self.enforced or self.max_per_submission <= 0:
+            return BudgetDecision(allowed=True, used=used, limit=self.max_per_submission)
 
-        stamps = self._prune(company_id, time.monotonic())
-        used = len(stamps)
-        if used + count <= self.max_actions:
-            return BudgetDecision(allowed=True, used=used, limit=self.max_actions)
+        if count > self.max_per_submission:
+            self._refused[company_id] += count
+            return BudgetDecision(
+                allowed=False,
+                reason=(
+                    f"{count} actions in one submission exceeds the ceiling of "
+                    f"{self.max_per_submission}; split it across decisions"
+                ),
+                used=used,
+                limit=self.max_per_submission,
+            )
 
-        self._refused[company_id] += count
-        return BudgetDecision(
-            allowed=False,
-            reason=(
-                f"company {company_id} has used {used} of {self.max_actions} actions "
-                f"in the last {self.window_seconds:g}s; {count} more would exceed the "
-                f"scenario's budget"
-            ),
-            used=used,
-            limit=self.max_actions,
-        )
+        return BudgetDecision(allowed=True, used=used, limit=self.max_per_submission)
 
     def consume(self, company_id: int, count: int = 1) -> None:
-        """Record ``count`` actions against a company's window.
+        """Record ``count`` actions against a company.
 
-        Recorded even when unenforced, so ``usage`` reflects what happened.
+        Recorded even when unenforced, so ``usage`` reflects what happened. Action
+        counts also come from the recorder's own tally of actions.parquet; this one
+        exists so the budget can report refusals alongside them.
         """
-        now = time.monotonic()
-        stamps = self._prune(company_id, now)
-        stamps.extend([now] * max(0, count))
+        self._used[company_id] += max(0, count)
 
     def usage(self) -> dict[str, object]:
         """Flatten for the result record."""
         return {
             "enforced": self.enforced,
-            "max_actions_per_window": self.max_actions,
-            "window_seconds": self.window_seconds,
+            "max_per_submission": self.max_per_submission,
+            "used_actions": {str(k): v for k, v in sorted(self._used.items())},
             "refused_actions": {str(k): v for k, v in sorted(self._refused.items())},
             "total_refused": sum(self._refused.values()),
         }
 
 
 def from_fairness(fairness: object) -> ActionBudget:
-    """Build a budget from a FairnessConfig.
-
-    The window is poll_interval, so the REST path is held to the same rate a
-    gameloop agent is: max_actions_per_cycle actions per poll_interval.
-    """
+    """Build a budget from the profile's fairness limits."""
     return ActionBudget(
-        max_actions=int(getattr(fairness, "max_actions_per_cycle", 0) or 0),
-        window_seconds=float(getattr(fairness, "poll_interval", 0.0) or 0.0),
+        max_per_submission=int(getattr(fairness, "max_actions_per_decision", 0) or 0),
         enforced=bool(getattr(fairness, "enforced", False)),
     )

@@ -94,6 +94,15 @@ def result(
         "scenario", f"{first['scenario_id'] or '?'} v{first['scenario_version'] or '?'}"
     )
     provenance.add_row("map seed", str(seed) if seed >= 0 else "[yellow]random[/]")
+    # The dimensions a scored scenario may vary. Shown because a reader comparing
+    # two results needs them: they are permitted to differ only on being disclosed.
+    if first["map_size_x"]:
+        provenance.add_row(
+            "world",
+            f"{first['map_size_x']}x{first['map_size_y']} {first['landscape']} "
+            f"{first['terrain_type']}"
+            + (f" (profile v{first['profile_version']})" if first["profile_version"] else ""),
+        )
     provenance.add_row("settings digest", first["settings_digest"] or "[yellow]none[/]")
     provenance.add_row(
         "nttd revision",

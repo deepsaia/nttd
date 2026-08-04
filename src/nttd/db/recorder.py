@@ -27,9 +27,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from nttd.db.parquet_writer import ParquetWriter
-from nttd.gameloop.schemas import CycleRecord
 from nttd.schemas.action_envelope import ActionEnvelope
-from nttd.schemas.action_result import ActionResult
+from nttd.schemas.action_result import ActionResult, ActionStatus
+from nttd.schemas.cycle_record import CycleRecord
 from nttd.schemas.snapshot import StateSnapshot
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,10 @@ class SessionRecorder:
 
         # Per-type buffers
         self._action_buffer: list[dict[str, Any]] = []
+        # Running per-company action tally, keyed by company_id. Survives the
+        # buffer being flushed, so it covers the whole session rather than
+        # whatever happens to be unflushed at the end.
+        self._action_counts: dict[int, dict[str, int]] = {}
         self._cycle_buffer: list[dict[str, Any]] = []
         self._event_buffer: list[dict[str, Any]] = []
 
@@ -296,6 +300,13 @@ class SessionRecorder:
             except (ValueError, TypeError):
                 submitted_at = datetime.now(timezone.utc)
 
+        # Tally as we write, so the result record's action counts come from nttd's
+        # own log rather than the contestant's word. Counted here rather than read
+        # back from actions.parquet at session end because the buffer may not have
+        # flushed yet, and a count that silently omits the last few seconds of a run
+        # is worse than no count.
+        self._tally_action(envelope.company_id, str(result.status))
+
         self._action_buffer.append({
             "action_id": envelope.action_id,
             "agent_id": envelope.metadata.get("participant_id", ""),
@@ -307,6 +318,25 @@ class SessionRecorder:
             "parameters_json": json.dumps(envelope.parameters, default=str),
             "submitted_at": submitted_at or datetime.now(timezone.utc),
         })
+
+    def _tally_action(self, company_id: int, status: str) -> None:
+        """Count an action against its company.
+
+        Companies below 0 are skipped: operator-tier refusals are logged against -1
+        and belong in the run's attestation, not in any contestant's action count.
+        """
+        if company_id is None or company_id < 0:
+            return
+        counts = self._action_counts.setdefault(
+            int(company_id), {"total_actions": 0, "successful_actions": 0},
+        )
+        counts["total_actions"] += 1
+        if status == ActionStatus.SUCCESS.value:
+            counts["successful_actions"] += 1
+
+    def action_counts(self) -> dict[int, dict[str, int]]:
+        """Observed action counts per company, for the result record."""
+        return {cid: dict(counts) for cid, counts in self._action_counts.items()}
 
     # ------------------------------------------------------------------
     # Event recording

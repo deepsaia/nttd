@@ -79,5 +79,10 @@ def test_cli_app_exposes_main_and_registers_commands() -> None:
         assert expected in registered, f"`nttd {expected}` is not registered"
 
     groups = {group.name for group in app.registered_groups}
-    for expected in ("session", "agent", "mas"):
-        assert expected in groups, f"`nttd {expected} ...` is not registered"
+    assert "session" in groups, "`nttd session ...` is not registered"
+
+    # `nttd agent` and `nttd mas` are gone deliberately: they registered an agent
+    # with nttd's own gameloop and started its cycle loop. nttd no longer runs
+    # anybody's agent, so a command to register one would be a command to nowhere.
+    assert "agent" not in groups
+    assert "mas" not in groups

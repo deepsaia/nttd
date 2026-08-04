@@ -13,6 +13,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from nttd.config.benchmark_profile import (
+    DIMENSION_PREFIX,
+    LOCKED_SETTINGS,
+    PROFILE_VERSION,
+    VARIABLE_SETTINGS,
+)
+from nttd.config.benchmark_profile import deviations as profile_deviations
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "scenario.conf"
@@ -74,14 +82,6 @@ _TOWN_NAMES_MAP: dict[str, str] = {
     "swiss": "16", "danish": "17", "turkish": "18", "italian": "19",
     "catalan": "20", "english_additional": "21",
 }
-
-# Snapshot class names an unscored scenario may give an agent. A scored run always
-# observes fully, so this only guards the per-agent observation_mode in agents[].
-# Kept in sync with _BUILTIN_PRESETS in state/snapshot_class.py by a test, rather
-# than imported, so config validation does not depend on runtime state.
-_KNOWN_OBSERVATION_MODES: frozenset[str] = frozenset({
-    "minimal", "compact", "agent", "mas_rail", "standard", "full",
-})
 
 # OpenTTD water_borders bitmask: NE=1, SE=2, SW=4, NW=8, random=16
 _WATER_BORDER_NE = 1
@@ -231,9 +231,14 @@ def _log2(n: int) -> int:
     return result
 
 
-def _compute_water_borders(map_cfg: Any) -> str:
-    """Compute OpenTTD water_borders bitmask from the map config tree."""
-    edges = _get(map_cfg, "map_edges", "random")
+def _compute_water_borders(map_cfg: Any, edges: str = "") -> str:
+    """Compute OpenTTD water_borders bitmask from the map config tree.
+
+    ``edges`` may be passed in when the caller has already resolved it against the
+    benchmark profile, so a scored run that omits map_edges gets the profile value
+    rather than this function's own default.
+    """
+    edges = edges or _get(map_cfg, "map_edges", "random")
     if edges == "random":
         return str(_WATER_BORDER_RANDOM)
     if edges == "all_water":
@@ -272,7 +277,7 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
 
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
-    agents: Any = None,
+    scored: bool = False, scenario_id: str = "",
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -287,12 +292,20 @@ def _validate_config(
             substituted -- a typo must not quietly produce a different world.
         rt: The ``runtime`` config tree, if present.
         fair: The ``fairness`` config tree, if present.
-        agents: The ``agents`` list, if present.
+        scored: Whether the scenario is scored, which additionally holds the map
+            to the benchmark profile.
 
     Raises:
         ScenarioConfigError: In strict mode, if any problem was found.
     """
     problems: list[str] = []
+
+    # --- Benchmark profile: a scored world may not be arbitrary ---------------
+    # Only for scored scenarios. Free play sets whatever it likes, because there
+    # is no comparison to protect.
+    if scored:
+        for problem in profile_deviations(m, _get, scenario_id):
+            _report(strict, problems, "%s", problem)
 
     # --- Enum validation ---
     _enum_checks: list[tuple[str, dict[str, str], Any]] = [
@@ -404,55 +417,16 @@ def _validate_config(
                 "(calendar mode is fixed at 12)", minutes,
             )
 
-    # --- Fairness limits: ranges that keep a run comparable -----------------
+    # --- fairness: not a scenario concern --------------------------------------
+    # These decide how much a contestant may do, so they belong to the operator, not
+    # to whoever wrote the scenario. They live in config/benchmark/profile.conf.
+    # Refused rather than ignored, so an author is told rather than silently overruled.
     if fair is not None:
-        # A floor below ~0.5s is not a pacing limit, it is a busy loop. The measured
-        # slowest decide time is ~11s, so the upper bounds are generous.
-        #
-        # The cast happens inside the loop: doing it while building the checks made a
-        # non-numeric value escape as a raw ValueError, which the CLI does not catch
-        # because it expects ScenarioConfigError.
-        checks = (
-            ("poll_interval", float, 10.0, 0.5, 600.0),
-            ("max_actions_per_cycle", int, 15, 1, 200),
-            ("max_history_cycles", int, 10, 0, 1000),
-            ("llm_timeout_seconds", float, 120.0, 1.0, 3600.0),
+        _report(
+            strict, problems,
+            "scenario fairness { ... } is not read: how much a contestant may do is "
+            "operator policy, set in config/benchmark/profile.conf. Remove the block.",
         )
-        for name, cast, default, low, high in checks:
-            raw = _get(fair, name, default)
-            try:
-                value = cast(raw)
-            except (TypeError, ValueError):
-                _report(
-                    strict, problems,
-                    "fairness.%s = %r is not a %s", name, raw, cast.__name__,
-                )
-                continue
-            if not low <= value <= high:
-                _report(
-                    strict, problems,
-                    "fairness.%s = %s is outside range [%s, %s]", name, value, low, high,
-                )
-
-        # observation_mode is not a fairness knob: a scored run always receives the
-        # complete entitled game state and leaves filtering to the agent. Refuse it
-        # here so an author is told rather than quietly overruled at runtime.
-        if _get(fair, "observation_mode", None) is not None:
-            _report(
-                strict, problems,
-                "fairness.observation_mode is not configurable: a scored run always "
-                "observes fully and the agent filters. Remove the key.",
-            )
-
-    # --- Per-agent observation_mode: must name a real snapshot class ---------
-    for i, agent in enumerate(agents or []):
-        mode = _get(agent, "observation_mode", None) or _get(agent, "snapshot_class", None)
-        if mode is not None and str(mode) not in _KNOWN_OBSERVATION_MODES:
-            _report(
-                strict, problems,
-                "agents[%d].observation_mode = %r is not a known snapshot class. Valid: %s",
-                i, mode, ", ".join(sorted(_KNOWN_OBSERVATION_MODES)),
-            )
 
     if problems:
         raise ScenarioConfigError(
@@ -491,10 +465,26 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     m = _get(raw, "map", {})
     co = _get(raw, "companies", {})
 
+    scored = bool(_get(raw, "scored", False))
+    # Resolved before validation because the allowlist is checked against it. Falls
+    # back to name, matching how _scenario_id is emitted below.
+    scenario_name = str(_get(raw, "name", "default"))
+    scenario_id = str(_get(raw, "id", scenario_name))
     _validate_config(
         m, co, strict=strict, rt=_get(raw, "runtime", {}),
-        fair=_get(raw, "fairness", None), agents=_get(raw, "agents", None),
+        fair=_get(raw, "fairness", None),
+        scored=scored, scenario_id=scenario_id,
     )
+
+    # For a scored run, an omitted locked setting takes the profile's value rather
+    # than this module's own default. Validation already treats omission as
+    # conformance, so without this the two disagreed: a scored scenario that left
+    # out starting_year passed validation and then generated a 1960 world while its
+    # record claimed profile conformance.
+    def _map(key: str, fallback: Any) -> Any:
+        if scored and key in LOCKED_SETTINGS:
+            return _get(m, key, LOCKED_SETTINGS[key])
+        return _get(m, key, fallback)
 
     # Map dimensions (log2)
     settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", 256))))
@@ -510,32 +500,38 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         settings["game_creation.custom_terrain_type"] = str(int(_get(m, "custom_terrain_height", 30)))
 
     # Variety and smoothness
-    settings["game_creation.variety"] = _VARIETY_MAP.get(_get(m, "variety", "none"), "0")
-    settings["game_creation.tgen_smoothness"] = _SMOOTHNESS_MAP.get(_get(m, "smoothness", "smooth"), "1")
+    settings["game_creation.variety"] = _VARIETY_MAP.get(_map("variety", "none"), "0")
+    settings["game_creation.tgen_smoothness"] = _SMOOTHNESS_MAP.get(
+        _map("smoothness", "smooth"), "1",
+    )
 
     # Water
-    settings["game_creation.amount_of_rivers"] = _RIVERS_MAP.get(_get(m, "rivers", "medium"), "2")
-    sea_level = _get(m, "sea_level", "medium")
+    settings["game_creation.amount_of_rivers"] = _RIVERS_MAP.get(_map("rivers", "medium"), "2")
+    sea_level = _map("sea_level", "medium")
     settings["difficulty.quantity_sea_lakes"] = _SEA_LEVEL_MAP.get(sea_level, "2")
     if sea_level == "custom":
         settings["game_creation.custom_sea_level"] = str(int(_get(m, "custom_sea_level", 1)))
-    settings["game_creation.water_borders"] = _compute_water_borders(m)
+    settings["game_creation.water_borders"] = _compute_water_borders(
+        m, _map("map_edges", "random"),
+    )
 
     # Towns
-    settings["game_creation.town_name"] = _TOWN_NAMES_MAP.get(_get(m, "town_names", "english"), "0")
-    num_towns = _get(m, "number_towns", "normal")
+    settings["game_creation.town_name"] = _TOWN_NAMES_MAP.get(
+        _map("town_names", "english"), "0",
+    )
+    num_towns = _map("number_towns", "normal")
     settings["difficulty.number_towns"] = _TOWNS_MAP.get(num_towns, "2")
     if num_towns == "custom":
         settings["game_creation.custom_town_number"] = str(int(_get(m, "custom_town_number", 1)))
 
     # Industries
-    industry = _get(m, "industry_density", "normal")
+    industry = _map("industry_density", "normal")
     settings["difficulty.industry_density"] = _INDUSTRY_MAP.get(industry, "4")
     if industry == "custom":
         settings["game_creation.custom_industry_number"] = str(int(_get(m, "custom_industry_number", 1)))
 
     # Start date
-    settings["game_creation.starting_year"] = str(int(_get(m, "starting_year", 1960)))
+    settings["game_creation.starting_year"] = str(int(_map("starting_year", 1960)))
 
     # Map generation seed.
     #
@@ -559,13 +555,6 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     # Fairness limits. Operator-owned, because they decide how much a contestant
     # may do: declared on AgentConfig they would let each contestant set their own
     # budget. Enforced only for a scored session -- see config/fairness.py.
-    fair = _get(raw, "fairness", {})
-    if fair:
-        settings["_fair_poll_interval"] = str(float(_get(fair, "poll_interval", 10.0)))
-        settings["_fair_max_actions"] = str(int(_get(fair, "max_actions_per_cycle", 15)))
-        settings["_fair_max_history"] = str(int(_get(fair, "max_history_cycles", 10)))
-        settings["_fair_llm_timeout"] = str(float(_get(fair, "llm_timeout_seconds", 120.0)))
-
     # Timekeeping. These are the only real pacing knobs and they apply at map
     # generation only -- see RuntimeConfig. They move the calendar clock, not the
     # economy clock, so they change when vehicles become available rather than how
@@ -578,12 +567,32 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     )
 
     # Scenario identity. Carried through so the session can compute a task_id
-    # without re-reading the config file.
-    scenario_name = str(_get(raw, "name", "default"))
-    settings["_scenario_id"] = str(_get(raw, "id", scenario_name))
+    # without re-reading the config file. Resolved above, before validation, because
+    # the profile's optional allowlist is checked against it.
+    settings["_scenario_id"] = scenario_id
     settings["_scenario_version"] = str(_get(raw, "version", "1"))
-    if _get(raw, "scored", False):
+    if scored:
         settings["_scored"] = "1"
+        # Which profile admitted the run. Recorded rather than assumed, so a result
+        # stays readable after the rules in config/benchmark/profile.conf change:
+        # two runs under different profile versions are not comparable, and the
+        # record says so.
+        settings["_profile_version"] = PROFILE_VERSION
+
+    # The dimensions a scored scenario is allowed to vary, emitted so the result
+    # record can carry them as leaderboard columns -- they are what lets a reader
+    # judge whether two runs are comparable, which is the whole reason they are
+    # permitted to differ rather than locked.
+    #
+    # A distinct "_dim_" prefix rather than "_map_", for two reasons: "_map_seed" is
+    # a load-bearing key that SessionRuntime reads for the -G flag, and these are
+    # display projections of settings already emitted as game_creation.* and
+    # difficulty.*. The projection is excluded from task_id, since an identity hash
+    # must not depend on the format of a display copy.
+    for key in sorted(VARIABLE_SETTINGS):
+        value = _get(m, key, None)
+        if value is not None:
+            settings[f"{DIMENSION_PREFIX}{key}"] = str(value)
 
     # nttd-internal runtime metadata (prefixed with _)
     settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))
