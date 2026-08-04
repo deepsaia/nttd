@@ -35,7 +35,6 @@ import pytest
 from nttd.api import action_routes, observation_routes
 from nttd.constants import KNOWN_ACTIONS, READ_ONLY_GS_ACTIONS
 
-
 # ---------------------------------------------------------------------------
 # 1. The loop needs no gameloop registration
 # ---------------------------------------------------------------------------
