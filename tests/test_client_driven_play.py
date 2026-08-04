@@ -34,6 +34,7 @@ import pytest
 
 from nttd.api import action_routes, observation_routes
 from nttd.constants import KNOWN_ACTIONS, READ_ONLY_GS_ACTIONS
+from nttd.schemas.action_result import ActionStatus
 
 # ---------------------------------------------------------------------------
 # 1. The loop needs no gameloop registration
@@ -121,10 +122,88 @@ def test_gs_query_still_refuses_mutators() -> None:
 # enforcement point. These assert it is wired where actions actually enter.
 
 
-def test_submit_consumes_from_the_action_budget() -> None:
+def test_both_paths_share_one_admission_check() -> None:
+    """The property that closes the bypass.
+
+    The REST route checked operator tier, the allowlist, and the budget inline; the
+    stepped loop checked nothing and called send_gamescript directly, so
+    set_max_loan executed in a scored session and left no audit row. Verified live:
+    five queued operator actions ran with only the two REST attempts logged.
+
+    Both now call actions.gate.admit, so there is one copy of the rules.
+    """
+    from nttd.runtime import orchestrator
+
+    for module, name in (
+        (inspect.getsource(action_routes.submit_action), "REST submit"),
+        (inspect.getsource(orchestrator.Orchestrator._execute_actions), "stepped flush"),
+    ):
+        assert "admit(" in module, f"{name} does not go through the shared gate"
+
+
+def test_the_gate_refuses_operator_tier() -> None:
+    from nttd.actions.gate import admit
+
+    admission = admit("set_max_loan", company_id=0)
+    assert admission.allowed is False
+    assert admission.status is ActionStatus.REJECTED
+    assert "operator-tier" in admission.error
+
+
+def test_the_gate_refuses_an_unknown_action() -> None:
+    from nttd.actions.gate import admit
+
+    admission = admit("teleport_vehicle", company_id=0)
+    assert admission.allowed is False
+    assert admission.status is ActionStatus.REJECTED
+    assert "Unknown action_type" in admission.error
+
+
+def test_the_gate_admits_a_participant_action() -> None:
+    from nttd.actions.gate import admit
+
+    assert admit("build_road_stop", company_id=0).allowed is True
+
+
+def test_the_gate_refuses_an_over_budget_submission() -> None:
+    """BLOCKED rather than REJECTED: the scenario's limit, not the contestant's
+    mistake, and a reader of the action log needs to tell those apart."""
+    from nttd.actions.gate import admit
+    from nttd.runtime.action_budget import ActionBudget
+
+    budget = ActionBudget(max_per_submission=5, enforced=True)
+    admission = admit("build_road_stop", company_id=0, budget=budget, count=50)
+    assert admission.allowed is False
+    assert admission.status is ActionStatus.BLOCKED
+
+
+def test_the_gate_checks_the_vocabulary_before_the_budget() -> None:
+    """A refusal that never had a chance of succeeding must not spend budget."""
+    from nttd.actions.gate import admit
+    from nttd.runtime.action_budget import ActionBudget
+
+    budget = ActionBudget(max_per_submission=5, enforced=True)
+    admit("set_max_loan", company_id=0, budget=budget, count=99)
+    assert budget.usage()["total_refused"] == 0, (
+        "an operator-tier refusal charged the budget"
+    )
+
+
+def test_the_gate_does_not_consume_budget() -> None:
+    """Checked but not consumed: the caller consumes where the action goes ahead, so
+    a refusal on another path cannot spend it."""
+    from nttd.actions.gate import admit
+    from nttd.runtime.action_budget import ActionBudget
+
+    budget = ActionBudget(max_per_submission=15, enforced=True)
+    admit("build_road_stop", company_id=0, budget=budget)
+    assert budget.usage()["used_actions"] == {}
+
+
+def test_submit_consumes_after_admission() -> None:
     source = inspect.getsource(action_routes.submit_action)
-    assert "action_budget.check" in source
-    assert "action_budget.consume" in source
+    assert source.index("admit(") < source.index("consume(")
+    assert source.index("consume(") < source.index("send_gamescript")
 
 
 def test_a_batch_is_checked_against_its_full_count() -> None:
@@ -133,41 +212,23 @@ def test_a_batch_is_checked_against_its_full_count() -> None:
     assert "count=len(envelopes)" in source
 
 
-def test_the_budget_is_checked_before_the_action_executes() -> None:
-    """A budget consulted after the fact bounds nothing."""
-    source = inspect.getsource(action_routes.submit_action)
-    assert source.index("action_budget.check") < source.index("send_gamescript")
+def test_the_stepped_path_records_its_actions() -> None:
+    """It recorded nothing, so a run driven by steps produced no actions.parquet."""
+    from nttd.runtime import orchestrator
+
+    source = inspect.getsource(orchestrator.Orchestrator._execute_actions)
+    assert "_record_action(" in source
 
 
-# ---------------------------------------------------------------------------
-# 4. Everything is recorded, refusals included
-# ---------------------------------------------------------------------------
+def test_a_refusal_is_recorded_on_both_paths() -> None:
+    from nttd.runtime import orchestrator
 
-
-def test_successful_and_failed_actions_are_recorded() -> None:
-    source = inspect.getsource(action_routes.submit_action)
-    assert "_record(" in source
-
-
-def test_budget_refusals_are_recorded() -> None:
-    """An auditor reading the log should see the whole attempt, not just a count."""
-    source = inspect.getsource(action_routes.submit_action)
-    blocked = source.index("Action budget exceeded")
-    assert "_record(" in source[blocked:blocked + 600]
-
-
-def test_operator_tier_attempts_are_recorded() -> None:
-    """Reaching for a superhuman power is exactly what an auditor wants to see."""
-    source = inspect.getsource(action_routes.submit_action)
-    assert "OPERATOR_ACTIONS" in source
-    rejected = source.index("OPERATOR_ACTIONS")
-    assert "_record(" in source[rejected:rejected + 1200]
-
-
-def test_the_recorder_is_not_allowed_to_fail_the_action() -> None:
-    """The audit trail must not be able to break the run it describes."""
-    source = inspect.getsource(action_routes._record)
-    assert "except Exception" in source
+    rest = inspect.getsource(action_routes.submit_action)
+    stepped = inspect.getsource(orchestrator.Orchestrator._execute_actions)
+    for source, name in ((rest, "REST"), (stepped, "stepped")):
+        refused = source.index("admission.allowed")
+        window = source[refused:refused + 900]
+        assert "_record" in window, f"{name} does not record a refusal"
 
 
 # ---------------------------------------------------------------------------
