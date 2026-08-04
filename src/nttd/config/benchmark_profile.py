@@ -1,4 +1,4 @@
-"""The benchmark profile: which worlds a scored run may be played on.
+"""The benchmark profile: which worlds a scored run may be played on, and how fast.
 
 OpenTTD exposes enough generation knobs that two scored runs can face worlds with
 nothing in common. Left free they do not produce a leaderboard, they produce a
@@ -6,7 +6,7 @@ collection of unrelated anecdotes: a run on a flat 128x128 map with many towns i
 not the same task as one on a mountainous 1024x1024 map with few, and ranking them
 in one table asserts a comparison that was never made.
 
-So a scored scenario is limited to a profile with three parts:
+So a scored scenario is limited to a profile with four parts:
 
   * LOCKED settings must hold exactly. These are the ones where a difference
     changes the problem without being visible to a reader of the board -- nobody
@@ -16,6 +16,9 @@ So a scored scenario is limited to a profile with three parts:
   * ALLOWED settings may differ, within an enumerated set of values, because they
     are recorded as leaderboard columns. A reader can see that one run was 512x512
     mountainous and another 256x256 flat, and discount the comparison themselves.
+
+  * FAIRNESS limits how much a contestant may do and how fast, enforced as a
+    sliding window on the action route.
 
   * An optional SCENARIO ALLOWLIST, empty by default, for when the board needs a
     fixed slate rather than open admission.
@@ -28,6 +31,10 @@ constants below are a fallback for when the file is missing or unreadable, so a
 checkout without it still refuses an obviously non-conforming scenario rather than
 silently accepting everything.
 
+A scored scenario need not restate the locked settings: omitting one means inheriting
+it, and ``scenario_to_settings`` emits the profile's value. So there is exactly one
+copy of the rules and nothing to drift.
+
 Conformance is normally the whole credential. There is deliberately no registry of
 blessed scenarios in the default posture: a curated list would have to enumerate
 roughly 4,700 size/landscape/terrain/tier combinations before seeds, and would make
@@ -37,6 +44,8 @@ it. ``task_id`` -- derived from world content -- is what groups comparable runs.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -66,7 +75,15 @@ _FALLBACK_ALLOWED: dict[str, tuple[Any, ...]] = {
     "terrain_type": ("very_flat", "flat", "hilly", "mountainous", "alpinist"),
 }
 
-_FALLBACK_VERSION = "1"
+# Actions permitted in one submission, per company. See config/fairness.py.
+_FALLBACK_FAIRNESS: dict[str, float] = {"max_actions_per_decision": 15}
+
+# Bounds on the fairness values themselves. Clamped rather than defaulted, so an
+# operator's intent survives as far as it is expressible. A ceiling of 0 would refuse
+# every action; one in the thousands is not a ceiling.
+_FAIRNESS_LIMITS: dict[str, tuple[float, float]] = {
+    "max_actions_per_decision": (1, 200),
+}
 
 # Prefix for the emitted display copies of the allowed dimensions. These are
 # projections of settings already carried as game_creation.* and difficulty.*, kept
@@ -75,15 +92,16 @@ _FALLBACK_VERSION = "1"
 # shift because a display copy was reformatted or a dimension was added.
 DIMENSION_PREFIX = "_dim_"
 
+_VERSION_LENGTH = 12
+
 
 class BenchmarkProfile:
     """The loaded admission rules for scored scenarios.
 
     Attributes:
-        version: Recorded in every result, so a reader can tell that two rows were
-            admitted under different rules.
         locked: Settings that must match exactly.
         allowed: Settings that may vary, mapped to their permitted values.
+        fairness: The action ceiling, as ``max_actions_per_decision``.
         scenario_allowlist: Scenario ids permitted to be scored. Empty means any
             conforming scenario may be, which is the default.
         source: Where the rules came from, for diagnostics.
@@ -91,17 +109,39 @@ class BenchmarkProfile:
 
     def __init__(
         self,
-        version: str,
         locked: dict[str, Any],
         allowed: dict[str, tuple[Any, ...]],
+        fairness: dict[str, float] | None = None,
         scenario_allowlist: tuple[str, ...] = (),
         source: str = "",
     ) -> None:
-        self.version = version
         self.locked = locked
         self.allowed = allowed
+        self.fairness = fairness or dict(_FALLBACK_FAIRNESS)
         self.scenario_allowlist = scenario_allowlist
         self.source = source
+
+    @property
+    def version(self) -> str:
+        """A digest of the rules, recorded in every result.
+
+        Derived rather than declared. A hand-written version number has to be
+        remembered, and the one time it is not, two runs admitted under different
+        rules appear equally comparable. Hashing the rules themselves means the
+        recorded version changes exactly when the rules do.
+        """
+        payload = json.dumps(
+            {
+                "locked": {key: str(value) for key, value in sorted(self.locked.items())},
+                "allowed": {
+                    key: [str(v) for v in values]
+                    for key, values in sorted(self.allowed.items())
+                },
+                "fairness": {key: str(value) for key, value in sorted(self.fairness.items())},
+            },
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()[:_VERSION_LENGTH]
 
     @property
     def variable_settings(self) -> frozenset[str]:
@@ -128,13 +168,14 @@ class BenchmarkProfile:
 
         for key, required in self.locked.items():
             # The default is the required value: a scored scenario that omits the key
-            # inherits the profile rather than being refused for silence.
+            # inherits the profile rather than being refused for silence, and
+            # scenario_to_settings emits the same value.
             actual = get(map_cfg, key, required)
             if not _matches(actual, required):
                 problems.append(
                     f"map.{key} = {actual!r} is fixed at {required!r} for a scored "
-                    f"run. Include config/benchmark/defaults.conf, or drop "
-                    f"scored = true to play it freely."
+                    f"run. Remove the key to inherit it, or drop scored = true to "
+                    f"play it freely."
                 )
 
         for key, allowed in self.allowed.items():
@@ -179,6 +220,27 @@ def _matches(actual: Any, expected: Any) -> bool:
     return str(actual) == str(expected)
 
 
+def _clamped_fairness(raw: dict[str, Any]) -> dict[str, float]:
+    """Read the fairness block, clamping each value into a usable range."""
+    values: dict[str, float] = dict(_FALLBACK_FAIRNESS)
+    for key, (low, high) in _FAIRNESS_LIMITS.items():
+        if key not in raw:
+            continue
+        try:
+            value = float(raw[key])
+        except (TypeError, ValueError):
+            logger.warning("Ignoring non-numeric fairness.%s = %r", key, raw[key])
+            continue
+        clamped = min(max(value, low), high)
+        if clamped != value:
+            logger.warning(
+                "fairness.%s = %s is outside [%s, %s]; clamped to %s",
+                key, value, low, high, clamped,
+            )
+        values[key] = clamped
+    return values
+
+
 def load_profile(path: Path | str | None = None) -> BenchmarkProfile:
     """Read the profile from HOCON, falling back to the built-in values.
 
@@ -188,9 +250,9 @@ def load_profile(path: Path | str | None = None) -> BenchmarkProfile:
     """
     profile_path = Path(path) if path else PROFILE_PATH
     fallback = BenchmarkProfile(
-        version=_FALLBACK_VERSION,
         locked=dict(_FALLBACK_LOCKED),
         allowed=dict(_FALLBACK_ALLOWED),
+        fairness=dict(_FALLBACK_FAIRNESS),
         source="built-in fallback",
     )
 
@@ -208,18 +270,17 @@ def load_profile(path: Path | str | None = None) -> BenchmarkProfile:
         raw = ConfigFactory.parse_file(str(profile_path))
         node = raw.get("profile", raw)
 
-        locked = {key: value for key, value in dict(node.get("locked", {})).items()}
+        locked = dict(node.get("locked", {}))
         allowed = {
-            key: tuple(value)
-            for key, value in dict(node.get("allowed", {})).items()
+            key: tuple(value) for key, value in dict(node.get("allowed", {})).items()
         }
         if not locked or not allowed:
             raise ValueError("profile.conf must define both locked and allowed")
 
         return BenchmarkProfile(
-            version=str(node.get("version", _FALLBACK_VERSION)),
             locked=locked,
             allowed=allowed,
+            fairness=_clamped_fairness(dict(node.get("fairness", {}))),
             scenario_allowlist=tuple(str(x) for x in node.get("scenario_allowlist", [])),
             source=str(profile_path),
         )
