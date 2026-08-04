@@ -47,12 +47,19 @@ def session_create(
     settings = scenario_to_settings(cfg)
     session_name = name or (cfg.name if cfg.name != "default" else generate_session_name())
 
+    # config_path only: the server loads the scenario itself. Sending the whole
+    # settings dict is refused with a 400, because it carries _scored and the
+    # profile-derived keys that a client may not supply -- they decide whether the
+    # run is scored and what bounds it.
     resp = requests.post(
         f"{url}/v1/operator/admin/sessions/new",
-        json={"name": session_name, "settings": settings, "config_path": config or ""},
+        json={"name": session_name, "settings": {}, "config_path": config or ""},
         timeout=10,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        console.print(f"[red]Could not create session:[/] {resp.status_code}")
+        console.print(f"[dim]{resp.text[:300]}[/]")
+        raise typer.Exit(code=1)
     session_id = resp.json()["session_id"]
 
     # End conditions are stored in settings and applied at session start
@@ -133,7 +140,7 @@ def session_start(
     ))
     console.print(
         f"\nJoin game: [cyan]127.0.0.1:{data.get('game_port')}[/]"
-        f"\nRegister agents: [cyan]nttd agent register -s {session_id} ...[/]"
+        f"\nAttach your runner: [cyan]nttd session attach {session_id}[/]"
     )
 
 
