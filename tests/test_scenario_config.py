@@ -425,43 +425,15 @@ def test_strict_rejects_configuring_the_observation_mode(tmp_path: Any) -> None:
         scenario_to_settings(load(path), strict=True)
 
 
-def test_strict_refuses_an_agents_block(tmp_path: Any) -> None:
-    """A scenario defines the world; which agents play it belongs to the runner.
-
-    The block used to name a model, a framework, and a path to a prompt function
-    inside examples/, which made the task definition depend on the contestant's own
-    code -- so a contestant running their own system could not use the scenario as
-    written.
-    """
-    from nttd.config.scenario_config import ScenarioConfigError
-
-    path = tmp_path / "withagents.conf"
+def test_an_unknown_top_level_key_is_ignored(tmp_path: Any) -> None:
+    """A scenario names the world and the rules. Anything else, including the
+    agents list old scenarios carried, is simply not read: which agents play a task
+    belongs to the runner's own config, and nttd runs no agents."""
+    path = tmp_path / "extra.conf"
     path.write_text(
         'scenario { map { size_x = 256, size_y = 256 }, '
         'agents = [ { agent_id = "a", model = "gpt-5.2" } ] }'
     )
-    with pytest.raises(ScenarioConfigError, match="not part of a scenario"):
-        scenario_to_settings(load(path), strict=True)
-
-
-def test_the_refusal_says_where_agents_belong(tmp_path: Any) -> None:
-    """An author copying an old scenario should be told, not silently run without
-    the agents they configured."""
-    from nttd.config.scenario_config import ScenarioConfigError
-
-    path = tmp_path / "withagents.conf"
-    path.write_text(
-        'scenario { map { size_x = 256 }, agents = [ { agent_id = "a" } ] }'
-    )
-    with pytest.raises(ScenarioConfigError) as excinfo:
-        scenario_to_settings(load(path), strict=True)
-    message = str(excinfo.value)
-    assert "runner" in message
-    assert "participant routes" in message
-
-
-def test_a_scenario_without_agents_is_unaffected(tmp_path: Any) -> None:
-    path = tmp_path / "clean.conf"
-    path.write_text('scenario { map { size_x = 256, size_y = 256 } }')
     settings = scenario_to_settings(load(path), strict=True)
     assert settings["game_creation.map_x"] == "8"
+    assert not any("agent" in key for key in settings)

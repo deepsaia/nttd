@@ -271,7 +271,7 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
 
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
-    agents: Any = None, scored: bool = False, scenario_id: str = "",
+    scored: bool = False, scenario_id: str = "",
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -286,7 +286,6 @@ def _validate_config(
             substituted -- a typo must not quietly produce a different world.
         rt: The ``runtime`` config tree, if present.
         fair: The ``fairness`` config tree, if present.
-        agents: The ``agents`` list, if present.
         scored: Whether the scenario is scored, which additionally holds the map
             to the benchmark profile.
 
@@ -452,23 +451,6 @@ def _validate_config(
                 "observes fully and the agent filters. Remove the key.",
             )
 
-    # --- agents[]: belongs to the runner, not the task -----------------------
-    # A scenario defines the WORLD. It used to also carry an agents list naming a
-    # model, a framework, and a path to a prompt function inside examples/ -- which
-    # made the task definition depend on the contestant's code, and meant a
-    # contestant running their own system could not use the scenario as written.
-    #
-    # Refused rather than ignored, so an author who copies an old scenario is told
-    # where the block went instead of quietly running without their agents.
-    if agents:
-        _report(
-            strict, problems,
-            "agents = [...] is not part of a scenario: a scenario defines the world, "
-            "and which agents play it belongs to your runner's own config. nttd does "
-            "not run agents -- your loop connects over the participant routes. "
-            "Remove the block.",
-        )
-
     if problems:
         raise ScenarioConfigError(
             f"{len(problems)} problem(s) in scenario config (strict mode): "
@@ -513,7 +495,7 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     scenario_id = str(_get(raw, "id", scenario_name))
     _validate_config(
         m, co, strict=strict, rt=_get(raw, "runtime", {}),
-        fair=_get(raw, "fairness", None), agents=_get(raw, "agents", None),
+        fair=_get(raw, "fairness", None),
         scored=scored, scenario_id=scenario_id,
     )
 
