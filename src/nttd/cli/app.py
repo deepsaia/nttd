@@ -16,6 +16,9 @@ Commands:
   nttd session stop          Stop a running session
   nttd session list          List all sessions
   nttd session status        Show detailed session status
+  nttd session attach        Show what a runner needs to play a session
+  nttd scenario validate     Check a scenario without running it
+  nttd scenario profile      Show the rules a scored scenario must satisfy
   nttd benchmark             Stand up a benchmark task and wait for it to end
   nttd result                Show the scored result record for a session
   nttd analyze               Generate session analysis reports
@@ -26,6 +29,7 @@ import typer
 from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
 from nttd.cli.result_command import result
+from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
 from nttd.cli.session_commands import session_app
 
@@ -36,6 +40,7 @@ app = typer.Typer(
 )
 
 app.add_typer(session_app, name="session")
+app.add_typer(scenario_app, name="scenario")
 app.command()(server)
 app.command()(benchmark)
 app.command()(result)
