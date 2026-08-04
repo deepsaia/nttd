@@ -279,7 +279,7 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
 
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
-    agents: Any = None, scored: bool = False,
+    agents: Any = None, scored: bool = False, scenario_id: str = "",
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -307,7 +307,7 @@ def _validate_config(
     # Only for scored scenarios. Free play sets whatever it likes, because there
     # is no comparison to protect.
     if scored:
-        for problem in profile_deviations(m, _get):
+        for problem in profile_deviations(m, _get, scenario_id):
             _report(strict, problems, "%s", problem)
 
     # --- Enum validation ---
@@ -508,10 +508,14 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     co = _get(raw, "companies", {})
 
     scored = bool(_get(raw, "scored", False))
+    # Resolved before validation because the allowlist is checked against it. Falls
+    # back to name, matching how _scenario_id is emitted below.
+    scenario_name = str(_get(raw, "name", "default"))
+    scenario_id = str(_get(raw, "id", scenario_name))
     _validate_config(
         m, co, strict=strict, rt=_get(raw, "runtime", {}),
         fair=_get(raw, "fairness", None), agents=_get(raw, "agents", None),
-        scored=scored,
+        scored=scored, scenario_id=scenario_id,
     )
 
     # Map dimensions (log2)
@@ -596,15 +600,16 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     )
 
     # Scenario identity. Carried through so the session can compute a task_id
-    # without re-reading the config file.
-    scenario_name = str(_get(raw, "name", "default"))
-    settings["_scenario_id"] = str(_get(raw, "id", scenario_name))
+    # without re-reading the config file. Resolved above, before validation, because
+    # the profile's optional allowlist is checked against it.
+    settings["_scenario_id"] = scenario_id
     settings["_scenario_version"] = str(_get(raw, "version", "1"))
     if scored:
         settings["_scored"] = "1"
-        # Which profile the run was held to. Recorded rather than assumed, so a
-        # result stays readable after LOCKED_SETTINGS changes: two runs under
-        # different profile versions are not comparable, and the record says so.
+        # Which profile admitted the run. Recorded rather than assumed, so a result
+        # stays readable after the rules in config/benchmark/profile.conf change:
+        # two runs under different profile versions are not comparable, and the
+        # record says so.
         settings["_profile_version"] = PROFILE_VERSION
 
     # The dimensions a scored scenario is allowed to vary, emitted so the result
