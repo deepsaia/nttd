@@ -83,6 +83,13 @@ _TOWN_NAMES_MAP: dict[str, str] = {
     "catalan": "20", "english_additional": "21",
 }
 
+# Runtime modes the orchestrator can actually start. Kept here rather than
+# imported from schemas.game so config validation does not depend on runtime
+# state; a test asserts the two agree.
+_KNOWN_RUNTIME_MODES: frozenset[str] = frozenset({
+    "async_realtime", "heartbeat", "stepped", "assisted",
+})
+
 # OpenTTD water_borders bitmask: NE=1, SE=2, SW=4, NW=8, random=16
 _WATER_BORDER_NE = 1
 _WATER_BORDER_SE = 2
@@ -277,7 +284,7 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
 
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
-    scored: bool = False, scenario_id: str = "",
+    scored: bool = False, scenario_id: str = "", ec: Any = None,
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -291,6 +298,8 @@ def _validate_config(
             an ill-specified task instance is refused rather than silently
             substituted -- a typo must not quietly produce a different world.
         rt: The ``runtime`` config tree, if present.
+        ec: The ``end_conditions`` config tree, if present. Needed because
+            which bounds make sense depends on the runtime mode.
         fair: The ``fairness`` config tree, if present.
         scored: Whether the scenario is scored, which additionally holds the map
             to the benchmark profile.
@@ -393,6 +402,33 @@ def _validate_config(
     if max_loan < 0:
         _report(strict, problems, "max_loan = %d must be non-negative", max_loan)
 
+    # --- Runtime mode, and what may bound a run in it ------------------------
+    if rt is not None:
+        mode = str(_get(rt, "mode", "async_realtime"))
+        if mode not in _KNOWN_RUNTIME_MODES:
+            _report(
+                strict, problems,
+                "Unknown runtime.mode value %r. Valid: %s",
+                mode, ", ".join(sorted(_KNOWN_RUNTIME_MODES)),
+            )
+        # A stepped run pauses between steps so a policy may deliberate for as long
+        # as it likes. Wall time therefore measures how slow the contestant's
+        # hardware is, not how much of the game was played, and ending on it would
+        # cut off a slow policy mid-run. max_heartbeats is the bound that means
+        # something when the clock only moves on request.
+        # Default True, matching TimeLimitConfig: a scenario that omits time_limit
+        # still loads with it ENABLED at 60 minutes. Reading it as False here meant a
+        # stepped scenario that simply said nothing passed validation and then ran
+        # under a wall clock anyway.
+        elif mode == "stepped" and ec is not None and _get(ec, "time_limit.enabled", True):
+            _report(
+                strict, problems,
+                "runtime.mode = 'stepped' with end_conditions.time_limit enabled: a "
+                "stepped run pauses between steps, so wall time measures the "
+                "contestant's hardware rather than the run. Bound it with "
+                "end_conditions.max_heartbeats instead.",
+            )
+
     # --- Timekeeping: units enum, and the mode-dependent range on the year ---
     if rt is not None:
         units = str(_get(rt, "timekeeping_units", "calendar"))
@@ -474,6 +510,7 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         m, co, strict=strict, rt=_get(raw, "runtime", {}),
         fair=_get(raw, "fairness", None),
         scored=scored, scenario_id=scenario_id,
+        ec=_get(raw, "end_conditions", None),
     )
 
     # For a scored run, an omitted locked setting takes the profile's value rather
@@ -599,6 +636,12 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     snapshot_interval = int(_get(rt, "snapshot_interval_days", 1))
     if snapshot_interval != 1:
         settings["_snapshot_interval_days"] = str(snapshot_interval)
+    # Game-days per step. Carried through because the orchestrator otherwise keeps
+    # its 30-day default: a scenario asking for 15 silently got 30, so every step
+    # covered twice the intended world and the run hit its horizon in half the
+    # steps. The scenario owns the step size, so it has to reach the runtime.
+    hb = _get(raw, "heartbeat", {})
+    settings["_heartbeat_interval_days"] = str(int(_get(hb, "interval_days", 30)))
     settings["_screenshot_interval_seconds"] = str(int(_get(rt, "screenshot_interval_seconds", 0)))
     settings["_screenshot_type"] = str(_get(rt, "screenshot_type", "minimap"))
     settings["_save_interval_seconds"] = str(int(_get(rt, "save_interval_seconds", 0)))
