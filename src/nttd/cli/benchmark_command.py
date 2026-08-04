@@ -15,7 +15,6 @@ from nttd.cli.helpers import (
     console,
     format_end_conditions_brief,
     get_base_url,
-    load_instructions,
 )
 
 
@@ -31,53 +30,39 @@ def _get_raw(cfg: Any, path: str, default: Any = None) -> Any:
         return default
 
 
-def _parse_agents(raw: Any) -> list[dict[str, Any]]:
-    """Parse agent definitions from the raw ConfigTree into dicts."""
-    agents_raw = _get_raw(raw, "agents", [])
-    if not agents_raw:
-        return []
+def _print_attach_instructions(
+    url: str, session_id: str, participants: list[dict[str, Any]],
+) -> None:
+    """Show a contestant how to attach its own loop to this session.
 
-    agents: list[dict[str, Any]] = []
-    for a in agents_raw:
-        agent_dict: dict[str, Any] = {
-            "agent_id": a.get("agent_id", "agent"),
-            "company_id": int(a.get("company_id", 0)),
-            "nttd_framework": a.get("nttd_framework", "openai"),
-            "model": a.get("model", "gpt-4o"),
-            "agent_type": a.get("agent_type", "road"),
-            "instructions": a.get("instructions", ""),
-            "instructions_file": a.get("instructions_file", ""),
-            "observation_mode": a.get("observation_mode") or a.get("snapshot_class") or "compact",
-            "include_finance": bool(a.get("include_finance", False)),
-            "poll_interval": float(a.get("poll_interval", 5.0)),
-            "observation_tools": bool(a.get("observation_tools", True)),
-            "max_actions_per_cycle": int(a.get("max_actions_per_cycle", 10)),
-            "max_history_cycles": int(a.get("max_history_cycles", 10)),
-            "api_key_env": a.get("api_key_env", "OPENAI_API_KEY"),
-        }
-        mas_transport = a.get("mas_transport", None)
-        if mas_transport:
-            agent_dict["mas_transport"] = {
-                "protocol": mas_transport.get("protocol", "custom"),
-                "mas_framework": mas_transport.get("mas_framework", "generic"),
-                "endpoint": mas_transport.get("endpoint", ""),
-                "stream_endpoint": mas_transport.get("stream_endpoint", ""),
-                "config_path": mas_transport.get("config_path", ""),
-                "timeout": float(mas_transport.get("timeout", 60.0)),
-                "retry_count": int(mas_transport.get("retry_count", 2)),
-                "retry_backoff": float(mas_transport.get("retry_backoff", 1.0)),
-            }
-            auth = mas_transport.get("auth", None)
-            if auth:
-                agent_dict["mas_transport"]["auth"] = {
-                    "type": auth.get("type", "none"),
-                    "token_env": auth.get("token_env", ""),
-                }
-        mas_config = a.get("mas_config", None)
-        if mas_config and "mas_transport" not in agent_dict:
-            agent_dict["mas_config"] = mas_config
-        agents.append(agent_dict)
-    return agents
+    nttd runs no agent, so a benchmark is only useful if the operator can see the
+    session id and the per-company token. The token is addressing rather than a
+    secret: it answers "which company is this action for" in a form the caller
+    cannot lie about.
+    """
+    if not participants:
+        console.print(
+            "[yellow]No participant tokens issued.[/] The session started with no "
+            "contestant company, so nothing can play it."
+        )
+        return
+
+    table = Table(title="Attach your runner")
+    table.add_column("Company", justify="right")
+    table.add_column("Participant token")
+    for entry in participants:
+        table.add_row(str(entry.get("company_id", "?")), str(entry.get("token", "")))
+    console.print(table)
+
+    first = participants[0]
+    console.print(
+        "\n[bold]Your loop observes and acts over these routes:[/]\n"
+        f"  GET  {url}/v1/participant/sessions/{session_id}/state/full\n"
+        f"  POST {url}/v1/participant/sessions/{session_id}/actions/submit\n"
+        f"  header: X-Participant-Token: {first.get('token', '')}\n"
+        "[dim]The company is derived from the token, so a company_id in the body is "
+        "ignored.[/]\n"
+    )
 
 
 def benchmark(
@@ -87,17 +72,23 @@ def benchmark(
     output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output directory for results")] = None,
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
-    """Run a full benchmark from HOCON config.
+    """Stand up a benchmark task and wait for it to end.
 
-    Creates a session, starts OpenTTD, registers agents from config,
-    starts all agent loops, waits for end condition, and exports results.
+    Creates the session, starts OpenTTD on the scenario's world, prints the
+    participant token a contestant needs, then waits for an end condition and writes
+    the result record.
+
+    It does NOT run an agent. The contestant owns the observe/decide/act loop and
+    connects over the participant REST routes -- an LLM agent, a multi-agent system,
+    an RL policy, or an ES candidate, all through the same surface. Attach yours to
+    the printed session id and token while this waits.
 
     Config validation is strict: an ill-specified scenario is refused rather than
     silently run with substituted defaults.
 
     Examples:
-      nttd benchmark --config config/scenario.conf
-      nttd benchmark --config config/scenario.conf --seed 1001 --output results/
+      nttd benchmark --config config/benchmark/t2_example.conf
+      nttd benchmark --config config/benchmark/t2_example.conf --seed 2002
     """
     import requests
 
@@ -134,9 +125,9 @@ def benchmark(
     ai_count = ai_opponents if ai_opponents >= 0 else int(settings.get("difficulty.max_no_competitors", "0"))
     effective_seed = settings.get("_map_seed")
 
-    # Parse agents from raw ConfigTree
-    raw = cfg._raw or {}
-    agents_list = _parse_agents(raw)
+    # One company per contestant. Multi-agent entries share a company, because
+    # scoring is per company and the runner decides how many loops attach to it.
+    agent_companies = 1
 
     if not effective_seed:
         console.print(
@@ -150,15 +141,29 @@ def benchmark(
         f"[bold]Seed:[/]         "
         + (f"[cyan]{effective_seed}[/]" if effective_seed else "[yellow]random[/]") + "\n"
         f"[bold]AI opponents:[/] {ai_count}\n"
-        f"[bold]Agents:[/]       {len(agents_list)}\n"
         + format_end_conditions_brief(cfg.end_conditions),
         title="Benchmark configuration",
     ))
 
-    # 2. Create session
+    # 2. Create session.
+    #
+    # config_path only: the server loads the scenario itself. Sending the whole
+    # settings dict is refused, because it carries _scored and _fair_* which a client
+    # may not supply -- they decide whether the run is scored and what bounds it.
+    #
+    # --seed is the one thing a caller may still override, since which world to play
+    # is the caller's choice while whether it is scored is not.
+    overrides: dict[str, str] = {}
+    if seed >= 0:
+        overrides["game_creation.generation_seed"] = str(seed)
+        overrides["_map_seed"] = str(seed)
     resp = requests.post(
         f"{url}/admin/sessions/new",
-        json={"name": f"benchmark_{cfg.name}", "settings": settings, "config_path": config},
+        json={
+            "name": f"benchmark_{cfg.name}",
+            "settings": overrides,
+            "config_path": config,
+        },
         timeout=10,
     )
     resp.raise_for_status()
@@ -172,7 +177,7 @@ def benchmark(
             json={
                 "mode": "newgame",
                 "ai_opponents": ai_count,
-                "agent_companies": len({a["company_id"] for a in agents_list}),
+                "agent_companies": agent_companies,
             },
             timeout=120,
         )
@@ -182,6 +187,12 @@ def benchmark(
         f"[green]Server started:[/] game_port=[cyan]{start_data.get('game_port')}[/] "
         f"pid={start_data.get('pid')}"
     )
+
+    # The contestant's loop runs elsewhere, so print what it needs to attach.
+    # Without this the token exists only in participants.json, which is a
+    # discoverability problem rather than a security one -- the file sits beside the
+    # runner anyway.
+    _print_attach_instructions(url, session_id, start_data.get("participants") or [])
 
     # 4. Set end conditions (must be after start -- runtime must exist)
     ec_payload = build_end_conditions_payload(cfg.end_conditions)
@@ -209,55 +220,7 @@ def benchmark(
         timeout=5,
     )
 
-    # 7. Register and start agents from config
-    for agent_cfg in agents_list:
-        agent_instructions = agent_cfg["instructions"]
-        if agent_cfg["instructions_file"]:
-            agent_instructions = load_instructions(agent_cfg["instructions_file"])
-
-        agent_payload: dict[str, Any] = {
-            "agent_id": agent_cfg["agent_id"],
-            "company_id": agent_cfg["company_id"],
-            "nttd_framework": agent_cfg["nttd_framework"],
-            "model": agent_cfg["model"],
-            "agent_type": agent_cfg["agent_type"],
-            "instructions": agent_instructions,
-            "observation_mode": agent_cfg["observation_mode"],
-            "include_finance": agent_cfg["include_finance"],
-            "poll_interval": agent_cfg["poll_interval"],
-            "observation_tools": agent_cfg["observation_tools"],
-            "max_actions_per_cycle": agent_cfg["max_actions_per_cycle"],
-            "max_history_cycles": agent_cfg["max_history_cycles"],
-            "api_key_env": agent_cfg["api_key_env"],
-        }
-        if "mas_transport" in agent_cfg:
-            agent_payload["mas_transport"] = agent_cfg["mas_transport"]
-        if "mas_config" in agent_cfg:
-            agent_payload["mas_config"] = agent_cfg["mas_config"]
-        resp = requests.post(
-            f"{url}/sessions/{session_id}/gameloop/agents/register",
-            json=agent_payload,
-            timeout=10,
-        )
-        if resp.ok:
-            console.print(
-                f"  [green]Registered:[/] {agent_cfg['agent_id']} "
-                f"(company {agent_cfg['company_id']}, {agent_cfg['model']})"
-            )
-        else:
-            console.print(f"  [red]Failed to register {agent_cfg['agent_id']}:[/] {resp.text}")
-            continue
-
-        resp = requests.post(
-            f"{url}/sessions/{session_id}/gameloop/agents/{agent_cfg['agent_id']}/start",
-            timeout=10,
-        )
-        if resp.ok:
-            console.print(f"  [green]Started:[/]    {agent_cfg['agent_id']}")
-        else:
-            console.print(f"  [red]Failed to start {agent_cfg['agent_id']}:[/] {resp.text}")
-
-    # 8. Monitor until end condition
+    # 7. Monitor until end condition
     console.print("\n[bold]Benchmark running[/] -- waiting for end condition...")
     console.print("[dim]Press Ctrl+C to stop early[/]\n")
 

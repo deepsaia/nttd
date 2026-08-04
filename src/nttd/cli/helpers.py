@@ -66,34 +66,6 @@ def check_server(base_url: str) -> None:
         raise typer.Exit(1)
 
 
-def load_instructions(path: str) -> str:
-    """Load agent instructions from a file or a python_file:function_name reference.
-
-    Supports:
-      - Plain text file: "prompts/bus.txt"
-      - Python callable: "examples/agent_instructions.py:get_bus_agent_prompt"
-    """
-    if ":" in path and not path.endswith(")"):
-        file_part, func_name = path.rsplit(":", 1)
-        file_path = Path(file_part)
-        if file_path.suffix == ".py" and file_path.exists():
-            import importlib.util
-
-            spec = importlib.util.spec_from_file_location("_instructions", str(file_path))
-            if spec and spec.loader:
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                func = getattr(mod, func_name, None)
-                if callable(func):
-                    result = func()
-                    return result if isinstance(result, str) else str(result)
-
-    file_path = Path(path)
-    if file_path.exists():
-        return file_path.read_text()
-
-    return path  # treat as inline instructions string
-
 
 def format_end_conditions_brief(ec: EndConditionsConfig) -> str:
     """Format end conditions as a brief summary string."""
