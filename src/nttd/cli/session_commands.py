@@ -47,12 +47,19 @@ def session_create(
     settings = scenario_to_settings(cfg)
     session_name = name or (cfg.name if cfg.name != "default" else generate_session_name())
 
+    # config_path only: the server loads the scenario itself. Sending the whole
+    # settings dict is refused with a 400, because it carries _scored and the
+    # profile-derived keys that a client may not supply -- they decide whether the
+    # run is scored and what bounds it.
     resp = requests.post(
-        f"{url}/admin/sessions/new",
-        json={"name": session_name, "settings": settings, "config_path": config or ""},
+        f"{url}/v1/operator/admin/sessions/new",
+        json={"name": session_name, "settings": {}, "config_path": config or ""},
         timeout=10,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        console.print(f"[red]Could not create session:[/] {resp.status_code}")
+        console.print(f"[dim]{resp.text[:300]}[/]")
+        raise typer.Exit(code=1)
     session_id = resp.json()["session_id"]
 
     # End conditions are stored in settings and applied at session start
@@ -109,7 +116,7 @@ def session_start(
 
     with console.status("Starting OpenTTD server..."):
         resp = requests.post(
-            f"{url}/admin/sessions/{session_id}/start",
+            f"{url}/v1/operator/admin/sessions/{session_id}/start",
             json=payload,
             timeout=30,
         )
@@ -133,7 +140,7 @@ def session_start(
     ))
     console.print(
         f"\nJoin game: [cyan]127.0.0.1:{data.get('game_port')}[/]"
-        f"\nRegister agents: [cyan]nttd agent register -s {session_id} ...[/]"
+        f"\nAttach your runner: [cyan]nttd session attach {session_id}[/]"
     )
 
 
@@ -149,7 +156,7 @@ def session_stop(
     url = base_url or get_base_url()
     check_server(url)
 
-    resp = requests.post(f"{url}/admin/sessions/{session_id}/stop", timeout=15)
+    resp = requests.post(f"{url}/v1/operator/admin/sessions/{session_id}/stop", timeout=15)
     if resp.status_code == 404:
         console.print(f"[red]Session {session_id} not found[/]")
         raise typer.Exit(1)
@@ -168,7 +175,7 @@ def session_list(
     url = base_url or get_base_url()
     check_server(url)
 
-    resp = requests.get(f"{url}/admin/sessions", timeout=10)
+    resp = requests.get(f"{url}/v1/operator/admin/sessions", timeout=10)
     resp.raise_for_status()
     data = resp.json()
     sessions = data.get("sessions", [])
@@ -208,7 +215,7 @@ def session_status(
     url = base_url or get_base_url()
     check_server(url)
 
-    resp = requests.get(f"{url}/admin/sessions/{session_id}", timeout=10)
+    resp = requests.get(f"{url}/v1/operator/admin/sessions/{session_id}", timeout=10)
     if resp.status_code == 404:
         console.print(f"[red]Session {session_id} not found[/]")
         raise typer.Exit(1)
@@ -240,7 +247,7 @@ def session_status(
 
     if running:
         try:
-            game_resp = requests.get(f"{url}/sessions/{session_id}/status", timeout=5)
+            game_resp = requests.get(f"{url}/v1/public/sessions/{session_id}/status", timeout=5)
             if game_resp.ok:
                 game = game_resp.json()
                 console.print(Panel(
@@ -252,3 +259,60 @@ def session_status(
                 ))
         except Exception:
             pass
+
+@session_app.command("attach")
+def session_attach(
+    session_id: Annotated[str, typer.Argument(help="Session ID")],
+    base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
+) -> None:
+    """Show what a runner needs to play this session.
+
+    nttd runs no agent, so a session is only useful once a contestant's own loop can
+    reach it. That needs the session id, a participant token, and the routes -- and
+    the token was previously visible only in the output of `session start`, or in
+    participants.json on disk.
+
+    Examples:
+      nttd session attach ses_20260804_120000_abcd1234
+    """
+    import requests
+
+    url = base_url or get_base_url()
+    check_server(url)
+
+    resp = requests.get(
+        f"{url}/v1/operator/admin/sessions/{session_id}/participants", timeout=10,
+    )
+    if not resp.ok:
+        console.print(f"[red]Could not read participants for[/] {session_id}")
+        console.print(f"[dim]{resp.text[:200]}[/]")
+        raise typer.Exit(code=1)
+
+    participants = resp.json().get("participants") or []
+    if not participants:
+        console.print(
+            f"[yellow]No participant tokens for[/] {session_id}.\n"
+            "The session started with no contestant company, so nothing can play it. "
+            "Start it with [cyan]--agent-companies 1[/]."
+        )
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"Attach a runner to {session_id}")
+    table.add_column("Company", justify="right")
+    table.add_column("Participant token")
+    for entry in participants:
+        table.add_row(str(entry.get("company_id", "?")), str(entry.get("token", "")))
+    console.print(table)
+
+    token = participants[0].get("token", "")
+    console.print(
+        "\n[bold]Real-time play[/] -- your loop observes and acts:\n"
+        f"  GET  {url}/v1/participant/sessions/{session_id}/state/full\n"
+        f"  POST {url}/v1/participant/sessions/{session_id}/actions/submit\n"
+        "\n[bold]Stepped play[/] -- for RL and ES, the world pauses between steps:\n"
+        f"  POST {url}/v1/participant/sessions/{session_id}/step/reset\n"
+        f"  POST {url}/v1/participant/sessions/{session_id}/step\n"
+        f"\n  header: [cyan]X-Participant-Token: {token}[/]\n"
+        "[dim]The company is derived from the token, so a company_id in the body is "
+        "ignored.[/]"
+    )

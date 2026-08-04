@@ -307,3 +307,53 @@ def test_every_outcome_is_recorded() -> None:
     no silent gaps for a verifier to trip over."""
     source = _code_only(inspect.getsource(Orchestrator._execute_actions))
     assert source.count("_record_action") >= 4
+
+
+# ---------------------------------------------------------------------------
+# The step size, and where the date comes from
+# ---------------------------------------------------------------------------
+
+
+def test_the_step_size_reaches_the_runtime() -> None:
+    """A scenario's heartbeat.interval_days was never emitted into settings, so the
+    orchestrator kept its 30-day default: a scenario asking for 15 silently got 30,
+    every step covered twice the intended world, and the run reached its horizon in
+    half the steps."""
+    from nttd.config.scenario_config import load, scenario_to_settings
+
+    settings = scenario_to_settings(
+        load(
+            __import__("pathlib").Path(__file__).parent.parent
+            / "config/benchmark/t2_stepped_example.conf",
+        ),
+        strict=True,
+    )
+    assert settings["_heartbeat_interval_days"] == "15"
+
+
+def test_the_step_size_is_applied_on_start_and_on_recovery() -> None:
+    """A restart that reverted the step size would change the task mid-run."""
+    from nttd.runtime import session_manager
+
+    source = _code_only(inspect.getsource(session_manager))
+    assert source.count("_apply_step_size(") >= 3, (
+        "expected the helper plus a call on both the start and recovery paths"
+    )
+
+
+def test_the_start_date_is_read_from_the_gamescript() -> None:
+    """world.game.game_date is fed by admin DATE packets, which arrive daily and
+    only while the game is running -- so a value read while paused is as old as the
+    pause. Measuring a step from it reported 150 days for a 15-day step,
+    intermittently, which is worse than always because the number looks plausible.
+    """
+    source = _code_only(inspect.getsource(Orchestrator.step))
+    assert "_authoritative_game_date" in source
+    assert "self.world.game.game_date" not in source.split("start_date")[1][:200]
+
+
+def test_reading_the_date_falls_back_to_the_cache() -> None:
+    """A step that cannot read the date should still advance."""
+    source = _code_only(inspect.getsource(Orchestrator._authoritative_game_date))
+    assert "except Exception" in source
+    assert "return self.world.game.game_date" in source

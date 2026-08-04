@@ -40,6 +40,23 @@ from nttd.runtime.session_runtime import SessionRuntime
 logger = logging.getLogger(__name__)
 
 
+def _apply_step_size(runtime: SessionRuntime, settings: dict[str, str]) -> None:
+    """Give the orchestrator the scenario's game-days-per-step.
+
+    Without this the orchestrator keeps its 30-day default, so a scenario asking for
+    15 silently got 30: every step covered twice the intended world and the run
+    reached its horizon in half the steps. Applied on recovery too, since a restart
+    that reverted the step size would change the task mid-run.
+    """
+    raw = settings.get("_heartbeat_interval_days")
+    if raw in (None, ""):
+        return
+    try:
+        runtime.orchestrator.set_heartbeat_interval(int(raw))
+    except (TypeError, ValueError):
+        logger.warning("Ignoring non-integer _heartbeat_interval_days=%r", raw)
+
+
 def _port_is_free(port: int) -> bool:
     """Check if a TCP port is available by attempting to bind to it."""
     try:
@@ -218,6 +235,7 @@ class SessionManager:
         runtime.fairness = fairness_from_settings(effective_settings)
         runtime.action_budget = budget_from_fairness(runtime.fairness)
         runtime.dimensions = dimensions_from_settings(effective_settings)
+        _apply_step_size(runtime, effective_settings)
         if runtime.scored_lock.scored:
             logger.info(
                 "Session %s is SCORED: game-mutating operator operations are refused",
@@ -508,6 +526,7 @@ class SessionManager:
             runtime.fairness = fairness_from_settings(stored)
             runtime.action_budget = budget_from_fairness(runtime.fairness)
             runtime.dimensions = dimensions_from_settings(stored)
+            _apply_step_size(runtime, stored)
             if runtime.scored_lock.scored:
                 logger.info("Recovered session %s is SCORED: lock restored", sid)
             if stored:

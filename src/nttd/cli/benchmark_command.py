@@ -158,7 +158,7 @@ def benchmark(
         overrides["game_creation.generation_seed"] = str(seed)
         overrides["_map_seed"] = str(seed)
     resp = requests.post(
-        f"{url}/admin/sessions/new",
+        f"{url}/v1/operator/admin/sessions/new",
         json={
             "name": f"benchmark_{cfg.name}",
             "settings": overrides,
@@ -173,7 +173,7 @@ def benchmark(
     # 3. Start session (spawn OpenTTD)
     with console.status("Starting OpenTTD server..."):
         resp = requests.post(
-            f"{url}/admin/sessions/{session_id}/start",
+            f"{url}/v1/operator/admin/sessions/{session_id}/start",
             json={
                 "mode": "newgame",
                 "ai_opponents": ai_count,
@@ -198,7 +198,7 @@ def benchmark(
     ec_payload = build_end_conditions_payload(cfg.end_conditions)
     if len(ec_payload) > 1:
         resp = requests.post(
-            f"{url}/admin/sessions/{session_id}/end-conditions",
+            f"{url}/v1/operator/admin/sessions/{session_id}/end-conditions",
             json=ec_payload,
             timeout=10,
         )
@@ -215,7 +215,7 @@ def benchmark(
 
     # 6. Set runtime mode
     requests.post(
-        f"{url}/sessions/{session_id}/mode",
+        f"{url}/v1/operator/sessions/{session_id}/mode",
         params={"mode": cfg.runtime.mode},
         timeout=5,
     )
@@ -233,7 +233,7 @@ def benchmark(
     _export_results(url, session_id, output)
 
     # 10. Stop session
-    requests.post(f"{url}/admin/sessions/{session_id}/stop", timeout=15)
+    requests.post(f"{url}/v1/operator/admin/sessions/{session_id}/stop", timeout=15)
     console.print(f"\n[green]Benchmark complete.[/] Session {session_id} archived.")
 
 
@@ -247,7 +247,7 @@ def _monitor_loop(base_url: str, session_id: str) -> None:
         while True:
             time.sleep(3.0)
             try:
-                resp = requests.get(f"{base_url}/admin/sessions/{session_id}", timeout=5)
+                resp = requests.get(f"{base_url}/v1/operator/admin/sessions/{session_id}", timeout=5)
                 if not resp.ok:
                     live.update("[red]Lost connection to server[/]")
                     break
@@ -258,7 +258,7 @@ def _monitor_loop(base_url: str, session_id: str) -> None:
                     live.update(f"[green]Session ended:[/] {session_data.get('end_reason', 'completed')}")
                     break
 
-                game_resp = requests.get(f"{base_url}/sessions/{session_id}/status", timeout=5)
+                game_resp = requests.get(f"{base_url}/v1/public/sessions/{session_id}/status", timeout=5)
                 game = game_resp.json() if game_resp.ok else {}
 
                 table = Table(title=f"Benchmark -- cycle {cycle}")
@@ -283,7 +283,7 @@ def _export_results(base_url: str, session_id: str, output_dir: str | None) -> N
     import requests
 
     try:
-        resp = requests.get(f"{base_url}/sessions/{session_id}/benchmark/results", timeout=10)
+        resp = requests.get(f"{base_url}/v1/operator/sessions/{session_id}/benchmark/results", timeout=10)
         if not resp.ok:
             console.print("[yellow]Could not fetch benchmark results[/]")
             return

@@ -292,6 +292,29 @@ async def start_session(session_id: str, request: StartSessionRequest) -> dict[s
     }
 
 
+@router.get("/sessions/{session_id}/participants")
+async def list_session_participants(session_id: str) -> dict[str, Any]:
+    """List the participant tokens issued for a running session.
+
+    Operator tier, because it returns every company's token rather than the caller's
+    own. That is a discoverability boundary, not a security one -- the same tokens
+    sit in ``<session_dir>/participants.json`` beside whatever is running -- but a
+    route that hands out all of them should still not be participant-facing.
+
+    Exists because tokens were previously returned only in the response to
+    ``/start``. A contestant who lost that output, or who attached to a session
+    someone else started, had to go and read a file off disk.
+    """
+    runtime = deps.get_runtime(session_id)
+    return {
+        "session_id": session_id,
+        "participants": [
+            {"company_id": p.company_id, "token": p.token}
+            for p in runtime.participants.participants()
+        ],
+    }
+
+
 @router.post("/sessions/{session_id}/stop")
 async def stop_session(session_id: str, end_reason: str = "manual") -> dict[str, Any]:
     session = await session_repo.get_session_by_id(session_id)
