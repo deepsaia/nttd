@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
+from nttd.actions.gate import admit
 from nttd.api.participant_auth import (
     AuthorizationHeader,
     ParticipantToken,
@@ -15,7 +16,7 @@ from nttd.api.participant_auth import (
     resolve_company_id,
 )
 from nttd.api.scored_guard import require_unscored
-from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS, OPERATOR_ACTIONS
+from nttd.constants import ACTION_CATEGORIES, KNOWN_ACTIONS
 from nttd.interpreter.parser import parse_action_list
 from nttd.interpreter.validator import validate_actions as validate_agent_actions
 from nttd.schemas.action_envelope import ActionEnvelope
@@ -45,33 +46,6 @@ async def submit_action(
     runtime = deps.get_runtime(session_id)
     runtime.action_tracker.submit(envelope)
 
-    if envelope.action_type in OPERATOR_ACTIONS:
-        # Refused with a distinct message rather than "unknown": the action does
-        # exist, it just has no human equivalent, so using it would make the run
-        # unscoreable. Saying so plainly stops an agent retrying it forever.
-        error = (
-            f"{envelope.action_type} is operator-tier: it has no human-player "
-            f"equivalent, so it is not available for play. See the operator tier "
-            f"for scenario authoring."
-        )
-        runtime.action_tracker.update_result(envelope.action_id, ActionStatus.REJECTED, error)
-        result = ActionResult(
-            action_id=envelope.action_id,
-            status=ActionStatus.REJECTED,
-            error=error,
-        )
-        # Recorded: reaching for a superhuman power is exactly what an auditor
-        # wants to see, even though it was refused.
-        _record(runtime, envelope, dict(envelope.parameters), result)
-        return result
-
-    if envelope.action_type not in KNOWN_ACTIONS:
-        return ActionResult(
-            action_id=envelope.action_id,
-            status=ActionStatus.REJECTED,
-            error=f"Unknown action_type: {envelope.action_type}",
-        )
-
     if not runtime.admin_client.connected:
         runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, "Not connected to OpenTTD")
         return ActionResult(
@@ -87,16 +61,21 @@ async def submit_action(
     token = extract_token(x_participant_token, authorization)
     company_id = apply_company_scope(runtime, params, token, envelope.company_id)
 
-    # The scenario's action budget applies here, not only to gameloop agents. Every
-    # bundled example posts to this route, so enforcing it only at registration
-    # bound almost nobody.
-    decision = runtime.action_budget.check(company_id)
-    if not decision.allowed:
-        error = f"Action budget exceeded: {decision.reason}"
-        runtime.action_tracker.update_result(envelope.action_id, ActionStatus.BLOCKED, error)
-        result = ActionResult(
-            action_id=envelope.action_id, status=ActionStatus.BLOCKED, error=error,
+    # Operator tier, allowlist, and budget, in one check shared with the stepped
+    # path. They used to be three inline branches here and nothing at all there, so
+    # the stepped loop reached operator-tier commands unguarded.
+    admission = admit(envelope.action_type, company_id, budget=runtime.action_budget)
+    if not admission.allowed:
+        runtime.action_tracker.update_result(
+            envelope.action_id, admission.status, admission.error,
         )
+        result = ActionResult(
+            action_id=envelope.action_id,
+            status=admission.status,
+            error=admission.error,
+        )
+        # Recorded whatever the reason: reaching for a superhuman power, or running
+        # into the ceiling, is exactly what an auditor wants to see.
         _record(runtime, envelope, params, result)
         return result
     runtime.action_budget.consume(company_id)
