@@ -100,6 +100,7 @@ class SessionRuntime:
         # Per-company action budget for the REST path. FairnessConfig binds at
         # agent registration, so without this a contestant posting straight to
         # /actions/submit has no pacing limit -- which every bundled example does.
+        # Assigned through the property so the orchestrator gets the same object.
         self.action_budget = ActionBudget()
         self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
         # Per-company contestant detail for the result record. The contestant runs
@@ -110,6 +111,23 @@ class SessionRuntime:
         self.process: asyncio.subprocess.Process | None = None
         self.poll_task: asyncio.Task[None] | None = None
         self.orchestrator_task: asyncio.Task[None] | None = None
+
+    @property
+    def action_budget(self) -> ActionBudget:
+        """The session's action budget.
+
+        A property because SessionManager replaces it after construction, once the
+        scenario's limits are known. The orchestrator needs the same object -- the
+        stepped path flushes batches through it, and without the budget stepped play
+        was unbounded -- so the setter keeps the two in step rather than relying on a
+        reference captured at construction time.
+        """
+        return self._action_budget
+
+    @action_budget.setter
+    def action_budget(self, budget: ActionBudget) -> None:
+        self._action_budget = budget
+        self.orchestrator.action_budget = budget
 
     @property
     def connected(self) -> bool:
