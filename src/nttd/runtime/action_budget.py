@@ -63,8 +63,13 @@ class ActionBudget:
     _refused: dict[int, int] = field(default_factory=lambda: defaultdict(int), repr=False)
 
     def check(self, company_id: int, count: int = 1) -> BudgetDecision:
-        """Test whether a submission of ``count`` actions is permitted."""
-        used = self._used[company_id]
+        """Test whether a submission of ``count`` actions is permitted.
+
+        Reads with ``.get`` rather than indexing: ``_used`` is a defaultdict, so
+        indexing it here materialised the key and a company that only ever tried
+        appeared in the usage report with a count of zero.
+        """
+        used = self._used.get(company_id, 0)
         if not self.enforced or self.max_per_submission <= 0:
             return BudgetDecision(allowed=True, used=used, limit=self.max_per_submission)
 

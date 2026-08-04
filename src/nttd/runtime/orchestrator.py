@@ -8,17 +8,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from nttd.actions.gate import admit
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
 from nttd.runtime.company_lock import CompanyLockManager
 from nttd.runtime.end_conditions import EndConditionChecker
+from nttd.runtime.step_errors import StepBatchTooLarge
 from nttd.schemas.action_envelope import ActionEnvelope, ActionMode
-from nttd.schemas.action_result import ActionStatus
+from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.game import RuntimeMode
 from nttd.schemas.snapshot import StateSnapshot
+from nttd.schemas.step_result import StepResult
 from nttd.state.world import WorldState
 from nttd.utils.name_generator import generate_timestamp
 
@@ -40,6 +44,13 @@ _STAGGER_INTERVAL = 5                  # refresh towns/industries every N cycles
 _SECS_PER_GAME_DAY = 1.97
 _TIMEOUT_MULTIPLIER = 3.0
 
+# OpenTTD applies a pause a tick after the rcon lands, so a GS refresh issued
+# immediately can read a state the game has already moved past.
+_PAUSE_SETTLE_SECONDS = 0.2
+
+# How often to poll the game date while waiting for an advance.
+_WAIT_POLL_SECONDS = 0.2
+
 
 class Orchestrator:
     """Controls the runtime loop and broker between the bridge, agents, and GS."""
@@ -53,6 +64,9 @@ class Orchestrator:
         self.world = world
         self.client = client
         self.recorder = recorder
+        # The session's action budget, set by SessionRuntime. None means unbounded,
+        # which is what an orchestrator built without a session should get.
+        self.action_budget: Any = None
         self._running = False
         self._heartbeat_interval_days: int = 30
         self._action_window_seconds: float = 5.0
@@ -94,6 +108,10 @@ class Orchestrator:
 
         # Staggered refresh counter (2.5.6)
         self._refresh_cycle: int = 0
+
+        # Steps taken in stepped mode. Counted here rather than by the caller so a
+        # reconnecting contestant cannot restart the count and get a longer run.
+        self._step_count: int = 0
 
     def _on_game_event(self, data: dict[str, Any]) -> None:
         """Handle unsolicited GS game events and record them."""
@@ -271,6 +289,45 @@ class Orchestrator:
         """
         return self._end_checker.start_clock(self.world.game.game_date)
 
+    def _record_action(
+        self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",
+        changed: dict[str, Any] | None = None,
+    ) -> None:
+        """Write an action to the session's audit log.
+
+        The stepped path recorded nothing, so a run driven by steps produced no
+        actions.parquet -- and a benchmark cannot be verified from an action log that
+        is missing the actions. Refusals are recorded too: reaching for a superhuman
+        power is exactly what an auditor wants to see, even though it did not happen.
+        """
+        if self.recorder is None:
+            return
+        try:
+            self.recorder.record_action(
+                envelope=ActionEnvelope(
+                    action_id=envelope.action_id,
+                    action_type=envelope.action_type,
+                    parameters=envelope.parameters,
+                    company_id=envelope.company_id,
+                    mode=envelope.mode,
+                    metadata={
+                        **envelope.metadata,
+                        "participant_type": "agent",
+                        "game_date": self.world.game.game_date,
+                        "submitted_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                ),
+                result=ActionResult(
+                    action_id=envelope.action_id,
+                    status=status,
+                    error=error,
+                    changed_entities=changed or {},
+                ),
+            )
+        except Exception:
+            # The audit trail must not be able to fail the action it describes.
+            logger.exception("Could not record action %s", envelope.action_id)
+
     async def _execute_actions(self, actions: list[dict[str, Any]]) -> None:
         """Execute a list of GS action dicts, tracking each in ActionTracker.
 
@@ -296,11 +353,29 @@ class Orchestrator:
             if self.action_tracker:
                 self.action_tracker.submit(envelope)
 
+            # The same admission check the REST path uses. This path previously
+            # called send_gamescript directly, so operator-tier commands were
+            # reachable in a scored session and left no row in actions.parquet.
+            admission = admit(gs_action, company_id, budget=self.action_budget)
+            if not admission.allowed:
+                if self.action_tracker:
+                    self.action_tracker.update_result(
+                        envelope.action_id, admission.status, admission.error,
+                    )
+                self._record_action(envelope, admission.status, admission.error)
+                logger.info("Action %s refused: %s", gs_action, admission.error)
+                continue
+            if self.action_budget is not None:
+                self.action_budget.consume(company_id)
+
             if not self.client.connected:
                 if self.action_tracker:
                     self.action_tracker.update_result(
                         envelope.action_id, ActionStatus.FAILED, "Not connected to OpenTTD"
                     )
+                self._record_action(
+                    envelope, ActionStatus.FAILED, "Not connected to OpenTTD",
+                )
                 continue
 
             lock = self.company_locks.get_lock(company_id)
@@ -316,6 +391,10 @@ class Orchestrator:
                                 envelope.action_id, ActionStatus.SUCCESS,
                                 changed_entities=result.get("result") or {},
                             )
+                        self._record_action(
+                            envelope, ActionStatus.SUCCESS,
+                            changed=result.get("result") or {},
+                        )
                         logger.info("Action %s succeeded", gs_action)
                     else:
                         error = result.get("error", "GS returned failure")
@@ -323,6 +402,7 @@ class Orchestrator:
                             self.action_tracker.update_result(
                                 envelope.action_id, ActionStatus.FAILED, error,
                             )
+                        self._record_action(envelope, ActionStatus.FAILED, error)
                         logger.warning("Action %s failed: %s", gs_action, error)
             except Exception:
                 logger.exception("Failed to execute action: %s", gs_action)
@@ -330,9 +410,199 @@ class Orchestrator:
                     self.action_tracker.update_result(
                         envelope.action_id, ActionStatus.FAILED, "exception during execution",
                     )
+                self._record_action(
+                    envelope, ActionStatus.FAILED, "exception during execution",
+                )
 
     # -------------------------------------------------------------------------
-    # Heartbeat mode — primary benchmarking mode
+    # Stepped mode — client-driven, for RL and ES
+    # -------------------------------------------------------------------------
+
+    async def enter_stepped(self) -> StateSnapshot:
+        """Pause the game and return the opening observation.
+
+        Stepped mode runs NO loop on the server. The game sits paused between steps,
+        so a policy may deliberate for as long as it likes without the world moving --
+        which is the entire reason to step rather than play in real time, and the
+        reason the heartbeat loop is wrong here: it waits a wall-clock window for
+        actions, truncating a slow policy and idling for a fast one.
+        """
+        self._running = True
+        self.world.game.mode = RuntimeMode.STEPPED
+        self._step_count = 0
+        await self._pause()
+        await self._refresh_world_from_gs()
+        snapshot = self.world.snapshot()
+        if self.recorder:
+            self.recorder.record_event(
+                self.world.game.game_date, "session_start", detail="stepped",
+            )
+            self.recorder.record_snapshot(snapshot)
+        logger.info(
+            "Stepped mode entered at date=%d; the game is paused until the first step",
+            snapshot.game.game_date,
+        )
+        return snapshot
+
+    async def step(
+        self, actions: list[dict[str, Any]] | None = None, days: int | None = None,
+    ) -> StepResult:
+        """Advance one step: flush actions, run the world forward, observe.
+
+        The barrier, in order: the game is already paused, so the batch executes
+        against a still world; then it unpauses, advances ``days`` game-days, pauses
+        again, and observes. A contestant therefore sees a consistent state and its
+        actions land at a known point, neither of which holds if the world moves
+        while a batch is part-executed.
+
+        Args:
+            actions: The batch to flush, each ``{"action": ..., "params": {...}}``.
+                Variable length: a step is not one action. Every one passes the same
+                admission check a REST submission does.
+            days: Game-days to advance. Defaults to the scenario's heartbeat
+                interval, so a scenario sets the step size once.
+
+        Returns:
+            A StepResult carrying the post-step observation and whether the run ended.
+        """
+        advance_days = days if days is not None else self._heartbeat_interval_days
+
+        batch = list(actions or [])
+        if batch:
+            # The ceiling applies to the BATCH, checked once before anything runs.
+            # _execute_actions admits each action individually with count=1, so a
+            # 16-action batch passed sixteen checks of one and the per-submission
+            # ceiling never saw it -- verified: 16/16 allowed against a limit of 15.
+            # Refused whole rather than truncated: a policy that planned a route as
+            # one batch should not have it half-built.
+            self._check_batch_size(batch)
+
+        # The target is fixed BEFORE the world starts moving, so a step advances the
+        # same number of days however long its actions took to execute.
+        start_date = self.world.game.game_date
+        target_date = start_date + advance_days
+
+        # Actions run with the game RUNNING, not paused. A GameScript DoCommand
+        # completes on a game tick, so while the game is paused it never completes
+        # and every build times out after 10s -- verified against OpenTTD 15.3: the
+        # same build_road_stop timed out paused and succeeded in 0.04s unpaused.
+        # (command_pause_level does not change this; it governs what a human client
+        # may issue, not whether the script's command queue drains.)
+        await self._unpause()
+        if batch:
+            await self._execute_actions(batch)
+        await self._wait_until_game_date(target_date)
+        await self._pause()
+
+        await self._refresh_world_from_gs()
+        snapshot = self.world.snapshot()
+        self._step_count += 1
+        if self.recorder:
+            self.recorder.record_snapshot(snapshot)
+
+        end_result = self._end_checker.check(snapshot)
+        if end_result.triggered:
+            logger.info("Simulation ended at step %d: %s", self._step_count, end_result.reason)
+            self._running = False
+            for callback in self.on_end:
+                try:
+                    result = callback(end_result.reason)
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception:
+                    logger.exception("on_end callback error")
+
+        return StepResult(
+            snapshot=snapshot,
+            step=self._step_count,
+            # What actually happened, not what was asked for: a slow batch can
+            # outrun the interval, and a reader reconstructing the run needs the
+            # real figure.
+            days_advanced=max(0, snapshot.game.game_date - start_date),
+            terminated=end_result.triggered,
+            end_reason=end_result.reason if end_result.triggered else "",
+        )
+
+    async def _wait_until_game_date(self, target_date: int) -> None:
+        """Block until the world reaches ``target_date``.
+
+        Target-based rather than duration-based, because a step's actions execute
+        with the game running and consume game time themselves. ``_wait_game_days``
+        measures from whenever it is called, so a step whose batch took ten seconds
+        would advance ten seconds further than one whose batch was empty -- and two
+        runs of the same scenario would cover different horizons.
+
+        Returns immediately when the target has already passed, which happens when a
+        slow batch (pathfinding can take a minute) outruns the step size.
+        """
+        remaining = target_date - self.world.game.game_date
+        if remaining <= 0:
+            logger.info(
+                "Step actions consumed the whole interval: already at %d, target %d",
+                self.world.game.game_date, target_date,
+            )
+            return
+
+        timeout_s = max(remaining * self._secs_per_game_day * _TIMEOUT_MULTIPLIER, 30.0)
+        deadline = timeout_s / _WAIT_POLL_SECONDS
+        for _ in range(int(deadline)):
+            await asyncio.sleep(_WAIT_POLL_SECONDS)
+            if self.world.game.game_date >= target_date or not self._running:
+                return
+        logger.warning(
+            "Timed out after %.0fs waiting for game date %d (now %d)",
+            timeout_s, target_date, self.world.game.game_date,
+        )
+
+    def _check_batch_size(self, batch: list[dict[str, Any]]) -> None:
+        """Refuse an over-ceiling batch before any of it executes.
+
+        Separate from the per-action gate because the two ask different questions.
+        The gate asks "may this action be taken at all"; this asks "is this
+        submission too big", which is a property of the batch and invisible when each
+        action is checked alone.
+
+        Raises:
+            StepBatchTooLarge: with the same wording the REST batch route uses, so a
+                contestant hitting the ceiling gets one explanation regardless of
+                which path it used.
+        """
+        if self.action_budget is None:
+            return
+        company_id = int((batch[0].get("params") or {}).get("company_id", -1))
+        decision = self.action_budget.check(company_id, count=len(batch))
+        if not decision.allowed:
+            logger.info("Step batch refused: %s", decision.reason)
+            for entry in batch:
+                envelope = ActionEnvelope(
+                    action_id=f"hb_{uuid.uuid4().hex[:8]}",
+                    company_id=company_id,
+                    action_type=str(entry.get("action") or "unknown"),
+                    parameters=dict(entry.get("params") or {}),
+                    mode=ActionMode.ATOMIC,
+                )
+                self._record_action(
+                    envelope, ActionStatus.BLOCKED,
+                    f"Action budget exceeded: {decision.reason}",
+                )
+            raise StepBatchTooLarge(f"Action budget exceeded: {decision.reason}")
+
+    async def _pause(self) -> None:
+        """Pause the game and reflect it in world state."""
+        if self.client.connected:
+            await self.client.send_rcon("pause")
+        self.world.set_paused(True)
+        # OpenTTD applies the pause a tick later; without this the first GS refresh
+        # can read a state the game has already moved past.
+        await asyncio.sleep(_PAUSE_SETTLE_SECONDS)
+
+    async def _unpause(self) -> None:
+        if self.client.connected:
+            await self.client.send_rcon("unpause")
+        self.world.set_paused(False)
+
+    # -------------------------------------------------------------------------
+    # Heartbeat mode — server-driven stepping
     # -------------------------------------------------------------------------
 
     async def run_heartbeat(self, steps: int = 0) -> None:

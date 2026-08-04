@@ -68,14 +68,28 @@ class SessionManager:
         self.admin_password = admin_password
         self.port_range_start = port_range_start
         self.runtimes: dict[str, SessionRuntime] = {}
+        # Ports handed out but not yet backed by a registered runtime. See
+        # _allocate_ports: the gap between the two is seconds long.
+        self._reserved_ports: set[int] = set()
 
     def _allocate_ports(self) -> tuple[int, int]:
-        """Find the next available game_port/admin_port pair.
+        """Reserve the next free game_port/admin_port pair.
 
         Game ports use even numbers, admin ports use the next odd number.
-        Checks both the runtime registry and actual OS port availability.
+
+        The pair is reserved here, not when the runtime is registered. A session is
+        only added to ``self.runtimes`` after its server has spawned, which takes
+        about eight seconds, and ``start_session`` awaits repeatedly in between --
+        so two concurrent starts both read an empty registry and both took port
+        4000. Verified: four concurrent starts were all handed 4000.
+
+        ``_port_is_free`` cannot close that window either, since it binds and
+        releases immediately rather than holding the port.
+
+        This matters for evolution strategies, which run a population of episodes
+        concurrently and would otherwise have every candidate collide on one port.
         """
-        used_ports: set[int] = set()
+        used_ports: set[int] = set(self._reserved_ports)
         for rt in self.runtimes.values():
             used_ports.add(rt.game_port)
             used_ports.add(rt.admin_port)
@@ -90,10 +104,22 @@ class SessionManager:
                 and _port_is_free(game_port)
                 and _port_is_free(admin_port)
             ):
+                # Reserved before returning, with no await in between, so a
+                # concurrent caller cannot observe the pair as free.
+                self._reserved_ports.update((game_port, admin_port))
                 return game_port, admin_port
             port += 2
             if port > self.port_range_start + 1000:
                 raise RuntimeError("No available ports in range")
+
+    def _release_ports(self, game_port: int, admin_port: int) -> None:
+        """Return a reserved pair to the pool.
+
+        Called when a session ends and when a start fails partway, so a failed
+        spawn does not leak its ports for the life of the process.
+        """
+        self._reserved_ports.discard(game_port)
+        self._reserved_ports.discard(admin_port)
 
     def get_runtime(self, session_id: str) -> SessionRuntime | None:
         """Get the runtime for a session, or None if not running."""
@@ -202,6 +228,10 @@ class SessionManager:
             self.openttd_binary, self.admin_password, map_seed=map_seed,
         )
         if not ok:
+            # Hand the ports back: a failed spawn would otherwise hold them until
+            # the process exits, and an ES population of failures would exhaust the
+            # range.
+            self._release_ports(game_port, admin_port)
             raise RuntimeError(f"Failed to start OpenTTD for session {session_id}")
 
         # Store PID and mark active
@@ -279,6 +309,7 @@ class SessionManager:
             except Exception:
                 logger.exception("Session %s: failed to write result record", session_id)
             await runtime.shutdown()
+            self._release_ports(runtime.game_port, runtime.admin_port)
 
         await session_repo.end_session(session_id, end_reason=end_reason)
         await session_repo.update_session_pid(session_id, None)
