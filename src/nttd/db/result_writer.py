@@ -92,9 +92,7 @@ _SCHEMA = pa.schema([
     # contestant was allowed to do, so a reader cannot compare two results without
     # knowing them.
     ("fairness_enforced", pa.bool_()),
-    ("poll_interval", pa.float64()),
-    ("max_actions_per_cycle", pa.int32()),
-    ("llm_timeout_seconds", pa.float64()),
+    ("max_actions_per_decision", pa.int32()),
     ("observation_mode", pa.string()),
     # Actions the budget refused. A contestant who ran into the ceiling played a
     # different run from one who never approached it, so the count is recorded.
@@ -268,9 +266,9 @@ class ResultWriter:
                 "blocked_operations": ",".join(blocked_ops),
                 "capability_digest": capability_digest(),
                 "fairness_enforced": bool(limits.get("enforced", False)),
-                "poll_interval": float(limits.get("poll_interval", 0.0)),
-                "max_actions_per_cycle": int(limits.get("max_actions_per_cycle", 0)),
-                "llm_timeout_seconds": float(limits.get("llm_timeout_seconds", 0.0)),
+                "max_actions_per_decision": int(
+                    limits.get("max_actions_per_decision", 0)
+                ),
                 "observation_mode": str(limits.get("observation_mode", "")),
                 "budget_refused_actions": int(spend.get("total_refused", 0)),
                 "nttd_git_sha": git_sha,
