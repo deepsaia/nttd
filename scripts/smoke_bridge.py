@@ -1,4 +1,15 @@
-"""Quick test to verify bridge connects to a running OpenTTD server."""
+"""Manual smoke check: does the bridge connect to an OpenTTD server?
+
+Renamed from test_bridge.py. It was never collected -- pytest's testpaths is
+["tests"] -- but the name implied it was part of the suite, so a reader could
+reasonably think bridge connectivity was covered when nothing ran it.
+
+Needs a server already listening on the default admin port, which is not how nttd
+allocates ports for its own sessions. For a real check of the behaviours nttd depends
+on, use scripts/verify_environment.py.
+
+    uv run python scripts/smoke_bridge.py
+"""
 import asyncio
 import logging
 
@@ -34,7 +45,7 @@ async def main() -> None:
     poll_task.cancel()
 
     snapshot = world.snapshot()
-    print(f"\nFinal state:")
+    print("\nFinal state:")
     print(f"  Game date: {snapshot.game.game_date}")
     print(f"  Companies: {len(snapshot.companies)}")
     for c in snapshot.companies:
