@@ -48,7 +48,7 @@ def session_create(
     session_name = name or (cfg.name if cfg.name != "default" else generate_session_name())
 
     resp = requests.post(
-        f"{url}/admin/sessions/new",
+        f"{url}/v1/operator/admin/sessions/new",
         json={"name": session_name, "settings": settings, "config_path": config or ""},
         timeout=10,
     )
@@ -109,7 +109,7 @@ def session_start(
 
     with console.status("Starting OpenTTD server..."):
         resp = requests.post(
-            f"{url}/admin/sessions/{session_id}/start",
+            f"{url}/v1/operator/admin/sessions/{session_id}/start",
             json=payload,
             timeout=30,
         )
@@ -149,7 +149,7 @@ def session_stop(
     url = base_url or get_base_url()
     check_server(url)
 
-    resp = requests.post(f"{url}/admin/sessions/{session_id}/stop", timeout=15)
+    resp = requests.post(f"{url}/v1/operator/admin/sessions/{session_id}/stop", timeout=15)
     if resp.status_code == 404:
         console.print(f"[red]Session {session_id} not found[/]")
         raise typer.Exit(1)
@@ -168,7 +168,7 @@ def session_list(
     url = base_url or get_base_url()
     check_server(url)
 
-    resp = requests.get(f"{url}/admin/sessions", timeout=10)
+    resp = requests.get(f"{url}/v1/operator/admin/sessions", timeout=10)
     resp.raise_for_status()
     data = resp.json()
     sessions = data.get("sessions", [])
@@ -208,7 +208,7 @@ def session_status(
     url = base_url or get_base_url()
     check_server(url)
 
-    resp = requests.get(f"{url}/admin/sessions/{session_id}", timeout=10)
+    resp = requests.get(f"{url}/v1/operator/admin/sessions/{session_id}", timeout=10)
     if resp.status_code == 404:
         console.print(f"[red]Session {session_id} not found[/]")
         raise typer.Exit(1)
@@ -240,7 +240,7 @@ def session_status(
 
     if running:
         try:
-            game_resp = requests.get(f"{url}/sessions/{session_id}/status", timeout=5)
+            game_resp = requests.get(f"{url}/v1/public/sessions/{session_id}/status", timeout=5)
             if game_resp.ok:
                 game = game_resp.json()
                 console.print(Panel(
@@ -252,3 +252,4 @@ def session_status(
                 ))
         except Exception:
             pass
+
