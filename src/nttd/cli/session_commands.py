@@ -253,3 +253,59 @@ def session_status(
         except Exception:
             pass
 
+@session_app.command("attach")
+def session_attach(
+    session_id: Annotated[str, typer.Argument(help="Session ID")],
+    base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
+) -> None:
+    """Show what a runner needs to play this session.
+
+    nttd runs no agent, so a session is only useful once a contestant's own loop can
+    reach it. That needs the session id, a participant token, and the routes -- and
+    the token was previously visible only in the output of `session start`, or in
+    participants.json on disk.
+
+    Examples:
+      nttd session attach ses_20260804_120000_abcd1234
+    """
+    import requests
+
+    url = base_url or get_base_url()
+    check_server(url)
+
+    resp = requests.get(
+        f"{url}/v1/operator/admin/sessions/{session_id}/participants", timeout=10,
+    )
+    if not resp.ok:
+        console.print(f"[red]Could not read participants for[/] {session_id}")
+        console.print(f"[dim]{resp.text[:200]}[/]")
+        raise typer.Exit(code=1)
+
+    participants = resp.json().get("participants") or []
+    if not participants:
+        console.print(
+            f"[yellow]No participant tokens for[/] {session_id}.\n"
+            "The session started with no contestant company, so nothing can play it. "
+            "Start it with [cyan]--agent-companies 1[/]."
+        )
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"Attach a runner to {session_id}")
+    table.add_column("Company", justify="right")
+    table.add_column("Participant token")
+    for entry in participants:
+        table.add_row(str(entry.get("company_id", "?")), str(entry.get("token", "")))
+    console.print(table)
+
+    token = participants[0].get("token", "")
+    console.print(
+        "\n[bold]Real-time play[/] -- your loop observes and acts:\n"
+        f"  GET  {url}/v1/participant/sessions/{session_id}/state/full\n"
+        f"  POST {url}/v1/participant/sessions/{session_id}/actions/submit\n"
+        "\n[bold]Stepped play[/] -- for RL and ES, the world pauses between steps:\n"
+        f"  POST {url}/v1/participant/sessions/{session_id}/step/reset\n"
+        f"  POST {url}/v1/participant/sessions/{session_id}/step\n"
+        f"\n  header: [cyan]X-Participant-Token: {token}[/]\n"
+        "[dim]The company is derived from the token, so a company_id in the body is "
+        "ignored.[/]"
+    )
