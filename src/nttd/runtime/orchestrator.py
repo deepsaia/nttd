@@ -486,13 +486,19 @@ class Orchestrator:
         #
         # Not because single-tile builds need it: at construction.command_pause_level
         # = 3 a paused build_road_stop returns success in 0.1s. It is the PATHFINDING
-        # actions. The A* loop in the GameScript yields every 500 iterations through
+        # actions. The A* loop yields every 500 iterations through
         # _YieldAndProcessEvents (main.nut:1912, :2414), whose first statement is
         # Sleep(1) -- and Sleep counts GAME TICKS, of which a paused game delivers
-        # none. So connect_road and connect_rail deadlock while paused at ANY pause
-        # level: verified at 180s with the GS still answering ping. They are the
-        # workhorse actions, so the flush has to sit between the unpause and the
-        # advance.
+        # none. So connect_road and connect_rail hang while paused, at any pause
+        # level, once the search is long enough to reach that yield.
+        #
+        # Length is what decides it, which is why this cannot be worked around by
+        # inspecting the action: a SHORT connection never yields and succeeds while
+        # paused in 0.0s, while a cross-map one times out. Whether a given
+        # connect_road deadlocks is not knowable before running it, so the flush
+        # simply always sits between the unpause and the advance. These are the
+        # workhorse actions; a design that could not issue them would not be a
+        # design.
         #
         # This also keeps the flush safe if the pause level is ever lowered: at
         # level 1 a paused build times out AND wedges the GameScript, while having
