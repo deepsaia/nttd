@@ -479,7 +479,7 @@ class Orchestrator:
 
         # The target is fixed BEFORE the world starts moving, so a step advances the
         # same number of days however long its actions took to execute.
-        start_date = self.world.game.game_date
+        start_date = await self._authoritative_game_date()
         target_date = start_date + advance_days
 
         # Actions run with the game RUNNING, not paused. A GameScript DoCommand
@@ -522,6 +522,33 @@ class Orchestrator:
             terminated=end_result.triggered,
             end_reason=end_result.reason if end_result.triggered else "",
         )
+
+    async def _authoritative_game_date(self) -> int:
+        """Ask the GameScript for the current date rather than trusting the cache.
+
+        ``world.game.game_date`` is fed by the admin port's DATE packets, which
+        arrive daily and only while the game is running. A value read while paused
+        is therefore as old as the pause, and a step that measured its start from it
+        reported an advance of 150 days for a 15-day step -- intermittently, which is
+        worse than always, because the number looks plausible.
+
+        One round trip, measured at about 0.04s, in exchange for a ``days_advanced``
+        that goes into the permanent record. Falls back to the cache if the query
+        fails, since a step that cannot read the date should still advance.
+        """
+        if not self.client.connected:
+            return self.world.game.game_date
+        try:
+            reply = await self.client.send_gamescript("get_date", {}, timeout=10.0)
+            date = (reply.get("result") or {}).get("date")
+            if isinstance(date, int) and date > 0:
+                # Keep the cache in step, so anything else reading it between date
+                # packets sees the same value this step was measured from.
+                self.world.game.game_date = date
+                return date
+        except Exception:
+            logger.exception("Could not read the game date; using the cached value")
+        return self.world.game.game_date
 
     async def _wait_until_game_date(self, target_date: int) -> None:
         """Block until the world reaches ``target_date``.
