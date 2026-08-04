@@ -319,6 +319,17 @@ class SessionRuntime:
 
         self.orchestrator.stop()  # reset running flag
 
+        if mode == "stepped":
+            # No task: stepped mode runs no loop on the server. The contestant drives
+            # each step, and the game stays paused in between so deliberation costs
+            # nothing. Starting a loop here would move the world underneath a policy
+            # that is still thinking, which is the whole thing stepping avoids.
+            logger.info(
+                "Session %s is stepped: no server loop, the contestant drives each step",
+                self.session_id,
+            )
+            return
+
         if mode == "heartbeat":
             self.orchestrator_task = asyncio.create_task(
                 self.orchestrator.run_heartbeat(),
