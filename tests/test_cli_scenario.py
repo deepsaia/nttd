@@ -149,3 +149,93 @@ def test_every_cli_route_exists_in_the_api() -> None:
             route = re.sub(r"\{[a-z_]+\}", lambda m: m.group(0), route)
             route = route.split("?")[0]
             assert route in known, f"{path.name} calls {route}, which the API does not serve"
+
+
+# ---------------------------------------------------------------------------
+# Runtime mode, and what may bound a run in it
+# ---------------------------------------------------------------------------
+
+
+def test_the_config_and_runtime_agree_on_the_mode_list() -> None:
+    """Validation keeps its own copy so it does not import runtime state. This is
+    what keeps the two from drifting."""
+    from nttd.config.scenario_config import _KNOWN_RUNTIME_MODES
+    from nttd.schemas.game import RuntimeMode
+
+    assert _KNOWN_RUNTIME_MODES == {mode.value for mode in RuntimeMode}
+
+
+def test_an_unknown_runtime_mode_is_refused(tmp_path: Path) -> None:
+    config = tmp_path / "mode.conf"
+    config.write_text('scenario { map { size_x = 256 }, runtime { mode = "turbo" } }')
+    result = runner.invoke(app, ["scenario", "validate", str(config)])
+    assert result.exit_code == 1
+    assert "runtime.mode" in result.stdout
+
+
+def test_a_stepped_run_may_not_be_bounded_by_wall_time(tmp_path: Path) -> None:
+    """The clock only advances when the contestant asks, so wall time measures
+    their hardware rather than the run, and a slow policy would be cut off."""
+    config = tmp_path / "stepped.conf"
+    config.write_text(
+        'scenario {\n  map { size_x = 256, seed = 5 }\n'
+        '  runtime { mode = "stepped" }\n'
+        '  end_conditions { time_limit { enabled = true, wall_minutes = 30 } }\n}\n'
+    )
+    result = runner.invoke(app, ["scenario", "validate", str(config)])
+    assert result.exit_code == 1
+    assert "max_heartbeats" in result.stdout
+
+
+def test_a_stepped_run_that_omits_time_limit_is_still_refused(tmp_path: Path) -> None:
+    """The subtle case. TimeLimitConfig.enabled defaults to True, so a scenario
+    that says nothing about time_limit still loads with a 60-minute wall clock.
+    Reading the key with default=False here let exactly that through.
+    """
+    config = tmp_path / "silent.conf"
+    config.write_text(
+        'scenario {\n  map { size_x = 256, seed = 5 }\n'
+        '  runtime { mode = "stepped" }\n'
+        '  end_conditions { max_heartbeats { enabled = true, count = 61 } }\n}\n'
+    )
+    result = runner.invoke(app, ["scenario", "validate", str(config)])
+    assert result.exit_code == 1, "an omitted time_limit still defaults to enabled"
+
+
+def test_a_stepped_run_bounded_by_steps_is_accepted(tmp_path: Path) -> None:
+    config = tmp_path / "ok.conf"
+    config.write_text(
+        'scenario {\n  map { size_x = 256, seed = 5 }\n'
+        '  runtime { mode = "stepped" }\n'
+        '  end_conditions {\n    time_limit { enabled = false }\n'
+        '    max_heartbeats { enabled = true, count = 61 }\n  }\n}\n'
+    )
+    assert runner.invoke(app, ["scenario", "validate", str(config)]).exit_code == 0
+
+
+def test_real_time_may_still_use_a_wall_clock(tmp_path: Path) -> None:
+    """The restriction is specific to stepped mode, not a general ban."""
+    config = tmp_path / "rt.conf"
+    config.write_text(
+        'scenario {\n  map { size_x = 256, seed = 5 }\n'
+        '  runtime { mode = "async_realtime" }\n'
+        '  end_conditions { time_limit { enabled = true, wall_minutes = 30 } }\n}\n'
+    )
+    assert runner.invoke(app, ["scenario", "validate", str(config)]).exit_code == 0
+
+
+def test_the_stepped_example_poses_the_same_world_as_the_realtime_one() -> None:
+    """A stepped entry and a real-time entry must face the same problem, or the two
+    are not comparable and the mode column means nothing."""
+    from nttd.config.scenario_config import load, scenario_to_settings
+
+    def world(path: str) -> dict[str, str]:
+        settings = scenario_to_settings(load(_REPO / path), strict=True)
+        return {
+            key: value for key, value in settings.items()
+            if key.startswith(("game_creation.", "difficulty."))
+        }
+
+    assert world("config/benchmark/t2_example.conf") == world(
+        "config/benchmark/t2_stepped_example.conf",
+    )
