@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +18,12 @@ import polars as pl
 
 logger = logging.getLogger(__name__)
 
-SESSIONS_DIR = Path("logs/sessions")
+# Honours NTTD_SESSIONS_DIR like every other module that resolves this path
+# (api/app.py, cli/result_command.py, cli/helpers.py, runtime/session_runtime.py).
+# Hardcoding it meant `nttd analyze` reported "Session not found" for any session
+# recorded outside the default directory, while `nttd result` on the same session
+# worked -- the two commands disagreed about where sessions live.
+SESSIONS_DIR = Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
 
 # "result" is included so a report can reach the contestant detail and per-model
 # spend that POST /report supplies; "agent_cycles" is gone with the gameloop.
