@@ -256,7 +256,7 @@ def test_result_records_distinguish_observed_from_reported_counts() -> None:
     figures are not, and must be marked as contestant-reported rather than
     presented with the same authority.
     """
-    from nttd.db.recorder import _ACTIONS_SCHEMA
+    from nttd.store.recorder import _ACTIONS_SCHEMA
 
     names = set(_ACTIONS_SCHEMA.names)
     assert {"company_id", "status", "action_type"} <= names, (
@@ -268,6 +268,6 @@ def test_result_records_distinguish_observed_from_reported_counts() -> None:
     "column", ["total_actions", "successful_actions"],
 )
 def test_action_counts_remain_result_columns(column: str) -> None:
-    from nttd.db.result_writer import _SCHEMA
+    from nttd.store.result_writer import _SCHEMA
 
     assert column in _SCHEMA.names

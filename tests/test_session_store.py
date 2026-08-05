@@ -19,7 +19,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from nttd.analysis.loader import load_session
-from nttd.db import parquet_reader, session_paths
+from nttd.store import parquet_reader, session_paths
 
 SNAPSHOT = {
     "companies": [{"id": 0, "name": "Player", "money": 5000, "loan": 100, "value": 9000}],
@@ -238,7 +238,7 @@ class TestEveryReaderAgrees:
     async def test_repositories_read_the_configured_directory(
         self, merged_session: str,
     ) -> None:
-        from nttd.db.repositories import action_repo, entity_repo, event_repo, metrics_repo
+        from nttd.store.repositories import action_repo, entity_repo, event_repo, metrics_repo
 
         assert await entity_repo.get_towns_latest(merged_session) == SNAPSHOT["towns"]
         assert await entity_repo.get_subsidies_latest(merged_session) == SNAPSHOT["subsidies"]
@@ -252,7 +252,7 @@ class TestEveryReaderAgrees:
         self, live_session: str,
     ) -> None:
         """None of the repositories used to read fragments, so a live session read empty."""
-        from nttd.db.repositories import action_repo, entity_repo, event_repo, metrics_repo
+        from nttd.store.repositories import action_repo, entity_repo, event_repo, metrics_repo
 
         assert await entity_repo.get_towns_latest(live_session) == SNAPSHOT["towns"]
         assert await metrics_repo.get_finance_series(live_session, 0)

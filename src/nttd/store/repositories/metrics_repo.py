@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from nttd.db import parquet_reader
+from nttd.store import parquet_reader
 
 logger = logging.getLogger(__name__)
 

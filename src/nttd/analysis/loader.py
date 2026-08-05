@@ -15,8 +15,8 @@ from typing import Any
 
 import polars as pl
 
-from nttd.db import parquet_reader, session_paths
-from nttd.db.conf_writer import read_session_conf
+from nttd.store import parquet_reader, session_paths
+from nttd.store.conf_writer import read_session_conf
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def load_frame(
     """Load one parquet type for a session as a polars DataFrame.
 
     Merged file or unmerged fragments, whichever the session has: that choice belongs
-    to db.parquet_reader, which the API repositories read through as well, so a live
+    to store.parquet_reader, which the API repositories read through as well, so a live
     session looks the same from either side.
     """
     table = parquet_reader.read_table(session_id, parquet_type, sessions_dir=sessions_dir)

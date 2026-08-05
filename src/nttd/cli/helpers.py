@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import typer
 from rich.console import Console
 
-from nttd.db import session_paths
+from nttd.store import session_paths
 
 if TYPE_CHECKING:
     from nttd.config.scenario_config import EndConditionsConfig

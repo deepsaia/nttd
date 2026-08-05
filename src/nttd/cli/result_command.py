@@ -15,7 +15,7 @@ import typer
 from rich.table import Table
 
 from nttd.cli.helpers import console
-from nttd.db import session_paths
+from nttd.store import session_paths
 
 
 def _print_model_breakdown(rows: list[dict]) -> None:
@@ -65,7 +65,7 @@ def result(
       nttd result -s ses_20260803_120000_abcd1234
       nttd result -s ses_... --json > entry.json
     """
-    from nttd.db.result_writer import read_result
+    from nttd.store.result_writer import read_result
 
     session_dir = _sessions_dir() / session
     rows = read_result(session_dir)

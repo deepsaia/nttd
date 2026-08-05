@@ -9,9 +9,9 @@ from pathlib import Path
 import pyarrow.parquet as pq
 import pytest
 
-from nttd.db.recorder import SessionRecorder
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult
+from nttd.store.recorder import SessionRecorder
 
 # ---------------------------------------------------------------------------
 # Helpers

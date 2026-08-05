@@ -8,8 +8,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from nttd.db import parquet_reader
-from nttd.db.repositories import action_repo, entity_repo, event_repo, metrics_repo
+from nttd.store import parquet_reader
+from nttd.store.repositories import action_repo, entity_repo, event_repo, metrics_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["metrics"])

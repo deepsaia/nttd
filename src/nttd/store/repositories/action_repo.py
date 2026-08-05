@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from nttd.db import parquet_reader, session_paths
+from nttd.store import parquet_reader, session_paths
 
 logger = logging.getLogger(__name__)
 

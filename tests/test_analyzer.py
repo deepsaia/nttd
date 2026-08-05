@@ -17,7 +17,7 @@ from nttd.analysis.reports.registry import (
     run_reports,
 )
 from nttd.analysis.reports.renderer import render_all, render_json, render_markdown
-from nttd.db import parquet_reader
+from nttd.store import parquet_reader
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -31,7 +31,7 @@ def session_dir(tmp_path: Path) -> Path:
     sdir.mkdir()
 
     # session.parquet
-    from nttd.db.conf_writer import write_session_conf
+    from nttd.store.conf_writer import write_session_conf
 
     write_session_conf(
         sdir,
@@ -234,7 +234,7 @@ def fragment_dir(tmp_path: Path) -> Path:
     fdir = sdir / "_fragments"
     fdir.mkdir(parents=True)
 
-    from nttd.db.conf_writer import write_session_conf
+    from nttd.store.conf_writer import write_session_conf
 
     write_session_conf(sdir, session_id="ses_frag", name="frag-test", status="active")
 

@@ -295,8 +295,18 @@ Per session, under `logs/sessions/<session_id>/` (or `NTTD_SESSIONS_DIR`):
 | `tiles.parquet` | terrain scan |
 | `nttd_scenario.conf` | the resolved scenario, for provenance |
 
-There is no database. The modules under `src/nttd/db/` read and write Parquet; the
-name is historical.
+There is no database. `src/nttd/store/` reads and writes Parquet files on disk, and the
+package used to be called `db/`, which is what made the point worth stating.
+
+Two modules in there exist to stop a specific bug recurring. `session_paths` is the only
+place that answers "where does session data live", and `parquet_reader` is the only place
+that opens a session's Parquet. Both were previously decided independently in eight
+places, and they disagreed: `nttd analyze` reported "Session not found" for a session
+`nttd result` read fine, four of the five API query modules ignored `NTTD_SESSIONS_DIR`
+outright, and none of them read the `_fragments/` files a running session has not merged
+yet, so every API query against a live session under-reported. The analysis loader wraps
+the same reader in polars rather than opening files itself, so the two sides cannot
+drift apart again.
 
 ### Scoring
 

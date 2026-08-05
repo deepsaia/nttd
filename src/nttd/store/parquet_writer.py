@@ -15,8 +15,8 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from nttd.db import session_paths
 from nttd.schemas.snapshot import StateSnapshot
+from nttd.store import session_paths
 
 logger = logging.getLogger(__name__)
 

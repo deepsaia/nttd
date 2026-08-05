@@ -1,20 +1,16 @@
-"""Repository for session CRUD -- reads/writes parquet files.
+"""Session CRUD, over one session.parquet per session directory.
 
-Despite living under ``db/``, there is no database: sessions are parquet files on
-disk. The agents.conf functions that used to sit here are gone, along with the
-server-driven gameloop that wrote that file -- participant identity now comes from
-the live token registry, and spend from POST /report.
-
-Session data is stored in logs/sessions/<session_id>/session.parquet.
-Listing sessions scans the directory for all session.parquet files.
+The agents.conf functions that used to sit here are gone, along with the
+server-driven gameloop that wrote that file: participant identity now comes from the
+live token registry, and spend from POST /report.
 """
 
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from nttd.db import session_paths
-from nttd.db.conf_writer import read_session_conf, update_session_conf, write_session_conf
+from nttd.store import session_paths
+from nttd.store.conf_writer import read_session_conf, update_session_conf, write_session_conf
 
 logger = logging.getLogger(__name__)
 

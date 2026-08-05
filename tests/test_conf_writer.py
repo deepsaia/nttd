@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from nttd.db.conf_writer import (
+from nttd.store.conf_writer import (
     read_session_conf,
     update_session_conf,
     write_session_conf,

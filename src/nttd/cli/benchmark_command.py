@@ -329,8 +329,8 @@ def _show_scored_result(session_id: str) -> None:
     This is the artifact a leaderboard ingests, so surfacing it here lets an
     operator see the actual score and confirm the run is traceable.
     """
-    from nttd.db import session_paths
-    from nttd.db.result_writer import read_result
+    from nttd.store import session_paths
+    from nttd.store.result_writer import read_result
 
     rows = read_result(session_paths.session_dir(session_id))
     if not rows:

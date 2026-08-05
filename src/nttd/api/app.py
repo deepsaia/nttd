@@ -23,8 +23,8 @@ from nttd.api.observation_routes import router as observation_router
 from nttd.api.snapshot_routes import router as snapshot_router
 from nttd.api.tiers import TIER_DESCRIPTIONS, Tier
 from nttd.api.ws_routes import router as ws_router
-from nttd.db import session_paths
 from nttd.runtime.session_manager import SessionManager
+from nttd.store import session_paths
 
 logger = logging.getLogger(__name__)
 
