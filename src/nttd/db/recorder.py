@@ -7,7 +7,6 @@ On session stop, fragments are merged into final consolidated files.
 Storage layout per session (under logs/sessions/<session_id>/):
   snapshots.parquet     -- full game state time-series (via ParquetWriter)
   actions.parquet       -- all actions with embedded parameters as JSON
-  agent_cycles.parquet  -- per-cycle agent telemetry
   events.parquet        -- lifecycle + game events
 
 During a session, fragments are written to _fragments/<type>_NNN.parquet
@@ -29,7 +28,6 @@ import pyarrow.parquet as pq
 from nttd.db.parquet_writer import ParquetWriter
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
-from nttd.schemas.cycle_record import CycleRecord
 from nttd.schemas.snapshot import StateSnapshot
 
 logger = logging.getLogger(__name__)
@@ -51,32 +49,6 @@ _ACTIONS_SCHEMA = pa.schema([
     ("submitted_at", pa.timestamp("us")),
 ])
 
-_AGENT_CYCLES_SCHEMA = pa.schema([
-    ("connection_id", pa.string()),
-    ("cycle_number", pa.int32()),
-    ("game_date", pa.int32()),
-    ("observe_ms", pa.float32()),
-    ("decide_ms", pa.float32()),
-    ("execute_ms", pa.float32()),
-    ("total_ms", pa.float32()),
-    ("actions_proposed", pa.int16()),
-    ("actions_executed", pa.int16()),
-    ("actions_succeeded", pa.int16()),
-    ("actions_failed", pa.int16()),
-    ("observation_size_bytes", pa.int32()),
-    ("balance", pa.int64()),
-    ("income", pa.int64()),
-    ("company_value", pa.int64()),
-    ("balance_delta", pa.int64()),
-    ("vehicles_running", pa.int16()),
-    ("prompt_tokens", pa.int32()),
-    ("completion_tokens", pa.int32()),
-    ("total_tokens", pa.int32()),
-    ("total_cost", pa.float32()),
-    ("llm_model", pa.string()),
-    ("llm_provider", pa.string()),
-])
-
 _EVENTS_SCHEMA = pa.schema([
     ("game_date", pa.int32()),
     ("event_type", pa.string()),
@@ -87,7 +59,6 @@ _EVENTS_SCHEMA = pa.schema([
 
 _SCHEMAS: dict[str, pa.Schema] = {
     "actions": _ACTIONS_SCHEMA,
-    "agent_cycles": _AGENT_CYCLES_SCHEMA,
     "events": _EVENTS_SCHEMA,
 }
 
@@ -114,12 +85,11 @@ class SessionRecorder:
         # buffer being flushed, so it covers the whole session rather than
         # whatever happens to be unflushed at the end.
         self._action_counts: dict[int, dict[str, int]] = {}
-        self._cycle_buffer: list[dict[str, Any]] = []
         self._event_buffer: list[dict[str, Any]] = []
 
         self._buffer_lock: asyncio.Lock = asyncio.Lock()
         # Per-type fragment counters (monotonic, used for unique filenames)
-        self._fragment_seq: dict[str, int] = {"actions": 0, "agent_cycles": 0, "events": 0}
+        self._fragment_seq: dict[str, int] = {"actions": 0, "events": 0}
 
         self._flush_task: asyncio.Task[None] | None = None
         self._running: bool = False
@@ -173,10 +143,8 @@ class SessionRecorder:
     async def _flush_once(self) -> None:
         async with self._buffer_lock:
             actions = self._action_buffer
-            cycles = self._cycle_buffer
             events = self._event_buffer
             self._action_buffer = []
-            self._cycle_buffer = []
             self._event_buffer = []
 
         t0 = time.monotonic()
@@ -187,10 +155,6 @@ class SessionRecorder:
         if actions:
             tasks.append(asyncio.ensure_future(asyncio.to_thread(
                 self._write_fragment, "actions", actions,
-            )))
-        if cycles:
-            tasks.append(asyncio.ensure_future(asyncio.to_thread(
-                self._write_fragment, "agent_cycles", cycles,
             )))
         if events:
             tasks.append(asyncio.ensure_future(asyncio.to_thread(
@@ -283,7 +247,7 @@ class SessionRecorder:
         self._snapshot_count += 1
         self._parquet.append(snapshot)
 
-        buf_size = len(self._action_buffer) + len(self._cycle_buffer) + len(self._event_buffer)
+        buf_size = len(self._action_buffer) + len(self._event_buffer)
         if buf_size >= _MAX_BUFFER_SIZE:
             asyncio.create_task(self._flush_once())
 
@@ -363,73 +327,3 @@ class SessionRecorder:
     # Agent tracking
     # ------------------------------------------------------------------
 
-    def record_agent_cycle(self, record: CycleRecord) -> None:
-        """Record a single agent cycle to the agent_cycles buffer."""
-        self._cycle_buffer.append({
-            "connection_id": record.connection_id,
-            "cycle_number": record.cycle_number,
-            "game_date": record.game_date,
-            "observe_ms": record.observe_ms,
-            "decide_ms": record.decide_ms,
-            "execute_ms": record.execute_ms,
-            "total_ms": record.total_ms,
-            "actions_proposed": record.actions_proposed,
-            "actions_executed": record.actions_executed,
-            "actions_succeeded": record.actions_succeeded,
-            "actions_failed": record.actions_failed,
-            "observation_size_bytes": record.observation_size_bytes,
-            "balance": record.balance,
-            "income": record.income,
-            "company_value": record.company_value,
-            "balance_delta": record.balance_delta,
-            "vehicles_running": record.vehicles_running,
-            "prompt_tokens": record.prompt_tokens,
-            "completion_tokens": record.completion_tokens,
-            "total_tokens": record.total_tokens,
-            "total_cost": record.total_cost,
-            "llm_model": record.llm_model,
-            "llm_provider": record.llm_provider,
-        })
-
-    def record_agent_connection(
-        self,
-        connection_id: str,
-        agent_id: str,
-        company_id: int,
-        nttd_framework: str,
-        model: str,
-        observation_mode: str = "compact",
-        poll_interval: float = 5.0,
-        started_at: datetime | None = None,
-        stopped_at: datetime | None = None,
-        total_cycles: int = 0,
-        total_actions: int = 0,
-        successful_actions: int = 0,
-        failed_actions: int = 0,
-        avg_cycle_ms: float = 0.0,
-        avg_decide_ms: float = 0.0,
-    ) -> None:
-        """Write agent connection data to agents.conf via conf_writer."""
-        from nttd.db.conf_writer import update_agent_in_conf
-
-        agent_data: dict[str, Any] = {
-            "connection_id": connection_id,
-            "company_id": company_id,
-            "nttd_framework": nttd_framework,
-            "model": model,
-            "observation_mode": observation_mode,
-            "poll_interval": poll_interval,
-        }
-        if started_at:
-            agent_data["started_at"] = started_at.isoformat()
-        if stopped_at:
-            agent_data["stopped_at"] = stopped_at.isoformat()
-        if total_cycles > 0:
-            agent_data["total_cycles"] = total_cycles
-            agent_data["total_actions"] = total_actions
-            agent_data["successful_actions"] = successful_actions
-            agent_data["failed_actions"] = failed_actions
-            agent_data["avg_cycle_ms"] = round(avg_cycle_ms, 1)
-            agent_data["avg_decide_ms"] = round(avg_decide_ms, 1)
-
-        update_agent_in_conf(self._session_dir, agent_id, agent_data)
