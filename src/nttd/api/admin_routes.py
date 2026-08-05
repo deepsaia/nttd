@@ -195,12 +195,18 @@ async def get_session(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Session not found")
 
     settings = await session_repo.get_settings(session_id)
-    participants = await session_repo.list_participants(session_id)
 
     # Add runtime state
     mgr = deps.session_manager
     runtime = mgr.get_runtime(session_id) if mgr else None
     running = runtime is not None and runtime.connected
+
+    # From the live token registry, not from agents.conf. That file was written by
+    # the deleted server-driven gameloop, so this field was always an empty list.
+    participants = (
+        [{"company_id": p.company_id} for p in runtime.participants.participants()]
+        if runtime is not None else []
+    )
 
     return {
         **session,
