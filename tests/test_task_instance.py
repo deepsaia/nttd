@@ -25,17 +25,12 @@ _BASE_SETTINGS = {
     "game_creation.generation_seed": "1001",
     "_map_seed": "1001",
     "_scenario_id": "bench-30min",
-    "_scenario_version": "1",
 }
 
 
 def _task(**overrides: str):
     settings = {**_BASE_SETTINGS, **overrides}
-    return compute_task_instance(
-        settings,
-        scenario_id=settings["_scenario_id"],
-        scenario_version=settings["_scenario_version"],
-    )
+    return compute_task_instance(settings, scenario_id=settings["_scenario_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -50,8 +45,8 @@ def test_same_inputs_give_same_id() -> None:
 def test_dict_ordering_does_not_matter() -> None:
     """Settings arrive from configs and HTTP bodies, so order is incidental."""
     reversed_settings = dict(reversed(list(_BASE_SETTINGS.items())))
-    a = compute_task_instance(_BASE_SETTINGS, "bench-30min", "1")
-    b = compute_task_instance(reversed_settings, "bench-30min", "1")
+    a = compute_task_instance(_BASE_SETTINGS, "bench-30min")
+    b = compute_task_instance(reversed_settings, "bench-30min")
     assert a.task_id == b.task_id
 
 
@@ -68,7 +63,7 @@ def test_recomputation_is_idempotent() -> None:
         "_task_id": first.task_id,
         "_settings_digest": first.settings_digest,
     }
-    second = compute_task_instance(with_outputs, "bench-30min", "1")
+    second = compute_task_instance(with_outputs, "bench-30min")
     assert second.task_id == first.task_id
 
 
@@ -87,7 +82,6 @@ def test_plumbing_settings_do_not_change_id() -> None:
             "_ai_opponents": "2",
         },
         "bench-30min",
-        "1",
     )
     assert noisy.task_id == baseline.task_id
 
@@ -101,9 +95,13 @@ def test_seed_change_changes_id() -> None:
     assert _task(_map_seed="2002").task_id != _task().task_id
 
 
-def test_version_bump_changes_id() -> None:
-    """An author bumps version to invalidate comparison with earlier results."""
-    assert _task(_scenario_version="2").task_id != _task().task_id
+def test_a_settings_change_changes_id() -> None:
+    """What a scenario version used to be for, done by the settings themselves.
+
+    A version number had to be remembered, and it duplicated this: any edit worth
+    invalidating a comparison changes the settings, which changes the digest.
+    """
+    assert _task(**{"difficulty.terrain_type": "3"}).task_id != _task().task_id
 
 
 def test_scenario_id_change_changes_id() -> None:
@@ -129,7 +127,7 @@ def test_seed_is_parsed_as_int() -> None:
 def test_missing_seed_is_none() -> None:
     """An unseeded run is recorded as such rather than defaulting to a number."""
     settings = {k: v for k, v in _BASE_SETTINGS.items() if k != "_map_seed"}
-    task = compute_task_instance(settings, "bench-30min", "1")
+    task = compute_task_instance(settings, "bench-30min")
     assert task.seed is None
 
 
@@ -139,7 +137,6 @@ def test_as_dict_round_trips_fields() -> None:
     assert payload == {
         "task_id": task.task_id,
         "scenario_id": "bench-30min",
-        "scenario_version": "1",
         "seed": 1001,
         "settings_digest": task.settings_digest,
     }

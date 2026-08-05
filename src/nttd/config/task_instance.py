@@ -32,7 +32,6 @@ _NON_TASK_KEYS: frozenset[str] = frozenset({
     # Identity, not content: hashed explicitly as part of task_id, so including
     # them in the settings digest too would double-count them.
     "_scenario_id",
-    "_scenario_version",
     # Outputs of this computation. They are persisted alongside the settings, so
     # excluding them keeps the hash idempotent -- recomputing from a stored
     # settings dict (as orphan recovery does) must yield the same task_id.
@@ -60,7 +59,6 @@ class TaskInstance:
 
     task_id: str
     scenario_id: str
-    scenario_version: str
     seed: int | None
     settings_digest: str
 
@@ -69,7 +67,6 @@ class TaskInstance:
         return {
             "task_id": self.task_id,
             "scenario_id": self.scenario_id,
-            "scenario_version": self.scenario_version,
             "seed": self.seed,
             "settings_digest": self.settings_digest,
         }
@@ -97,7 +94,6 @@ def _digest(payload: Any) -> str:
 def compute_task_instance(
     settings: dict[str, str],
     scenario_id: str,
-    scenario_version: str = "1",
 ) -> TaskInstance:
     """Derive the task instance identity from resolved settings.
 
@@ -106,8 +102,6 @@ def compute_task_instance(
             internal ``_map_seed`` key if a seed was configured.
         scenario_id: Stable identifier for the scenario, independent of the file
             path it happens to live at.
-        scenario_version: Bumped by the scenario author on any change that
-            should invalidate comparison with earlier results.
 
     Returns:
         A TaskInstance whose ``task_id`` changes if and only if the world or the
@@ -121,7 +115,6 @@ def compute_task_instance(
 
     task_id = _digest({
         "scenario_id": scenario_id,
-        "scenario_version": str(scenario_version),
         "seed": seed,
         "settings": task_settings,
     })
@@ -129,7 +122,6 @@ def compute_task_instance(
     return TaskInstance(
         task_id=task_id,
         scenario_id=scenario_id,
-        scenario_version=str(scenario_version),
         seed=seed,
         settings_digest=settings_digest,
     )

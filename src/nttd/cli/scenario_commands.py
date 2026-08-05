@@ -66,7 +66,6 @@ def validate(
     table.add_column("Field", style="bold")
     table.add_column("Value")
     table.add_row("id", settings.get("_scenario_id", "?"))
-    table.add_row("version", settings.get("_scenario_version", "?"))
     table.add_row(
         "scored",
         "[green]yes[/] (held to the benchmark profile)" if scored

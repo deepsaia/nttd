@@ -205,11 +205,10 @@ class SessionManager:
         task = compute_task_instance(
             effective_settings,
             scenario_id=effective_settings.get("_scenario_id", "unknown"),
-            scenario_version=effective_settings.get("_scenario_version", "1"),
         )
         logger.info(
-            "Session %s task instance: task_id=%s scenario=%s v%s seed=%s",
-            session_id, task.task_id, task.scenario_id, task.scenario_version, task.seed,
+            "Session %s task instance: task_id=%s scenario=%s seed=%s",
+            session_id, task.task_id, task.scenario_id, task.seed,
         )
 
         # Persist effective settings to DB for reproducibility
@@ -533,7 +532,6 @@ class SessionManager:
                 runtime.task_instance = compute_task_instance(
                     stored,
                     scenario_id=stored.get("_scenario_id", "unknown"),
-                    scenario_version=stored.get("_scenario_version", "1"),
                 )
 
             # Reload the tokens the session already handed out, so agents that
