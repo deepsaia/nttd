@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 763 476" width="763" height="476" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">
+  <style>
+    .bg    { fill: #ffffff; }
+    .title { fill: #14161f; font-weight: 700; }
+    .label { fill: #14161f; }
+    .muted { fill: #5b6472; }
+    .edge  { stroke: #8b95a6; fill: none; }
+    .box   { fill: #ffffff; stroke: #8b95a6; }
+    .actor { fill: #f0ecf8; stroke: #6b5b95; }
+    .actor-t { fill: #4a3f6b; font-weight: 600; }
+    .server { fill: #e8f1f8; stroke: #2f6f9f; }
+    .server-t { fill: #1d4f74; font-weight: 600; }
+    .game  { fill: #e9f4ec; stroke: #3f7d58; }
+    .game-t { fill: #2b5940; font-weight: 600; }
+    .guard { fill: #fbeceb; stroke: #b0413e; }
+    .guard-t { fill: #8a2f2c; font-weight: 600; }
+    .data  { fill: #fdf5e6; stroke: #a8792c; }
+    .data-t { fill: #7a5720; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #14161f; }
+      .title { fill: #f2f4f8; }
+      .label { fill: #e4e8ef; }
+      .muted { fill: #9aa4b4; }
+      .edge  { stroke: #7d879a; }
+      .box   { fill: #1c1f2b; stroke: #7d879a; }
+      .actor { fill: #2a2440; stroke: #a894d6; }
+      .actor-t { fill: #c9bcf0; }
+      .server { fill: #162c3d; stroke: #5aa3d4; }
+      .server-t { fill: #a3d0ee; }
+      .game  { fill: #17301f; stroke: #6fb98a; }
+      .game-t { fill: #a5dcb8; }
+      .guard { fill: #351d1c; stroke: #dc7a77; }
+      .guard-t { fill: #f0aaa8; }
+      .data  { fill: #332715; stroke: #d4a94f; }
+      .data-t { fill: #e8c579; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b95a6"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="763" height="476" rx="10"/>
+  <text class="title" x="381" y="30" text-anchor="middle" font-size="15">What a scored run may be played on</text>
+  <text class="muted" x="381" y="48" text-anchor="middle">5 sizes x 5 terrain types = 25 maps, each with any seed</text>
+  <text class="label" x="202" y="86" text-anchor="middle" font-weight="600">64</text>
+  <text class="label" x="306" y="86" text-anchor="middle" font-weight="600">128</text>
+  <text class="label" x="410" y="86" text-anchor="middle" font-weight="600">256</text>
+  <text class="label" x="514" y="86" text-anchor="middle" font-weight="600">512</text>
+  <text class="label" x="618" y="86" text-anchor="middle" font-weight="600">1024</text>
+  <text class="muted" x="138" y="86" text-anchor="end">size_x = size_y</text>
+  <text class="label" x="138" y="118" text-anchor="end">very_flat</text>
+  <rect class="game" x="152" y="98" width="100" height="30" rx="4"/>
+  <rect class="game" x="256" y="98" width="100" height="30" rx="4"/>
+  <rect class="game" x="360" y="98" width="100" height="30" rx="4"/>
+  <rect class="game" x="464" y="98" width="100" height="30" rx="4"/>
+  <rect class="game" x="568" y="98" width="100" height="30" rx="4"/>
+  <text class="label" x="138" y="152" text-anchor="end">flat</text>
+  <rect class="game" x="152" y="132" width="100" height="30" rx="4"/>
+  <rect class="game" x="256" y="132" width="100" height="30" rx="4"/>
+  <rect class="game" x="360" y="132" width="100" height="30" rx="4"/>
+  <rect class="game" x="464" y="132" width="100" height="30" rx="4"/>
+  <rect class="game" x="568" y="132" width="100" height="30" rx="4"/>
+  <text class="label" x="138" y="186" text-anchor="end">hilly</text>
+  <rect class="game" x="152" y="166" width="100" height="30" rx="4"/>
+  <rect class="game" x="256" y="166" width="100" height="30" rx="4"/>
+  <rect class="game" x="360" y="166" width="100" height="30" rx="4"/>
+  <rect class="game" x="464" y="166" width="100" height="30" rx="4"/>
+  <rect class="game" x="568" y="166" width="100" height="30" rx="4"/>
+  <text class="label" x="138" y="220" text-anchor="end">mountainous</text>
+  <rect class="game" x="152" y="200" width="100" height="30" rx="4"/>
+  <rect class="game" x="256" y="200" width="100" height="30" rx="4"/>
+  <rect class="game" x="360" y="200" width="100" height="30" rx="4"/>
+  <rect class="game" x="464" y="200" width="100" height="30" rx="4"/>
+  <rect class="game" x="568" y="200" width="100" height="30" rx="4"/>
+  <text class="label" x="138" y="254" text-anchor="end">alpinist</text>
+  <rect class="game" x="152" y="234" width="100" height="30" rx="4"/>
+  <rect class="game" x="256" y="234" width="100" height="30" rx="4"/>
+  <rect class="game" x="360" y="234" width="100" height="30" rx="4"/>
+  <rect class="game" x="464" y="234" width="100" height="30" rx="4"/>
+  <rect class="game" x="568" y="234" width="100" height="30" rx="4"/>
+  <rect class="guard" x="24" y="292" width="715" height="76" rx="8"/>
+  <text class="guard-t" x="44" y="314">Locked: identical in every scored run</text>
+  <text class="label" x="44" y="335">industry_density = normal, landscape = temperate, map_edges = random, number_towns = normal, rivers = medium</text>
+  <text class="label" x="44" y="353">sea_level = medium, smoothness = smooth, starting_year = 2020, town_names = english, variety = none</text>
+  <rect class="data" x="24" y="380" width="715" height="76" rx="8"/>
+  <text class="data-t" x="44" y="402">The seed is where the variance lives</text>
+  <text class="label" x="44" y="423">Any seed is admissible, so the 25 maps are families rather than fixed boards.</text>
+  <text class="label" x="44" y="441">task_id is a digest over scenario id, version, seed and settings, so runs on one world group by themselves.</text>
+</svg>
