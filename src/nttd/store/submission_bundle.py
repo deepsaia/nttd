@@ -4,11 +4,19 @@ nttd is self-hosted, so a submission cannot mean "we watched it happen". It has 
 "the artifacts are internally consistent and the score is recomputable". This assembles
 the artifacts that make that checkable, and a manifest that says what they are.
 
-**The manifest is a projection of ``result.parquet``, never a second source.** Every
-field in it is copied from the recorded row, so the two cannot contradict each other. A
-field the run did not record does not appear: `tier`, for instance, is nowhere in the
-record, so rather than deriving a plausible value the bundle ships the resolved scenario
-and lets a reader see the actual bound.
+**The manifest holds identity and integrity, and nothing else.** It carries the session
+and task ids, the world fingerprint, and a digest per artifact. Everything about the run
+-- score, provenance, mode, spend -- is in ``result.parquet``, which is sitting in the
+same bundle. An earlier version projected forty fields out of that row into nested JSON,
+which meant maintaining a test proving the copy had not drifted from the original. The
+duplication created the need for the test; removing the duplication removed both.
+
+**The manifest carries no verdict, deliberately.** A bundle that said "verified" would be
+making a claim about itself that anyone could write -- the same defect as a scenario
+declaring ``scored = true``, in a new place. A bundle carries evidence; whoever needs to
+trust it computes the verdict themselves, which for a leaderboard means computing it on
+their own infrastructure with their own nttd and GameScript. ``nttd verify`` run locally
+is a self-check and predicts that verdict; it does not grant one.
 
 **On signing.** The plan called for a signed manifest. With nobody operating nttd there
 is no key authority, so a signature would prove authorship rather than honesty: a
@@ -35,7 +43,6 @@ from nttd.config.task_instance import file_digest
 from nttd.runtime.final_save import FINAL_SAVE_NAME, SAVE_EXTENSION
 from nttd.store.map_digest import map_digest
 from nttd.store.result_writer import read_result
-from nttd.store.verification_gaps import verification_gaps
 
 logger = logging.getLogger(__name__)
 
@@ -132,55 +139,18 @@ class SubmissionBundle:
     def _manifest(
         self, rows: list[dict[str, Any]], copied: dict[str, Path],
     ) -> dict[str, Any]:
-        """Build the manifest from the recorded row plus artifact digests."""
+        """Identity and integrity. The run itself is in result.parquet."""
         first = rows[0]
-        tiles = self.session_dir / "tiles.parquet"
-
         return {
             "manifest_version": MANIFEST_VERSION,
             "session_id": first.get("session_id", ""),
-            "task": {
-                "task_id": first.get("task_id", ""),
-                "scenario_id": first.get("scenario_id", ""),
-                "map_seed": first.get("map_seed"),
-                "settings_digest": first.get("settings_digest", ""),
-                # Regenerate the seed and this must match. Hashed from the terrain
-                # rather than the file, so two generations of one seed agree.
-                "map_digest": map_digest(tiles) or "",
-            },
-            "world": {
-                "map_size_x": first.get("map_size_x"),
-                "map_size_y": first.get("map_size_y"),
-                "landscape": first.get("landscape", ""),
-                "terrain_type": first.get("terrain_type", ""),
-            },
-            "rules": {
-                "profile_version": first.get("profile_version", ""),
-                "capability_digest": first.get("capability_digest", ""),
-                "score_version": first.get("score_version", ""),
-                "scored_session": bool(first.get("scored_session")),
-                "clean_run": bool(first.get("clean_run")),
-                "blocked_attempts": first.get("blocked_attempts", 0),
-                "blocked_operations": first.get("blocked_operations", ""),
-            },
-            "run": {
-                "runtime_mode": first.get("runtime_mode", ""),
-                "end_reason": first.get("end_reason", ""),
-                "wall_seconds": first.get("wall_seconds"),
-                "game_days": first.get("game_days"),
-                "start_game_date": first.get("start_game_date"),
-                "end_game_date": first.get("end_game_date"),
-            },
-            "scores": [_score_of(row) for row in rows],
-            "provenance": {
-                "nttd_git_sha": first.get("nttd_git_sha", ""),
-                "nttd_git_dirty": bool(first.get("nttd_git_dirty")),
-                "gamescript_digest": first.get("gamescript_digest", ""),
-                "scenario_file_digest": first.get("scenario_file_digest", ""),
-                "openttd_version": first.get("openttd_version", ""),
-                "final_save_digest": first.get("final_save_digest", ""),
-                "final_save_bytes": first.get("final_save_bytes", 0),
-            },
+            # Which problem was played. Everything else about the task -- seed,
+            # settings digest, profile -- is in result.parquet.
+            "task_id": first.get("task_id", ""),
+            # The world fingerprint: regenerate the recorded seed and this must match.
+            # Hashed from the terrain rather than from tiles.parquet, so two
+            # generations of one seed agree.
+            "map_digest": map_digest(self.session_dir / "tiles.parquet") or "",
             "artifacts": {
                 name: {
                     "sha256": file_digest(path) or "",
@@ -188,9 +158,6 @@ class SubmissionBundle:
                 }
                 for name, path in sorted(copied.items())
             },
-            # The bundle states its own weaknesses. A reader should not have to
-            # discover that a save is missing by trying to reload it.
-            "verification_gaps": verification_gaps(rows),
         }
 
     def _archive(self, bundle_dir: Path) -> None:
@@ -200,19 +167,3 @@ class SubmissionBundle:
             for path in sorted(bundle_dir.iterdir()):
                 tar.add(path, arcname=path.name)
         logger.info("Submission archive written to %s", target)
-
-
-def _score_of(row: dict[str, Any]) -> dict[str, Any]:
-    """One company's ranked result, as the manifest carries it."""
-    return {
-        "company_id": row.get("company_id"),
-        "company_name": row.get("company_name", ""),
-        "primary_score": row.get("primary_score"),
-        "tiebreak_cargo": row.get("tiebreak_cargo"),
-        "rating_available": bool(row.get("rating_available")),
-        "company_value": row.get("company_value"),
-        "participant_type": row.get("participant_type", ""),
-        "model": row.get("model", ""),
-        "total_actions": row.get("total_actions"),
-        "spend_is_reported": bool(row.get("spend_is_reported")),
-    }
