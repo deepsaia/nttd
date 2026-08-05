@@ -37,7 +37,7 @@ copy of the rules and nothing to drift.
 
 Conformance is normally the whole credential. There is deliberately no registry of
 blessed scenarios in the default posture: a curated list would have to enumerate
-roughly 4,700 size/landscape/terrain/tier combinations before seeds, and would make
+the 25 size/terrain combinations across four tiers before seeds, and would make
 a legitimate conforming run look second-class purely because nobody added a row for
 it. ``task_id`` -- derived from world content -- is what groups comparable runs.
 """
@@ -66,14 +66,24 @@ _FALLBACK_LOCKED: dict[str, Any] = {
     "town_names": "english",
     "number_towns": "normal",
     "industry_density": "normal",
+    "landscape": "temperate",
 }
 
 _FALLBACK_ALLOWED: dict[str, tuple[Any, ...]] = {
-    "size_x": (64, 128, 256, 512, 1024),
-    "size_y": (64, 128, 256, 512, 1024),
-    "landscape": ("temperate", "sub-arctic", "sub-tropical", "toyland"),
+    "size": (64, 128, 256, 512, 1024),
     "terrain_type": ("very_flat", "flat", "hilly", "mountainous", "alpinist"),
 }
+
+# One allowed list governing both map axes, because a scored map must be square.
+# Handled apart from the generic membership check: squareness is a relation between
+# two settings, which a per-key list of permitted values cannot express.
+SIZE_KEY = "size"
+SIZE_FIELDS = ("size_x", "size_y")
+
+# Locked settings recorded as result columns anyway. Landscape is locked today and
+# expected to open up, and a free-play row should still say which world it was, so
+# leaving the column permanently empty would lose information for no gain.
+REPORTED_LOCKED = ("landscape",)
 
 # Actions permitted in one submission, per company. See config/fairness.py.
 _FALLBACK_FAIRNESS: dict[str, float] = {"max_actions_per_decision": 15}
@@ -150,6 +160,53 @@ class BenchmarkProfile:
         permitted to differ."""
         return frozenset(self.allowed)
 
+    @property
+    def reported_settings(self) -> tuple[str, ...]:
+        """Scenario fields recorded as result columns, in a stable order.
+
+        The allowed keys, since disclosure is what permits them to vary, with two
+        adjustments: ``size`` expands to the two axes a scenario actually writes, and
+        the locked settings in REPORTED_LOCKED are included because a row should say
+        which world it was even when the value was not the contestant's choice.
+        """
+        keys: list[str] = []
+        for key in sorted(self.allowed):
+            keys.extend(SIZE_FIELDS if key == SIZE_KEY else [key])
+        for key in REPORTED_LOCKED:
+            if key not in keys:
+                keys.append(key)
+        return tuple(keys)
+
+    def _size_problems(self, map_cfg: Any, get: Any) -> list[str]:
+        """Check both map axes against the one size list, and require them equal."""
+        permitted = self.allowed.get(SIZE_KEY)
+        if not permitted:
+            return []
+
+        problems: list[str] = []
+        values: dict[str, Any] = {}
+        for field in SIZE_FIELDS:
+            actual = get(map_cfg, field, None)
+            if actual is None:
+                continue
+            values[field] = actual
+            if not any(_matches(actual, candidate) for candidate in permitted):
+                rendered = ", ".join(str(value) for value in permitted)
+                problems.append(
+                    f"map.{field} = {actual!r} is not allowed for a scored run. "
+                    f"Choose one of: {rendered}."
+                )
+
+        if len(values) == 2 and not _matches(values["size_x"], _as_int(values["size_y"])):
+            problems.append(
+                f"map.size_x = {values['size_x']!r} and map.size_y = "
+                f"{values['size_y']!r} differ: a scored map must be square. Rectangles "
+                f"only vary the aspect ratio, so they would multiply the board by 5 "
+                f"without adding a distinct problem. Set both to the same value, or "
+                f"drop scored = true to play it freely."
+            )
+        return problems
+
     def deviations(self, map_cfg: Any, get: Any, scenario_id: str = "") -> list[str]:
         """Return a human-readable problem per profile violation.
 
@@ -178,7 +235,11 @@ class BenchmarkProfile:
                     f"play it freely."
                 )
 
+        problems.extend(self._size_problems(map_cfg, get))
+
         for key, allowed in self.allowed.items():
+            if key == SIZE_KEY:
+                continue
             actual = get(map_cfg, key, None)
             if actual is None:
                 # Omitted entirely. scenario_to_settings supplies OpenTTD's own
@@ -203,6 +264,14 @@ class BenchmarkProfile:
             )
 
         return problems
+
+
+def _as_int(value: Any) -> Any:
+    """Coerce a config value to int when it looks like one, for numeric comparison."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
 
 
 def _matches(actual: Any, expected: Any) -> bool:
@@ -309,6 +378,7 @@ def active_profile() -> BenchmarkProfile:
 LOCKED_SETTINGS: dict[str, Any] = _PROFILE.locked
 ALLOWED_RANGES: dict[str, tuple[Any, ...]] = _PROFILE.allowed
 VARIABLE_SETTINGS: frozenset[str] = _PROFILE.variable_settings
+REPORTED_SETTINGS: tuple[str, ...] = _PROFILE.reported_settings
 PROFILE_VERSION: str = _PROFILE.version
 
 
