@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,14 +15,10 @@ from typing import Any
 
 import polars as pl
 
-logger = logging.getLogger(__name__)
+from nttd.store import parquet_reader, session_paths
+from nttd.store.conf_writer import read_session_conf
 
-# Honours NTTD_SESSIONS_DIR like every other module that resolves this path
-# (api/app.py, cli/result_command.py, cli/helpers.py, runtime/session_runtime.py).
-# Hardcoding it meant `nttd analyze` reported "Session not found" for any session
-# recorded outside the default directory, while `nttd result` on the same session
-# worked -- the two commands disagreed about where sessions live.
-SESSIONS_DIR = Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
+logger = logging.getLogger(__name__)
 
 # "result" is included so a report can reach the contestant detail and per-model
 # spend that POST /report supplies; "agent_cycles" is gone with the gameloop.
@@ -110,55 +105,32 @@ class SessionData:
         return f"{self.name} ({self.model})"
 
 
-def load_fragments(session_dir: Path, parquet_type: str) -> pl.DataFrame:
-    """Read all fragment files for a parquet type and concatenate into one DataFrame.
+def load_frame(
+    session_id: str,
+    parquet_type: str,
+    sessions_dir: Path | str | None = None,
+) -> pl.DataFrame:
+    """Load one parquet type for a session as a polars DataFrame.
 
-    Returns an empty DataFrame if no fragments exist.
+    Merged file or unmerged fragments, whichever the session has: that choice belongs
+    to store.parquet_reader, which the API repositories read through as well, so a live
+    session looks the same from either side.
     """
-    fragments_dir = session_dir / "_fragments"
-    if not fragments_dir.exists():
+    table = parquet_reader.read_table(session_id, parquet_type, sessions_dir=sessions_dir)
+    if table is None:
         return pl.DataFrame()
-
-    pattern = f"{parquet_type}_*.parquet"
-    fragment_paths = sorted(fragments_dir.glob(pattern))
-    if not fragment_paths:
-        return pl.DataFrame()
-
-    frames: list[pl.DataFrame] = []
-    for frag_path in fragment_paths:
-        try:
-            frames.append(pl.read_parquet(frag_path))
-        except Exception:
-            logger.warning("Failed to read fragment %s, skipping", frag_path)
-
-    if not frames:
-        return pl.DataFrame()
-
-    return pl.concat(frames)
+    return pl.from_arrow(table)
 
 
-def _load_parquet_with_fragments(session_dir: Path, parquet_type: str) -> pl.DataFrame:
-    """Load a parquet type, preferring merged file but falling back to fragments."""
-    merged_path = session_dir / f"{parquet_type}.parquet"
-    if merged_path.exists():
-        try:
-            return pl.read_parquet(merged_path)
-        except Exception:
-            logger.warning("Failed to read %s", merged_path)
-
-    return load_fragments(session_dir, parquet_type)
-
-
-def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> SessionData:
+def load_session(session_id: str, sessions_dir: Path | str | None = None) -> SessionData:
     """Load all data for a session from its directory."""
-    session_dir = Path(sessions_dir) / session_id
+    root = Path(sessions_dir) if sessions_dir is not None else session_paths.sessions_dir()
+    session_dir = root / session_id
     if not session_dir.exists():
         raise FileNotFoundError(f"Session directory not found: {session_dir}")
 
     data = SessionData(session_id=session_id, session_dir=session_dir)
 
-    # Load session metadata (parquet preferred, .conf fallback)
-    from nttd.db.conf_writer import read_session_conf
     sess = read_session_conf(session_dir)
     if sess:
         data.name = sess.get("name", session_id)
@@ -175,7 +147,7 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
 
     # Load Parquet files (merged or fragments for in-progress sessions)
     for parquet_type in _PARQUET_TYPES:
-        df = _load_parquet_with_fragments(session_dir, parquet_type)
+        df = load_frame(session_id, parquet_type, sessions_dir=root)
         if not df.is_empty():
             setattr(data, parquet_type, df)
 
@@ -199,7 +171,7 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
 
 def load_sessions(
     session_ids: list[str],
-    sessions_dir: Path | str = SESSIONS_DIR,
+    sessions_dir: Path | str | None = None,
 ) -> list[SessionData]:
     """Load multiple sessions."""
     return [load_session(sid, sessions_dir) for sid in session_ids]

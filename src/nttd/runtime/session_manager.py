@@ -30,12 +30,12 @@ from nttd.config.scenario_config import (
     TimeLimitConfig,
 )
 from nttd.config.task_instance import compute_task_instance
-from nttd.db.repositories import session_repo
-from nttd.db.result_writer import ResultWriter
 from nttd.runtime.action_budget import from_fairness as budget_from_fairness
 from nttd.runtime.config_builder import build_session_config
 from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.session_runtime import SessionRuntime
+from nttd.store.repositories import session_repo
+from nttd.store.result_writer import ResultWriter
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from nttd.analysis.loader import load_fragments, load_session
+from nttd.analysis.loader import load_session
 from nttd.analysis.reports.registry import (
     ReportResult,
     ensure_reports_loaded,
@@ -17,6 +17,7 @@ from nttd.analysis.reports.registry import (
     run_reports,
 )
 from nttd.analysis.reports.renderer import render_all, render_json, render_markdown
+from nttd.store import parquet_reader
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -30,7 +31,7 @@ def session_dir(tmp_path: Path) -> Path:
     sdir.mkdir()
 
     # session.parquet
-    from nttd.db.conf_writer import write_session_conf
+    from nttd.store.conf_writer import write_session_conf
 
     write_session_conf(
         sdir,
@@ -233,7 +234,7 @@ def fragment_dir(tmp_path: Path) -> Path:
     fdir = sdir / "_fragments"
     fdir.mkdir(parents=True)
 
-    from nttd.db.conf_writer import write_session_conf
+    from nttd.store.conf_writer import write_session_conf
 
     write_session_conf(sdir, session_id="ses_frag", name="frag-test", status="active")
 
@@ -284,9 +285,10 @@ class TestLoader:
         assert not s.is_in_progress
 
     def test_load_fragments(self, fragment_dir: Path) -> None:
-        df = load_fragments(fragment_dir, "actions")
-        assert len(df) == 3
-        assert list(df["action_id"]) == ["frag_0", "frag_1", "frag_2"]
+        table = parquet_reader.read_fragments(fragment_dir, "actions")
+        assert table is not None
+        assert table.num_rows == 3
+        assert table.column("action_id").to_pylist() == ["frag_0", "frag_1", "frag_2"]
 
     def test_load_session_from_fragments(self, fragment_dir: Path) -> None:
         s = load_session("ses_frag", sessions_dir=fragment_dir.parent)

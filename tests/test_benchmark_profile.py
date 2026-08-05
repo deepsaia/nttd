@@ -510,7 +510,7 @@ def test_the_profile_version_is_derived_from_the_rules(tmp_path: Path) -> None:
 def test_every_allowed_key_is_a_recorded_leaderboard_column() -> None:
     """Disclosure is the condition on which a setting may vary. An allowed key with
     no column would let two runs differ invisibly."""
-    from nttd.db.result_writer import _SCHEMA
+    from nttd.store.result_writer import _SCHEMA
 
     columns = set(_SCHEMA.names)
     for key in active_profile().allowed:

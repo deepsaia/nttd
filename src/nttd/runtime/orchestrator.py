@@ -27,7 +27,7 @@ from nttd.state.world import WorldState
 from nttd.utils.name_generator import generate_timestamp
 
 if TYPE_CHECKING:
-    from nttd.db.recorder import SessionRecorder
+    from nttd.store.recorder import SessionRecorder
 
 logger = logging.getLogger(__name__)
 

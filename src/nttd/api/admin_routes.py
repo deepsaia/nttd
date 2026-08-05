@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 import nttd.api.dependencies as deps
 from nttd.api.scored_guard import require_unscored
-from nttd.db.repositories import session_repo
+from nttd.store.repositories import session_repo
 from nttd.utils.name_generator import generate_session_name
 
 logger = logging.getLogger(__name__)

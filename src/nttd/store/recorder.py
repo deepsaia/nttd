@@ -25,10 +25,11 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from nttd.db.parquet_writer import ParquetWriter
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.snapshot import StateSnapshot
+from nttd.store import session_paths
+from nttd.store.parquet_writer import ParquetWriter
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +73,12 @@ class SessionRecorder:
 
     def __init__(
         self, session_id: str, flush_interval: float = _FLUSH_INTERVAL_SECONDS,
-        data_dir: str = "logs/sessions",
+        data_dir: str | None = None,
     ) -> None:
         self.session_id: str = session_id
         self._flush_interval: float = flush_interval
-        self._session_dir: Path = Path(data_dir).resolve() / session_id
+        root = Path(data_dir) if data_dir else session_paths.sessions_dir()
+        self._session_dir: Path = root.resolve() / session_id
         self._fragments_dir: Path = self._session_dir / "_fragments"
 
         # Per-type buffers

@@ -24,6 +24,7 @@ from nttd.api.snapshot_routes import router as snapshot_router
 from nttd.api.tiers import TIER_DESCRIPTIONS, Tier
 from nttd.api.ws_routes import router as ws_router
 from nttd.runtime.session_manager import SessionManager
+from nttd.store import session_paths
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ OPENTTD_BINARY = os.environ.get(
     "/Applications/OpenTTD.app/Contents/MacOS/openttd",
 )
 BASE_CONFIG_DIR = Path(os.environ.get("NTTD_BASE_CONFIG", "ottd_config"))
-SESSIONS_DIR = Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
+SESSIONS_DIR = session_paths.sessions_dir()
 PORT_RANGE_START = int(os.environ.get("NTTD_PORT_RANGE_START", "4000"))
 
 
@@ -43,10 +44,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-
-    # Configure repository paths
-    from nttd.db.repositories import session_repo
-    session_repo.set_sessions_dir(SESSIONS_DIR)
 
     # Initialize session manager
     deps.session_manager = SessionManager(

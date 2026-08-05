@@ -13,8 +13,8 @@ from pathlib import Path
 
 from nttd.analysis.score import rank_companies
 from nttd.config.task_instance import compute_task_instance
-from nttd.db.result_writer import ResultWriter, read_result
 from nttd.schemas.company import Company
+from nttd.store.result_writer import ResultWriter, read_result
 
 _SETTINGS = {
     "game_creation.map_x": "8",
@@ -212,7 +212,7 @@ def test_capability_digest_reflects_the_vocabulary(tmp_path: Path) -> None:
     """
     from unittest.mock import patch
 
-    from nttd.db import result_writer
+    from nttd.store import result_writer
 
     baseline = _write(tmp_path)[0]["capability_digest"]
     assert baseline
@@ -234,7 +234,7 @@ def test_every_written_key_is_in_the_schema(tmp_path: Path) -> None:
     a result that looks written and is not, which is how a newly added column first
     went missing. Comparing the two sets makes that failure loud.
     """
-    from nttd.db.result_writer import _SCHEMA
+    from nttd.store.result_writer import _SCHEMA
 
     rows = _write(tmp_path)
     assert set(rows[0]) == set(_SCHEMA.names)
