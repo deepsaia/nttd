@@ -253,7 +253,14 @@ diversity, cash, and loan status. Cargo delivered breaks ties.
 
 ## Reference runners
 
-`examples/` and `agents/` hold working runners: a plain HTTP client, LangChain and
-LangGraph agents, and a neuro-san multi-agent system whose coded tools call back into
-`gs/query`. They are contestant-side code and will move to a separate `nttd-examples`
-repository.
+Working runners live in a separate repository,
+[deepsaia/nttd-examples](https://github.com/deepsaia/nttd-examples): a minimal HTTP
+runner, a scripted policy, LangChain and LangGraph agents, and a neuro-san multi-agent
+system whose coded tools call back into `gs/query`.
+
+They are contestant-side code, and none of them import the `nttd` package. That is worth
+knowing before you start: you do not need the engine installed to write an entry, and an
+entry written in another language is on equal footing.
+
+Start with `examples/minimal_runner.py`. It is the whole contract in one file and runs
+without an API key.

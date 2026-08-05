@@ -21,7 +21,8 @@ explains the current one. nttd used to run the contestant's agent in-process thr
 framework adapters — a LangChain adapter, an OpenAI adapter, an HTTP adapter that
 called out to a neuro-san server. That inverted the control direction: because nttd
 drove the loop, the *scenario file* had to name the contestant's model, framework, and
-the path to a prompt function inside `examples/`. The task definition depended on the
+the path to a prompt function inside the contestant's own tree. The task definition
+depended on the
 contestant's code, so a contestant running their own system could not use a shipped
 scenario as written.
 
