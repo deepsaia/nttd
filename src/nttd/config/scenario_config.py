@@ -24,7 +24,23 @@ from nttd.config.benchmark_profile import deviations as profile_deviations
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "scenario.conf"
+# A shipped benchmark example rather than a free-play file. The gameloop-era
+# configs it used to point at named per-agent models and an observation_mode, so
+# the default was a scenario nttd could no longer honour.
+# The world a scenario inherits when it says nothing. Named once because the emitted
+# OpenTTD setting and the recorded dimension must agree: the dimension loop read the
+# raw tree while the setting applied a default, so a free-play scenario that omitted
+# landscape generated a temperate world and then recorded no landscape at all.
+_MAP_DEFAULTS: dict[str, Any] = {
+    "size_x": 256,
+    "size_y": 256,
+    "landscape": "temperate",
+    "terrain_type": "flat",
+}
+
+_DEFAULT_CONFIG_PATH = (
+    Path(__file__).parent.parent.parent.parent / "config" / "benchmark" / "t2_example.conf"
+)
 
 # ---------------------------------------------------------------------------
 # Value maps: human-readable config strings -> OpenTTD INI integer values
@@ -192,21 +208,23 @@ class RuntimeConfig:
 class ScenarioConfig:
     """Top-level scenario config. Map/company settings live in _raw (ConfigTree).
 
-    ``id`` and ``version`` identify the task instance independently of the file
-    path, so a result stays traceable to the exact problem it was scored on.
-    ``id`` defaults to ``name``; bump ``version`` on any change that should
-    invalidate comparison with earlier results.
+    ``id`` identifies the task independently of the file path, so a result stays
+    traceable to the exact problem it was scored on. It defaults to ``name``.
+
+    There is no scenario version. It was a number an author had to remember to bump,
+    and it duplicated work ``settings_digest`` already does: any edit that should
+    invalidate a comparison changes the settings, which changes the digest, which
+    changes the task_id. A version that only distinguishes two scenarios with
+    identical settings distinguishes nothing.
     """
 
     name: str = "default"
     description: str = ""
     id: str = ""
-    version: str = "1"
-    # When true, the session refuses game-mutating operator operations for its
-    # whole life, for every caller. This is what protects a benchmark result: a
-    # self-hosting contestant holds every credential, so session state is the only
-    # boundary that means anything. Off by default, since scenario authoring and
-    # debugging need the full surface.
+    # Computed from the world by resolve_scored, never read from the file as a fact.
+    # When true the session refuses game-mutating operator operations for its whole
+    # life, for every caller: a self-hosting contestant holds every credential, so
+    # session state is the only boundary that means anything.
     scored: bool = False
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     end_conditions: EndConditionsConfig = field(default_factory=EndConditionsConfig)
@@ -321,8 +339,8 @@ def _validate_config(
 
     # --- Enum validation ---
     _enum_checks: list[tuple[str, dict[str, str], Any]] = [
-        ("landscape", _LANDSCAPE_MAP, _get(m, "landscape", "temperate")),
-        ("terrain_type", _TERRAIN_MAP, _get(m, "terrain_type", "flat")),
+        ("landscape", _LANDSCAPE_MAP, _get(m, "landscape", _MAP_DEFAULTS["landscape"])),
+        ("terrain_type", _TERRAIN_MAP, _get(m, "terrain_type", _MAP_DEFAULTS["terrain_type"])),
         ("variety", _VARIETY_MAP, _get(m, "variety", "none")),
         ("smoothness", _SMOOTHNESS_MAP, _get(m, "smoothness", "smooth")),
         ("rivers", _RIVERS_MAP, _get(m, "rivers", "medium")),
@@ -351,7 +369,7 @@ def _validate_config(
             )
 
     # --- Custom terrain height: 1..255 ---
-    terrain = _get(m, "terrain_type", "flat")
+    terrain = _get(m, "terrain_type", _MAP_DEFAULTS["terrain_type"])
     if terrain == "custom":
         h = int(_get(m, "custom_terrain_height", 30))
         if h < 1 or h > 255:
@@ -575,14 +593,14 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     _map = functools.partial(_locked_aware_get, m, scored)
 
     # Map dimensions (log2)
-    settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", 256))))
-    settings["game_creation.map_y"] = str(_log2(int(_get(m, "size_y", 256))))
+    settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", _MAP_DEFAULTS["size_x"]))))
+    settings["game_creation.map_y"] = str(_log2(int(_get(m, "size_y", _MAP_DEFAULTS["size_y"]))))
 
     # Landscape
-    settings["game_creation.landscape"] = _LANDSCAPE_MAP.get(_get(m, "landscape", "temperate"), "0")
+    settings["game_creation.landscape"] = _LANDSCAPE_MAP.get(_get(m, "landscape", _MAP_DEFAULTS["landscape"]), "0")
 
     # Terrain
-    terrain = _get(m, "terrain_type", "flat")
+    terrain = _get(m, "terrain_type", _MAP_DEFAULTS["terrain_type"])
     settings["difficulty.terrain_type"] = _TERRAIN_MAP.get(terrain, "1")
     if terrain == "custom":
         settings["game_creation.custom_terrain_type"] = str(int(_get(m, "custom_terrain_height", 30)))
@@ -658,7 +676,6 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     # without re-reading the config file. Resolved above, before validation, because
     # the profile's optional allowlist is checked against it.
     settings["_scenario_id"] = scenario_id
-    settings["_scenario_version"] = str(_get(raw, "version", "1"))
     if scored:
         settings["_scored"] = "1"
         # Which profile admitted the run. Recorded rather than assumed, so a result
@@ -682,7 +699,7 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         # record it. Reading the raw tree left the column empty for exactly the
         # scenarios that were most conformant, so a T3 example that omitted landscape
         # reported no landscape at all.
-        value = _map(key, None)
+        value = _map(key, _MAP_DEFAULTS.get(key))
         if value is not None:
             settings[f"{DIMENSION_PREFIX}{key}"] = str(value)
 
@@ -797,7 +814,6 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
         # id falls back to name so existing scenarios keep a stable identity
         # without every file needing an explicit id.
         id=str(_get(s, "id", scenario_name)),
-        version=str(_get(s, "version", "1")),
         # Computed, not read: the same rule scenario_to_settings applies, so the
         # dataclass and the emitted settings cannot disagree about whether a run is
         # scoreable. See resolve_scored.

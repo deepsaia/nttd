@@ -1,6 +1,6 @@
 """Evaluates end conditions after each heartbeat step.
 
-End conditions are configured via config/scenario.conf.
+End conditions are configured in a scenario's end_conditions block.
 Logic "any" (default): simulation stops when the first enabled condition is met.
 Logic "all": simulation stops when every enabled condition is simultaneously met.
 """
