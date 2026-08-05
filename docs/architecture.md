@@ -283,6 +283,75 @@ combination, because wall time in stepped mode measures the contestant's hardwar
 
 ---
 
+## Several companies, one clock
+
+A session can hold N contestant companies. Real-time and stepped need different things
+from that, because one of them has a clock the contestants control.
+
+### Real-time needs nothing added
+
+The world runs continuously and each company submits whenever it likes. Verified on a
+two-company session: both acted independently, and company 0's token targeting company 1
+was refused with `Token is scoped to company 0 but the request targets company 1`. The
+action ceiling is already per company, scoring is already per company, and observation is
+full state for everyone, so it is symmetric.
+
+The one thing to know is that every company's actions funnel through one GameScript.
+A company issuing long `connect_rail` calls will slow its rivals' submissions. That is a
+shared-resource property of the game, not something nttd schedules around.
+
+### Stepped needs a barrier
+
+There is one world with one clock, so N companies cannot each hold their own. Measured
+on a two-company session before this was built: each company took **one** step, and the
+world advanced **60** days when the calls were staggered and **30** when they arrived
+together. "Ten steps" meant a different amount of world depending on request timing, and
+the two companies got step numbers 3 and 4 out of a shared counter.
+
+So the clock is synchronised and participation is not. A window opens when the first
+company arrives and closes when every registered stepper has arrived; the last arriver
+drives the single world advance, and everyone gets the same post-advance observation and
+the same step number. N companies times K steps is K windows, the same horizon one
+company stepping K times would cover.
+
+Four properties worth stating, because each was a decision:
+
+**No decision deadline.** Removing wall-clock pressure from deliberation is the entire
+point of stepping, so a slow policy is never truncated. The only timeout is a liveness
+one, defaulting to 10 minutes: a registered stepper that goes silent past it is evicted
+for the rest of the run and recorded as `stepper_evicted`, so a crashed runner cannot
+hang a session. Over HTTP a runner that is thinking hard is indistinguishable from one
+that has died; the timeout is set far above any real deliberation so only the second case
+should reach it.
+
+**Registration is explicit**, via `POST /step/reset`. Inferring the barrier's size from
+the session's company count would stall every window for 10 minutes on a company whose
+runner never attached.
+
+**The ceiling is checked per company, before joining the window.** Two companies each
+submitting a legal 15 is 30 actions in the merged flush. Checking the merged batch would
+let one contestant's legal batch refuse everybody's window; an earlier version read the
+company off the first action, which had exactly that effect.
+
+**The flush is ordered by company, not by arrival.** Which company happened to call first
+should not decide whose road gets built on a contested tile.
+
+### Two shapes of multi-agent entry
+
+| Shape | What it is | What drives it |
+|---|---|---|
+| Independent runners | N processes, N tokens, one `NttdEnv` each | the server's barrier |
+| One process, N policies | self-play and population training | `NttdParallelEnv` |
+
+`NttdParallelEnv` is the PettingZoo `ParallelEnv` shape and an ordinary client of the
+same routes. It issues its N `POST /step` calls on a thread pool, not for speed but
+because each blocks until the window closes: issued one after another, the first would
+wait forever. An agent omitted from its `actions` dict still steps, with an empty batch,
+for the same reason. There is no `pettingzoo` dependency; taking the package for two base
+classes would push it onto every nttd install.
+
+---
+
 ## The record
 
 Per session, under `logs/sessions/<session_id>/` (or `NTTD_SESSIONS_DIR`):
@@ -335,6 +404,11 @@ Things a reader might expect and will not find:
 - **No LLM timeout or history cap.** Both are unenforceable against a loop running in
   the contestant's own process, and stating an unenforceable suggestion as a limit
   misleads whoever reads the result.
-- **No PettingZoo / multi-agent stepping** yet. The barrier is single-company;
-  multi-agent stepping needs a decision about whether companies step in lockstep or
-  independently.
+- **No `pettingzoo` dependency**, though `NttdParallelEnv` follows its `ParallelEnv`
+  shape. Taking the package for two base classes would push it onto every nttd install.
+- **No per-agent termination.** One world means one set of end conditions, so a stepped
+  run ends for every company at once. A company going bankrupt ends the session rather
+  than removing that agent and continuing.
+- **No decision deadline at the step barrier.** A slow policy is never truncated; only a
+  silent one is evicted. The consequence is that one hung runner costs the other
+  companies one liveness timeout before the run continues without it.

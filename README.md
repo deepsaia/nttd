@@ -168,6 +168,47 @@ requests.post(f"{P}/report", headers=H, json={
 
 `nttd result` then shows the breakdown per model and role.
 
+Note the distinction from the next section: this is several loops cooperating as **one**
+company. Several *competing* companies is `--agent-companies N`, one token each.
+
+---
+
+#### 2b. Several competing companies
+
+`uv run nttd session start -s ses_... --agent-companies 2` creates two contestant
+companies with one participant token each, in `participants.json`.
+
+**Example A — real-time.** Nothing special: each company acts on its own cadence with its
+own token. The ceiling and the score are per company, and observation is full state for
+everyone, so nobody has an information edge. Using one company's token against another is
+refused. The one shared resource is the GameScript: a rival issuing long `connect_rail`
+calls will slow your submissions.
+
+**Example B — stepped, from one process.** For self-play and population training:
+
+```python
+import json
+from nttd.rl.multi_env import NttdParallelEnv
+
+tokens = {int(k): v for k, v in json.load(open(f"logs/sessions/{SID}/participants.json")).items()}
+env = NttdParallelEnv(session_id=SID, tokens=tokens)
+observations, infos = env.reset()
+observations, rewards, terminations, truncations, infos = env.step({
+    "company_0": my_policy(observations["company_0"]),
+    "company_1": [],                      # waiting is a legitimate move
+})
+```
+
+Stepped play gathers each company's step into a shared **window**: the world advances once
+per window, so K steps is K intervals whether one company plays or four. Without that, two
+companies each taking one step advanced the world 60 days when staggered and 30 when
+simultaneous, which would make a two-company run incomparable to a one-company one and
+non-deterministic against itself.
+
+There is no decision deadline, so a slow policy is never truncated; a company that goes
+silent for 10 minutes is dropped and the rest carry on. For N independent policies in N
+processes, use N `NttdEnv` instances and nothing else.
+
 ---
 
 #### 3. RL, stepped
@@ -336,7 +377,7 @@ Full API at `http://localhost:8000/docs` once the server is running.
 ## Development
 
 ```bash
-uv run pytest -q                          # 463 tests
+uv run pytest -q                          # 483 tests
 uv run ruff check src/ tests/
 uv run python scripts/generate_diagrams.py
 ```

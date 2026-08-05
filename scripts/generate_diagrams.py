@@ -233,8 +233,42 @@ def step_barrier() -> None:
   <text class="guard-t" x="44" y="305">Why the flush unpauses, rather than applying actions to a still world</text>
   <text class="label" x="44" y="327">A GameScript command completes on a game TICK. The pathfinder yields through Sleep(1), which counts ticks, so a</text>
   <text class="label" x="44" y="345">LONG connect_road hangs while paused and a short one does not. Which one, is not knowable in advance.</text>
+
+  <text class="title" x="427" y="404" text-anchor="middle" font-size="14">With several companies: the clock is shared, participation is not</text>
+
+  <rect class="actor" x="24" y="424" width="150" height="44" rx="8"/>
+  <text class="actor-t" x="99" y="443" text-anchor="middle">company 0 steps</text>
+  <text class="muted" x="99" y="460" text-anchor="middle">arrives first, waits</text>
+
+  <rect class="actor" x="24" y="478" width="150" height="44" rx="8"/>
+  <text class="actor-t" x="99" y="497" text-anchor="middle">company 1 steps</text>
+  <text class="muted" x="99" y="514" text-anchor="middle">arrives later</text>
+
+  <line class="edge" x1="176" y1="446" x2="228" y2="465" marker-end="url(#a)"/>
+  <line class="edge" x1="176" y1="500" x2="228" y2="481" marker-end="url(#a)"/>
+
+  <rect class="server" x="230" y="440" width="176" height="66" rx="8"/>
+  <text class="server-t" x="318" y="464" text-anchor="middle">window</text>
+  <text class="muted" x="318" y="481" text-anchor="middle">closes when every</text>
+  <text class="muted" x="318" y="496" text-anchor="middle">registered stepper is in</text>
+
+  <line class="edge" x1="408" y1="473" x2="446" y2="473" marker-end="url(#a)"/>
+  <rect class="game" x="448" y="440" width="176" height="66" rx="8"/>
+  <text class="game-t" x="536" y="464" text-anchor="middle">ONE world advance</text>
+  <text class="muted" x="536" y="481" text-anchor="middle">both batches, company</text>
+  <text class="muted" x="536" y="496" text-anchor="middle">order; same observation</text>
+
+  <line class="edge" x1="626" y1="473" x2="664" y2="473" marker-end="url(#a)"/>
+  <rect class="box" x="666" y="440" width="164" height="66" rx="8"/>
+  <text class="label" x="748" y="464" text-anchor="middle">K steps = K intervals</text>
+  <text class="muted" x="748" y="481" text-anchor="middle">whether 1 company</text>
+  <text class="muted" x="748" y="496" text-anchor="middle">plays or four</text>
+
+  <rect class="guard" x="24" y="534" width="806" height="58" rx="8"/>
+  <text class="guard-t" x="44" y="556">No decision deadline; only a liveness one</text>
+  <text class="label" x="44" y="577">A slow policy is never truncated. A company silent for 10 minutes is evicted and recorded, so a dead runner cannot hang the run.</text>
 """
-    _write("step_barrier.svg", _svg(854, 380, body))
+    _write("step_barrier.svg", _svg(854, 612, body))
 
 
 def benchmark_profile() -> None:
