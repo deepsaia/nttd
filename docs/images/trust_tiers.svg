@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 822 348" width="822" height="348" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">
+  <style>
+    .bg    { fill: #ffffff; }
+    .title { fill: #14161f; font-weight: 700; }
+    .label { fill: #14161f; }
+    .muted { fill: #5b6472; }
+    .edge  { stroke: #8b95a6; fill: none; }
+    .box   { fill: #ffffff; stroke: #8b95a6; }
+    .actor { fill: #f0ecf8; stroke: #6b5b95; }
+    .actor-t { fill: #4a3f6b; font-weight: 600; }
+    .server { fill: #e8f1f8; stroke: #2f6f9f; }
+    .server-t { fill: #1d4f74; font-weight: 600; }
+    .game  { fill: #e9f4ec; stroke: #3f7d58; }
+    .game-t { fill: #2b5940; font-weight: 600; }
+    .guard { fill: #fbeceb; stroke: #b0413e; }
+    .guard-t { fill: #8a2f2c; font-weight: 600; }
+    .data  { fill: #fdf5e6; stroke: #a8792c; }
+    .data-t { fill: #7a5720; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #14161f; }
+      .title { fill: #f2f4f8; }
+      .label { fill: #e4e8ef; }
+      .muted { fill: #9aa4b4; }
+      .edge  { stroke: #7d879a; }
+      .box   { fill: #1c1f2b; stroke: #7d879a; }
+      .actor { fill: #2a2440; stroke: #a894d6; }
+      .actor-t { fill: #c9bcf0; }
+      .server { fill: #162c3d; stroke: #5aa3d4; }
+      .server-t { fill: #a3d0ee; }
+      .game  { fill: #17301f; stroke: #6fb98a; }
+      .game-t { fill: #a5dcb8; }
+      .guard { fill: #351d1c; stroke: #dc7a77; }
+      .guard-t { fill: #f0aaa8; }
+      .data  { fill: #332715; stroke: #d4a94f; }
+      .data-t { fill: #e8c579; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b95a6"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="822" height="348" rx="10"/>
+
+  <text class="title" x="414" y="28" text-anchor="middle" font-size="15">Trust tiers, and the boundary that actually holds</text>
+  <text class="muted" x="414" y="46" text-anchor="middle">a contestant self-hosts, so it holds every credential: tiers organise, the scored lock protects</text>
+
+  <rect class="guard" x="24" y="70" width="250" height="136" rx="8"/>
+  <text class="guard-t" x="149" y="92" text-anchor="middle">/v1/operator</text>
+  <text class="muted" x="149" y="111" text-anchor="middle">scenario authoring, debugging</text>
+  <text class="label" x="40" y="134">deity powers, rcon, save/load</text>
+  <text class="label" x="40" y="152">gs/execute, mode, step size</text>
+  <text class="label" x="40" y="170">9 superhuman actions</text>
+  <text class="muted" x="40" y="192">refused for a scored session</text>
+
+  <rect class="actor" x="286" y="70" width="250" height="136" rx="8"/>
+  <text class="actor-t" x="411" y="92" text-anchor="middle">/v1/participant</text>
+  <text class="muted" x="411" y="111" text-anchor="middle">gameplay, scoped by token</text>
+  <text class="label" x="302" y="134">actions/submit, step, report</text>
+  <text class="label" x="302" y="152">state/full, gs/query (read-only)</text>
+  <text class="label" x="302" y="170">76 human-parity actions</text>
+  <text class="muted" x="302" y="192">company comes from the token</text>
+
+  <rect class="server" x="548" y="70" width="250" height="136" rx="8"/>
+  <text class="server-t" x="673" y="92" text-anchor="middle">/v1/public</text>
+  <text class="muted" x="673" y="111" text-anchor="middle">read-only, no credential</text>
+  <text class="label" x="564" y="134">session status</text>
+  <text class="label" x="564" y="152">metrics, leaderboard</text>
+  <text class="label" x="564" y="170">analysis</text>
+
+  <rect class="box" x="24" y="230" width="774" height="98" rx="8"/>
+  <text class="title" x="44" y="254">The tiers are namespacing, not authentication.</text>
+  <text class="label" x="44" y="277">A contestant runs nttd themselves, so no credential can be withheld from them. What protects a result</text>
+  <text class="label" x="44" y="295">is SESSION STATE: a scenario with scored = true refuses every game-mutating operator operation for</text>
+  <text class="label" x="44" y="313">the whole run, for every caller, and records each attempt in the action log.</text>
+</svg>

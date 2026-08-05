@@ -81,6 +81,11 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 
+[tool.ruff.lint.per-file-ignores]
+# SVG source. A <text> element cannot be wrapped without changing what it renders,
+# so the line-length rule does not apply to the diagram bodies.
+"scripts/generate_diagrams.py" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
