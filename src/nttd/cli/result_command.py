@@ -16,6 +16,7 @@ from rich.table import Table
 
 from nttd.cli.helpers import console
 from nttd.store import session_paths
+from nttd.store.verification_gaps import verification_gaps
 
 
 def _print_model_breakdown(rows: list[dict]) -> None:
@@ -165,36 +166,9 @@ def result(
     _print_model_breakdown(rows)
 
     # Flag what would block verification, so gaps are visible before submission.
-    gaps: list[str] = []
-    if not first["scored_session"]:
-        gaps.append(
-            "session was not scored -- operator powers were available throughout, "
-            "so the run is not a benchmark result"
-        )
-    if not first["clean_run"]:
-        gaps.append(
-            f"{first['blocked_attempts']} operator operation(s) attempted and refused "
-            f"({first['blocked_operations']}) -- nothing took effect, but the run is "
-            f"not clean"
-        )
-    if seed < 0:
-        gaps.append("no map seed -- the world cannot be regenerated")
-    if not first["task_id"]:
-        gaps.append("no task_id -- the run is not tied to a task instance")
-    if first["nttd_git_dirty"]:
-        gaps.append("uncommitted changes -- the recorded revision does not reproduce this run")
-    if not first["gamescript_digest"]:
-        gaps.append("GameScript not pinned")
-    if not first["final_save_digest"]:
-        gaps.append(
-            "no final savegame -- the score cannot be recomputed by anyone else, so "
-            "it is self-reported. This is the single largest gap a submission can have"
-        )
-    if not any(r["spend_is_reported"] for r in rows):
-        gaps.append(
-            "no spend reported -- model, tokens, and cost are absent because nttd "
-            "cannot observe them. Have your runner POST /report to include them"
-        )
+    # Derived in store/verification_gaps.py so a submission bundle records the same
+    # list rather than a second implementation of it.
+    gaps = verification_gaps(rows)
 
     if gaps:
         console.print("\n[yellow]Verification gaps:[/]")
