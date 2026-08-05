@@ -34,7 +34,6 @@ All data lives in `logs/sessions/<session_id>/`:
 | File | Content |
 |------|---------|
 | `session.parquet` | Session metadata, settings, timestamps (single-row) |
-| `agents.parquet` | Per-agent config (one row per agent) |
 | `actions.parquet` | Action history (type, status, agent, error) |
 | `result.parquet` | One row per scored company, with reported per-model spend |
 | `events.parquet` | Game events (session_start, agent_start/stop) |

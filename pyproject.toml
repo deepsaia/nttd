@@ -39,21 +39,6 @@ rl = [
     "numpy>=2.0",
     "requests>=2.32",
 ]
-agents = [
-    "langchain>=0.3",
-    "langchain-openai>=0.3",
-    "langchain-anthropic>=0.3",
-    "requests>=2.32",
-    "websockets>=14.0",
-]
-agents-langgraph = [
-    "langgraph>=0.3",
-    "langchain>=0.3",
-    "langchain-openai>=0.3",
-    "langchain-anthropic>=0.3",
-    "requests>=2.32",
-    "websockets>=14.0",
-]
 mcp = [
     "mcp[cli]>=1.9",
     "httpx>=0.28.0",
@@ -67,11 +52,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# agents/ is included so `from agents.base import ...` works after `uv sync`
-# Only the engine. agents/ and examples/ are contestant-side reference code and
-# move to a separate nttd-examples repo: they are not part of what nttd ships, and
-# a top-level package literally named "agents" collides with the OpenAI Agents SDK
-# for anyone who installs both.
+# Only the engine. The reference runners live in deepsaia/nttd-examples: they are
+# contestant-side code, they talk HTTP rather than importing nttd, and a top-level
+# package literally named "agents" collided with the OpenAI Agents SDK for anyone
+# who installed both.
 packages = ["src/nttd"]
 
 [tool.ruff]

@@ -90,6 +90,25 @@ Useful ones: `find_bus_stop_spots`, `find_station_spot`, `find_rail_depot_spot`,
 the build cursor before clicking. It works while the game is paused, so a stepped policy
 can price a whole batch during deliberation for free.
 
+The finders use `GSTestMode()` dry-run validation, so a coordinate they return is one
+the corresponding build will accept. Guessing tiles and handling the failures is
+allowed, but it costs you actions against the ceiling for nothing.
+
+### Building a route, by transport mode
+
+| Mode | Primary action | Finders |
+|---|---|---|
+| Road | `connect_road` | `find_bus_stop_spots`, `find_depot_spots` |
+| Rail | `connect_rail` | `find_station_spot`, `find_rail_depot_spot`, `get_engines` |
+| Air | `build_airport` plus orders | `find_airport_spots`, `get_hangars` |
+| Water | `build_dock`, `build_path` | `find_dock_spots`, `find_water_depot_spots` |
+
+`connect_road` and `connect_rail` are whole-route actions: they pathfind and then build
+the track, including bridges and tunnels. That makes them the two most expensive things
+you can submit, and in stepped mode the reason the flush happens with the game running
+rather than paused. Their pathfinder yields every 500 iterations, and that yield counts
+game ticks, so a long search cannot complete while the world is stopped.
+
 ---
 
 ## Acting
@@ -234,7 +253,14 @@ diversity, cash, and loan status. Cargo delivered breaks ties.
 
 ## Reference runners
 
-`examples/` and `agents/` hold working runners: a plain HTTP client, LangChain and
-LangGraph agents, and a neuro-san multi-agent system whose coded tools call back into
-`gs/query`. They are contestant-side code and will move to a separate `nttd-examples`
-repository.
+Working runners live in a separate repository,
+[deepsaia/nttd-examples](https://github.com/deepsaia/nttd-examples): a minimal HTTP
+runner, a scripted policy, LangChain and LangGraph agents, and a neuro-san multi-agent
+system whose coded tools call back into `gs/query`.
+
+They are contestant-side code, and none of them import the `nttd` package. That is worth
+knowing before you start: you do not need the engine installed to write an entry, and an
+entry written in another language is on equal footing.
+
+Start with `examples/minimal_runner.py`. It is the whole contract in one file and runs
+without an API key.

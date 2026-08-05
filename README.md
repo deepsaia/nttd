@@ -336,7 +336,7 @@ Full API at `http://localhost:8000/docs` once the server is running.
 ## Development
 
 ```bash
-uv run pytest -q                          # 581 tests
+uv run pytest -q                          # 463 tests
 uv run ruff check src/ tests/
 uv run python scripts/generate_diagrams.py
 ```
@@ -345,9 +345,10 @@ The GameScript lives in `ottd_config/game/nttd-gs/main.nut`. It is loaded from t
 per-session config directory, so editing it takes effect on the next session — no
 rebuild.
 
-`examples/` and `agents/` hold reference runners. They are contestant-side code and
-will move to a separate `nttd-examples` repository; the engine ships only
-`src/nttd`.
+Reference runners live in
+[deepsaia/nttd-examples](https://github.com/deepsaia/nttd-examples). They are
+contestant-side code and none of them import the `nttd` package: this repository ships
+only the engine, `src/nttd`.
 
 ---
 
