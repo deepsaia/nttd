@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 SESSIONS_DIR = Path("logs/sessions")
 
-_PARQUET_TYPES = ("actions", "agent_cycles", "events", "snapshots", "tiles")
+# "result" is included so a report can reach the contestant detail and per-model
+# spend that POST /report supplies; "agent_cycles" is gone with the gameloop.
+_PARQUET_TYPES = ("actions", "events", "snapshots", "tiles", "result")
 
 
 @dataclass
@@ -41,12 +43,13 @@ class SessionData:
     settings: dict[str, str] = field(default_factory=dict)
     meta: dict[str, Any] = field(default_factory=dict)
 
-    # From agents.conf
+    # Contestant detail, from result.parquet. Was agents.conf, which the deleted
+    # server-driven gameloop wrote and nothing writes now.
     agents: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # Polars DataFrames
     actions: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
-    agent_cycles: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
+    result: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     events: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     snapshots: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     tiles: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
@@ -61,9 +64,17 @@ class SessionData:
 
     @property
     def model(self) -> str:
-        """LLM model used (from first agent entry)."""
-        for agent in self.agents.values():
-            return agent.get("model", "unknown")
+        """The model or models that played, as the contestant reported them.
+
+        From result.parquet rather than agents.conf: nttd runs no agent, so it never
+        observes a model name and can only record what POST /report told it. A
+        multi-agent entry reports several, joined with "+", so this can name more than
+        one model -- which is the honest answer for a system that used more than one.
+        """
+        if not self.result.is_empty() and "model" in self.result.columns:
+            reported = [m for m in self.result["model"].to_list() if m]
+            if reported:
+                return reported[0]
         return "unknown"
 
     @property
@@ -141,7 +152,7 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
     data = SessionData(session_id=session_id, session_dir=session_dir)
 
     # Load session metadata (parquet preferred, .conf fallback)
-    from nttd.db.conf_writer import read_agents_conf, read_session_conf
+    from nttd.db.conf_writer import read_session_conf
     sess = read_session_conf(session_dir)
     if sess:
         data.name = sess.get("name", session_id)
@@ -155,8 +166,6 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
         data.settings = sess.get("settings", {})
         data.meta = sess.get("meta", {})
 
-    # Load agent data (parquet preferred, .conf fallback)
-    data.agents = read_agents_conf(session_dir)
 
     # Load Parquet files (merged or fragments for in-progress sessions)
     for parquet_type in _PARQUET_TYPES:
@@ -165,7 +174,7 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
             setattr(data, parquet_type, df)
 
     # Tag DataFrames with session info for multi-session analysis
-    for attr in ("actions", "agent_cycles", "events", "snapshots"):
+    for attr in ("actions", "events", "snapshots"):
         df = getattr(data, attr)
         if not df.is_empty():
             tagged = df.with_columns(
@@ -175,8 +184,8 @@ def load_session(session_id: str, sessions_dir: Path | str = SESSIONS_DIR) -> Se
             setattr(data, attr, tagged)
 
     logger.info(
-        "Loaded session %s: %d actions, %d cycles, %d events, %d snapshots",
-        session_id, len(data.actions), len(data.agent_cycles),
+        "Loaded session %s: %d actions, %d events, %d snapshots",
+        session_id, len(data.actions),
         len(data.events), len(data.snapshots),
     )
     return data

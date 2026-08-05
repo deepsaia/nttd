@@ -68,7 +68,6 @@ def ensure_reports_loaded() -> None:
     """
     from nttd.analysis.reports import (  # noqa: F401
         action_analysis,
-        agent_performance,
         cargo_delivery,
         cargo_distances,
         cargo_routes,
@@ -80,7 +79,6 @@ def ensure_reports_loaded() -> None:
         session_summary,
         stations,
         tile_map,
-        token_accounting,
         vehicle_fleet,
         video,
         world_state,
