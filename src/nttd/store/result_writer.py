@@ -108,6 +108,12 @@ _SCHEMA = pa.schema([
     ("nttd_git_dirty", pa.bool_()),
     ("gamescript_digest", pa.string()),
     ("scenario_file_digest", pa.string()),
+    # The savegame a verifier reloads to recompute the score. Empty means none was
+    # captured, which is a verification gap rather than a detail: without it the
+    # score is self-reported and cannot be checked by anyone.
+    ("final_save_name", pa.string()),
+    ("final_save_digest", pa.string()),
+    ("final_save_bytes", pa.int64()),
     ("openttd_version", pa.string()),
     ("recorded_at", pa.timestamp("us")),
 ])
@@ -183,6 +189,7 @@ class ResultWriter:
         end_game_date: int,
         participants: dict[int, dict[str, Any]] | None = None,
         gamescript_path: Path | None = None,
+        final_save: Path | None = None,
         openttd_binary: str = "",
         capability: dict[str, Any] | None = None,
         fairness: dict[str, Any] | None = None,
@@ -196,6 +203,8 @@ class ResultWriter:
             task: Task instance identity, or None for a session without a scenario.
             participants: Per-company contestant detail, keyed by company_id.
             gamescript_path: The GameScript that ran, hashed for provenance.
+            final_save: The captured savegame, hashed so a submitted bundle is
+                tamper-evident. None when the capture failed.
             openttd_binary: Path to the OpenTTD binary, queried for its version.
             capability: Attestation from the session's scored lock -- whether the
                 run was scored and whether it stayed within the participant tier.
@@ -212,6 +221,8 @@ class ResultWriter:
 
         git_sha, git_dirty = _git_revision(self.repo_root)
         gs_digest = file_digest(gamescript_path) if gamescript_path else None
+        save_digest = file_digest(final_save) if final_save else None
+        save_bytes = final_save.stat().st_size if final_save and final_save.exists() else 0
         scenario_digest = file_digest(self.session_dir / "nttd_scenario.conf")
         version = openttd_version(openttd_binary) if openttd_binary else ""
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -283,6 +294,9 @@ class ResultWriter:
                 "nttd_git_dirty": git_dirty,
                 "gamescript_digest": gs_digest or "",
                 "scenario_file_digest": scenario_digest or "",
+                "final_save_name": final_save.name if final_save else "",
+                "final_save_digest": save_digest or "",
+                "final_save_bytes": save_bytes,
                 "openttd_version": version,
                 "recorded_at": now,
             })

@@ -143,6 +143,12 @@ def result(
         + (" [yellow](uncommitted changes)[/]" if first["nttd_git_dirty"] else ""),
     )
     provenance.add_row("GameScript", first["gamescript_digest"] or "[yellow]none[/]")
+    save_digest = first["final_save_digest"]
+    provenance.add_row(
+        "final save",
+        f"{save_digest} ({first['final_save_bytes'] / 1024:.0f} KB)" if save_digest
+        else "[yellow]none -- the score cannot be recomputed[/]",
+    )
     provenance.add_row("scenario file", first["scenario_file_digest"] or "[yellow]none[/]")
     provenance.add_row("OpenTTD", first["openttd_version"] or "[yellow]unknown[/]")
     provenance.add_row("mode", first["runtime_mode"] or "?")
@@ -179,6 +185,11 @@ def result(
         gaps.append("uncommitted changes -- the recorded revision does not reproduce this run")
     if not first["gamescript_digest"]:
         gaps.append("GameScript not pinned")
+    if not first["final_save_digest"]:
+        gaps.append(
+            "no final savegame -- the score cannot be recomputed by anyone else, so "
+            "it is self-reported. This is the single largest gap a submission can have"
+        )
     if not any(r["spend_is_reported"] for r in rows):
         gaps.append(
             "no spend reported -- model, tokens, and cost are absent because nttd "
