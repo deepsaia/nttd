@@ -124,7 +124,7 @@ def result(
     provenance.add_row("capability set", first["capability_digest"] or "[yellow]none[/]")
     provenance.add_row("task_id", first["task_id"] or "[yellow]none[/]")
     provenance.add_row(
-        "scenario", f"{first['scenario_id'] or '?'} v{first['scenario_version'] or '?'}"
+        "scenario", str(first["scenario_id"] or "?")
     )
     provenance.add_row("map seed", str(seed) if seed >= 0 else "[yellow]random[/]")
     # The dimensions a scored scenario may vary. Shown because a reader comparing

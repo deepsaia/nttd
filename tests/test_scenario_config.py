@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture
 def default_config() -> ScenarioConfig:
-    """Load from the real config/scenario.conf file."""
+    """Load the shipped default, which is config/benchmark/t2_example.conf."""
     return load()
 
 
@@ -43,7 +43,7 @@ def default_settings(default_config: ScenarioConfig) -> dict[str, str]:
 
 
 def test_load_default_config() -> None:
-    """Loading the project's scenario.conf returns a valid ScenarioConfig."""
+    """Loading the shipped default returns a valid ScenarioConfig."""
     cfg = load()
     assert isinstance(cfg, ScenarioConfig)
     assert cfg._raw is not None  # has a parsed ConfigTree
@@ -223,7 +223,11 @@ def test_shipped_configs_are_strict_clean() -> None:
     """Every shipped scenario must pass strict validation."""
     from pathlib import Path
 
-    configs = sorted(Path("config").glob("*.conf"))
+    # profile.conf is the admission rules, not a scenario, so it is excluded.
+    configs = [
+        path for path in sorted(Path("config/benchmark").glob("*.conf"))
+        if path.name != "profile.conf"
+    ]
     assert configs, "expected shipped scenario configs"
     for path in configs:
         scenario_to_settings(load(path), strict=True)
@@ -233,7 +237,9 @@ def test_shipped_configs_are_seeded() -> None:
     """Every shipped scenario must pin a seed, or its runs are not comparable."""
     from pathlib import Path
 
-    for path in sorted(Path("config").glob("*.conf")):
+    for path in sorted(Path("config/benchmark").glob("*.conf")):
+        if path.name == "profile.conf":
+            continue
         settings = scenario_to_settings(load(path), strict=True)
         assert settings.get("_map_seed"), f"{path.name} has no map.seed"
 
@@ -386,7 +392,7 @@ def test_validation_warns_on_conflicting_water_borders(caplog: pytest.LogCapture
 
 
 def test_validation_no_warnings_on_valid_config(caplog: pytest.LogCaptureFixture) -> None:
-    """The default scenario.conf should not produce any validation warnings."""
+    """The shipped default should not produce any validation warnings."""
     cfg = load()
     scenario_to_settings(cfg)  # triggers validation internally
     warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]

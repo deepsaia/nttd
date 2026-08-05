@@ -21,7 +21,6 @@ _SETTINGS = {
     "difficulty.terrain_type": "2",
     "_map_seed": "1001",
     "_scenario_id": "bench-30min",
-    "_scenario_version": "1",
 }
 
 
@@ -33,7 +32,7 @@ def _write(tmp_path: Path, **overrides: object) -> list[dict]:
         Company(id=1, name="Rival", performance_rating=380, q0_cargo=300,
                 value=110_000, money=20_000, loan=200_000),
     ]
-    task = compute_task_instance(_SETTINGS, "bench-30min", "1")
+    task = compute_task_instance(_SETTINGS, "bench-30min")
     kwargs: dict = {
         "session_id": "ses_test",
         "scores": rank_companies(companies),
@@ -69,11 +68,10 @@ def test_one_row_per_scored_company_ranked(tmp_path: Path) -> None:
 def test_task_identity_is_recorded(tmp_path: Path) -> None:
     """Without this a leaderboard row cannot be traced to a specific world."""
     rows = _write(tmp_path)
-    expected = compute_task_instance(_SETTINGS, "bench-30min", "1")
+    expected = compute_task_instance(_SETTINGS, "bench-30min")
     for row in rows:
         assert row["task_id"] == expected.task_id
         assert row["scenario_id"] == "bench-30min"
-        assert row["scenario_version"] == "1"
         assert row["map_seed"] == 1001
         assert row["settings_digest"] == expected.settings_digest
 
@@ -134,7 +132,7 @@ def test_missing_gamescript_records_empty_not_crash(tmp_path: Path) -> None:
 def test_unseeded_run_records_sentinel_seed(tmp_path: Path) -> None:
     """An unseeded run is flagged as such rather than defaulting to a real seed."""
     settings = {k: v for k, v in _SETTINGS.items() if k != "_map_seed"}
-    task = compute_task_instance(settings, "bench-30min", "1")
+    task = compute_task_instance(settings, "bench-30min")
     row = _write(tmp_path, task=task)[0]
     assert row["map_seed"] == -1
 

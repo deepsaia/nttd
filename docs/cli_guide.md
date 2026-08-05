@@ -193,14 +193,14 @@ it.
 
 ```hocon
 scenario {
-  name    = "benchmark-t2-example"
-  id      = "benchmark-t2-example"
-  version = "1"
+  name = "benchmark-t2-example"
+  id   = "benchmark-t2-example"
 
-  # Optional, and it cannot grant anything: scoredness is computed from the world.
-  # Present here it asserts conformance, and the scenario is refused if that is
-  # false. Set it to false to opt out of a conforming world.
-  scored = true
+  # No `version`, and no `scored`. There is no scenario version at all: any edit
+  # worth invalidating a comparison changes the settings, which changes the
+  # settings_digest and so the task_id. And scoredness is computed from the world
+  # below, so declaring it would grant nothing. Add `scored = false` to opt OUT of a
+  # conforming world, which is what you want while authoring.
 
   map {
     size_x       = 256      # 64 | 128 | 256 | 512 | 1024

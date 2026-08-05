@@ -632,19 +632,28 @@ def test_the_dataclass_and_the_settings_agree_on_scoredness(tmp_path: Path) -> N
         assert cfg.scored == (settings.get("_scored") == "1")
 
 
-def test_every_shipped_example_is_scored_on_its_own_merits() -> None:
-    """Not because each says so: strip the flag and they must still be scored."""
+def test_every_shipped_example_is_scored_without_declaring_it() -> None:
+    """The examples must not teach authors to write a flag that grants nothing.
+
+    Each one conforms, so each is scored on the world alone. If an example declared
+    it, a reader would reasonably conclude the declaration is what did the work.
+    """
     for example in _EXAMPLES + ("t2_stepped_example",):
         text = (_BENCHMARK_DIR / f"{example}.conf").read_text()
-        assert "scored = true" in text, f"{example} no longer declares scored"
-        stripped = text.replace("scored = true", "")
-        path = _BENCHMARK_DIR.parent.parent / "build" / f"{example}_stripped.conf"
-        path.parent.mkdir(exist_ok=True)
-        path.write_text(stripped)
-        try:
-            settings = scenario_to_settings(load(path), strict=True)
-            assert settings.get("_scored") == "1", (
-                f"{example} is only scored because it claims to be"
-            )
-        finally:
-            path.unlink()
+        body = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("#")
+        )
+        assert "scored" not in body, f"{example}.conf declares scored; it is computed"
+
+        settings = scenario_to_settings(load(_BENCHMARK_DIR / f"{example}.conf"), strict=True)
+        assert settings.get("_scored") == "1", f"{example} is not scored"
+
+
+def test_no_shipped_example_carries_a_version() -> None:
+    """A version number had to be remembered and duplicated settings_digest."""
+    for example in _EXAMPLES + ("t2_stepped_example",):
+        text = (_BENCHMARK_DIR / f"{example}.conf").read_text()
+        body = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("#")
+        )
+        assert "version" not in body, f"{example}.conf still carries a version field"

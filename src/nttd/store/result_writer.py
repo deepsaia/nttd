@@ -50,7 +50,6 @@ _SCHEMA = pa.schema([
     # Task instance
     ("task_id", pa.string()),
     ("scenario_id", pa.string()),
-    ("scenario_version", pa.string()),
     ("map_seed", pa.int64()),
     ("settings_digest", pa.string()),
     # The world settings a scored scenario is allowed to vary. They may differ
@@ -242,7 +241,6 @@ class ResultWriter:
                 "final_loan": score.loan,
                 "task_id": task.task_id if task else "",
                 "scenario_id": task.scenario_id if task else "",
-                "scenario_version": task.scenario_version if task else "",
                 "map_seed": task.seed if (task and task.seed is not None) else -1,
                 "settings_digest": task.settings_digest if task else "",
                 # The permitted-to-vary dimensions, as leaderboard columns.
