@@ -4,11 +4,11 @@ Ref: docs/openttd_study_part4_multiplayer_agent_design.md §12, §16
 """
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
 
+from nttd.db import parquet_reader
 from nttd.db.repositories import action_repo, entity_repo, event_repo, metrics_repo
 
 logger = logging.getLogger(__name__)
@@ -43,9 +43,7 @@ async def get_latest_metrics(session_id: str) -> dict[str, Any]:
 @router.get("/metrics/comparison")
 async def get_comparison(session_id: str, game_date: int) -> dict[str, Any]:
     """Compare all companies at a specific game date (reads from Parquet)."""
-    from nttd.db.repositories.entity_repo import _read_snapshot_at  # noqa: PLC0415
-
-    snap = _read_snapshot_at(session_id, game_date)
+    snap = parquet_reader.snapshot_at(session_id, game_date)
     if snap is None:
         return {"game_date": game_date, "companies": [], "count": 0}
 
@@ -157,14 +155,9 @@ async def compute_leaderboard(session_id: str) -> dict[str, Any]:
 @router.get("/replay/sessions/{session_id}/snapshots")
 async def get_replay_snapshots(session_id: str) -> dict[str, Any]:
     """Return snapshot metadata for timeline scrubbing (from Parquet)."""
-    import pyarrow.parquet as pq  # noqa: PLC0415
-
-    parquet_path = Path("logs/sessions") / session_id / "snapshots.parquet"
-    if not parquet_path.exists():
-        return {"session_id": session_id, "snapshots": [], "count": 0}
-
-    table = pq.read_table(parquet_path, columns=["snapshot_id", "game_date", "tick", "captured_at"])
-    data = table.to_pylist()
+    data = parquet_reader.read_rows(
+        session_id, "snapshots", ["snapshot_id", "game_date", "tick", "captured_at"],
+    )
     return {"session_id": session_id, "snapshots": data, "count": len(data)}
 
 

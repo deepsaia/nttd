@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 import typer
 from rich.console import Console
 
+from nttd.db import session_paths
+
 if TYPE_CHECKING:
     from nttd.config.scenario_config import EndConditionsConfig
 
@@ -108,13 +110,11 @@ def resolve_session_path(value: str) -> tuple[str, Path]:
     Like :func:`resolve_session`, but also returns the resolved directory
     path for commands that operate on the filesystem (e.g. ``nttd analyze``).
     """
-    from nttd.analysis.loader import SESSIONS_DIR
-
     p = Path(value)
     if "/" in value or p.is_dir():
         resolved = p.resolve()
         return resolved.name, resolved
-    return value, SESSIONS_DIR / value
+    return value, session_paths.session_dir(value)
 
 
 def complete_session(incomplete: str) -> list[str]:
@@ -122,14 +122,9 @@ def complete_session(incomplete: str) -> list[str]:
 
     Scans logs/sessions/ for directories matching the incomplete prefix.
     """
-    import os
-
-    sessions_dir = Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
-    if not sessions_dir.is_dir():
-        return []
     return [
-        d.name for d in sorted(sessions_dir.iterdir())
-        if d.is_dir() and d.name.startswith(incomplete)
+        d.name for d in session_paths.iter_session_dirs()
+        if d.name.startswith(incomplete)
     ]
 
 

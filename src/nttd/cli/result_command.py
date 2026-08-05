@@ -8,7 +8,6 @@ confirms a run is complete and traceable before submitting it.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Annotated
 
@@ -16,6 +15,7 @@ import typer
 from rich.table import Table
 
 from nttd.cli.helpers import console
+from nttd.db import session_paths
 
 
 def _print_model_breakdown(rows: list[dict]) -> None:
@@ -52,7 +52,7 @@ def _print_model_breakdown(rows: list[dict]) -> None:
 
 
 def _sessions_dir() -> Path:
-    return Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
+    return session_paths.sessions_dir()
 
 
 def result(

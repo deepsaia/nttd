@@ -12,6 +12,8 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from nttd.db import session_paths
+
 logger = logging.getLogger(__name__)
 
 _SCHEMA = pa.schema([
@@ -28,9 +30,10 @@ _SCHEMA = pa.schema([
 class TileWriter:
     """Writes tile terrain data to a Parquet file."""
 
-    def __init__(self, session_id: str, data_dir: str = "logs/sessions") -> None:
+    def __init__(self, session_id: str, data_dir: str | None = None) -> None:
         self.session_id = session_id
-        self._file_path = Path(data_dir).resolve() / session_id / "tiles.parquet"
+        root = Path(data_dir) if data_dir else session_paths.sessions_dir()
+        self._file_path = root.resolve() / session_id / "tiles.parquet"
 
     def write_full_scan(self, rows_data: list[dict[str, Any]]) -> int:
         """Write the initial full tile scan from GS get_map_terrain response.
