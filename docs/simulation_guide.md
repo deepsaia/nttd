@@ -70,7 +70,7 @@ Stored in `logs/sessions/<session_id>/`:
 | `agents.parquet` | Per-agent config |
 | `snapshots.parquet` | Game state time-series |
 | `actions.parquet` | Agent actions with results |
-| `agent_cycles.parquet` | Per-cycle telemetry |
+| `result.parquet` | One row per scored company |
 | `events.parquet` | Lifecycle events |
 | `tiles.parquet` | Terrain data |
 | `screenshot/` | Minimap screenshots (when enabled, default off) |

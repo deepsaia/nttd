@@ -1,5 +1,11 @@
 # OpenTTD Study Part 4: Multiplayer, AI Agents, and System Design
 
+> **Note.** This part analyses an earlier nttd design in which nttd ran the
+> contestant's agent in-process through framework adapters. That is no longer how
+> nttd works: the contestant owns the loop and reaches the game over HTTP. The
+> OpenTTD research here still holds; the nttd-side conclusions do not. See
+> [../architecture.md](../architecture.md) for the current design.
+
 > Companion to Parts 1-3. Covers multiplayer mechanics, LLM agent integration, admin client architecture, game state management, and technical constraint mitigation strategies.
 >
 > **Primary sources**: OpenTTD C++ source ([openTTD](https://github.com/OpenTTD/OpenTTD)), OpenTTD wiki, nttd codebase, docs.openttd.org GS/AI API references.
