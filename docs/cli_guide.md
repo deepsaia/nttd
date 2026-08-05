@@ -205,6 +205,50 @@ after the fact.
 
 ---
 
+### `nttd verify`
+
+```bash
+uv run nttd verify -s ses_...                 # seconds
+uv run nttd verify -s ses_... --regenerate    # ~15s, and the only route to 'verified'
+uv run nttd verify <bundle-path> --json
+```
+
+**A self-check, not an authoritative verdict.** It runs on your machine, from code you
+could have changed, so it predicts what a leaderboard will conclude rather than granting
+anything. The verdict that counts is computed by the board's ingest, on infrastructure you
+do not control and with its own copy of nttd and the GameScript.
+
+Sharing the code is the point rather than a compromise: you should be able to predict the
+outcome instead of being surprised by it. And nothing is written into the bundle -- a
+bundle carrying its own verdict would assert something anyone could write.
+
+| Verdict | Means |
+|---|---|
+| `verified` | the score was recomputed from the save **and** the world matches its declared seed |
+| `replayed` | the score was recomputed from the save; the world was not reconciled |
+| `unverified` | the artifacts do not support checking, so the score is self-reported |
+
+The default path checks the artifact digests, inspects the save with `openttd -q`, reloads
+it to recompute every company's score, and replays the action log for consistency. That
+takes about 2 seconds and earns `replayed`, which is the intended bar.
+
+`--regenerate` additionally rebuilds the world from its seed and compares terrain, which
+is what earns `verified`. Measured at about 15 seconds for a 256x256 map: 64,516 tiles
+regenerated and hashed.
+
+What it catches, all measured against a real bundle:
+
+| Tampering | Outcome |
+|---|---|
+| edit a score in `result.parquet` | `unverified` -- the digest no longer matches |
+| edit the score *and* fix the digest | `unverified` -- the savegame does not support the score |
+| swap the declared seed and fix the digest | `replayed` -- the regenerated world is a different world |
+
+Exits non-zero only on `unverified`, so it works as a gate in a script without treating
+`replayed` as a failure.
+
+---
+
 ### `nttd analyze`
 
 ```bash
