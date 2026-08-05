@@ -195,7 +195,12 @@ class Orchestrator:
             logger.debug("Screenshot request failed (non-critical)")
 
     async def _capture_save(self, game_date: int, suffix: str = "") -> None:
-        """Fire-and-forget RCON save. Does not block the game loop."""
+        """Fire-and-forget interval save, for debugging a run in progress.
+
+        Deliberately unconfirmed and non-blocking: these are a convenience, not
+        evidence. The savegame a verifier reloads is captured at session end by
+        runtime/final_save.py, which checks that it landed and is readable.
+        """
         try:
             ts = generate_timestamp()
             filename = f"d{game_date}-{ts}{suffix}"
@@ -805,12 +810,12 @@ class Orchestrator:
             end_result = self._end_checker.check(snapshot)
             if end_result.triggered:
                 logger.info("Async real-time simulation ended: %s", end_result.reason)
-                # Final screenshot and save before ending (only if enabled)
-                if self.client.connected:
-                    if self._screenshot_interval_seconds > 0:
-                        await self._capture_screenshot()
-                    if self._save_interval_seconds > 0:
-                        await self._capture_save(snapshot.game.game_date, suffix="_final")
+                # Final screenshot only. The final SAVE is captured by
+                # stop_session, which every mode ends through -- a "_final" save
+                # here would have been a second one under a different name, and it
+                # never ran at all for a stepped or manually stopped session.
+                if self.client.connected and self._screenshot_interval_seconds > 0:
+                    await self._capture_screenshot()
                 for cb in self.on_end:
                     try:
                         result = cb(end_result.reason)

@@ -32,6 +32,7 @@ from nttd.config.scenario_config import (
 from nttd.config.task_instance import compute_task_instance
 from nttd.runtime.action_budget import from_fairness as budget_from_fairness
 from nttd.runtime.config_builder import build_session_config
+from nttd.runtime.final_save import FinalSaveCapture
 from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.session_runtime import SessionRuntime
 from nttd.store.repositories import session_repo
@@ -314,15 +315,22 @@ class SessionManager:
     async def stop_session(self, session_id: str, end_reason: str = "manual") -> None:
         """Stop a running session's OpenTTD server and clean up transient files.
 
-        Preserves the session's recorded Parquet while removing
-        OpenTTD config artifacts (openttd.cfg, secrets.cfg, symlinks, saves).
+        Captures the final savegame first, then writes the result, then shuts the
+        server down. Preserves the recorded Parquet and the save while removing the
+        OpenTTD config artifacts; the save is the artifact a verifier reloads to
+        recompute the score, so it outlives the session by design.
         """
         runtime = self.runtimes.pop(session_id, None)
         if runtime:
+            # Save BEFORE shutdown: it needs the live admin connection. Every mode
+            # ends here, including stepped and manual stops, which is why the capture
+            # lives at this single point rather than in the real-time loop.
+            final_save = await self._capture_final_save(session_id, runtime)
+
             # Score before shutting down -- the world state is needed, and a
             # failure here must not prevent the process from being stopped.
             try:
-                self._write_result(session_id, runtime, end_reason)
+                self._write_result(session_id, runtime, end_reason, final_save)
             except Exception:
                 logger.exception("Session %s: failed to write result record", session_id)
             await runtime.shutdown()
@@ -338,8 +346,29 @@ class SessionManager:
 
         logger.info("Session %s stopped (reason=%s)", session_id, end_reason)
 
+    async def _capture_final_save(
+        self, session_id: str, runtime: SessionRuntime,
+    ) -> Path | None:
+        """Capture the savegame a verifier replays, or None if it could not be.
+
+        Never raises: a session must still stop and write its result when the save
+        fails. The absence is recorded instead, so it shows up as a verification gap
+        rather than as silence.
+        """
+        try:
+            capture = FinalSaveCapture(
+                runtime.admin_client,
+                self.sessions_dir / session_id / "save",
+                openttd_binary=self.openttd_binary,
+            )
+            return await capture.capture()
+        except Exception:
+            logger.exception("Session %s: final save capture failed", session_id)
+            return None
+
     def _write_result(
         self, session_id: str, runtime: SessionRuntime, end_reason: str,
+        final_save: Path | None = None,
     ) -> None:
         """Score the finished session and write its immutable result record."""
         scores = rank_companies(list(runtime.world.companies.values()))
@@ -380,6 +409,7 @@ class SessionManager:
             fairness=runtime.fairness.as_dict(),
             budget=runtime.action_budget.usage(),
             dimensions=runtime.dimensions,
+            final_save=final_save,
         )
 
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:
