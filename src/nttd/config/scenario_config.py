@@ -8,6 +8,7 @@ passed around as typed objects in the orchestrator and end-condition checker.
 If pyhocon is not installed or the config file is missing, returns safe defaults
 so the server can start without a config file present.
 """
+import functools
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,7 +18,7 @@ from nttd.config.benchmark_profile import (
     DIMENSION_PREFIX,
     LOCKED_SETTINGS,
     PROFILE_VERSION,
-    VARIABLE_SETTINGS,
+    REPORTED_SETTINGS,
 )
 from nttd.config.benchmark_profile import deviations as profile_deviations
 
@@ -285,6 +286,7 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
     scored: bool = False, scenario_id: str = "", ec: Any = None,
+    conformance: list[str] | None = None,
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -310,11 +312,12 @@ def _validate_config(
     problems: list[str] = []
 
     # --- Benchmark profile: a scored world may not be arbitrary ---------------
-    # Only for scored scenarios. Free play sets whatever it likes, because there
-    # is no comparison to protect.
-    if scored:
-        for problem in profile_deviations(m, _get, scenario_id):
-            _report(strict, problems, "%s", problem)
+    # Reported only when the author ASSERTED scored = true over a world that breaks
+    # the profile. A scenario that merely does not conform is free play, not an error:
+    # scoredness is computed from the world, so silence is an answer rather than a
+    # mistake. See resolve_scored.
+    for problem in conformance or []:
+        _report(strict, problems, "%s", problem)
 
     # --- Enum validation ---
     _enum_checks: list[tuple[str, dict[str, str], Any]] = [
@@ -471,6 +474,54 @@ def _validate_config(
         )
 
 
+def _locked_aware_get(map_cfg: Any, scored: bool, key: str, fallback: Any) -> Any:
+    """Read a map setting, preferring the profile's locked value for a scored run.
+
+    Module level rather than nested in scenario_to_settings, and bound with
+    functools.partial at the call site.
+
+    Validation treats an omitted locked setting as conformance, so without this the
+    two disagreed: a scored scenario that left out starting_year passed validation and
+    then generated a 1960 world while its record claimed profile conformance.
+    """
+    if scored and key in LOCKED_SETTINGS:
+        return _get(map_cfg, key, LOCKED_SETTINGS[key])
+    return _get(map_cfg, key, fallback)
+
+
+def resolve_scored(raw: Any, map_cfg: Any, scenario_id: str) -> tuple[bool, list[str]]:
+    """Decide whether a run is scoreable by checking the world, not by reading a flag.
+
+    ``scored = true`` is an assertion an author can make about their own config, which
+    makes it worth nothing on its own: anyone can write it above a world the profile
+    would never admit. So conformance is computed from the config and the flag can only
+    ever narrow the answer:
+
+      * absent    -- scored if and only if the world conforms to the profile.
+      * ``false`` -- never scored. An opt-out, always honoured, for when you want to
+        play a conforming world with operator powers available.
+      * ``true``  -- an assertion of conformance. Honoured when it holds, and refused
+        when it does not, because an author who wrote it clearly meant to produce a
+        benchmark run and needs to hear that the world is wrong rather than get a
+        quietly unscored one.
+
+    Returns:
+        ``(scored, problems)``. ``problems`` holds the profile deviations, non-empty
+        only when the author asserted ``scored = true`` over a world that breaks them,
+        so the caller can report them; a scenario that simply does not conform is free
+        play rather than an error.
+    """
+    deviations = profile_deviations(map_cfg, _get, scenario_id)
+    conforms = not deviations
+    declared = _get(raw, "scored", None)
+
+    if declared is not None and not bool(declared):
+        return False, []
+    if declared is not None and bool(declared) and not conforms:
+        return False, deviations
+    return conforms, []
+
+
 def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str, str]:
     """Convert a ScenarioConfig to OpenTTD INI settings dict.
 
@@ -501,16 +552,19 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     m = _get(raw, "map", {})
     co = _get(raw, "companies", {})
 
-    scored = bool(_get(raw, "scored", False))
     # Resolved before validation because the allowlist is checked against it. Falls
     # back to name, matching how _scenario_id is emitted below.
     scenario_name = str(_get(raw, "name", "default"))
     scenario_id = str(_get(raw, "id", scenario_name))
+
+    # Computed from the world, not read from a flag. See resolve_scored.
+    scored, conformance = resolve_scored(raw, m, scenario_id)
     _validate_config(
         m, co, strict=strict, rt=_get(raw, "runtime", {}),
         fair=_get(raw, "fairness", None),
         scored=scored, scenario_id=scenario_id,
         ec=_get(raw, "end_conditions", None),
+        conformance=conformance,
     )
 
     # For a scored run, an omitted locked setting takes the profile's value rather
@@ -518,10 +572,7 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     # conformance, so without this the two disagreed: a scored scenario that left
     # out starting_year passed validation and then generated a 1960 world while its
     # record claimed profile conformance.
-    def _map(key: str, fallback: Any) -> Any:
-        if scored and key in LOCKED_SETTINGS:
-            return _get(m, key, LOCKED_SETTINGS[key])
-        return _get(m, key, fallback)
+    _map = functools.partial(_locked_aware_get, m, scored)
 
     # Map dimensions (log2)
     settings["game_creation.map_x"] = str(_log2(int(_get(m, "size_x", 256))))
@@ -626,8 +677,12 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
     # display projections of settings already emitted as game_creation.* and
     # difficulty.*. The projection is excluded from task_id, since an identity hash
     # must not depend on the format of a display copy.
-    for key in sorted(VARIABLE_SETTINGS):
-        value = _get(m, key, None)
+    for key in REPORTED_SETTINGS:
+        # _map, not _get: a scored scenario that inherits a locked setting must still
+        # record it. Reading the raw tree left the column empty for exactly the
+        # scenarios that were most conformant, so a T3 example that omitted landscape
+        # reported no landscape at all.
+        value = _map(key, None)
         if value is not None:
             settings[f"{DIMENSION_PREFIX}{key}"] = str(value)
 
@@ -743,7 +798,12 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
         # without every file needing an explicit id.
         id=str(_get(s, "id", scenario_name)),
         version=str(_get(s, "version", "1")),
-        scored=bool(_get(s, "scored", False)),
+        # Computed, not read: the same rule scenario_to_settings applies, so the
+        # dataclass and the emitted settings cannot disagree about whether a run is
+        # scoreable. See resolve_scored.
+        scored=resolve_scored(
+            s, _get(s, "map", {}), str(_get(s, "id", scenario_name)),
+        )[0],
         heartbeat=HeartbeatConfig(
             interval_days=int(_get(hb_raw, "interval_days", 30)),
             action_window_seconds=float(_get(hb_raw, "action_window_seconds", 5.0)),
