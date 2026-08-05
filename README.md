@@ -370,6 +370,7 @@ nttd session list           List sessions
 nttd session status         Show detailed session status
 nttd scenario validate      Check a scenario without running it
 nttd scenario profile       Show the rules a scored scenario must satisfy
+nttd submit                 Package a session into a submission bundle
 nttd result                 Show the scored result record
 nttd analyze                Generate analysis reports
 ```

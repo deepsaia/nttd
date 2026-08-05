@@ -21,6 +21,7 @@ Commands:
   nttd scenario profile      Show the rules a scored scenario must satisfy
   nttd benchmark             Stand up a benchmark task and wait for it to end
   nttd result                Show the scored result record for a session
+  nttd submit                Package a session into a submission bundle
   nttd analyze               Generate session analysis reports
 """
 
@@ -32,6 +33,7 @@ from nttd.cli.result_command import result
 from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
 from nttd.cli.session_commands import session_app
+from nttd.cli.submit_command import submit
 
 app = typer.Typer(
     name="nttd",
@@ -44,6 +46,7 @@ app.add_typer(scenario_app, name="scenario")
 app.command()(server)
 app.command()(benchmark)
 app.command()(result)
+app.command()(submit)
 app.command()(analyze)
 
 

@@ -173,6 +173,38 @@ so stop it first.
 
 ---
 
+### `nttd submit`
+
+```bash
+uv run nttd submit -s ses_...
+uv run nttd submit -s ses_... --no-archive
+```
+
+Packages the session into `logs/sessions/<id>/submission/` plus a `.tar.gz`: the result,
+the action log, the snapshots, the tile scan, the resolved scenario, and the savegame a
+verifier reloads. Prints every artifact with its sha256 and states what the bundle cannot
+prove about itself.
+
+nttd is self-hosted, so a submission cannot mean "we watched it happen". It means the
+artifacts are internally consistent and the score is recomputable.
+
+**`manifest.json` is a projection of `result.parquet`**, never a second source, so the two
+cannot disagree. A field the run did not record does not appear: there is no `tier`, for
+instance, because nothing records one; the resolved scenario ships instead and states the
+actual bound.
+
+The manifest also carries a **map digest** hashed from the terrain rather than from
+`tiles.parquet`, since that file holds a session id and a timestamp. Measured across nine
+independent sessions, seed 1001 gives the same digest every time, and other seeds differ,
+which is what lets a verifier regenerate the world and compare.
+
+There is no signature. With nobody operating nttd there is no key authority, so a
+signature would prove authorship rather than honesty: a contestant signing their own
+claim. The per-artifact digests are the load-bearing part, and they are tamper-evident
+after the fact.
+
+---
+
 ### `nttd analyze`
 
 ```bash
