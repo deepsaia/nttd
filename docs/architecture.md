@@ -200,8 +200,21 @@ was accepted for a scored run and unlocks `custom_terrain_height` over 1..255 â€
 unbounded world axis that no column discloses, so a height-240 world and a flat one
 produced rows reading identically.
 
+Two axes are allowed, giving **5 sizes x 5 terrain types = 25 scoreable maps**, each
+admitting any seed. See [play_modes.md](play_modes.md) for the matrix and the reasoning
+behind what is pinned.
+
+![What a scored run may be played on](images/scoreable_worlds.svg)
+
+**Scoredness is computed, not declared.** `scored = true` is an assertion an author makes
+about their own config, so it grants nothing: conformance is derived from the world, and
+the flag can only narrow the answer. Absent means scored if and only if the world
+conforms; `false` is an always-honoured opt-out; `true` over a non-conforming world is
+refused rather than quietly downgraded, because an author who wrote it meant to produce a
+benchmark run and needs to hear the world is wrong.
+
 **There is no registry of blessed scenarios.** A curated list would have to enumerate
-roughly 4,700 size/landscape/terrain/tier combinations before seeds, and would make a
+the 25 size/terrain combinations across four tiers before seeds, and would make a
 legitimate conforming run look second-class because nobody added a row for it.
 Conformance is the credential, and `task_id` groups the comparable runs.
 
@@ -280,6 +293,18 @@ the world.
 
 A stepped run is bounded by `max_heartbeats`, not wall time. nttd refuses the
 combination, because wall time in stepped mode measures the contestant's hardware.
+
+---
+
+## Play modes
+
+![Play modes: what each one measures](images/play_modes.svg)
+
+Real time measures play and speed together; stepped measures the policy alone. Which
+contestants use which, and how each is bounded and scored, is in
+[play_modes.md](play_modes.md). The one hard constraint is that a human can only play real
+time: a stepped world stays paused until a registered stepper calls `POST /step`, and an
+OpenTTD client has no way to do that.
 
 ---
 
