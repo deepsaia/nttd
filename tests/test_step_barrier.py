@@ -239,18 +239,18 @@ def test_a_batch_at_the_ceiling_is_admitted() -> None:
     orchestrator = Orchestrator(WorldState(), _StubClient())
     orchestrator.action_budget = ActionBudget(max_per_submission=15, enforced=True)
     batch = [{"action": "set_loan", "params": {"company_id": 0}}] * 15
-    orchestrator._check_batch_size(batch)  # must not raise
+    orchestrator.check_batch_size(batch)  # must not raise
 
 
 def test_the_batch_check_runs_before_anything_executes() -> None:
     """A ceiling checked after the first action has run is not a ceiling."""
     source = _code_only(inspect.getsource(Orchestrator.step))
-    assert source.index("_check_batch_size") < source.index("_execute_actions")
+    assert source.index("check_batch_size") < source.index("_execute_actions")
 
 
 def test_a_refused_batch_is_recorded() -> None:
     """Every entry, so the audit log shows what was attempted rather than a gap."""
-    source = inspect.getsource(Orchestrator._check_batch_size)
+    source = inspect.getsource(Orchestrator.check_batch_size)
     assert "_record_action" in source
     assert "ActionStatus.BLOCKED" in source
 

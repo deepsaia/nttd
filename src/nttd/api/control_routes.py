@@ -11,6 +11,7 @@ See ``nttd.api.tiers``.
 """
 
 import asyncio
+import functools
 import logging
 from typing import Any
 
@@ -26,7 +27,11 @@ from nttd.api.participant_auth import (
     resolve_company_id,
 )
 from nttd.api.scored_guard import require_unscored
-from nttd.runtime.step_errors import StepBatchTooLarge
+from nttd.runtime.step_errors import (
+    AlreadyWaitingAtBarrier,
+    NotRegisteredForStepping,
+    StepBatchTooLarge,
+)
 from nttd.schemas.game import GameState, RuntimeMode
 from nttd.schemas.spend_report import SpendReport
 from nttd.schemas.step_result import StepRequest, StepResult
@@ -163,17 +168,47 @@ async def report_spend(
 
 
 @participant_router.post("/step/reset", response_model=StepResult)
-async def reset_stepped(session_id: str) -> StepResult:
-    """Enter stepped mode and return the opening observation.
+async def reset_stepped(
+    session_id: str,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
+) -> StepResult:
+    """Enter stepped mode, register as a stepper, and return the opening observation.
 
     Idempotent: calling it again re-pauses and re-observes without restarting the
     world. A Gym ``reset`` that begins a NEW episode needs a new session, because a
     session is a run -- rewinding one in place would leave the action log describing
     two episodes as though they were one.
+
+    Registration is what makes multi-company stepping work. The barrier waits for every
+    registered stepper before advancing the shared clock, so it has to be told which
+    companies are playing; inferring it from the session's company count would stall
+    every window on a company whose runner never attached.
     """
     runtime = deps.get_runtime(session_id)
+    token = extract_token(x_participant_token, authorization)
+    company_id = resolve_company_id(runtime, token, None)
+    runtime.step_barrier.register(company_id)
+
     snapshot = await runtime.orchestrator.enter_stepped()
-    return StepResult(snapshot=snapshot, step=0, days_advanced=0)
+    return StepResult(
+        snapshot=snapshot,
+        step=0,
+        days_advanced=0,
+        steppers=sorted(runtime.step_barrier.registered),
+    )
+
+
+async def _advance_world(
+    runtime: Any, days: int | None, batches: list[dict[str, Any]],
+) -> StepResult:
+    """Advance the shared world once, with every arrived company's actions merged.
+
+    Module level rather than a closure in the route, and given to the barrier as a
+    partial: the barrier decides *when* one advance happens, the orchestrator decides
+    what an advance is.
+    """
+    return await runtime.orchestrator.step(actions=batches, days=days)
 
 
 @participant_router.post("/step", response_model=StepResult)
@@ -199,6 +234,7 @@ async def take_step(
     # so a batch cannot smuggle a rival's company_id past the scope check.
     token = extract_token(x_participant_token, authorization)
     actions: list[dict[str, Any]] = []
+    company_id = resolve_company_id(runtime, token, None)
     for entry in request.actions:
         params = dict(entry.get("params") or {})
         apply_company_scope(runtime, params, token)
@@ -217,11 +253,27 @@ async def take_step(
             ),
         )
 
+    # The batch ceiling is per company, so it is checked against this caller's batch
+    # before the batches are merged. Checking the merged flush instead would let one
+    # company's legitimate 15 actions blow the ceiling for everybody.
     try:
-        return await runtime.orchestrator.step(actions=actions, days=days)
+        runtime.orchestrator.check_batch_size(actions)
     except StepBatchTooLarge as exc:
         # 400 rather than 403: the batch is malformed for this scenario, not
         # forbidden. Splitting it across steps is the fix, and the message says so.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # partial rather than a closure: the barrier drives the advance, and it needs a
+    # callable that takes only the merged batch.
+    advance = functools.partial(_advance_world, runtime, days)
+
+    try:
+        return await runtime.step_barrier.arrive(company_id, actions, advance)
+    except NotRegisteredForStepping as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AlreadyWaitingAtBarrier as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except StepBatchTooLarge as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
