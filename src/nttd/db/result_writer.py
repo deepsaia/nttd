@@ -78,7 +78,14 @@ _SCHEMA = pa.schema([
     ("prompt_tokens", pa.int64()),
     ("completion_tokens", pa.int64()),
     ("total_cost_usd", pa.float64()),
-    ("cost_is_estimated", pa.bool_()),
+    # True when the contestant reported spend at all. Distinguishes "told us zero"
+    # (a local RL policy that genuinely cost nothing) from "told us nothing", which a
+    # reader comparing them needs and a single 0.0 cannot express.
+    ("spend_is_reported", pa.bool_()),
+    # Per-model spend as JSON. A multi-agent system routinely uses several models --
+    # neuro-san runs a front-man plus specialists, often on different ones -- so a
+    # single cost figure hides the shape of the system that produced it.
+    ("model_breakdown_json", pa.string()),
     # Capability attestation. Self-hosting means auth cannot prevent cheating, so
     # the record states what the run actually stayed within. A scored run that
     # attempted an operator power is still scored -- the attempt was refused -- but
@@ -259,7 +266,10 @@ class ResultWriter:
                 "prompt_tokens": int(who.get("prompt_tokens", 0)),
                 "completion_tokens": int(who.get("completion_tokens", 0)),
                 "total_cost_usd": float(who.get("total_cost", 0.0)),
-                "cost_is_estimated": bool(who.get("cost_is_estimated", False)),
+                "spend_is_reported": bool(who.get("spend_is_reported", False)),
+                "model_breakdown_json": json.dumps(
+                    who.get("model_breakdown") or [], separators=(",", ":"),
+                ),
                 "scored_session": bool(attest.get("scored", False)),
                 "clean_run": bool(attest.get("clean_run", True)),
                 "blocked_attempts": int(attest.get("blocked_attempts", 0)),
