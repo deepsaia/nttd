@@ -16,7 +16,7 @@ from typing import Any
 import polars as pl
 
 from nttd.store import parquet_reader, session_paths
-from nttd.store.conf_writer import read_session_conf
+from nttd.store.session_writer import read_session
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class SessionData:
     session_id: str
     session_dir: Path
 
-    # From session.conf
+    # From session.parquet
     name: str = ""
     status: str = ""
     created_at: str = ""
@@ -131,7 +131,7 @@ def load_session(session_id: str, sessions_dir: Path | str | None = None) -> Ses
 
     data = SessionData(session_id=session_id, session_dir=session_dir)
 
-    sess = read_session_conf(session_dir)
+    sess = read_session(session_dir)
     if sess:
         data.name = sess.get("name", session_id)
         data.status = sess.get("status", "")

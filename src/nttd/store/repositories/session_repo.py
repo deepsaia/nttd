@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from nttd.store import session_paths
-from nttd.store.conf_writer import read_session_conf, update_session_conf, write_session_conf
+from nttd.store.session_writer import read_session, update_session, write_session
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ async def create_session(
     meta: dict[str, Any] | None = None,
 ) -> None:
     session_dir = session_paths.session_dir(session_id)
-    write_session_conf(
+    write_session(
         session_dir=session_dir,
         session_id=session_id,
         name=name,
@@ -39,7 +39,7 @@ async def create_session(
 
 async def update_session_name(session_id: str, name: str) -> None:
     session_dir = session_paths.session_dir(session_id)
-    update_session_conf(session_dir, {"session.name": name})
+    update_session(session_dir, {"session.name": name})
 
 
 async def update_session_ports(
@@ -48,7 +48,7 @@ async def update_session_ports(
     admin_port: int,
 ) -> None:
     session_dir = session_paths.session_dir(session_id)
-    update_session_conf(session_dir, {
+    update_session(session_dir, {
         "session.game_port": game_port,
         "session.admin_port": admin_port,
     })
@@ -56,12 +56,12 @@ async def update_session_ports(
 
 async def update_session_pid(session_id: str, pid: int | None) -> None:
     session_dir = session_paths.session_dir(session_id)
-    update_session_conf(session_dir, {"session.pid": pid or 0})
+    update_session(session_dir, {"session.pid": pid or 0})
 
 
 async def mark_session_active(session_id: str, pid: int) -> None:
     session_dir = session_paths.session_dir(session_id)
-    update_session_conf(session_dir, {
+    update_session(session_dir, {
         "session.status": "active",
         "session.pid": pid,
         "session.started_at": datetime.now(timezone.utc).isoformat(),
@@ -72,7 +72,7 @@ async def get_active_sessions_with_ports() -> list[dict[str, Any]]:
     """Return all sessions with status 'active' that have ports and pid set."""
     results: list[dict[str, Any]] = []
     for session_dir in session_paths.iter_session_dirs():
-        data = read_session_conf(session_dir)
+        data = read_session(session_dir)
         if data and data.get("status") == "active" and data.get("pid"):
             results.append(data)
     return results
@@ -91,17 +91,17 @@ async def end_session(
     }
     if game_end_date is not None:
         updates["session.game_end_date"] = game_end_date
-    update_session_conf(session_dir, updates)
+    update_session(session_dir, updates)
 
 
 async def get_session_by_id(session_id: str) -> dict[str, Any] | None:
     session_dir = session_paths.session_dir(session_id)
-    return read_session_conf(session_dir)
+    return read_session(session_dir)
 
 
 async def archive_session(session_id: str) -> None:
     session_dir = session_paths.session_dir(session_id)
-    update_session_conf(session_dir, {
+    update_session(session_dir, {
         "session.status": "archived",
         "session.ended_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -120,7 +120,7 @@ async def list_sessions(
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for session_dir in session_paths.iter_session_dirs():
-        data = read_session_conf(session_dir)
+        data = read_session(session_dir)
         if data is None:
             continue
         s = data.get("status", "")
@@ -142,7 +142,7 @@ async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
     session_dir = session_paths.session_dir(session_id)
     parquet_path = session_dir / "session.parquet"
     if not parquet_path.exists():
-        write_session_conf(
+        write_session(
             session_dir=session_dir,
             session_id=session_id,
             settings=settings,
@@ -150,7 +150,7 @@ async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
         return
 
     try:
-        data = read_session_conf(session_dir)
+        data = read_session(session_dir)
         if data is None:
             return
 
@@ -158,8 +158,8 @@ async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
         existing_settings = data.get("settings", {})
         existing_settings.update(settings)
 
-        # Rewrite session.conf with merged settings
-        write_session_conf(
+        # Rewrite session.parquet with merged settings
+        write_session(
             session_dir=session_dir,
             session_id=data.get("session_id", session_id),
             name=data.get("name", ""),
@@ -180,7 +180,7 @@ async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
 
 async def get_settings(session_id: str) -> dict[str, str]:
     session_dir = session_paths.session_dir(session_id)
-    data = read_session_conf(session_dir)
+    data = read_session(session_dir)
     if data is None:
         return {}
     return data.get("settings", {})

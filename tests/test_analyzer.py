@@ -31,9 +31,9 @@ def session_dir(tmp_path: Path) -> Path:
     sdir.mkdir()
 
     # session.parquet
-    from nttd.store.conf_writer import write_session_conf
+    from nttd.store.session_writer import write_session
 
-    write_session_conf(
+    write_session(
         sdir,
         session_id="ses_test123",
         name="test-session",
@@ -234,9 +234,9 @@ def fragment_dir(tmp_path: Path) -> Path:
     fdir = sdir / "_fragments"
     fdir.mkdir(parents=True)
 
-    from nttd.store.conf_writer import write_session_conf
+    from nttd.store.session_writer import write_session
 
-    write_session_conf(sdir, session_id="ses_frag", name="frag-test", status="active")
+    write_session(sdir, session_id="ses_frag", name="frag-test", status="active")
 
     schema = pa.schema([
         ("action_id", pa.string()),
