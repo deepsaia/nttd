@@ -100,7 +100,6 @@ def session_overview_table(sessions: list[SessionData]) -> go.Figure:
         ("Duration (min)", [f"{s.duration_minutes:.1f}" for s in sessions]),
         ("End Reason", [s.end_reason or "manual" for s in sessions]),
         ("Total Actions", [str(len(s.actions)) for s in sessions]),
-        ("Total Cycles", [str(len(s.agent_cycles)) for s in sessions]),
         ("Snapshots", [str(len(s.snapshots)) for s in sessions]),
         ("Agents", [str(len(s.agents)) for s in sessions]),
     ]
@@ -132,7 +131,6 @@ def agent_performance_bars(sessions: list[SessionData]) -> go.Figure:
                 "successful": ok,
                 "failed": info.get("failed_actions", 0),
                 "success_rate": ok / total * 100 if total > 0 else 0,
-                "cycles": info.get("total_cycles", 0),
                 "avg_decide_ms": info.get("avg_decide_ms", 0),
             })
 
@@ -429,99 +427,6 @@ def actions_per_agent_bar(sessions: list[SessionData]) -> go.Figure:
 # Cycle timing
 # ---------------------------------------------------------------------------
 
-def cycle_timing_boxplots(sessions: list[SessionData]) -> go.Figure:
-    """Box plots of decide and execute timing per agent and model."""
-    frames = [
-        s.agent_cycles.with_columns(pl.lit(s.model).alias("_model")).to_pandas()
-        for s in sessions if not s.agent_cycles.is_empty()
-    ]
-    if not frames:
-        fig = go.Figure()
-        fig.update_layout(title="Cycle Timing Distribution (no data yet)", template=_TEMPLATE)
-        return fig
-    combined = pd.concat(frames, ignore_index=True)
-    combined["agent"] = combined["connection_id"].str.split(":").str[2]
-
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=("Decide (ms)", "Execute (ms)"),
-        horizontal_spacing=0.12,
-    )
-
-    for i, metric in enumerate(["decide_ms", "execute_ms"]):
-        for model in combined["_model"].unique():
-            mdf = combined[combined["_model"] == model]
-            fig.add_trace(go.Box(
-                y=mdf[metric], x=mdf["agent"],
-                name=model,
-                marker_color=MODEL_COLORS.get(model, "#999"),
-                showlegend=(i == 0),
-            ), row=1, col=i + 1)
-
-    fig.update_layout(
-        title="Cycle Timing Distribution by Agent",
-        boxmode="group", template=_TEMPLATE, height=500,
-        legend=dict(orientation="h", y=1.1, font=dict(size=10)),
-        margin=dict(t=80),
-    )
-    return fig
-
-
-def cycle_decide_over_time(sessions: list[SessionData]) -> go.Figure:
-    """Line chart: decide_ms per cycle number, per agent, per model."""
-    fig = go.Figure()
-    for s in sessions:
-        if s.agent_cycles.is_empty():
-            continue
-        df = s.agent_cycles.to_pandas()
-        df["agent"] = df["connection_id"].str.split(":").str[2]
-        for agent in sorted(df["agent"].unique()):
-            adf = df[df["agent"] == agent].sort_values("cycle_number")
-            color = get_agent_color(agent)
-            dash = "solid" if s.model == "gpt-5.2" else "dot"
-            fig.add_trace(go.Scatter(
-                x=adf["cycle_number"], y=adf["decide_ms"],
-                name=f"{s.model} / {agent}", mode="lines",
-                line=dict(width=1.5, color=color, dash=dash),
-                opacity=0.8,
-            ))
-
-    fig.update_layout(
-        title="LLM Decide Latency Over Cycles",
-        xaxis_title="Cycle Number", yaxis_title="Decide (ms)",
-        template=_TEMPLATE, height=450,
-        legend=dict(font=dict(size=10)),
-    )
-    return fig
-
-
-def actions_per_cycle_scatter(sessions: list[SessionData]) -> go.Figure:
-    """Scatter: actions proposed vs succeeded per cycle."""
-    frames = [s.agent_cycles.with_columns(pl.lit(s.model).alias("_model")).to_pandas()
-              for s in sessions if not s.agent_cycles.is_empty()]
-    if not frames:
-        fig = go.Figure()
-        fig.update_layout(title="Actions Proposed vs Succeeded (no data yet)", template=_TEMPLATE)
-        return fig
-    combined = pd.concat(frames, ignore_index=True)
-    combined["agent"] = combined["connection_id"].str.split(":").str[2]
-
-    fig = px.scatter(
-        combined, x="actions_proposed", y="actions_succeeded",
-        color="_model", symbol="agent",
-        color_discrete_map=MODEL_COLORS,
-        title="Actions Proposed vs Succeeded per Cycle",
-        labels={"actions_proposed": "Proposed", "actions_succeeded": "Succeeded",
-                "_model": "Model", "agent": "Agent"},
-        opacity=0.6,
-    )
-    max_val = max(combined["actions_proposed"].max(), combined["actions_succeeded"].max(), 1)
-    fig.add_shape(type="line", x0=0, y0=0, x1=max_val, y1=max_val,
-                  line=dict(dash="dash", color="gray", width=1))
-    fig.update_layout(template=_TEMPLATE, height=450)
-    return fig
-
-
 # ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
@@ -751,95 +656,6 @@ def transport_mode_finances(sessions: list[SessionData]) -> go.Figure:
 # Batch rendering
 # ---------------------------------------------------------------------------
 
-def token_usage_by_agent(sessions: list[SessionData]) -> go.Figure:
-    """Grouped bar chart: prompt vs completion tokens per agent."""
-    rows = []
-    for s in sessions:
-        if s.agent_cycles.is_empty() or "total_tokens" not in s.agent_cycles.columns:
-            continue
-        for group in s.agent_cycles.partition_by("connection_id"):
-            conn_id = str(group["connection_id"][0])
-            parts = conn_id.split(":")
-            agent_id = parts[-1] if len(parts) >= 3 else conn_id
-            rows.append({
-                "agent": agent_id,
-                "model": s.model,
-                "prompt_tokens": int(group["prompt_tokens"].sum()),
-                "completion_tokens": int(group["completion_tokens"].sum()),
-                "total_cost": round(float(group["total_cost"].sum()), 4),
-            })
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        fig = go.Figure()
-        fig.update_layout(title="Token Usage by Agent (no data)", template=_TEMPLATE)
-        return fig
-
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=("Token Usage by Agent", "Cost by Agent ($)"),
-        horizontal_spacing=0.15,
-    )
-
-    for agent in df["agent"].unique():
-        adf = df[df["agent"] == agent]
-        color = get_agent_color(agent)
-        fig.add_trace(go.Bar(
-            x=["Prompt", "Completion"],
-            y=[int(adf["prompt_tokens"].sum()), int(adf["completion_tokens"].sum())],
-            name=agent, marker_color=color,
-        ), row=1, col=1)
-        fig.add_trace(go.Bar(
-            x=[agent], y=[float(adf["total_cost"].sum())],
-            name=agent, marker_color=color, showlegend=False,
-        ), row=1, col=2)
-
-    fig.update_layout(
-        title="Token Usage by Agent",
-        barmode="group", template=_TEMPLATE,
-        height=450, legend=dict(orientation="h", y=1.1),
-    )
-    return fig
-
-
-def tokens_over_time(sessions: list[SessionData]) -> go.Figure:
-    """Line chart: total_tokens per cycle over game_date, one line per agent."""
-    fig = go.Figure()
-    has_data = False
-
-    for s in sessions:
-        if s.agent_cycles.is_empty() or "total_tokens" not in s.agent_cycles.columns:
-            continue
-        for group in s.agent_cycles.partition_by("connection_id"):
-            conn_id = str(group["connection_id"][0])
-            parts = conn_id.split(":")
-            agent_id = parts[-1] if len(parts) >= 3 else conn_id
-
-            dates = group["game_date"].to_list()
-            tokens = group["total_tokens"].to_list()
-            if not any(t > 0 for t in tokens):
-                continue
-            has_data = True
-            fig.add_trace(go.Scatter(
-                x=dates, y=tokens,
-                mode="lines+markers", name=agent_id,
-                line=dict(color=get_agent_color(agent_id)),
-            ))
-
-    if not has_data:
-        fig.update_layout(title="Tokens Over Time (no data)", template=_TEMPLATE)
-        return fig
-
-    fig.update_layout(
-        title="Token Usage Per Cycle Over Time",
-        xaxis_title="Game Date",
-        yaxis_title="Total Tokens",
-        template=_TEMPLATE, height=450,
-        legend=dict(orientation="h", y=1.1),
-    )
-    return fig
-
-
 def generate_all_plots(
     sessions: list[SessionData],
     output_dir: str | None = None,
@@ -857,9 +673,6 @@ def generate_all_plots(
         ("07_action_types", action_type_distribution(sessions)),
         ("08_action_success_by_type", action_success_by_type(sessions)),
         ("09_actions_per_agent", actions_per_agent_bar(sessions)),
-        ("10_cycle_timing", cycle_timing_boxplots(sessions)),
-        ("11_decide_latency", cycle_decide_over_time(sessions)),
-        ("12_actions_scatter", actions_per_cycle_scatter(sessions)),
         ("13_events", events_timeline(sessions)),
         ("14_agent_spending", agent_spending_proxy(sessions)),
         ("15_transport_finances", transport_mode_finances(sessions)),

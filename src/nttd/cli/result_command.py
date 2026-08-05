@@ -18,6 +18,39 @@ from rich.table import Table
 from nttd.cli.helpers import console
 
 
+def _print_model_breakdown(rows: list[dict]) -> None:
+    """Show per-model tokens and cost, for the companies that reported any."""
+    shown = False
+    for row in rows:
+        try:
+            breakdown = json.loads(row.get("model_breakdown_json") or "[]")
+        except json.JSONDecodeError:
+            continue
+        if not breakdown:
+            continue
+        table = Table(title=f"Reported spend: {row['company_name'] or row['company_id']}")
+        table.add_column("Model")
+        table.add_column("Role")
+        table.add_column("Prompt", justify="right")
+        table.add_column("Completion", justify="right")
+        table.add_column("Cost", justify="right")
+        for entry in breakdown:
+            table.add_row(
+                entry.get("model", "?"),
+                entry.get("role", "") or "-",
+                f"{entry.get('prompt_tokens', 0):,}",
+                f"{entry.get('completion_tokens', 0):,}",
+                f"${entry.get('total_cost_usd', 0.0):.4f}",
+            )
+        console.print(table)
+        shown = True
+    if shown:
+        console.print(
+            "[dim]Contestant-reported and unverifiable: nttd runs no model, so it has "
+            "no independent view of these. Action counts above are observed.[/]"
+        )
+
+
 def _sessions_dir() -> Path:
     return Path(os.environ.get("NTTD_SESSIONS_DIR", "logs/sessions"))
 
@@ -119,6 +152,12 @@ def result(
     provenance.add_row("recorded at", str(first["recorded_at"]))
     console.print(provenance)
 
+    # Per-model spend, when reported. Shown as a table rather than folded into the
+    # single cost figure because a multi-agent system routinely runs several models,
+    # and a cheap router in front of one expensive planner is a different system from
+    # the same total spent uniformly.
+    _print_model_breakdown(rows)
+
     # Flag what would block verification, so gaps are visible before submission.
     gaps: list[str] = []
     if not first["scored_session"]:
@@ -140,8 +179,11 @@ def result(
         gaps.append("uncommitted changes -- the recorded revision does not reproduce this run")
     if not first["gamescript_digest"]:
         gaps.append("GameScript not pinned")
-    if any(r["cost_is_estimated"] for r in rows):
-        gaps.append("token totals are partial (older cycles aged out of the buffer)")
+    if not any(r["spend_is_reported"] for r in rows):
+        gaps.append(
+            "no spend reported -- model, tokens, and cost are absent because nttd "
+            "cannot observe them. Have your runner POST /report to include them"
+        )
 
     if gaps:
         console.print("\n[yellow]Verification gaps:[/]")

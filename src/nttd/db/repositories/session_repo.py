@@ -1,5 +1,10 @@
 """Repository for session CRUD -- reads/writes parquet files.
 
+Despite living under ``db/``, there is no database: sessions are parquet files on
+disk. The agents.conf functions that used to sit here are gone, along with the
+server-driven gameloop that wrote that file -- participant identity now comes from
+the live token registry, and spend from POST /report.
+
 Session data is stored in logs/sessions/<session_id>/session.parquet.
 Listing sessions scans the directory for all session.parquet files.
 """
@@ -201,33 +206,3 @@ async def get_settings(session_id: str) -> dict[str, str]:
     return data.get("settings", {})
 
 
-async def add_participant(
-    session_id: str,
-    participant_id: str,
-    participant_type: str,
-    name: str | None = None,
-    company_id: int | None = None,
-    config: str | None = None,
-) -> None:
-    """Record a participant in agents.conf."""
-    from nttd.db.conf_writer import update_agent_in_conf
-    session_dir = _SESSIONS_DIR / session_id
-    agent_data: dict[str, Any] = {
-        "participant_type": participant_type,
-    }
-    if name:
-        agent_data["name"] = name
-    if company_id is not None:
-        agent_data["company_id"] = company_id
-    update_agent_in_conf(session_dir, participant_id, agent_data)
-
-
-async def list_participants(session_id: str) -> list[dict[str, Any]]:
-    """Read participants from agents.conf."""
-    from nttd.db.conf_writer import read_agents_conf
-    session_dir = _SESSIONS_DIR / session_id
-    agents = read_agents_conf(session_dir)
-    results: list[dict[str, Any]] = []
-    for agent_id, data in agents.items():
-        results.append({"participant_id": agent_id, **data})
-    return results

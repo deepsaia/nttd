@@ -8,7 +8,6 @@ from nttd.analysis.loader import SessionData
 from nttd.analysis.plots import (
     action_success_by_type,
     action_type_distribution,
-    actions_per_cycle_scatter,
 )
 from nttd.analysis.reports.registry import ReportResult, register, session_header
 
@@ -98,7 +97,6 @@ def generate(sessions: list[SessionData]) -> ReportResult:
     figures = [
         ("action_type_distribution", action_type_distribution(sessions)),
         ("action_success_by_type", action_success_by_type(sessions)),
-        ("actions_per_cycle", actions_per_cycle_scatter(sessions)),
     ]
 
     return ReportResult(

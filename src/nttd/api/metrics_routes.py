@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from nttd.db.repositories import action_repo, agent_repo, entity_repo, event_repo, metrics_repo
+from nttd.db.repositories import action_repo, entity_repo, event_repo, metrics_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["metrics"])
@@ -107,11 +107,10 @@ async def get_agent_performance(participant_id: str, session_id: str) -> dict[st
 async def get_session_leaderboard(session_id: str) -> dict[str, Any]:
     """Compute and return leaderboard from latest snapshot + agent data."""
     companies = await metrics_repo.get_company_latest(session_id)
-    agent_summary = await agent_repo.get_agent_summary(session_id)
+    # No agent join: agents.conf was written by the deleted server-driven gameloop,
+    # so it no longer exists. Contestant identity and spend live in result.parquet,
+    # reported through POST /report.
     agent_by_company: dict[int, dict[str, Any]] = {}
-    for a in agent_summary:
-        if a.get("company_id") is not None:
-            agent_by_company[a["company_id"]] = a
 
     # Build leaderboard entries
     entries: list[dict[str, Any]] = []
@@ -219,29 +218,3 @@ async def get_subsidies(session_id: str) -> dict[str, Any]:
 # Agent data (session-scoped)
 # ---------------------------------------------------------------------------
 
-@router.get("/data/agents")
-async def get_agents(session_id: str) -> dict[str, Any]:
-    """List agent connections for a session with aggregate stats."""
-    data = await agent_repo.get_agent_connections(session_id)
-    return {"agents": data, "count": len(data)}
-
-
-@router.get("/data/agents/summary")
-async def get_agents_summary(session_id: str) -> dict[str, Any]:
-    """Per-agent aggregate stats for a session."""
-    data = await agent_repo.get_agent_summary(session_id)
-    return {"agents": data, "count": len(data)}
-
-
-@router.get("/data/agents/cycles")
-async def get_agent_cycles(
-    session_id: str,
-    connection_id: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> dict[str, Any]:
-    """Query agent cycle records for a session."""
-    data = await agent_repo.get_agent_cycles(
-        session_id, connection_id=connection_id, limit=limit, offset=offset,
-    )
-    return {"cycles": data, "count": len(data)}
