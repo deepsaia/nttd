@@ -20,8 +20,6 @@ on a thread pool for that reason, not for speed.
 Deliberately no ``pettingzoo`` dependency. The API shape is what callers want, and
 taking the package as a hard dependency for two base classes would push it onto every
 nttd install.
-
-Requires the ``rl`` extra:  uv add 'nttd[rl]'
 """
 
 from __future__ import annotations

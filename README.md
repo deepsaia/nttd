@@ -41,9 +41,7 @@ Requirements: Python 3.13+, [uv](https://docs.astral.sh/uv/), and
 ```bash
 git clone git@github.com:deepsaia/nttd.git
 cd nttd
-uv sync                    # engine only
-uv sync --extra rl         # adds the Gym environment (gymnasium, numpy)
-uv sync --extra dev        # adds pytest and ruff
+uv sync                    # everything: server, CLI, analysis, RL, MCP, tests
 ```
 
 Install OpenTTD, launch it once, and add **OpenGFX2 Classic** from Online Content.
@@ -288,12 +286,30 @@ comparable.
 ![What makes two runs comparable](docs/images/benchmark_profile.svg)
 
 `config/benchmark/profile.conf` is the single authority on what may be scored, and is
-meant to be edited by hand. There is no list of approved scenarios: write your own,
-and if it sets `scored = true` and stays inside the profile, it is a benchmark run.
+meant to be edited by hand. There is no list of approved scenarios: write your own, and
+if it stays inside the profile it is a benchmark run.
 
-Runs are grouped by `task_id`, a digest over the scenario id, version, seed, and
-normalised settings. Two people who independently describe the same world land on the
-same `task_id` without coordinating.
+**Scoredness is computed from the world, not declared in the file.** `scored = true` is
+an assertion anyone could write above a world the profile would never admit, so it grants
+nothing. A conforming scenario is scored whether or not it says so; `scored = false` is
+an always-honoured opt-out; and `scored = true` over a non-conforming world is refused
+rather than quietly downgraded.
+
+A scored run may vary two things, giving **5 sizes × 5 terrain types = 25 maps**:
+
+![What a scored run may be played on](docs/images/scoreable_worlds.svg)
+
+Maps must be **square**, because rectangles vary only the aspect ratio and would
+multiply the board by five without adding a distinct problem. `landscape` is locked to
+temperate for now: the four OpenTTD landscapes are separate economies, so each is really
+its own benchmark.
+
+The seed is where the variance lives. Any seed is admissible, so the 25 maps are families
+rather than fixed boards. Runs are grouped by `task_id`, a digest over the scenario id,
+version, seed, and normalised settings, so two people who independently describe the same
+world land on the same `task_id` without coordinating.
+
+Full detail in [play modes and scoring](docs/play_modes.md).
 
 ### Tiers fix time, not the world
 
@@ -307,9 +323,9 @@ setting changes it, so wall-minutes *are* the economy horizon:
 | T3 | 60 min | ~5 game years | economic performance becomes measurable |
 | T4 | 120 min | ~10 game years | longer-running businesses |
 
-Shipped examples: `t2_example.conf` (256×256 temperate flat),
-`t3_subarctic_example.conf` (512×512 sub-arctic hilly, 2 AI opponents), and
-`t2_stepped_example.conf` (the same world as T2, bounded in steps).
+Shipped examples: `t2_example.conf` (256×256 flat), `t3_example.conf` (512×512
+hilly, 2 AI opponents), and `t2_stepped_example.conf` (the same world as T2, bounded
+in steps).
 
 ---
 
@@ -367,10 +383,10 @@ Full API at `http://localhost:8000/docs` once the server is running.
 | | |
 |---|---|
 | [Architecture](docs/architecture.md) | How the pieces fit, and why the boundaries are where they are |
+| [Play modes and scoring](docs/play_modes.md) | Which worlds are scoreable, the two modes, and how a run is ranked |
 | [CLI guide](docs/cli_guide.md) | Every command, with examples |
 | [Agent guide](docs/agent_guide.md) | Writing a runner against the participant routes |
 | [Session analysis](docs/session_analyzer.md) | Reading a completed run |
-| [OpenTTD study](docs/study/) | Game mechanics and GameScript API reference |
 
 ---
 

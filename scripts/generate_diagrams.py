@@ -67,6 +67,21 @@ _DEFS = """  <defs>
 """
 
 
+# Average advance of ui-sans-serif at 12px, measured against the rendered output.
+# Approximate on purpose: it exists to keep a label inside its box, not to typeset.
+_CHAR_WIDTH = 6.25
+
+
+def text_width(text: str, font_size: int = 12) -> float:
+    """Estimate the rendered width of a label.
+
+    Used to derive a diagram's width from its longest line. Hand-tuned widths went
+    stale the moment the content changed: a label overflowing its viewBox is invisible
+    in the SVG source and only shows up when someone renders it.
+    """
+    return len(text) * _CHAR_WIDTH * (font_size / 12)
+
+
 def _svg(width: int, height: int, body: str) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -136,7 +151,7 @@ def architecture() -> None:
   <text class="muted" x="761" y="197" text-anchor="middle">one per run</text>
 
   <line class="edge" x1="761" y1="224" x2="761" y2="262" marker-end="url(#a)"/>
-  <text class="muted" x="772" y="248">admin port, GameScript</text>
+  <text class="muted" x="761" y="248" text-anchor="middle">admin port, GameScript</text>
   <rect class="game" x="620" y="264" width="236" height="70" rx="8"/>
   <text class="game-t" x="738" y="286" text-anchor="middle">OpenTTD 15.3 (dedicated)</text>
   <text class="muted" x="738" y="305" text-anchor="middle">seeded world, pinned by -G</text>
@@ -187,6 +202,145 @@ def trust_tiers() -> None:
   <text class="label" x="44" y="313">the whole run, for every caller, and records each attempt in the action log.</text>
 """
     _write("trust_tiers.svg", _svg(822, 348, body))
+
+
+def scoreable_worlds() -> None:
+    """The 5x5 matrix a scored run may be played on, and what is pinned around it.
+
+    Built from the live profile rather than hardcoded, so narrowing
+    config/benchmark/profile.conf and regenerating shows the smaller board.
+    """
+    from nttd.config.benchmark_profile import ALLOWED_RANGES, LOCKED_SETTINGS
+
+    sizes = [str(v) for v in ALLOWED_RANGES["size"]]
+    terrains = [str(v) for v in ALLOWED_RANGES["terrain_type"]]
+
+    cell_w, cell_h = 104, 34
+    left, top = 150, 96
+    rows: list[str] = []
+
+    pinned = ", ".join(f"{k} = {v}" for k, v in sorted(LOCKED_SETTINGS.items()))
+    half = len(pinned) // 2
+    split = pinned.find(", ", half)
+    locked_lines = [pinned[:split], pinned[split + 2:]] if split > 0 else [pinned]
+    seed_lines = [
+        "Any seed is admissible, so the 25 maps are families rather than fixed boards.",
+        "task_id is a digest over scenario id, version, seed and settings, so runs on "
+        "one world group by themselves.",
+    ]
+    # Derived, not chosen: the locked list grows whenever a setting is pinned, and a
+    # fixed width would silently push it outside the viewBox.
+    widest = max(text_width(line) for line in locked_lines + seed_lines)
+    width = max(left + cell_w * len(sizes) + 40, int(44 + widest + 44))
+
+    rows.append(
+        f'  <text class="title" x="{width // 2}" y="30" text-anchor="middle" '
+        f'font-size="15">What a scored run may be played on</text>'
+    )
+    rows.append(
+        f'  <text class="muted" x="{width // 2}" y="48" text-anchor="middle">'
+        f'{len(sizes)} sizes x {len(terrains)} terrain types = '
+        f'{len(sizes) * len(terrains)} maps, each with any seed</text>'
+    )
+
+    for col, size in enumerate(sizes):
+        x = left + col * cell_w + cell_w // 2
+        rows.append(
+            f'  <text class="label" x="{x}" y="{top - 10}" text-anchor="middle" '
+            f'font-weight="600">{size}</text>'
+        )
+    rows.append(
+        f'  <text class="muted" x="{left - 12}" y="{top - 10}" text-anchor="end">'
+        f'size_x = size_y</text>'
+    )
+
+    for row, terrain in enumerate(terrains):
+        y = top + row * cell_h
+        rows.append(
+            f'  <text class="label" x="{left - 12}" y="{y + 22}" text-anchor="end">'
+            f'{terrain}</text>'
+        )
+        for col in range(len(sizes)):
+            x = left + col * cell_w
+            rows.append(
+                f'  <rect class="game" x="{x + 2}" y="{y + 2}" '
+                f'width="{cell_w - 4}" height="{cell_h - 4}" rx="4"/>'
+            )
+
+    grid_bottom = top + cell_h * len(terrains)
+
+    locked_y = grid_bottom + 26
+    rows.append(f'  <rect class="guard" x="24" y="{locked_y}" width="{width - 48}" height="76" rx="8"/>')
+    rows.append(f'  <text class="guard-t" x="44" y="{locked_y + 22}">Locked: identical in every scored run</text>')
+    for index, line in enumerate(locked_lines):
+        rows.append(f'  <text class="label" x="44" y="{locked_y + 43 + index * 18}">{line}</text>')
+
+    seed_y = locked_y + 88
+    rows.append(f'  <rect class="data" x="24" y="{seed_y}" width="{width - 48}" height="76" rx="8"/>')
+    rows.append(f'  <text class="data-t" x="44" y="{seed_y + 22}">The seed is where the variance lives</text>')
+    for index, line in enumerate(seed_lines):
+        rows.append(f'  <text class="label" x="44" y="{seed_y + 43 + index * 18}">{line}</text>')
+
+    _write("scoreable_worlds.svg", _svg(width, seed_y + 96, "\n".join(rows) + "\n"))
+
+
+def play_modes() -> None:
+    """Who plays, in which mode, and what that mode actually measures."""
+    body = """
+  <text class="title" x="493" y="28" text-anchor="middle" font-size="15">Play modes: what each one measures</text>
+  <text class="muted" x="493" y="46" text-anchor="middle">nttd never asks what kind of contestant you are, so the column below is convention plus one hard constraint</text>
+
+  <rect class="actor" x="24" y="74" width="330" height="182" rx="8"/>
+  <text class="actor-t" x="44" y="98">Contestant</text>
+  <text class="muted" x="250" y="98">usual mode</text>
+
+  <text class="label" x="44" y="126">Human</text>
+  <text class="muted" x="250" y="126">real time only</text>
+  <text class="label" x="44" y="154">Single LLM agent</text>
+  <text class="muted" x="250" y="154">either</text>
+  <text class="label" x="44" y="182">Multi-agent system</text>
+  <text class="muted" x="250" y="182">either</text>
+  <text class="label" x="44" y="210">RL policy</text>
+  <text class="muted" x="250" y="210">stepped</text>
+  <text class="label" x="44" y="238">ES population</text>
+  <text class="muted" x="250" y="238">stepped</text>
+
+  <line class="edge" x1="356" y1="130" x2="404" y2="124" marker-end="url(#a)"/>
+  <line class="edge" x1="356" y1="222" x2="404" y2="218" marker-end="url(#a)"/>
+
+  <rect class="server" x="406" y="86" width="196" height="76" rx="8"/>
+  <text class="server-t" x="504" y="110" text-anchor="middle">Real time</text>
+  <text class="muted" x="504" y="130" text-anchor="middle">the world never stops;</text>
+  <text class="muted" x="504" y="147" text-anchor="middle">submit whenever ready</text>
+
+  <rect class="server" x="406" y="180" width="196" height="76" rx="8"/>
+  <text class="server-t" x="504" y="204" text-anchor="middle">Stepped</text>
+  <text class="muted" x="504" y="224" text-anchor="middle">paused between steps;</text>
+  <text class="muted" x="504" y="241" text-anchor="middle">deliberation costs 0 days</text>
+
+  <line class="edge" x1="604" y1="124" x2="642" y2="124" marker-end="url(#a)"/>
+  <line class="edge" x1="604" y1="218" x2="642" y2="218" marker-end="url(#a)"/>
+
+  <rect class="box" x="644" y="86" width="318" height="76" rx="8"/>
+  <text class="label" x="662" y="110" font-weight="600">Measures play AND speed</text>
+  <text class="muted" x="662" y="130">A faster model gets more decisions per horizon.</text>
+  <text class="muted" x="662" y="147">Bounded by wall-minutes. Ceiling: 15 actions.</text>
+
+  <rect class="box" x="644" y="180" width="318" height="76" rx="8"/>
+  <text class="label" x="662" y="204" font-weight="600">Measures policy only</text>
+  <text class="muted" x="662" y="224">Slowness is not punished: thinking is free.</text>
+  <text class="muted" x="662" y="241">Bounded by steps. Wall-clock bounds are refused.</text>
+
+  <rect class="guard" x="24" y="272" width="938" height="58" rx="8"/>
+  <text class="guard-t" x="44" y="294">Why a human is real time only</text>
+  <text class="label" x="44" y="315">A stepped world is paused until a registered stepper calls POST /step, and an OpenTTD client has no way to. Everything else is convention.</text>
+
+  <rect class="data" x="24" y="344" width="938" height="76" rx="8"/>
+  <text class="data-t" x="44" y="366">Scored the same way in either mode</text>
+  <text class="label" x="44" y="387">performance_rating (0-1000), cargo delivered breaks ties, one row per company.</text>
+  <text class="label" x="44" y="405">The mode is recorded, so a reader can compare within it rather than across it.</text>
+"""
+    _write("play_modes.svg", _svg(986, 440, body))
 
 
 def step_barrier() -> None:
@@ -284,18 +438,18 @@ def benchmark_profile() -> None:
   <text class="label" x="40" y="154">variety, smoothness, rivers</text>
   <text class="label" x="40" y="172">sea_level, map_edges</text>
   <text class="label" x="40" y="190">town_names, number_towns</text>
-  <text class="label" x="40" y="208">industry_density</text>
+  <text class="label" x="40" y="208">industry_density, landscape</text>
   <text class="muted" x="40" y="234">a difference here is invisible</text>
 
   <rect class="actor" x="290" y="70" width="254" height="180" rx="8"/>
   <text class="actor-t" x="417" y="92" text-anchor="middle">Free to vary</text>
   <text class="muted" x="417" y="111" text-anchor="middle">each is a leaderboard column</text>
-  <text class="label" x="306" y="136">size_x, size_y</text>
+  <text class="label" x="306" y="136">size (both axes, equal)</text>
   <text class="muted" x="306" y="152">64 | 128 | 256 | 512 | 1024</text>
-  <text class="label" x="306" y="176">landscape</text>
-  <text class="muted" x="306" y="192">temperate | sub-arctic | ...</text>
-  <text class="label" x="306" y="216">terrain_type</text>
-  <text class="muted" x="306" y="232">flat | hilly | mountainous | ...</text>
+  <text class="label" x="306" y="176">terrain_type</text>
+  <text class="muted" x="306" y="192">very_flat | flat | hilly |</text>
+  <text class="muted" x="306" y="208">mountainous | alpinist</text>
+  <text class="muted" x="306" y="234">5 x 5 = 25 scoreable maps</text>
 
   <rect class="data" x="556" y="70" width="242" height="180" rx="8"/>
   <text class="data-t" x="677" y="92" text-anchor="middle">task_id</text>
@@ -309,8 +463,8 @@ def benchmark_profile() -> None:
 
   <rect class="box" x="24" y="274" width="774" height="78" rx="8"/>
   <text class="title" x="44" y="298">Conformance is the credential. There is no list of approved scenarios.</text>
-  <text class="label" x="44" y="320">Write your own: if it sets scored = true and stays inside the profile, it is a benchmark run. A curated list would have</text>
-  <text class="label" x="44" y="338">to enumerate roughly 4,700 size/landscape/terrain/tier combinations before seeds, and would gate legitimate play.</text>
+  <text class="label" x="44" y="320">Write your own: if it stays inside the profile it is a benchmark run, whether or not it says so. Scoredness is COMPUTED</text>
+  <text class="label" x="44" y="338">from the world, so scored = true grants nothing: over a non-conforming world it is refused, not honoured.</text>
 """
     _write("benchmark_profile.svg", _svg(822, 372, body))
 
@@ -321,6 +475,8 @@ def main() -> None:
     architecture()
     trust_tiers()
     step_barrier()
+    scoreable_worlds()
+    play_modes()
     benchmark_profile()
     print("Done.")
 

@@ -20,14 +20,16 @@ Reward is computed here, not by the server. What to optimise is the contestant's
 choice, and a reward baked into nttd would have every RL entry optimising the
 platform's opinion instead of its own. The leaderboard score stays separate from it,
 which is what lets two policies with different shaping still be compared.
-
-Requires the ``rl`` extra:  uv add 'nttd[rl]'
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any
+
+import numpy as np
+import requests
+from gymnasium import spaces
 
 logger = logging.getLogger(__name__)
 
@@ -39,21 +41,6 @@ _DEFAULT_TIMEOUT = 300.0
 _STEP_TIMEOUT = 600.0
 
 _OBSERVATION_SIZE = 10
-
-
-def _require_gym() -> None:
-    """Fail with an actionable message rather than an ImportError deep in a call."""
-    import importlib.util
-
-    missing = [
-        name for name in ("gymnasium", "numpy")
-        if importlib.util.find_spec(name) is None
-    ]
-    if missing:
-        raise ImportError(
-            f"NttdEnv needs {' and '.join(missing)}. Install with: "
-            f"uv add 'nttd[rl]'  (or pip install gymnasium numpy)"
-        )
 
 
 class NttdEnv:
@@ -101,17 +88,12 @@ class NttdEnv:
                 scenario's end conditions. Truncation is the env's own budget; the
                 server terminates on its end conditions independently.
         """
-        _require_gym()
-        import numpy as np
-        from gymnasium import spaces
-
         self.base_url = base_url.rstrip("/")
         self.session_id = session_id
         self.token = token
         self.company_id = company_id
         self.max_steps = max_steps
 
-        self._np = np
         self._step_count = 0
         self._start_date = 0
         self._previous_value = 0.0
@@ -136,8 +118,6 @@ class NttdEnv:
         return f"{self.base_url}/v1/participant/sessions/{self.session_id}/{suffix}"
 
     def _post(self, suffix: str, payload: Any, timeout: float) -> dict[str, Any]:
-        import requests
-
         response = requests.post(
             self._url(suffix), json=payload, headers=self._headers, timeout=timeout,
         )
@@ -236,7 +216,6 @@ class NttdEnv:
 
     def _encode(self, snapshot: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         """Project the full snapshot into the baseline observation vector."""
-        np = self._np
         game = snapshot.get("game") or {}
         companies = snapshot.get("companies") or []
         vehicles = snapshot.get("vehicles") or []

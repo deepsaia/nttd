@@ -334,7 +334,6 @@ class TestParallelEnv:
 
     @staticmethod
     def _env(step_hook: Any) -> Any:
-        pytest.importorskip("gymnasium")
         from nttd.rl.multi_env import NttdParallelEnv
 
         env = NttdParallelEnv(session_id="ses_x", tokens={0: "pt_a", 1: "pt_b"})
@@ -343,7 +342,6 @@ class TestParallelEnv:
         return env
 
     def test_at_least_one_company_is_required(self) -> None:
-        pytest.importorskip("gymnasium")
         from nttd.rl.multi_env import NttdParallelEnv
 
         with pytest.raises(ValueError, match="at least one company token"):

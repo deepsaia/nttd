@@ -51,4 +51,7 @@ logs/
 .experiment_runs/
 .verify_runs/
 docs/superpowers/
+# Local research notes: OpenTTD mechanics, GS API transcripts, orientation probes.
+# Kept out of the repo because they are working material rather than nttd's docs.
+docs/study/
 .playwright-mcp/

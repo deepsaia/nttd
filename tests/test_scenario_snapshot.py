@@ -37,9 +37,9 @@ def test_a_snapshot_yields_the_same_settings_as_the_source(tmp_path: Path) -> No
     """Faithfulness is the whole value: a snapshot that parses to something else
     is worse than no snapshot, because it looks authoritative."""
     destination = tmp_path / "nttd_scenario.conf"
-    _snapshot_scenario(_BENCHMARK_DIR / "t3_subarctic_example.conf", destination)
+    _snapshot_scenario(_BENCHMARK_DIR / "t3_example.conf", destination)
 
-    source_settings = scenario_to_settings(load(_BENCHMARK_DIR / "t3_subarctic_example.conf"), strict=True)
+    source_settings = scenario_to_settings(load(_BENCHMARK_DIR / "t3_example.conf"), strict=True)
     snapshot_settings = scenario_to_settings(load(destination), strict=True)
     assert snapshot_settings == source_settings
 

@@ -3,7 +3,7 @@
 Snapshots are buffered in memory and flushed to numbered fragment files.
 On finalize(), fragments are merged into a single snapshots.parquet.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §13
+Derived from the OpenTTD multiplayer/agent study, §13 (local research notes, not in the repo).
 """
 
 import json

@@ -43,9 +43,7 @@ export NTTD_OPENTTD_BINARY=/path/to/openttd
 ## Prerequisites
 
 ```bash
-uv sync                 # engine
-uv sync --extra rl      # + the Gym environment
-uv sync --extra dev     # + pytest, ruff
+uv sync                 # everything, in one go
 ```
 
 Confirm your environment behaves the way nttd's design assumes:
@@ -199,14 +197,14 @@ scenario {
   id      = "benchmark-t2-example"
   version = "1"
 
-  # Holds the map to the benchmark profile and refuses game-mutating
-  # operator operations for the life of the run.
+  # Optional, and it cannot grant anything: scoredness is computed from the world.
+  # Present here it asserts conformance, and the scenario is refused if that is
+  # false. Set it to false to opt out of a conforming world.
   scored = true
 
   map {
     size_x       = 256      # 64 | 128 | 256 | 512 | 1024
-    size_y       = 256
-    landscape    = "temperate"
+    size_y       = 256      # must equal size_x: a scored map is square
     terrain_type = "flat"
     seed         = 1001     # pin it, or the run is not reproducible
   }
@@ -237,10 +235,15 @@ makes it different.
 
 Locked by `config/benchmark/profile.conf` and refused if you change them:
 `variety`, `smoothness`, `rivers`, `sea_level`, `map_edges`, `starting_year`,
-`town_names`, `number_towns`, `industry_density`.
+`town_names`, `number_towns`, `industry_density`, `landscape`.
 
-Free to vary, because each is recorded as a leaderboard column: `size_x`, `size_y`,
-`landscape`, `terrain_type`. Run `nttd scenario profile` for the permitted values.
+Free to vary, because each is recorded as a result column: the map **size** (one list
+for both axes, which must be equal) and `terrain_type`. That is 5 × 5 = 25 scoreable
+maps, each admitting any seed. Run `nttd scenario profile` for the permitted values.
+
+**Scoredness is computed, not declared.** A conforming world is scored whether or not
+the file says so; `scored = true` over a non-conforming world is refused rather than
+honoured. See [play_modes.md](play_modes.md).
 
 There is **no** `agents` block and **no** `fairness` block. Which agents play is your
 runner's business; how much anyone may do is operator policy and lives in the profile.

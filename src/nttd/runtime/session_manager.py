@@ -315,7 +315,7 @@ class SessionManager:
     async def stop_session(self, session_id: str, end_reason: str = "manual") -> None:
         """Stop a running session's OpenTTD server and clean up transient files.
 
-        Preserves session data (Parquet, session.conf, agents.conf) while removing
+        Preserves the session's recorded Parquet while removing
         OpenTTD config artifacts (openttd.cfg, secrets.cfg, symlinks, saves).
         """
         runtime = self.runtimes.pop(session_id, None)

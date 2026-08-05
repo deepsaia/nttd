@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 986 440" width="986" height="440" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">
+  <style>
+    .bg    { fill: #ffffff; }
+    .title { fill: #14161f; font-weight: 700; }
+    .label { fill: #14161f; }
+    .muted { fill: #5b6472; }
+    .edge  { stroke: #8b95a6; fill: none; }
+    .box   { fill: #ffffff; stroke: #8b95a6; }
+    .actor { fill: #f0ecf8; stroke: #6b5b95; }
+    .actor-t { fill: #4a3f6b; font-weight: 600; }
+    .server { fill: #e8f1f8; stroke: #2f6f9f; }
+    .server-t { fill: #1d4f74; font-weight: 600; }
+    .game  { fill: #e9f4ec; stroke: #3f7d58; }
+    .game-t { fill: #2b5940; font-weight: 600; }
+    .guard { fill: #fbeceb; stroke: #b0413e; }
+    .guard-t { fill: #8a2f2c; font-weight: 600; }
+    .data  { fill: #fdf5e6; stroke: #a8792c; }
+    .data-t { fill: #7a5720; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #14161f; }
+      .title { fill: #f2f4f8; }
+      .label { fill: #e4e8ef; }
+      .muted { fill: #9aa4b4; }
+      .edge  { stroke: #7d879a; }
+      .box   { fill: #1c1f2b; stroke: #7d879a; }
+      .actor { fill: #2a2440; stroke: #a894d6; }
+      .actor-t { fill: #c9bcf0; }
+      .server { fill: #162c3d; stroke: #5aa3d4; }
+      .server-t { fill: #a3d0ee; }
+      .game  { fill: #17301f; stroke: #6fb98a; }
+      .game-t { fill: #a5dcb8; }
+      .guard { fill: #351d1c; stroke: #dc7a77; }
+      .guard-t { fill: #f0aaa8; }
+      .data  { fill: #332715; stroke: #d4a94f; }
+      .data-t { fill: #e8c579; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b95a6"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="986" height="440" rx="10"/>
+
+  <text class="title" x="493" y="28" text-anchor="middle" font-size="15">Play modes: what each one measures</text>
+  <text class="muted" x="493" y="46" text-anchor="middle">nttd never asks what kind of contestant you are, so the column below is convention plus one hard constraint</text>
+
+  <rect class="actor" x="24" y="74" width="330" height="182" rx="8"/>
+  <text class="actor-t" x="44" y="98">Contestant</text>
+  <text class="muted" x="250" y="98">usual mode</text>
+
+  <text class="label" x="44" y="126">Human</text>
+  <text class="muted" x="250" y="126">real time only</text>
+  <text class="label" x="44" y="154">Single LLM agent</text>
+  <text class="muted" x="250" y="154">either</text>
+  <text class="label" x="44" y="182">Multi-agent system</text>
+  <text class="muted" x="250" y="182">either</text>
+  <text class="label" x="44" y="210">RL policy</text>
+  <text class="muted" x="250" y="210">stepped</text>
+  <text class="label" x="44" y="238">ES population</text>
+  <text class="muted" x="250" y="238">stepped</text>
+
+  <line class="edge" x1="356" y1="130" x2="404" y2="124" marker-end="url(#a)"/>
+  <line class="edge" x1="356" y1="222" x2="404" y2="218" marker-end="url(#a)"/>
+
+  <rect class="server" x="406" y="86" width="196" height="76" rx="8"/>
+  <text class="server-t" x="504" y="110" text-anchor="middle">Real time</text>
+  <text class="muted" x="504" y="130" text-anchor="middle">the world never stops;</text>
+  <text class="muted" x="504" y="147" text-anchor="middle">submit whenever ready</text>
+
+  <rect class="server" x="406" y="180" width="196" height="76" rx="8"/>
+  <text class="server-t" x="504" y="204" text-anchor="middle">Stepped</text>
+  <text class="muted" x="504" y="224" text-anchor="middle">paused between steps;</text>
+  <text class="muted" x="504" y="241" text-anchor="middle">deliberation costs 0 days</text>
+
+  <line class="edge" x1="604" y1="124" x2="642" y2="124" marker-end="url(#a)"/>
+  <line class="edge" x1="604" y1="218" x2="642" y2="218" marker-end="url(#a)"/>
+
+  <rect class="box" x="644" y="86" width="318" height="76" rx="8"/>
+  <text class="label" x="662" y="110" font-weight="600">Measures play AND speed</text>
+  <text class="muted" x="662" y="130">A faster model gets more decisions per horizon.</text>
+  <text class="muted" x="662" y="147">Bounded by wall-minutes. Ceiling: 15 actions.</text>
+
+  <rect class="box" x="644" y="180" width="318" height="76" rx="8"/>
+  <text class="label" x="662" y="204" font-weight="600">Measures policy only</text>
+  <text class="muted" x="662" y="224">Slowness is not punished: thinking is free.</text>
+  <text class="muted" x="662" y="241">Bounded by steps. Wall-clock bounds are refused.</text>
+
+  <rect class="guard" x="24" y="272" width="938" height="58" rx="8"/>
+  <text class="guard-t" x="44" y="294">Why a human is real time only</text>
+  <text class="label" x="44" y="315">A stepped world is paused until a registered stepper calls POST /step, and an OpenTTD client has no way to. Everything else is convention.</text>
+
+  <rect class="data" x="24" y="344" width="938" height="76" rx="8"/>
+  <text class="data-t" x="44" y="366">Scored the same way in either mode</text>
+  <text class="label" x="44" y="387">performance_rating (0-1000), cargo delivered breaks ties, one row per company.</text>
+  <text class="label" x="44" y="405">The mode is recorded, so a reader can compare within it rather than across it.</text>
+</svg>

@@ -20,6 +20,7 @@ from nttd.config.benchmark_profile import (
     DIMENSION_PREFIX,
     LOCKED_SETTINGS,
     PROFILE_VERSION,
+    REPORTED_SETTINGS,
     VARIABLE_SETTINGS,
     active_profile,
     deviations,
@@ -32,7 +33,7 @@ from nttd.config.scenario_config import (
 )
 
 _BENCHMARK_DIR = Path(__file__).parent.parent / "config" / "benchmark"
-_EXAMPLES = ("t2_example", "t3_subarctic_example")
+_EXAMPLES = ("t2_example", "t3_example")
 
 
 def _get(cfg: Any, path: str, default: Any = None) -> Any:
@@ -81,12 +82,55 @@ def test_the_user_specified_settings_are_all_locked() -> None:
         "town_names": "english",
         "number_towns": "normal",
         "industry_density": "normal",
+        # Locked, and expected to open up later. The four landscapes are separate
+        # economies, so each is really its own benchmark.
+        "landscape": "temperate",
     }
 
 
-def test_size_landscape_and_terrain_may_vary() -> None:
-    """The axes a player most wants to choose, and each is a leaderboard column."""
-    assert VARIABLE_SETTINGS == {"size_x", "size_y", "landscape", "terrain_type"}
+def test_only_size_and_terrain_may_vary() -> None:
+    """Two axes, and each is a recorded column.
+
+    ``size`` is one list governing both map axes rather than a pair of independent
+    ones: free axes give 25 rectangles differing only in aspect ratio.
+    """
+    assert VARIABLE_SETTINGS == {"size", "terrain_type"}
+
+
+def test_the_scoreable_matrix_is_five_by_five() -> None:
+    """25 maps, each a genuinely distinct problem, with seed variance on top."""
+    assert len(ALLOWED_RANGES["size"]) == 5
+    assert len(ALLOWED_RANGES["terrain_type"]) == 5
+
+
+def test_a_rectangular_map_is_refused_for_a_scored_run() -> None:
+    """Squareness is a relation between two settings, which a per-key list of
+    permitted values cannot express, so it has its own check."""
+    problems = deviations({"size_x": 256, "size_y": 512}, _get)
+    assert any("must be square" in problem for problem in problems)
+
+
+def test_a_square_map_at_an_allowed_size_passes() -> None:
+    assert deviations({"size_x": 512, "size_y": 512}, _get) == []
+
+
+def test_both_axes_are_checked_against_the_one_size_list() -> None:
+    """Equal but not permitted is still refused, otherwise 200x200 would pass."""
+    problems = deviations({"size_x": 200, "size_y": 200}, _get)
+    assert len(problems) == 2
+    assert all("not allowed" in problem for problem in problems)
+
+
+def test_landscape_is_reported_even_though_it_is_locked() -> None:
+    """A row should say which world it was, and landscape is expected to open up."""
+    assert "landscape" in REPORTED_SETTINGS
+    assert "landscape" in LOCKED_SETTINGS
+
+
+def test_the_size_dimension_expands_to_the_two_axes_a_scenario_writes() -> None:
+    assert "size_x" in REPORTED_SETTINGS
+    assert "size_y" in REPORTED_SETTINGS
+    assert "size" not in REPORTED_SETTINGS
 
 
 # ---------------------------------------------------------------------------
@@ -144,20 +188,25 @@ def test_ranges_cover_exactly_the_variable_settings() -> None:
     assert set(ALLOWED_RANGES) == set(VARIABLE_SETTINGS)
 
 
+def test_a_setting_cannot_be_both_locked_and_variable() -> None:
+    """The two would contradict: one says it must hold exactly, the other that it
+    may differ."""
+    assert set(LOCKED_SETTINGS) & set(VARIABLE_SETTINGS) == set()
+
+
 def test_map_sizes_are_powers_of_two_within_openttd_limits() -> None:
     """A non-power-of-two would be refused by OpenTTD at generation, so the profile
     must not offer one as a legal choice."""
-    for axis in ("size_x", "size_y"):
-        for size in ALLOWED_RANGES[axis]:
-            assert 64 <= int(size) <= 4096
-            assert int(size) & (int(size) - 1) == 0
+    for size in ALLOWED_RANGES["size"]:
+        assert 64 <= int(size) <= 4096
+        assert int(size) & (int(size) - 1) == 0
 
 
 def test_the_largest_openttd_sizes_are_excluded() -> None:
     """Observation is always the full entitled state, so 2048x2048 is a payload
     problem (16x the tiles of 1024x1024) rather than a transport one."""
-    assert 2048 not in ALLOWED_RANGES["size_x"]
-    assert 4096 not in ALLOWED_RANGES["size_x"]
+    assert 2048 not in ALLOWED_RANGES["size"]
+    assert 4096 not in ALLOWED_RANGES["size"]
 
 
 def test_custom_terrain_is_not_an_allowed_value() -> None:
@@ -210,10 +259,17 @@ def _write(tmp_path: Path, scored: bool, **overrides: Any) -> Path:
     map_values: dict[str, Any] = {
         **LOCKED_SETTINGS,
         "size_x": 256, "size_y": 256,
-        "landscape": "temperate", "terrain_type": "flat",
+        "terrain_type": "flat",
         "seed": 1001,
     }
     map_values.update(overrides)
+    # A scored map must be square, so an override of one axis moves both unless the
+    # test set the other explicitly. Without this, every size override became a
+    # rectangle and was refused for the wrong reason.
+    if "size_x" in overrides and "size_y" not in overrides:
+        map_values["size_y"] = overrides["size_x"]
+    if "size_y" in overrides and "size_x" not in overrides:
+        map_values["size_x"] = overrides["size_y"]
     lines = [
         "scenario {", '  name = "probe"', f"  scored = {str(scored).lower()}", "  map {",
     ]
@@ -424,8 +480,8 @@ def test_narrowing_a_range_by_hand_refuses_a_previously_valid_world(
             for key, value in LOCKED_SETTINGS.items()
         ) + "  }\n"
         "  allowed {\n"
-        "    size_x = [256]\n    size_y = [256]\n"
-        '    landscape = ["temperate"]\n    terrain_type = ["flat"]\n'
+        "    size = [256]\n"
+        '    terrain_type = ["flat"]\n'
         "  }\n  scenario_allowlist = []\n}\n"
     )
     profile = load_profile(narrowed)
@@ -433,15 +489,13 @@ def test_narrowing_a_range_by_hand_refuses_a_previously_valid_world(
         "narrowing the rules must change the recorded version"
     )
 
-    # 512x512 sub-arctic hilly was admitted by the shipped profile.
+    # 512x512 hilly was admitted by the shipped profile: two axes plus the terrain.
     problems = profile.deviations(
-        {"size_x": 512, "size_y": 512, "landscape": "sub-arctic", "terrain_type": "hilly"},
-        _get,
+        {"size_x": 512, "size_y": 512, "terrain_type": "hilly"}, _get,
     )
-    assert len(problems) == 4
+    assert len(problems) == 3
     assert profile.deviations(
-        {"size_x": 256, "size_y": 256, "landscape": "temperate", "terrain_type": "flat"},
-        _get,
+        {"size_x": 256, "size_y": 256, "terrain_type": "flat"}, _get,
     ) == []
 
 
@@ -513,6 +567,84 @@ def test_every_allowed_key_is_a_recorded_leaderboard_column() -> None:
     from nttd.store.result_writer import _SCHEMA
 
     columns = set(_SCHEMA.names)
-    for key in active_profile().allowed:
+    for key in REPORTED_SETTINGS:
         column = f"map_{key}" if key.startswith("size_") else key
-        assert column in columns, f"allowed dimension {key} has no result column"
+        assert column in columns, f"reported dimension {key} has no result column"
+
+
+# ---------------------------------------------------------------------------
+# Scoredness is computed, not declared
+# ---------------------------------------------------------------------------
+# `scored = true` is an assertion an author makes about their own config, which makes
+# it worth nothing on its own: anyone can write it above a world the profile would
+# never admit. Conformance is computed from the world instead, and the flag can only
+# narrow the answer.
+
+
+def test_a_conforming_world_is_scored_without_saying_so(tmp_path: Path) -> None:
+    """Conformance earns it. The flag is not what grants it."""
+    path = tmp_path / "no_flag.conf"
+    path.write_text(
+        'scenario {\n  name = "probe"\n  map {\n'
+        "    size_x = 256\n    size_y = 256\n    terrain_type = \"flat\"\n"
+        "    seed = 1\n  }\n}\n"
+    )
+    settings = scenario_to_settings(load(path), strict=True)
+    assert settings.get("_scored") == "1"
+
+
+def test_a_non_conforming_world_is_not_scored_and_is_not_an_error(
+    tmp_path: Path,
+) -> None:
+    """Free play is the answer, not a refusal: silence is not a mistake."""
+    path = _write(tmp_path, scored=False, number_towns="high")
+    text = path.read_text().replace("  scored = false\n", "")
+    path.write_text(text)
+    settings = scenario_to_settings(load(path), strict=True)
+    assert settings.get("_scored") != "1"
+
+
+def test_asserting_scored_over_a_non_conforming_world_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The lie. An author who wrote scored = true meant to produce a benchmark run,
+    so they need to hear the world is wrong rather than get a quietly unscored one."""
+    path = _write(tmp_path, scored=True, size_x=256, size_y=512)
+    with pytest.raises(ScenarioConfigError, match="square"):
+        scenario_to_settings(load(path), strict=True)
+
+
+def test_scored_false_opts_out_of_a_conforming_world(tmp_path: Path) -> None:
+    """The one thing the flag can still do: narrow. For playing a conforming world
+    with operator powers available."""
+    path = _write(tmp_path, scored=False)
+    settings = scenario_to_settings(load(path), strict=True)
+    assert settings.get("_scored") != "1"
+
+
+def test_the_dataclass_and_the_settings_agree_on_scoredness(tmp_path: Path) -> None:
+    """Two code paths read the scenario; a disagreement would mean the lock engaged
+    for a run whose record said free play, or the reverse."""
+    for scored in (True, False):
+        path = _write(tmp_path, scored=scored)
+        cfg = load(path)
+        settings = scenario_to_settings(cfg, strict=True)
+        assert cfg.scored == (settings.get("_scored") == "1")
+
+
+def test_every_shipped_example_is_scored_on_its_own_merits() -> None:
+    """Not because each says so: strip the flag and they must still be scored."""
+    for example in _EXAMPLES + ("t2_stepped_example",):
+        text = (_BENCHMARK_DIR / f"{example}.conf").read_text()
+        assert "scored = true" in text, f"{example} no longer declares scored"
+        stripped = text.replace("scored = true", "")
+        path = _BENCHMARK_DIR.parent.parent / "build" / f"{example}_stripped.conf"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(stripped)
+        try:
+            settings = scenario_to_settings(load(path), strict=True)
+            assert settings.get("_scored") == "1", (
+                f"{example} is only scored because it claims to be"
+            )
+        finally:
+            path.unlink()

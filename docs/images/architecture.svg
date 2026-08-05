@@ -93,7 +93,7 @@
   <text class="muted" x="761" y="197" text-anchor="middle">one per run</text>
 
   <line class="edge" x1="761" y1="224" x2="761" y2="262" marker-end="url(#a)"/>
-  <text class="muted" x="772" y="248">admin port, GameScript</text>
+  <text class="muted" x="761" y="248" text-anchor="middle">admin port, GameScript</text>
   <rect class="game" x="620" y="264" width="236" height="70" rx="8"/>
   <text class="game-t" x="738" y="286" text-anchor="middle">OpenTTD 15.3 (dedicated)</text>
   <text class="muted" x="738" y="305" text-anchor="middle">seeded world, pinned by -G</text>

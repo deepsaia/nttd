@@ -168,7 +168,7 @@ An empty `actions` list is a legitimate move: waiting while vehicles earn is rea
 Or use the Gym wrapper, which is an ordinary client over these routes:
 
 ```python
-from nttd.rl.env import NttdEnv     # needs: uv sync --extra rl
+from nttd.rl.env import NttdEnv
 
 env = NttdEnv(session_id=SID, token=TOKEN)
 obs, info = env.reset()
@@ -231,7 +231,7 @@ For self-play or population training from a single process:
 
 ```python
 import json
-from nttd.rl.multi_env import NttdParallelEnv     # needs: uv sync --extra rl
+from nttd.rl.multi_env import NttdParallelEnv
 
 tokens = {int(k): v for k, v in json.load(open(f"logs/sessions/{SID}/participants.json")).items()}
 env = NttdParallelEnv(session_id=SID, tokens=tokens)
