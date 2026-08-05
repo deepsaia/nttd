@@ -23,10 +23,12 @@ from nttd.api.participant_auth import (
     ParticipantToken,
     apply_company_scope,
     extract_token,
+    resolve_company_id,
 )
 from nttd.api.scored_guard import require_unscored
 from nttd.runtime.step_errors import StepBatchTooLarge
 from nttd.schemas.game import GameState, RuntimeMode
+from nttd.schemas.spend_report import SpendReport
 from nttd.schemas.step_result import StepRequest, StepResult
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,38 @@ async def stop_orchestrator(session_id: str) -> dict[str, str]:
             pass
         runtime.orchestrator_task = None
     return {"status": "stopped"}
+
+
+@participant_router.post("/report")
+async def report_spend(
+    session_id: str,
+    report: SpendReport,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
+) -> dict[str, Any]:
+    """Declare what nttd cannot observe: model, framework, tokens, and cost.
+
+    nttd runs no agent, so these live in the contestant's process. Without this route
+    the corresponding result columns were permanently empty -- ``ParticipantReport``
+    existed to hold them and nothing ever filled it.
+
+    Recorded as REPORTED, never observed. A contestant could put anything here, which
+    is exactly why the result marks the group unverified instead of presenting it
+    beside action counts that nttd tallied itself.
+
+    Scoped by token like every other participant route, so a contestant cannot report
+    spend against a rival's company. Callable repeatedly: values merge, so a runner
+    may declare its model up front and its totals at the end.
+    """
+    runtime = deps.get_runtime(session_id)
+    token = extract_token(x_participant_token, authorization)
+    company_id = resolve_company_id(runtime, token)
+
+    runtime.participant_report.declare(
+        company_id,
+        **{key: value for key, value in report.model_dump().items() if value},
+    )
+    return {"company_id": company_id, "recorded": "reported"}
 
 
 @participant_router.post("/step/reset", response_model=StepResult)
