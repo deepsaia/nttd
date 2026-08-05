@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 354" width="880" height="354" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">
+  <style>
+    .bg    { fill: #ffffff; }
+    .title { fill: #14161f; font-weight: 700; }
+    .label { fill: #14161f; }
+    .muted { fill: #5b6472; }
+    .edge  { stroke: #8b95a6; fill: none; }
+    .box   { fill: #ffffff; stroke: #8b95a6; }
+    .actor { fill: #f0ecf8; stroke: #6b5b95; }
+    .actor-t { fill: #4a3f6b; font-weight: 600; }
+    .server { fill: #e8f1f8; stroke: #2f6f9f; }
+    .server-t { fill: #1d4f74; font-weight: 600; }
+    .game  { fill: #e9f4ec; stroke: #3f7d58; }
+    .game-t { fill: #2b5940; font-weight: 600; }
+    .guard { fill: #fbeceb; stroke: #b0413e; }
+    .guard-t { fill: #8a2f2c; font-weight: 600; }
+    .data  { fill: #fdf5e6; stroke: #a8792c; }
+    .data-t { fill: #7a5720; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #14161f; }
+      .title { fill: #f2f4f8; }
+      .label { fill: #e4e8ef; }
+      .muted { fill: #9aa4b4; }
+      .edge  { stroke: #7d879a; }
+      .box   { fill: #1c1f2b; stroke: #7d879a; }
+      .actor { fill: #2a2440; stroke: #a894d6; }
+      .actor-t { fill: #c9bcf0; }
+      .server { fill: #162c3d; stroke: #5aa3d4; }
+      .server-t { fill: #a3d0ee; }
+      .game  { fill: #17301f; stroke: #6fb98a; }
+      .game-t { fill: #a5dcb8; }
+      .guard { fill: #351d1c; stroke: #dc7a77; }
+      .guard-t { fill: #f0aaa8; }
+      .data  { fill: #332715; stroke: #d4a94f; }
+      .data-t { fill: #e8c579; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b95a6"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="880" height="354" rx="10"/>
+
+  <text class="title" x="440" y="28" text-anchor="middle" font-size="15">nttd architecture</text>
+  <text class="muted" x="440" y="46" text-anchor="middle">the contestant owns the loop; nttd owns the world and the record</text>
+
+  <rect class="actor" x="24" y="70" width="196" height="152" rx="8"/>
+  <text class="actor-t" x="122" y="91" text-anchor="middle">Contestant (own process)</text>
+  <rect class="box" x="40" y="101" width="164" height="22" rx="4"/>
+  <text class="label" x="122" y="116" text-anchor="middle">LLM agent</text>
+  <rect class="box" x="40" y="128" width="164" height="22" rx="4"/>
+  <text class="label" x="122" y="143" text-anchor="middle">Multi-agent system</text>
+  <rect class="box" x="40" y="155" width="164" height="22" rx="4"/>
+  <text class="label" x="122" y="170" text-anchor="middle">RL policy</text>
+  <rect class="box" x="40" y="182" width="164" height="22" rx="4"/>
+  <text class="label" x="122" y="197" text-anchor="middle">ES population / human</text>
+  <text class="muted" x="122" y="240" text-anchor="middle">observe, decide, act</text>
+
+  <line class="edge" x1="222" y1="146" x2="268" y2="146" marker-end="url(#a)"/>
+  <rect class="server" x="270" y="70" width="152" height="152" rx="8"/>
+  <text class="server-t" x="346" y="91" text-anchor="middle">Play surfaces</text>
+  <rect class="box" x="284" y="101" width="124" height="22" rx="4"/>
+  <text class="label" x="346" y="116" text-anchor="middle">HTTP (REST)</text>
+  <rect class="box" x="284" y="128" width="124" height="22" rx="4"/>
+  <text class="label" x="346" y="143" text-anchor="middle">MCP</text>
+  <rect class="box" x="284" y="155" width="124" height="22" rx="4"/>
+  <text class="label" x="346" y="170" text-anchor="middle">Gym (stepped)</text>
+  <text class="muted" x="346" y="197" text-anchor="middle">one token per company</text>
+
+  <line class="edge" x1="424" y1="146" x2="466" y2="146" marker-end="url(#a)"/>
+  <rect class="guard" x="468" y="70" width="152" height="152" rx="8"/>
+  <text class="guard-t" x="544" y="91" text-anchor="middle">Admission</text>
+  <rect class="box" x="482" y="101" width="124" height="22" rx="4"/>
+  <text class="label" x="544" y="116" text-anchor="middle">operator tier?</text>
+  <rect class="box" x="482" y="128" width="124" height="22" rx="4"/>
+  <text class="label" x="544" y="143" text-anchor="middle">in the vocabulary?</text>
+  <rect class="box" x="482" y="155" width="124" height="22" rx="4"/>
+  <text class="label" x="544" y="170" text-anchor="middle">within budget?</text>
+  <text class="muted" x="544" y="197" text-anchor="middle">one gate, every path</text>
+
+  <line class="edge" x1="622" y1="146" x2="664" y2="146" marker-end="url(#a)"/>
+  <rect class="server" x="666" y="70" width="190" height="152" rx="8"/>
+  <text class="server-t" x="761" y="91" text-anchor="middle">Session runtime</text>
+  <rect class="box" x="680" y="101" width="162" height="22" rx="4"/>
+  <text class="label" x="761" y="116" text-anchor="middle">scored lock</text>
+  <rect class="box" x="680" y="128" width="162" height="22" rx="4"/>
+  <text class="label" x="761" y="143" text-anchor="middle">orchestrator, step barrier</text>
+  <rect class="box" x="680" y="155" width="162" height="22" rx="4"/>
+  <text class="label" x="761" y="170" text-anchor="middle">recorder</text>
+  <text class="muted" x="761" y="197" text-anchor="middle">one per run</text>
+
+  <line class="edge" x1="761" y1="224" x2="761" y2="262" marker-end="url(#a)"/>
+  <text class="muted" x="772" y="248">admin port, GameScript</text>
+  <rect class="game" x="620" y="264" width="236" height="70" rx="8"/>
+  <text class="game-t" x="738" y="286" text-anchor="middle">OpenTTD 15.3 (dedicated)</text>
+  <text class="muted" x="738" y="305" text-anchor="middle">seeded world, pinned by -G</text>
+  <text class="muted" x="738" y="322" text-anchor="middle">economy: 1 wall-min = 1 month</text>
+
+  <line class="edge" x1="700" y1="186" x2="466" y2="292" marker-end="url(#a)"/>
+  <rect class="data" x="24" y="264" width="436" height="70" rx="8"/>
+  <text class="data-t" x="242" y="286" text-anchor="middle">Record (Parquet, per session)</text>
+  <text class="muted" x="242" y="305" text-anchor="middle">actions . snapshots . events . tiles . result</text>
+  <text class="muted" x="242" y="322" text-anchor="middle">result.parquet is what a leaderboard ingests</text>
+</svg>

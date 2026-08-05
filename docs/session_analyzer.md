@@ -36,7 +36,7 @@ All data lives in `logs/sessions/<session_id>/`:
 | `session.parquet` | Session metadata, settings, timestamps (single-row) |
 | `agents.parquet` | Per-agent config (one row per agent) |
 | `actions.parquet` | Action history (type, status, agent, error) |
-| `agent_cycles.parquet` | Per-cycle telemetry (decide_ms, execute_ms) |
+| `result.parquet` | One row per scored company, with reported per-model spend |
 | `events.parquet` | Game events (session_start, agent_start/stop) |
 | `snapshots.parquet` | Full game state snapshots (companies, vehicles, towns, etc.) |
 | `tiles.parquet` | Terrain data (height, slope, water/coast/buildable flags) |

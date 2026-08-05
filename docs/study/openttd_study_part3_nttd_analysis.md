@@ -1,5 +1,11 @@
 # OpenTTD Comprehensive Study - Part 3: nttd Implementation Analysis & API Design
 
+> **Note.** This part analyses an earlier nttd design in which nttd ran the
+> contestant's agent in-process through framework adapters. That is no longer how
+> nttd works: the contestant owns the loop and reaches the game over HTTP. The
+> OpenTTD research here still holds; the nttd-side conclusions do not. See
+> [../architecture.md](../architecture.md) for the current design.
+
 > This is Part 3 of 3. See also:
 > - [Part 1: Game Mechanics](./openttd_study_part1_game_mechanics.md)
 > - [Part 2: GameScript API Reference](./openttd_study_part2_gs_api_reference.md)
