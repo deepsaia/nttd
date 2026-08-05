@@ -180,10 +180,28 @@ uv run nttd submit -s ses_...
 uv run nttd submit -s ses_... --no-archive
 ```
 
-Packages the session into `logs/sessions/<id>/submission/` plus a `.tar.gz`: the result,
-the action log, the snapshots, the tile scan, the resolved scenario, and the savegame a
-verifier reloads. Prints every artifact with its sha256 and states what the bundle cannot
-prove about itself.
+Packages the session into `logs/sessions/<id>/submission/` plus a `.tar.gz`, prints every
+artifact with its sha256, and states what the bundle cannot prove about itself.
+
+| File | Read by a check | Why it is there |
+|---|---|---|
+| `manifest.json` | yes | identity and integrity: ids, map digest, a sha256 per artifact |
+| `result.parquet` | yes | the score and all provenance |
+| `final.sav` | yes | the score is recomputed from this |
+| `actions.parquet` | yes | action-log consistency and the capability check |
+| `nttd_scenario.conf` | yes | rebuilding the world for `--regenerate` |
+| `tiles.parquet` | no | shows *where* two worlds differ, not just that they do |
+| `events.parquet` | no | human reading; kilobytes |
+| `final_snapshot.parquet` | no | the end state, readable without OpenTTD |
+
+**The full snapshot series is not bundled.** No check reads it, and it dominates a long
+run: 2,000 snapshots measured 7.9 MB, so a T4 at one-day intervals is around 14 MB against
+roughly 250 KB for everything verification uses. A bundle should be the evidence, not the
+archive. Keep your own `snapshots.parquet` and link to it; the bundle carries the last row
+as `final_snapshot.parquet`.
+
+**Nothing here is magic.** The layout above is the whole format, so you can assemble a
+bundle by hand, and `nttd verify` only reads files. The commands are a convenience.
 
 nttd is self-hosted, so a submission cannot mean "we watched it happen". It means the
 artifacts are internally consistent and the score is recomputable.
@@ -217,6 +235,11 @@ uv run nttd verify <bundle-path> --json
 could have changed, so it predicts what a leaderboard will conclude rather than granting
 anything. The verdict that counts is computed by the board's ingest, on infrastructure you
 do not control and with its own copy of nttd and the GameScript.
+
+So expect a submitted run to start out unjudged whatever this printed, and to gain a real
+verdict when the board next runs its checks. That is not a lack of trust in your self-check;
+it is that a verdict computed where the contestant controls the code cannot mean anything to
+anyone else. nttd ships the checker; it does not host a board, and it stores no verdict.
 
 Sharing the code is the point rather than a compromise: you should be able to predict the
 outcome instead of being surprised by it. And nothing is written into the bundle -- a

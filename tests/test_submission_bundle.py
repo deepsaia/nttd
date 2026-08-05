@@ -117,11 +117,22 @@ def _write_tiles(session_dir: Path, heights: list[int], session_id: str = "ses_p
     )
 
 
+def _write_snapshots(session_dir: Path, dates: list[int]) -> None:
+    pq.write_table(
+        pa.table({
+            "game_date": dates,
+            "snapshot_json": [f'{{"game": {{"game_date": {d}}}}}' for d in dates],
+        }),
+        session_dir / "snapshots.parquet",
+    )
+
+
 @pytest.fixture
 def session_dir(tmp_path: Path) -> Path:
     d = tmp_path / "ses_probe"
     _write_result(d)
     _write_tiles(d, [0, 1, 2, 3])
+    _write_snapshots(d, [100, 200, 300])
     (d / "actions.parquet").write_bytes(b"actions")
     (d / "nttd_scenario.conf").write_text("scenario {}\n")
     (d / "save").mkdir()
@@ -244,6 +255,41 @@ class TestBundleContents:
         )
 
 
+class TestSnapshotsShipSeparately:
+    """The full series is not evidence and dominates a long run.
+
+    Measured: 2,000 snapshots is a 7.9 MB Parquet, so a T4 at one-day intervals is
+    around 14 MB against roughly 250 KB for everything verification reads. No check
+    opens it. A contestant keeps their own and links to them.
+    """
+
+    def test_the_series_is_not_bundled(self, session_dir: Path) -> None:
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        assert not (bundle / "snapshots.parquet").exists()
+
+    def test_the_end_state_is_bundled_as_one_row(self, session_dir: Path) -> None:
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        final = bundle / "final_snapshot.parquet"
+        assert final.exists()
+
+        table = pq.read_table(final)
+        assert table.num_rows == 1
+        assert table.column("game_date").to_pylist() == [300], "not the last snapshot"
+
+    def test_it_is_named_for_what_it_is(self, session_dir: Path) -> None:
+        """Calling a one-row file snapshots.parquet would read as a time series."""
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        manifest = json.loads((bundle / MANIFEST_NAME).read_text())
+        assert "final_snapshot.parquet" in manifest["artifacts"]
+        assert "snapshots.parquet" not in manifest["artifacts"]
+
+    def test_a_session_without_snapshots_still_bundles(self, session_dir: Path) -> None:
+        (session_dir / "snapshots.parquet").unlink()
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        assert (bundle / MANIFEST_NAME).exists()
+        assert not (bundle / "final_snapshot.parquet").exists()
+
+
 class TestTheManifestHoldsIdentityAndIntegrityOnly:
     def test_it_carries_no_verdict(self, session_dir: Path) -> None:
         """A verdict in a bundle is a self-granted claim, which is worth nothing.
@@ -328,3 +374,18 @@ class TestTheArchive:
 
         assert MANIFEST_NAME in names, "the manifest must be at the archive root"
         assert not any("/" in name for name in names), "paths should be flat"
+
+
+class TestTheSubmitCommandRuns:
+    """It broke once when the manifest was thinned and the summary still read the old
+    shape. The crash was hidden because the command had been run with its output
+    suppressed and its exit code unchecked."""
+
+    def test_it_prints_a_summary_without_raising(
+        self, session_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from nttd.cli.submit_command import submit
+        from nttd.store import session_paths
+
+        monkeypatch.setenv(session_paths.ENV_VAR, str(session_dir.parent))
+        submit(session=session_dir.name, no_archive=True)

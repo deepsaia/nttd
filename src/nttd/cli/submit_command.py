@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -9,7 +11,9 @@ from rich.table import Table
 
 from nttd.cli.helpers import console
 from nttd.store import session_paths
+from nttd.store.result_writer import read_result
 from nttd.store.submission_bundle import MANIFEST_NAME, SubmissionBundle
+from nttd.store.verification_gaps import verification_gaps
 
 
 def submit(
@@ -45,10 +49,8 @@ def submit(
         console.print(f"[red]Cannot build a bundle:[/] {exc}")
         raise typer.Exit(code=1) from exc
 
-    import json
-
     manifest = json.loads((bundle_dir / MANIFEST_NAME).read_text())
-    _print_summary(manifest, bundle_dir)
+    _print_summary(manifest, bundle_dir, read_result(bundle_dir))
 
     if not no_archive:
         archive = bundle.archive_path
@@ -57,7 +59,9 @@ def submit(
             f"({archive.stat().st_size / 1024:.0f} KB)"
         )
 
-    gaps = manifest["verification_gaps"]
+    # Derived here rather than stored in the bundle: a gap list is advice to the
+    # contestant, and a bundle should carry evidence rather than commentary on itself.
+    gaps = verification_gaps(read_result(bundle_dir))
     if gaps:
         console.print("\n[yellow]This bundle cannot be fully verified:[/]")
         for gap in gaps:
@@ -66,34 +70,40 @@ def submit(
         console.print("\n[green]Nothing is missing: this bundle can be fully checked.[/]")
 
 
-def _print_summary(manifest: dict, bundle_dir: object) -> None:
-    """Show what went in, so a contestant sees the bundle rather than trusting it."""
-    task = manifest["task"]
-    world = manifest["world"]
-    rules = manifest["rules"]
+def _print_summary(manifest: dict, bundle_dir: Path, rows: list[dict]) -> None:
+    """Show what went in, so a contestant sees the bundle rather than trusting it.
 
-    table = Table(title=f"Submission: {manifest['session_id']}", show_header=False)
+    Identity comes from the manifest and the run detail from the result row, because
+    that is where each lives: the manifest holds identity and integrity only.
+    """
+    first = rows[0] if rows else {}
+
+    table = Table(title=f"Submission: {manifest.get('session_id', '?')}", show_header=False)
     table.add_column("Field", style="bold")
     table.add_column("Value")
-    table.add_row("task_id", task["task_id"] or "[yellow]none[/]")
-    table.add_row("scenario", task["scenario_id"] or "?")
-    table.add_row("map seed", str(task["map_seed"]))
-    table.add_row("map digest", task["map_digest"] or "[yellow]no tile scan[/]")
+    table.add_row("task_id", manifest.get("task_id") or "[yellow]none[/]")
+    table.add_row("map digest", manifest.get("map_digest") or "[yellow]no tile scan[/]")
+    table.add_row("scenario", first.get("scenario_id") or "?")
+    table.add_row("map seed", str(first.get("map_seed", "?")))
     table.add_row(
         "world",
-        f"{world['map_size_x']}x{world['map_size_y']} "
-        f"{world['landscape']} {world['terrain_type']}",
+        f"{first.get('map_size_x')}x{first.get('map_size_y')} "
+        f"{first.get('landscape', '')} {first.get('terrain_type', '')}".strip(),
     )
-    table.add_row("profile", rules["profile_version"] or "?")
-    table.add_row("scored", "yes" if rules["scored_session"] else "[yellow]no[/]")
-    table.add_row("clean run", "yes" if rules["clean_run"] else "[yellow]no[/]")
+    table.add_row("profile", first.get("profile_version") or "?")
+    table.add_row("scored", "yes" if first.get("scored_session") else "[yellow]no[/]")
+    table.add_row("clean run", "yes" if first.get("clean_run") else "[yellow]no[/]")
     console.print(table)
 
     artifacts = Table(title="Artifacts", show_header=True)
     artifacts.add_column("File", style="bold")
     artifacts.add_column("Size", justify="right")
     artifacts.add_column("sha256")
-    for name, meta in manifest["artifacts"].items():
+    for name, meta in manifest.get("artifacts", {}).items():
         artifacts.add_row(name, f"{meta['bytes'] / 1024:.0f} KB", meta["sha256"] or "?")
     console.print(artifacts)
     console.print(f"Bundle: [cyan]{bundle_dir}[/]")
+    console.print(
+        "[dim]The full snapshot series is not bundled: no check reads it and it "
+        "dominates a long run. Keep your own and link to them.[/]"
+    )
