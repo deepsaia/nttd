@@ -12,7 +12,6 @@ import pytest
 from nttd.db.recorder import SessionRecorder
 from nttd.schemas.action_envelope import ActionEnvelope
 from nttd.schemas.action_result import ActionResult
-from nttd.schemas.cycle_record import CycleRecord
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,23 +38,6 @@ def _make_envelope(
 def _make_result(action_id: str = "test:0:agent1:1:0", status: str = "success") -> ActionResult:
     return ActionResult(action_id=action_id, status=status)
 
-
-def _make_cycle(connection_id: str = "road-agent", cycle_number: int = 1) -> CycleRecord:
-    return CycleRecord(
-        connection_id=connection_id,
-        session_id="test_session",
-        cycle_number=cycle_number,
-        game_date=18628,
-        observe_ms=50.0,
-        decide_ms=1200.0,
-        execute_ms=300.0,
-        total_ms=1550.0,
-        actions_proposed=3,
-        actions_executed=3,
-        actions_succeeded=2,
-        actions_failed=1,
-        observation_size_bytes=4096,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -105,25 +87,6 @@ async def test_record_action_persists(recorder: SessionRecorder, data_dir: Path)
     assert table.column("action_id")[0].as_py() == "test:0:agent1:1:0"
     assert table.column("action_type")[0].as_py() == "connect_road"
     assert table.column("status")[0].as_py() == "success"
-
-
-@pytest.mark.asyncio
-async def test_record_agent_cycle_persists(recorder: SessionRecorder, data_dir: Path) -> None:
-    """Agent cycles are flushed to Parquet."""
-    await recorder.start()
-
-    recorder.record_agent_cycle(_make_cycle())
-
-    await recorder._flush_once()
-    await recorder.stop()
-
-    cycles_path = data_dir / "test_session" / "agent_cycles.parquet"
-    assert cycles_path.exists()
-
-    table = pq.read_table(cycles_path)
-    assert table.num_rows == 1
-    assert table.column("connection_id")[0].as_py() == "road-agent"
-    assert table.column("decide_ms")[0].as_py() == pytest.approx(1200.0, rel=0.01)
 
 
 @pytest.mark.asyncio

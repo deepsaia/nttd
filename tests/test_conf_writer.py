@@ -7,11 +7,8 @@ from pathlib import Path
 import pytest
 
 from nttd.db.conf_writer import (
-    read_agents_conf,
     read_session_conf,
-    update_agent_in_conf,
     update_session_conf,
-    write_agents_conf,
     write_session_conf,
 )
 
@@ -130,53 +127,3 @@ def test_write_creates_directory(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_write_and_read_agents_conf(session_dir: Path) -> None:
-    """Write agents.conf and read it back."""
-    agents = {
-        "road-agent": {
-            "company_id": 0,
-            "agent_type": "road",
-            "nttd_framework": "langchain",
-        },
-        "rail-agent": {
-            "company_id": 1,
-            "agent_type": "rail",
-            "nttd_framework": "scripted",
-        },
-    }
-    write_agents_conf(session_dir, agents)
-
-    result = read_agents_conf(session_dir)
-    assert "road-agent" in result
-    assert result["road-agent"]["company_id"] == 0
-    assert result["road-agent"]["agent_type"] == "road"
-    assert "rail-agent" in result
-    assert result["rail-agent"]["company_id"] == 1
-
-
-def test_update_agent_in_conf(session_dir: Path) -> None:
-    """update_agent_in_conf adds/updates a single agent entry."""
-    write_agents_conf(session_dir, {
-        "agent-1": {"company_id": 0, "status": "running"},
-    })
-
-    # Add new agent
-    update_agent_in_conf(session_dir, "agent-2", {"company_id": 1, "status": "running"})
-
-    result = read_agents_conf(session_dir)
-    assert "agent-1" in result
-    assert "agent-2" in result
-    assert result["agent-2"]["company_id"] == 1
-
-    # Update existing agent
-    update_agent_in_conf(session_dir, "agent-1", {"status": "stopped", "total_cycles": 50})
-
-    result = read_agents_conf(session_dir)
-    assert result["agent-1"]["status"] == "stopped"
-    assert result["agent-1"]["total_cycles"] == 50
-
-
-def test_read_nonexistent_agents_conf(tmp_path: Path) -> None:
-    """Reading a non-existent agents.conf returns empty dict."""
-    result = read_agents_conf(tmp_path / "nonexistent")
-    assert result == {}

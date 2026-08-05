@@ -48,7 +48,7 @@ def _write(tmp_path: Path, **overrides: object) -> list[dict]:
                 "agent_id": "road_agent", "nttd_framework": "langchain",
                 "model": "gpt-5.2", "total_actions": 42, "successful_actions": 40,
                 "prompt_tokens": 120_000, "completion_tokens": 8_000,
-                "total_cost": 3.91, "cost_is_estimated": False,
+                "total_cost": 3.91, "spend_is_reported": True,
             },
         },
     }
@@ -94,7 +94,11 @@ def test_contestant_detail_is_recorded(tmp_path: Path) -> None:
     assert scored["model"] == "gpt-5.2"
     assert scored["total_actions"] == 42
     assert scored["total_cost_usd"] == 3.91
-    assert scored["cost_is_estimated"] is False
+    # Replaces cost_is_estimated. That flag meant "some cycles aged out of the ring
+    # buffer", which was a property of the deleted gameloop's telemetry. The question
+    # now is whether the contestant reported spend at all -- a local RL policy that
+    # genuinely cost nothing and a MAS entry that stayed silent both show 0.0.
+    assert scored["spend_is_reported"] is True
 
 
 def test_company_without_participant_still_scored(tmp_path: Path) -> None:

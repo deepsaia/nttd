@@ -30,7 +30,7 @@ def session_dir(tmp_path: Path) -> Path:
     sdir.mkdir()
 
     # session.parquet
-    from nttd.db.conf_writer import write_agents_conf, write_session_conf
+    from nttd.db.conf_writer import write_session_conf
 
     write_session_conf(
         sdir,
@@ -45,18 +45,6 @@ def session_dir(tmp_path: Path) -> Path:
         admin_port=3977,
     )
 
-    # agents.parquet
-    write_agents_conf(sdir, {
-        "test_agent": {
-            "model": "test-model",
-            "total_actions": 5,
-            "successful_actions": 4,
-            "failed_actions": 1,
-            "total_cycles": 3,
-            "avg_decide_ms": 100.0,
-            "avg_cycle_ms": 150.0,
-        },
-    })
 
     # actions.parquet
     actions_schema = pa.schema([
@@ -83,7 +71,7 @@ def session_dir(tmp_path: Path) -> Path:
     }, schema=actions_schema)
     pq.write_table(actions, sdir / "actions.parquet")
 
-    # agent_cycles.parquet
+    # agent_cycles.parquet -- no longer read; kept out of the fixture
     cycles_schema = pa.schema([
         ("connection_id", pa.string()),
         ("cycle_number", pa.int32()),
@@ -290,7 +278,6 @@ class TestLoader:
         assert s.name == "test-session"
         assert s.status == "ended"
         assert len(s.actions) == 3
-        assert len(s.agent_cycles) == 2
         assert len(s.events) == 1
         assert len(s.snapshots) == 1
         assert len(s.tiles) == 16
@@ -322,8 +309,12 @@ class TestRegistry:
         ensure_reports_loaded()
         reports = list_reports()
         assert len(reports) >= 11
+        # agent_performance and token_accounting are gone: both read the
+        # gameloop's per-cycle telemetry, which nothing writes since nttd stopped
+        # running contestants' agents. Per-model spend now comes from POST /report
+        # and lands in result.parquet.
         expected = {
-            "session_summary", "agent_performance", "financial",
+            "session_summary", "financial",
             "cargo_delivery", "vehicle_fleet", "infrastructure",
             "events_timeline", "action_analysis", "world_state",
             "tile_map", "orders",
