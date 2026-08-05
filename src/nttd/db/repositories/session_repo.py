@@ -11,20 +11,12 @@ Listing sessions scans the directory for all session.parquet files.
 
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
+from nttd.db import session_paths
 from nttd.db.conf_writer import read_session_conf, update_session_conf, write_session_conf
 
 logger = logging.getLogger(__name__)
-
-_SESSIONS_DIR = Path("logs/sessions")
-
-
-def set_sessions_dir(path: Path) -> None:
-    """Configure the sessions directory (called at app startup)."""
-    global _SESSIONS_DIR
-    _SESSIONS_DIR = path
 
 
 async def create_session(
@@ -36,7 +28,7 @@ async def create_session(
     admin_port: int | None = None,
     meta: dict[str, Any] | None = None,
 ) -> None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     write_session_conf(
         session_dir=session_dir,
         session_id=session_id,
@@ -50,7 +42,7 @@ async def create_session(
 
 
 async def update_session_name(session_id: str, name: str) -> None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     update_session_conf(session_dir, {"session.name": name})
 
 
@@ -59,7 +51,7 @@ async def update_session_ports(
     game_port: int,
     admin_port: int,
 ) -> None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     update_session_conf(session_dir, {
         "session.game_port": game_port,
         "session.admin_port": admin_port,
@@ -67,12 +59,12 @@ async def update_session_ports(
 
 
 async def update_session_pid(session_id: str, pid: int | None) -> None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     update_session_conf(session_dir, {"session.pid": pid or 0})
 
 
 async def mark_session_active(session_id: str, pid: int) -> None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     update_session_conf(session_dir, {
         "session.status": "active",
         "session.pid": pid,
@@ -83,11 +75,7 @@ async def mark_session_active(session_id: str, pid: int) -> None:
 async def get_active_sessions_with_ports() -> list[dict[str, Any]]:
     """Return all sessions with status 'active' that have ports and pid set."""
     results: list[dict[str, Any]] = []
-    if not _SESSIONS_DIR.exists():
-        return results
-    for session_dir in _SESSIONS_DIR.iterdir():
-        if not session_dir.is_dir():
-            continue
+    for session_dir in session_paths.iter_session_dirs():
         data = read_session_conf(session_dir)
         if data and data.get("status") == "active" and data.get("pid"):
             results.append(data)
@@ -99,7 +87,7 @@ async def end_session(
     end_reason: str = "completed",
     game_end_date: int | None = None,
 ) -> None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     updates: dict[str, Any] = {
         "session.status": "ended",
         "session.ended_at": datetime.now(timezone.utc).isoformat(),
@@ -111,12 +99,12 @@ async def end_session(
 
 
 async def get_session_by_id(session_id: str) -> dict[str, Any] | None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     return read_session_conf(session_dir)
 
 
 async def archive_session(session_id: str) -> None:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     update_session_conf(session_dir, {
         "session.status": "archived",
         "session.ended_at": datetime.now(timezone.utc).isoformat(),
@@ -126,7 +114,7 @@ async def archive_session(session_id: str) -> None:
 async def delete_session(session_id: str) -> None:
     """Delete session directory entirely."""
     import shutil
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     if session_dir.exists():
         shutil.rmtree(session_dir, ignore_errors=True)
 
@@ -135,11 +123,7 @@ async def list_sessions(
     status: str | None = None, include_archived: bool = False, limit: int = 50,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
-    if not _SESSIONS_DIR.exists():
-        return results
-    for session_dir in sorted(_SESSIONS_DIR.iterdir(), reverse=True):
-        if not session_dir.is_dir():
-            continue
+    for session_dir in session_paths.iter_session_dirs():
         data = read_session_conf(session_dir)
         if data is None:
             continue
@@ -159,7 +143,7 @@ async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
 
     Reads the existing data, merges settings, and rewrites the file.
     """
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     parquet_path = session_dir / "session.parquet"
     if not parquet_path.exists():
         write_session_conf(
@@ -199,7 +183,7 @@ async def upsert_settings(session_id: str, settings: dict[str, str]) -> None:
 
 
 async def get_settings(session_id: str) -> dict[str, str]:
-    session_dir = _SESSIONS_DIR / session_id
+    session_dir = session_paths.session_dir(session_id)
     data = read_session_conf(session_dir)
     if data is None:
         return {}

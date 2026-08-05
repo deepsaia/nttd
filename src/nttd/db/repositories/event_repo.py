@@ -1,19 +1,15 @@
-"""Repository for game event queries -- reads from Parquet."""
+"""Game event queries, over the shared Parquet read path."""
+
+from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
-import pyarrow.parquet as pq
+from nttd.db import parquet_reader
 
 logger = logging.getLogger(__name__)
 
-_SESSIONS_DIR = Path("logs/sessions")
-
-
-def set_sessions_dir(path: Path) -> None:
-    global _SESSIONS_DIR
-    _SESSIONS_DIR = path
+_EVENTS = "events"
 
 
 async def get_events(
@@ -25,13 +21,8 @@ async def get_events(
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Query game events with optional filters."""
-    parquet_path = _SESSIONS_DIR / session_id / "events.parquet"
-    if not parquet_path.exists():
-        return []
-
-    table = pq.read_table(parquet_path)
-    rows = table.to_pylist()
+    """Query game events with optional filters, most recent first."""
+    rows = parquet_reader.read_rows(session_id, _EVENTS)
 
     if event_type is not None:
         rows = [r for r in rows if r.get("event_type") == event_type]
@@ -42,17 +33,5 @@ async def get_events(
     if to_date is not None:
         rows = [r for r in rows if r.get("game_date", 0) <= to_date]
 
-    # Most recent first
     rows.reverse()
     return rows[offset:offset + limit]
-
-
-async def get_messages(
-    session_id: str,
-    message_type: str | None = None,
-    company_id: int | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    """Messages are no longer stored separately -- return empty list."""
-    return []
