@@ -475,7 +475,7 @@ class Orchestrator:
             # ceiling never saw it -- verified: 16/16 allowed against a limit of 15.
             # Refused whole rather than truncated: a policy that planned a route as
             # one batch should not have it half-built.
-            self._check_batch_size(batch)
+            self.check_batch_size(batch)
 
         # The target is fixed BEFORE the world starts moving, so a step advances the
         # same number of days however long its actions took to execute.
@@ -597,13 +597,19 @@ class Orchestrator:
             timeout_s, target_date, self.world.game.game_date,
         )
 
-    def _check_batch_size(self, batch: list[dict[str, Any]]) -> None:
+    def check_batch_size(self, batch: list[dict[str, Any]]) -> None:
         """Refuse an over-ceiling batch before any of it executes.
 
         Separate from the per-action gate because the two ask different questions.
         The gate asks "may this action be taken at all"; this asks "is this
         submission too big", which is a property of the batch and invisible when each
         action is checked alone.
+
+        Grouped by company, because the ceiling is per company and a multi-company step
+        window merges several batches into one flush. Reading the company off the first
+        action instead, as this did, meant two companies each submitting a legal 15
+        looked like one company submitting 30, so one contestant's legal batch could
+        refuse everybody's window.
 
         Raises:
             StepBatchTooLarge: with the same wording the REST batch route uses, so a
@@ -612,11 +618,18 @@ class Orchestrator:
         """
         if self.action_budget is None:
             return
-        company_id = int((batch[0].get("params") or {}).get("company_id", -1))
-        decision = self.action_budget.check(company_id, count=len(batch))
-        if not decision.allowed:
-            logger.info("Step batch refused: %s", decision.reason)
-            for entry in batch:
+
+        by_company: dict[int, list[dict[str, Any]]] = {}
+        for entry in batch:
+            company_id = int((entry.get("params") or {}).get("company_id", -1))
+            by_company.setdefault(company_id, []).append(entry)
+
+        for company_id, entries in sorted(by_company.items()):
+            decision = self.action_budget.check(company_id, count=len(entries))
+            if decision.allowed:
+                continue
+            logger.info("Step batch refused for company %d: %s", company_id, decision.reason)
+            for entry in entries:
                 envelope = ActionEnvelope(
                     action_id=f"hb_{uuid.uuid4().hex[:8]}",
                     company_id=company_id,

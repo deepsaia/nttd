@@ -186,6 +186,72 @@ per seed.
 
 ---
 
+## Playing several companies in one session
+
+Start the session with `--agent-companies N`. You get one token per company, in
+`logs/sessions/<id>/participants.json`, and `nttd session attach` prints them.
+
+### Real-time
+
+Nothing special. Each company acts on its own cadence with its own token. The ceiling and
+the score are per company, and observation is full state for everyone, so nobody has an
+information edge. Using one company's token to target another is refused:
+
+```
+Token is scoped to company 0 but the request targets company 1
+```
+
+Be aware that every company's actions go through one GameScript, so a rival issuing long
+`connect_rail` calls will slow your submissions. That is the game's shared resource, not
+something nttd schedules around.
+
+### Stepped
+
+The clock is shared, so steps are gathered into **windows**. Every registered stepper has
+to arrive before the world advances, and then everyone gets the same observation and the
+same step number. This is what keeps a two-company run comparable to a one-company run:
+K steps is K intervals either way, rather than 2K.
+
+What that means for your runner:
+
+- **Call `/step/reset` before your first `/step`.** It registers you as a stepper. A
+  `/step` without it gets a 409 telling you so, because the barrier has to know who it is
+  waiting for.
+- **Your `/step` blocks until every other stepper has arrived.** That is not a bug to work
+  around with a shorter timeout; use a generous one.
+- **You are never truncated for thinking.** There is no decision deadline. There is a
+  10-minute liveness timeout, after which a silent company is dropped from the barrier for
+  the rest of the run and the remaining companies carry on without it.
+- **One step per company per window.** A second concurrent `/step` from the same company
+  gets a 409: two batches in one window would be the action ceiling bypassed.
+- `result["steppers"]` lists whose actions were in the window, so you can tell whether a
+  rival was still playing.
+
+For self-play or population training from a single process:
+
+```python
+import json
+from nttd.rl.multi_env import NttdParallelEnv     # needs: uv sync --extra rl
+
+tokens = {int(k): v for k, v in json.load(open(f"logs/sessions/{SID}/participants.json")).items()}
+env = NttdParallelEnv(session_id=SID, tokens=tokens)
+
+observations, infos = env.reset()
+observations, rewards, terminations, truncations, infos = env.step({
+    "company_0": [{"action": "set_loan", "params": {"amount": 200_000}}],
+    "company_1": [],
+})
+```
+
+The PettingZoo `ParallelEnv` shape. It issues the N step calls concurrently because each
+one blocks until the window closes, so serial calls would deadlock on the first. An agent
+you leave out of the dict still steps with an empty batch, for the same reason.
+
+If you are running N independent policies in N processes instead, use N `NttdEnv`
+instances and nothing else: the server's barrier already synchronises them.
+
+---
+
 ## Reporting what nttd cannot see
 
 nttd runs no model, so it cannot observe which model you used, how many tokens you
