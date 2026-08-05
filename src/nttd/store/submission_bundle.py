@@ -51,16 +51,26 @@ MANIFEST_VERSION = 1
 BUNDLE_DIR_NAME = "submission"
 
 # Recorded artifacts a verifier needs, and whether the bundle is useless without them.
-# tiles.parquet is here because step 1 of verification regenerates the world and
-# compares it: the digest alone proves a mismatch, the scan shows where.
+#
+# The full snapshot series is deliberately absent. No check reads it, and it dominates a
+# long run: 2,000 snapshots measured 7.9 MB, so a T4 at one-day intervals is around 14 MB
+# against roughly 250 KB for everything verification actually uses. A bundle should be
+# the evidence, not the archive. Keep your own snapshots and link to them; the bundle
+# carries the end state, which is what a score is computed from.
+#
+# tiles.parquet stays: no check opens it either, because the world check regenerates its
+# own scan and compares digests, but it is what lets a human see *where* two worlds
+# differ rather than only that they do.
 _ARTIFACTS: tuple[tuple[str, bool], ...] = (
     ("result.parquet", True),
     ("actions.parquet", False),
-    ("snapshots.parquet", False),
     ("events.parquet", False),
     ("tiles.parquet", False),
     ("nttd_scenario.conf", False),
 )
+
+# The one snapshot the bundle does carry, written from the last row of the series.
+FINAL_SNAPSHOT_NAME = "final_snapshot.parquet"
 
 
 class SubmissionBundle:
@@ -123,6 +133,10 @@ class SubmissionBundle:
             destination.write_bytes(source.read_bytes())
             copied[name] = destination
 
+        final_snapshot = self._write_final_snapshot(bundle_dir)
+        if final_snapshot is not None:
+            copied[final_snapshot.name] = final_snapshot
+
         save = self.session_dir / "save" / f"{FINAL_SAVE_NAME}{SAVE_EXTENSION}"
         if save.exists():
             destination = bundle_dir / save.name
@@ -135,6 +149,33 @@ class SubmissionBundle:
             )
 
         return copied
+
+    def _write_final_snapshot(self, bundle_dir: Path) -> Path | None:
+        """Write the last recorded snapshot, dropping the rest of the series.
+
+        One row rather than thousands. The end state is what a score is computed from,
+        and the intermediate series is analysis material a contestant can keep and link
+        to. Named for what it is, so nobody reads a one-row file as a time series.
+        """
+        source = self.session_dir / "snapshots.parquet"
+        if not source.exists():
+            return None
+
+        try:
+            import pyarrow.parquet as pq
+
+            table = pq.read_table(source)
+            if table.num_rows == 0:
+                return None
+            dates = table.column("game_date").to_pylist()
+            last = max(range(len(dates)), key=lambda index: dates[index])
+            destination = bundle_dir / FINAL_SNAPSHOT_NAME
+            pq.write_table(table.slice(last, 1), destination)
+        except Exception:
+            logger.exception("Could not extract a final snapshot from %s", source)
+            return None
+
+        return destination
 
     def _manifest(
         self, rows: list[dict[str, Any]], copied: dict[str, Path],
