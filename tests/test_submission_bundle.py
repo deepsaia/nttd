@@ -4,9 +4,12 @@ nttd is self-hosted, so a submission cannot mean "we watched it happen". It mean
 artifacts are internally consistent and the score is recomputable. Two properties carry
 that, and both are pinned here:
 
-  * the manifest is a **projection** of result.parquet, so it cannot contradict the
-    record it describes;
+  * the manifest holds identity and integrity only, so it has nothing to contradict:
+    everything about the run lives in the result.parquet sitting beside it;
   * every artifact carries a digest, so an edit after the fact is detectable.
+
+The manifest carries no verdict. A bundle asserting "verified" would be making a claim
+anyone could write, which is the same defect as a scenario declaring ``scored = true``.
 """
 
 from __future__ import annotations
@@ -226,8 +229,8 @@ class TestBundleContents:
     def test_a_missing_savegame_does_not_block_the_bundle(
         self, session_dir: Path,
     ) -> None:
-        """It becomes a stated gap rather than a refusal, so a contestant can see
-        exactly what their submission lacks."""
+        """A weaker submission is still a submission, and `nttd submit` says what is
+        missing. The gap is advice to the contestant, not a field in the bundle."""
         (session_dir / "save" / "final.sav").unlink()
         _write_result(session_dir, final_save_digest="", final_save_name="")
 
@@ -235,32 +238,36 @@ class TestBundleContents:
         manifest = json.loads((bundle / MANIFEST_NAME).read_text())
 
         assert "final.sav" not in manifest["artifacts"]
-        assert any("no final savegame" in gap for gap in manifest["verification_gaps"])
+        assert any(
+            "no final savegame" in gap
+            for gap in verification_gaps(pq.read_table(bundle / "result.parquet").to_pylist())
+        )
 
 
-class TestTheManifestIsAProjection:
-    def test_every_projected_field_comes_from_the_result_row(
-        self, session_dir: Path,
-    ) -> None:
-        """The design rule: the manifest never invents a value.
+class TestTheManifestHoldsIdentityAndIntegrityOnly:
+    def test_it_carries_no_verdict(self, session_dir: Path) -> None:
+        """A verdict in a bundle is a self-granted claim, which is worth nothing.
 
-        A manifest with an independent source could disagree with the record, and the
-        disagreement would be invisible to whoever read only one of them.
+        Whoever needs to trust the bundle computes it themselves, on hardware the
+        contestant does not control. This is the `scored = true` lesson applied to
+        verification.
         """
         bundle = SubmissionBundle(session_dir).build(archive=False)
-        manifest = json.loads((bundle / MANIFEST_NAME).read_text())
-        row = pq.read_table(bundle / "result.parquet").to_pylist()[0]
+        text = (bundle / MANIFEST_NAME).read_text()
+        for word in ("verified", "replayed", "unverified", "verdict"):
+            assert word not in text, f"the manifest asserts {word!r} about itself"
 
-        assert manifest["task"]["task_id"] == row["task_id"]
-        assert manifest["task"]["map_seed"] == row["map_seed"]
-        assert manifest["task"]["settings_digest"] == row["settings_digest"]
-        assert manifest["world"]["map_size_x"] == row["map_size_x"]
-        assert manifest["rules"]["profile_version"] == row["profile_version"]
-        assert manifest["rules"]["capability_digest"] == row["capability_digest"]
-        assert manifest["run"]["runtime_mode"] == row["runtime_mode"]
-        assert manifest["provenance"]["gamescript_digest"] == row["gamescript_digest"]
-        assert manifest["provenance"]["final_save_digest"] == row["final_save_digest"]
-        assert manifest["scores"][0]["primary_score"] == row["primary_score"]
+    def test_it_does_not_restate_the_result_record(self, session_dir: Path) -> None:
+        """An earlier version copied forty fields out of result.parquet, which needed a
+        test proving the copy had not drifted. Not restating it removes both."""
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        manifest = json.loads((bundle / MANIFEST_NAME).read_text())
+
+        assert set(manifest) == {
+            "manifest_version", "session_id", "task_id", "map_digest", "artifacts",
+        }
+        for absent in ("primary_score", "profile_version", "runtime_mode", "scores"):
+            assert absent not in manifest
 
     def test_it_does_not_carry_a_tier(self, session_dir: Path) -> None:
         """Nothing records a tier, so deriving a plausible one would be an invention.
@@ -270,12 +277,20 @@ class TestTheManifestIsAProjection:
         assert "tier" not in json.dumps(manifest)
         assert (bundle / "nttd_scenario.conf").exists()
 
-    def test_the_map_digest_is_recorded_for_the_world_played(
+    def test_the_identity_it_does_carry_matches_the_record(
         self, session_dir: Path,
     ) -> None:
         bundle = SubmissionBundle(session_dir).build(archive=False)
         manifest = json.loads((bundle / MANIFEST_NAME).read_text())
-        assert manifest["task"]["map_digest"] == map_digest(session_dir / "tiles.parquet")
+        row = pq.read_table(bundle / "result.parquet").to_pylist()[0]
+
+        assert manifest["session_id"] == row["session_id"]
+        assert manifest["task_id"] == row["task_id"]
+
+    def test_the_map_digest_is_the_world_played(self, session_dir: Path) -> None:
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        manifest = json.loads((bundle / MANIFEST_NAME).read_text())
+        assert manifest["map_digest"] == map_digest(session_dir / "tiles.parquet")
 
 
 class TestTamperEvidence:
