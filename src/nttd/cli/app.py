@@ -22,6 +22,7 @@ Commands:
   nttd benchmark             Stand up a benchmark task and wait for it to end
   nttd result                Show the scored result record for a session
   nttd submit                Package a session into a submission bundle
+  nttd verify                Self-check a submission bundle
   nttd analyze               Generate session analysis reports
 """
 
@@ -34,6 +35,7 @@ from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
 from nttd.cli.session_commands import session_app
 from nttd.cli.submit_command import submit
+from nttd.cli.verify_command import verify
 
 app = typer.Typer(
     name="nttd",
@@ -47,6 +49,7 @@ app.command()(server)
 app.command()(benchmark)
 app.command()(result)
 app.command()(submit)
+app.command()(verify)
 app.command()(analyze)
 
 
