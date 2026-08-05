@@ -4,7 +4,7 @@ Tracks direction because trains can't make arbitrary turns.
 Cost model: flat=100, slope=+200, curve45=100, curve90=600, bridge/tunnel.
 Bridge/tunnel neighbor expansion with max length limits.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §14.4
+Derived from the OpenTTD multiplayer/agent study, §14.4 (local research notes, not in the repo).
 """
 
 from nttd.pathfinding.astar import PathNode

@@ -1,6 +1,6 @@
 """Metrics, leaderboard, and replay API endpoints.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §12, §16
+Derived from the OpenTTD multiplayer/agent study, §12, §16 (local research notes, not in the repo).
 """
 
 import logging

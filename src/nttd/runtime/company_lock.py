@@ -3,7 +3,7 @@
 Cross-company actions run in parallel. Same-company actions are serialized
 to prevent stale-state conflicts.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §15.2
+Derived from the OpenTTD multiplayer/agent study, §15.2 (local research notes, not in the repo).
 """
 
 import asyncio

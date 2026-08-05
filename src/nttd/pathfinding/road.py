@@ -4,7 +4,7 @@ Cost model aligned with YAPF and AI Pathfinder.Road v3:
   flat=100, slope=+200, bridge=150/tile, tunnel=120/tile, demolish=500
   Bridge/tunnel neighbor expansion with max length limits.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §14.4
+Derived from the OpenTTD multiplayer/agent study, §14.4 (local research notes, not in the repo).
 """
 
 from nttd.pathfinding.astar import PathNode

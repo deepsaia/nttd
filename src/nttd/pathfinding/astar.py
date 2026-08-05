@@ -1,6 +1,6 @@
 """Generic A* pathfinding with pluggable cost functions.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §14.4
+Derived from the OpenTTD multiplayer/agent study, §14.4 (local research notes, not in the repo).
 """
 
 import heapq

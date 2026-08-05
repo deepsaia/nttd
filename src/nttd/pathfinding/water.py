@@ -2,7 +2,7 @@
 
 Existing water is free to traverse. Land tiles require canal construction.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §14.5
+Derived from the OpenTTD multiplayer/agent study, §14.5 (local research notes, not in the repo).
 """
 
 from nttd.pathfinding.astar import PathNode

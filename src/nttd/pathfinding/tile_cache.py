@@ -3,7 +3,7 @@
 Loads tile data from GS via batched get_tile_area commands.
 Invalidated when construction commands modify the map.
 
-Ref: docs/openttd_study_part4_multiplayer_agent_design.md §14.3
+Derived from the OpenTTD multiplayer/agent study, §14.3 (local research notes, not in the repo).
 """
 
 import logging
