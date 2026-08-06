@@ -203,7 +203,7 @@ Build a lock so ships can change height. It must sit on the slope between two wa
 
 ### `build_path`
 
-Lay a route that was already worked out, step by step. This exists for a pathfinder that plans elsewhere and hands the whole route over, rather than for placing track directly. Steps that only pass over existing infrastructure are skipped, and the reply reports what was built, skipped and refused.
+Lay a route that was already worked out, step by step. This exists for a pathfinder that plans elsewhere and hands the whole route over, rather than for placing track directly. Steps that only pass over existing infrastructure are skipped. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed.
 
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
 - `road_type` (integer, default 0) Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.
@@ -427,7 +427,7 @@ Build a waypoint on a track tile. Trains can be ordered through one without stop
 
 ### `connect_rail`
 
-Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it.
+Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working line.
 
 Supply one of: `tile_from` or `from_x` and `from_y`.
 
@@ -561,7 +561,7 @@ Supply one of: `tile` or `x` and `y`.
 
 ### `connect_road`
 
-Build road between two tiles, finding the route itself.
+Build road between two tiles, finding the route itself. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working road.
 
 Supply one of: `tile_from` or `from_x` and `from_y`.
 
