@@ -289,33 +289,38 @@ artifact with its sha256, and states what the bundle cannot prove about itself.
 
 | File | Read by a check | Why it is there |
 |---|---|---|
-| `manifest.json` | yes | identity and integrity: ids, map digest, a sha256 per artifact |
-| `result.parquet` | yes | the score and all provenance |
-| `final.sav` | yes | the score is recomputed from this |
-| `actions.parquet` | yes | action-log consistency and the capability check |
+| `manifest.json` | yes | integrity: a sha256 per artifact, plus the map digest |
+| `result.parquet` | yes | **the claim**: score, provenance, business metrics |
+| `final.sav` | yes | the savegame. The score is recomputed from this |
+| `snapshots.parquet` | no | the series. How the run got where it got |
+| `actions.parquet` | yes | what the contestant did |
 | `nttd_scenario.conf` | yes | rebuilding the world for `--regenerate` |
 | `tiles.parquet` | no | shows *where* two worlds differ, not just that they do |
-| `events.parquet` | no | human reading; kilobytes |
-| `final_snapshot.parquet` | no | the end state, readable without OpenTTD |
-| `trajectory.parquet` | no | the contestant's series, so run-wide metrics can be rechecked |
+| `events.parquet` | no | lifecycle and game events |
 
-**The full snapshot series is not bundled.** It dominates a long run: 2,000 snapshots
-measured 7.9 MB, so a real-time run at one-day intervals reaches tens of megabytes against
-roughly 250 KB for everything verification uses. A bundle should be the evidence, not the
-archive. Keep your own `snapshots.parquet` and link to it.
+Every file does one of three jobs, and nothing does none of them.
 
-**What is bundled instead** is the last row, as `final_snapshot.parquet`, and the
-contestant company's series as `trajectory.parquet`: ten integers a tick rather than the
-whole world as JSON. About 11 KB for a 200-step run and 1.3 MB for the longest plausible
-real-time one, where the full series would be 146 MB.
+**Evidence** cannot be derived from anything else: the savegame, the series, the action
+log, the terrain scan, the events, the scenario. This is what a verifier checks against.
 
-It is there because the endpoint figures can be recomputed from the savegame and the
-run-wide ones cannot. Operating margin across the run, peak credit drawn, lowest cash and
-days to first profit come from the series, so without it they would be claims rather than
-something a verifier can check. It is also what a trend chart is drawn from.
+**The claim** is `result.parquet`. The score and the twenty-seven business metrics are
+derived, and verification means recomputing them from the evidence and comparing.
 
-Stepped runs are the cheap case here: one snapshot per step, where real-time takes one per
-game day.
+**Integrity** is `manifest.json`, so tampering with either shows.
+
+The series earns its place by being the only record of *how* the run went. Endpoint
+figures can be recomputed from the savegame; operating margin across the run, peak credit
+drawn, lowest cash and days to first profit cannot. It is also what a trend chart is drawn
+from.
+
+It is bounded by the tier rather than open-ended. A T4 at one-day intervals is around
+14 MB; a stepped run is far smaller, because stepped mode records one snapshot **per
+step** where real time records one **per game day**.
+
+Two files used to sit here and no longer do. `final_snapshot.parquet` was the last row of
+the series and `trajectory.parquet` was an extract of it, and both existed only because
+the series itself was absent. A derivation shipped next to its source is how a bundle
+turns into an archive.
 
 **Nothing here is magic.** The layout above is the whole format, so you can assemble a
 bundle by hand, and `nttd verify` only reads files. The commands are a convenience.
