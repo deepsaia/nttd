@@ -144,17 +144,139 @@ class TestItMatchesTheGameScript:
             assert actions[name]["parameters"] == {}
 
 
+class TestEverythingIsDescribed:
+    def test_every_action_has_prose(self, actions: dict[str, Any]) -> None:
+        """An undescribed action is one an agent can name but cannot use."""
+        missing = sorted(name for name, entry in actions.items() if not entry["description"])
+        assert missing == []
+
+    def test_every_parameter_has_prose_and_a_type(self, actions: dict[str, Any]) -> None:
+        missing = sorted(
+            f"{name}.{param}"
+            for name, entry in actions.items()
+            for param, meta in entry["parameters"].items()
+            if not meta.get("description") or not meta.get("type")
+        )
+        assert missing == []
+
+    def test_a_repeated_parameter_says_the_same_thing(self, actions: dict[str, Any]) -> None:
+        """`x` appears in 36 actions. Describing it 36 times invites 36 slightly
+        different descriptions, so the glossary supplies one and an action overrides it
+        only where the meaning genuinely differs."""
+        seen: dict[str, set[str]] = {}
+        for entry in actions.values():
+            for param, meta in entry["parameters"].items():
+                seen.setdefault(param, set()).add(meta["description"])
+
+        overridden = {"direction", "transport_type", "action", "vehicle_type"}
+        inconsistent = {
+            param: descriptions
+            for param, descriptions in seen.items()
+            if len(descriptions) > 1 and param not in overridden
+        }
+        assert inconsistent == {}
+
+
+class TestEnumValuesComeFromTheBuild:
+    """The values are read from OpenTTD by scripts/dump_gs_enums.py rather than typed.
+
+    A wrong constant is worse than a missing one: it is a plausible value the game
+    accepts and acts on, and several of these collide. OF_UNLOAD and
+    OF_SERVICE_IF_NEEDED are both 4; OF_TRANSFER and OF_STOP_IN_DEPOT are both 8.
+    """
+
+    def test_the_manifest_matches_the_dump_exactly(self, actions: dict[str, Any]) -> None:
+        dumped = json.loads((_ROOT / "config" / "actions" / "enums.json").read_text())["enums"]
+        for name, entry in actions.items():
+            for param, meta in entry["parameters"].items():
+                if "enum" not in meta:
+                    continue
+                source = dumped[meta["enum"]["class"]]
+                for constant, value in meta["enum"]["values"].items():
+                    assert source[constant] == value, f"{name}.{param}.{constant}"
+
+    def test_the_values_are_the_ones_openttd_reported(self, actions: dict[str, Any]) -> None:
+        """Spot checks that would each be an easy thing to get wrong by hand."""
+        flags = actions["add_order"]["parameters"]["order_flags"]["enum"]["values"]
+        assert flags["OF_FULL_LOAD"] == 64
+        assert flags["OF_NO_LOAD"] == 128
+        assert flags["OF_UNLOAD"] == flags["OF_SERVICE_IF_NEEDED"] == 4
+
+        track = actions["remove_rail_track"]["parameters"]["track"]["enum"]["values"]
+        assert track["RAILTRACK_NE_SW"] == 1
+        assert track["RAILTRACK_NW_SE"] == 2
+
+    def test_invalid_sentinels_are_not_offered(self, actions: dict[str, Any]) -> None:
+        """Every one of these enums carries an _INVALID member. It is a return value
+        meaning "none", not something to pass in."""
+        for entry in actions.values():
+            for meta in entry["parameters"].values():
+                offered = list(meta.get("enum", {}).get("values", {}))
+                assert not [name for name in offered if name.endswith("_INVALID")]
+
+
+class TestAlternatives:
+    """Actions that accept a choice of parameters.
+
+    The first manifest marked every mentioned parameter required, which is wrong
+    wherever the GameScript accepts alternatives: insert_order came out demanding
+    station_id and dest_tile and destination at once, which no caller can satisfy.
+    """
+
+    def test_no_single_alternative_is_required(self, actions: dict[str, Any]) -> None:
+        params = actions["insert_order"]["parameters"]
+        for name in ("station_id", "dest_tile", "destination"):
+            assert params[name]["required"] is False
+        assert params["vehicle_id"]["required"] is True
+
+    def test_the_choice_is_published(self, actions: dict[str, Any]) -> None:
+        groups = actions["insert_order"]["one_of"]
+        assert ["station_id"] in groups[0]
+        assert ["dest_tile"] in groups[0]
+
+    def test_a_branch_can_be_more_than_one_parameter(self, actions: dict[str, Any]) -> None:
+        """build_train takes depot_tile, or depot_x and depot_y as a pair. Treating each
+        branch as a single name left depot_y required, which nobody passing depot_tile
+        could satisfy."""
+        entry = actions["build_train"]
+        assert entry["parameters"]["depot_y"]["required"] is False
+        assert ["depot_x", "depot_y"] in entry["one_of"][0]
+
+    def test_tile_or_coordinates_is_derived_not_declared(self, actions: dict[str, Any]) -> None:
+        """Every action resolving a tile through the shared helper needs tile or x,y.
+        That comes from the helper rather than being declared 11 times."""
+        for name in ("build_road_stop", "remove_rail_track", "find_flat_spots"):
+            assert [["tile"], ["x", "y"]] in actions[name]["one_of"], name
+
+
 class TestItIsReproducible:
     def test_regenerating_changes_nothing(self, manifest: dict[str, Any]) -> None:
         """A committed manifest that differs from its generator is a manifest nobody
-        can trust to describe the GameScript."""
-        before = _MANIFEST.read_text()
+        can trust to describe the GameScript.
+
+        The reference pages are covered too. They are a third rendering of the same
+        source, and a stale one reads exactly like a current one.
+        """
+        watched = [_MANIFEST, *sorted((_ROOT / "docs" / "actions").glob("*.md"))]
+        before = {path: path.read_text() for path in watched}
         subprocess.run(
             [sys.executable, str(_GENERATOR)], cwd=_ROOT, check=True, capture_output=True,
         )
-        assert _MANIFEST.read_text() == before, (
-            "run: uv run python scripts/generate_action_manifest.py"
-        )
+        for path in watched:
+            assert path.read_text() == before[path], (
+                f"{path.name} is stale: "
+                "run uv run python scripts/generate_action_manifest.py"
+            )
+
+    def test_the_reference_is_split_by_what_an_action_does(self) -> None:
+        """The whole surface is about 16k tokens. An agent deciding what to observe
+        should not have to read 76 build actions to do it."""
+        reference = _ROOT / "docs" / "actions"
+        observations = (reference / "observations.md").read_text()
+        assert "get_stations" in observations
+        assert "### `build_rail_station`" not in observations
+        assert "### `build_rail_station`" in (reference / "actions.md").read_text()
+        assert "### `found_town`" in (reference / "operator.md").read_text()
 
     def test_it_records_where_it_came_from(self, manifest: dict[str, Any]) -> None:
         assert manifest["generated_from"].endswith("main.nut")
@@ -212,13 +334,49 @@ class TestTheActionsCommand:
         assert "change_bank_balance" not in output
         assert "build_road_stop" in output
 
-    def test_it_says_how_much_is_undescribed(
+    def test_it_reports_no_gaps_now_that_there_are_none(
         self, capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Silence would read as a complete manifest, and an agent composing actions
-        from it would be working from names alone."""
+        """This asserted the opposite while the manifest was a skeleton. Keeping it
+        pointed the other way is what makes the gap notice meaningful: it should appear
+        when something really is undescribed, not as permanent decoration."""
         from nttd.cli.actions_command import actions as actions_command
 
         actions_command(category="rail")
         output = capsys.readouterr().out
-        assert "no description yet" in output.lower()
+        assert "no description yet" not in output.lower()
+
+    def test_observations_and_actions_are_listed_apart(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Reading the world and changing it are used differently, and grouping by
+        category alone put get_stations next to build_rail_station."""
+        from nttd.cli.actions_command import actions as actions_command
+
+        actions_command(observations=True)
+        output = capsys.readouterr().out
+        assert "Observations" in output
+        assert "get_stations" in output
+        assert "build_rail_station" not in output
+
+    def test_it_prints_the_constants_a_parameter_accepts(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Without these an agent has the parameter name and no way to choose a value:
+        `condition` is an integer, and which integer is the whole question."""
+        from nttd.cli.actions_command import actions as actions_command
+
+        actions_command(action="set_order_condition")
+        output = capsys.readouterr().out
+        assert "OC_UNCONDITIONALLY" in output
+        assert "OC_LOAD_PERCENTAGE = 0" in output
+
+    def test_it_prints_the_alternatives(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from nttd.cli.actions_command import actions as actions_command
+
+        actions_command(action="add_order")
+        output = capsys.readouterr().out
+        assert "Supply one of" in output
+        assert "station_id" in output

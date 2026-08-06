@@ -74,6 +74,30 @@ def accepted_parameters(action_type: str) -> list[str]:
     return sorted(parameters(action_type))
 
 
+def alternatives(action_type: str) -> list[list[list[str]]]:
+    """Groups of parameters the action accepts a choice between.
+
+    Each group is a list of branches, and a branch is the parameters that must be
+    supplied together: ``build_train`` takes ``depot_tile``, or ``depot_x`` and
+    ``depot_y`` as a pair. No member of a group is required on its own, so this is the
+    only thing that says one of them has to be there.
+    """
+    return (ACTIONS.get(action_type) or {}).get("one_of", [])
+
+
+def enum_values(action_type: str, parameter: str) -> dict[str, int]:
+    """The named constants a parameter accepts, read from the OpenTTD build.
+
+    Empty when the parameter takes a plain value or an id the running game assigns.
+    """
+    return (parameters(action_type).get(parameter) or {}).get("enum", {}).get("values", {})
+
+
+def parameter_type(action_type: str, parameter: str) -> str:
+    """``integer``, ``string``, ``boolean``, ``array``, ``object``, or empty."""
+    return (parameters(action_type).get(parameter) or {}).get("type", "")
+
+
 def tier(action_type: str) -> str:
     """``participant``, ``operator``, ``read_only``, or empty when unknown."""
     return (ACTIONS.get(action_type) or {}).get("tier", "")

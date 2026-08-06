@@ -74,9 +74,14 @@ observes fully regardless.
 ### Finding out what you can do
 
 ```bash
-uv run nttd actions --playable        # everything you may submit
+uv run nttd actions --observations    # the 44 ways to read the world
+uv run nttd actions --playable        # the 76 ways to change it
 uv run nttd actions build_road_stop   # one action's parameters and defaults
 ```
+
+Or read it as files, split so you can pull in only the half you need:
+[observations](actions/observations.md), [actions](actions/actions.md),
+[operator](actions/operator.md).
 
 Generated from the GameScript, so it cannot drift from what the game accepts. The same
 description backs `POST /actions/interpret/validate`, which tells you what an action is
@@ -84,7 +89,24 @@ missing before you spend a round trip finding out:
 
 ```
 plant_tree_rectangle missing required params: height, width, x, y
+insert_order needs one of: station_id or dest_tile or destination
 ```
+
+Two things there are worth knowing before you compose an action by hand.
+
+**Some parameters take named constants, and the numbers are not guessable.** `order_flags`
+is a bitmask you add together, and neighbouring meanings are not neighbouring values:
+`OF_FULL_LOAD` is 64, `OF_NO_LOAD` is 128, and `OF_UNLOAD` and `OF_SERVICE_IF_NEEDED` are
+both 4. The accepted values are listed with each parameter, read from the OpenTTD build
+rather than written down, so they are right for the version you are playing.
+
+**Some actions accept a choice rather than a fixed set.** `add_order` takes a station id
+or a destination tile; anything placing something on the map takes `tile` or an `x,y`
+pair. The reference says which, and the validator checks you supplied one of them.
+
+Ids that the running game assigns are a third case: rail types, road types, cargo types,
+bridge types and airport types are numbered per game and gated by year. Ask
+(`get_rail_types`, `get_cargo_types`, and so on) rather than hard-coding what worked once.
 
 ### Read-only queries
 

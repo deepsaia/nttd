@@ -163,24 +163,45 @@ tell whether your edits to `config/benchmark/profile.conf` are taking effect.
 ### `nttd actions`
 
 ```bash
-uv run nttd actions                       # every action, grouped by category
+uv run nttd actions                       # everything, split by what it does
 uv run nttd actions build_road_stop       # one action's parameters
+uv run nttd actions --observations        # only what reads the world
+uv run nttd actions --playable            # only what changes it
 uv run nttd actions --category rail       # one category
 uv run nttd actions --playable --json     # what a contestant may submit, as JSON
 ```
 
 What nttd can do, and what each action takes. **Generated from the GameScript**, not
 hand-written, so it cannot describe an action the game does not implement or miss one it
-does. 129 actions, 345 parameters.
+does. 129 actions, 345 parameters, all described.
 
-Each entry gives the required parameters, the optional ones with their defaults, and the
-tier: `participant` for anything a contestant may submit, `operator` for the nine powers
-with no human equivalent, `read_only` for queries.
+The listing splits on what running something does, because that is the first thing worth
+knowing: 44 observations that read the world and cost nothing, 76 actions that change it,
+and 9 operator powers refused during scored play.
+
+Each entry gives every parameter with its type, whether it is required, its default, and
+what it means. Where a parameter takes a named constant the accepted values are listed
+with it, and where an action accepts a choice of parameters that is stated too:
+
+```
+Supply one of: station_id or dest_tile or destination.
+condition accepts (GSOrder): OC_AGE = 3, OC_LOAD_PERCENTAGE = 0, ...
+```
+
+The same content is in [the action reference](action_reference.md), split into three
+pages so an agent reading files can pull in only what it needs.
 
 Regenerate after changing the GameScript:
 
 ```bash
 uv run python scripts/generate_action_manifest.py
+```
+
+The enum values are read from OpenTTD itself rather than written down. Re-dump them after
+changing the OpenTTD build:
+
+```bash
+uv run python scripts/dump_gs_enums.py
 ```
 
 A test regenerates and compares, so a committed manifest cannot drift from the game it
