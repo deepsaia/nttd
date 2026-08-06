@@ -26,6 +26,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from nttd.analysis import business_metrics
 from nttd.analysis.score import SCORE_VERSION, CompanyScore
 from nttd.config.task_instance import TaskInstance, file_digest
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
@@ -105,6 +106,38 @@ _SCHEMA = pa.schema([
     ("final_save_digest", pa.string()),
     ("final_save_bytes", pa.int64()),
     ("openttd_version", pa.string()),
+    # Business metrics, derived from the snapshot series and the action log.
+    # The score says how well the company did; these say how it was run. Every one
+    # is recomputable from the artifacts in the bundle, so a verifier can check
+    # them rather than take them on trust. See analysis/business_metrics.py.
+    ("metrics_version", pa.string()),
+    ("operating_margin_final", pa.float64()),
+    ("operating_margin_mean", pa.float64()),
+    ("profitable_quarters_share", pa.float64()),
+    ("maintenance_burden_final", pa.float64()),
+    ("maintenance_burden_mean", pa.float64()),
+    ("return_on_capital", pa.float64()),
+    ("peak_capital_deployed", pa.int64()),
+    ("value_at_25pct", pa.int64()),
+    ("value_at_50pct", pa.int64()),
+    ("value_at_75pct", pa.int64()),
+    ("cargo_at_25pct", pa.int64()),
+    ("cargo_at_50pct", pa.int64()),
+    ("cargo_at_75pct", pa.int64()),
+    ("days_to_first_profit", pa.int64()),
+    ("peak_credit_used", pa.float64()),
+    ("final_credit_used", pa.float64()),
+    ("min_cash", pa.int64()),
+    ("ended_in_debt", pa.bool_()),
+    ("profitable_vehicle_share", pa.float64()),
+    ("idle_vehicle_share", pa.float64()),
+    ("vehicles_final", pa.int64()),
+    ("stations_final", pa.int64()),
+    ("cargo_per_vehicle", pa.float64()),
+    ("cargo_per_station", pa.float64()),
+    ("action_success_rate", pa.float64()),
+    ("value_per_action", pa.float64()),
+    ("usd_per_score_point", pa.float64()),
     ("recorded_at", pa.timestamp("us")),
 ])
 
@@ -277,6 +310,16 @@ class ResultWriter:
                 "final_save_bytes": save_bytes,
                 "openttd_version": version,
                 "recorded_at": now,
+                # Derived from this session's own traces rather than reported by the
+                # contestant, so the verifier can recompute and compare.
+                **business_metrics.compute(
+                    self.session_dir,
+                    score.company_id,
+                    primary_score=score.primary,
+                    total_cost_usd=float(who.get("total_cost", 0.0)),
+                    total_actions=int(who.get("total_actions", 0)),
+                    successful_actions=int(who.get("successful_actions", 0)),
+                ).as_row(),
             })
 
         self.session_dir.mkdir(parents=True, exist_ok=True)
@@ -291,8 +334,39 @@ class ResultWriter:
 
 
 def read_result(session_dir: Path) -> list[dict[str, Any]]:
-    """Read a session's result rows, or [] if none were written."""
+    """Read a session's result rows, or [] if none were written.
+
+    Columns the file predates are filled with a typed default rather than left absent.
+    Every result written before a column existed is missing it, and readers index rows
+    directly: ``nttd result`` raised ``KeyError: 'final_save_digest'`` on a session from
+    two days earlier, and adding the business metrics made every existing file old in
+    the same way. A board ingesting bundles from a range of nttd versions would hit this
+    constantly, so it is fixed once here rather than at each reader.
+    """
     path = Path(session_dir) / _RESULT_FILENAME
     if not path.exists():
         return []
-    return pq.read_table(path).to_pylist()
+
+    rows = pq.read_table(path).to_pylist()
+    for row in rows:
+        for field in _SCHEMA:
+            if field.name not in row:
+                row[field.name] = _default_for(field.type)
+    return rows
+
+
+def _default_for(arrow_type: pa.DataType) -> Any:
+    """An empty value of the right type, so a missing column reads as absent.
+
+    Not None: a reader formatting a number would then have to guard every field, and
+    the point is that it does not have to.
+    """
+    if pa.types.is_boolean(arrow_type):
+        return False
+    if pa.types.is_floating(arrow_type):
+        return 0.0
+    if pa.types.is_integer(arrow_type):
+        return 0
+    if pa.types.is_timestamp(arrow_type):
+        return None
+    return ""

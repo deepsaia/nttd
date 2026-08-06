@@ -243,12 +243,37 @@ validator was rejected by the game.
 
 ```bash
 uv run nttd result -s ses_...
+uv run nttd result -s ses_... --business      # how the company was run
 uv run nttd result -s ses_... --json > entry.json
 ```
 
 Shows the score, the task identity, code provenance, per-model reported spend, and an
 explicit list of verification gaps. `result.parquet` is written when the session stops,
 so stop it first.
+
+**`--business`** shows how the company was run rather than how it scored. The score is
+OpenTTD's performance rating and cannot distinguish an operator that borrowed to the
+limit, ran at a loss for three years and recovered from one that compounded steadily to
+the same place.
+
+Six families: profitability, capital, growth, risk, operations and decisions. Each is
+given both at the end and across the run where both are useful, because peak borrowing
+and final borrowing answer different questions.
+
+Nothing here is separately recorded. Every figure is derived from `snapshots.parquet`,
+which already holds full state per tick, and the action log. That is what makes them
+checkable: whoever verifies a run recomputes them from the same artifacts and compares,
+so they are evidence rather than claims, which self-reported spend can never be.
+
+Two readings worth knowing:
+
+- **Borrowing is measured against available credit, not company value.** OpenTTD reports
+  company value as 0 or 1 until a company owns something, so debt-to-value gave a peak
+  leverage of 250,000 on a real session where a company had simply drawn its starting
+  loan.
+- **A result recorded before these existed says so** rather than showing zeros. Zero is a
+  claim, and "days to first profit: 0" would say profitable immediately when the truth is
+  that nobody measured.
 
 ---
 
