@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nttd.runtime.orchestrator import Orchestrator
 
 from nttd.analysis.score import rank_companies
+from nttd.config import single_company
 from nttd.config.benchmark_profile import dimensions_from_settings
 from nttd.config.scenario_config import (
     BankruptcyConfig,
@@ -230,7 +231,17 @@ class SessionManager:
         runtime.task_instance = task
         # Lock a scored session before the server is up, so the window between
         # spawn and lock cannot be used.
-        runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
+        #
+        # The company count is only known here: it arrives as a start argument, not
+        # from the scenario, so the profile check on the config cannot see it. A run
+        # shared by several contestants is a different problem from a solo one on the
+        # same world, and nothing on a result row records which it was.
+        scored = effective_settings.get("_scored") == "1"
+        too_many = single_company.blocks_scoring(agent_companies)
+        if scored and too_many:
+            logger.warning("Session %s is not scored: %s", session_id, too_many)
+            scored = False
+        runtime.scored_lock.scored = scored
         runtime.dimensions = dimensions_from_settings(effective_settings)
         _apply_step_size(runtime, effective_settings)
         if runtime.scored_lock.scored:
@@ -557,7 +568,15 @@ class SessionManager:
             # reachable again. Without this a recovered scored session would run
             # unlocked and unbounded, so an nttd restart would silently turn a
             # scored run into an unprotected one.
-            runtime.scored_lock.scored = stored.get("_scored") == "1"
+            # The same company rule as at start. Without it a restart would re-score a
+            # multi-company session, because _scored is stored from the scenario and
+            # the count that disqualified it lives in a different key.
+            recovered_scored = stored.get("_scored") == "1"
+            if recovered_scored and single_company.blocks_scoring(
+                int(stored.get("_agent_companies", "0") or 0),
+            ):
+                recovered_scored = False
+            runtime.scored_lock.scored = recovered_scored
             runtime.dimensions = dimensions_from_settings(stored)
             _apply_step_size(runtime, stored)
             if runtime.scored_lock.scored:
