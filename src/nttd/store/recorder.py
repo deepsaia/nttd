@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,17 @@ _ACTIONS_SCHEMA = pa.schema([
     ("error", pa.string()),
     ("parameters_json", pa.string()),
     ("submitted_at", pa.timestamp("us")),
+    # How the action reached the game. "api" is a submission through nttd; "client"
+    # is a command issued in the OpenTTD window by a person. Without this column the
+    # log records only API traffic, and a run played by hand looks like a run that
+    # did nothing.
+    ("source", pa.string()),
+    # Which connected OpenTTD client issued it, for client commands only.
+    ("client_id", pa.int32()),
 ])
+
+SOURCE_API = "api"
+SOURCE_CLIENT = "client"
 
 _EVENTS_SCHEMA = pa.schema([
     ("game_date", pa.int32()),
@@ -283,6 +294,36 @@ class SessionRecorder:
             "error": result.error or "",
             "parameters_json": json.dumps(envelope.parameters, default=str),
             "submitted_at": submitted_at or datetime.now(timezone.utc),
+            "source": SOURCE_API,
+            "client_id": 0,
+        })
+
+    def record_client_command(self, command: dict[str, Any], game_date: int) -> None:
+        """Record a command issued from the OpenTTD game window.
+
+        Recorded in the same table as API actions rather than a separate one, so any
+        reader asking "what did this company do" gets the whole answer. The `source`
+        column is what separates them.
+
+        Status is always "success": OpenTTD logs a command after accepting it, so a
+        refusal never reaches us. Parameters are absent because the payload is raw
+        command serialisation, which is version-specific to decode.
+        """
+        company_id = int(command.get("company_id", 0))
+        self._tally_action(company_id, ActionStatus.SUCCESS.value)
+
+        self._action_buffer.append({
+            "action_id": f"cmd_{uuid.uuid4().hex[:12]}",
+            "agent_id": "",
+            "company_id": company_id,
+            "game_date": game_date,
+            "action_type": str(command.get("command", "unknown")),
+            "status": ActionStatus.SUCCESS.value,
+            "error": "",
+            "parameters_json": "",
+            "submitted_at": datetime.now(timezone.utc),
+            "source": SOURCE_CLIENT,
+            "client_id": int(command.get("client_id", 0)),
         })
 
     def _tally_action(self, company_id: int, status: str) -> None:
