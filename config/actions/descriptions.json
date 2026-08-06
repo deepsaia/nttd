@@ -4,12 +4,585 @@
     "regenerating from the GameScript can never destroy it: the generator merges this",
     "in and rewrites the mechanical parts around it.",
     "",
-    "Every action and parameter here must exist in the GameScript, and every one there",
-    "wants an entry here. The drift test enforces both directions.",
-    "",
     "Describe what the GameScript actually does, checked against its implementation.",
     "A plausible-sounding description inferred from a parameter name is worse than a",
-    "missing one: an agent will believe it."
+    "missing one: an agent will believe it.",
+    "",
+    "parameter_glossary gives one type and one description per parameter name, applied",
+    "wherever that name appears. That is what keeps 36 uses of 'x' saying the same thing.",
+    "An action overrides an entry only where the meaning genuinely differs, and 'direction'",
+    "is why that exists: it picks a track orientation for build_rail_station and an",
+    "adjacent tile everywhere else.",
+    "",
+    "enum_bindings say which OpenTTD enum a parameter draws from. The values are not",
+    "written here. They are read from the OpenTTD build by scripts/dump_gs_enums.py,",
+    "because a wrong constant is worse than a missing one: OF_UNLOAD and",
+    "OF_SERVICE_IF_NEEDED are both 4, and the game would accept either.",
+    "",
+    "one_of lists parameters that substitute for each other. Only the GameScript call",
+    "site says which alternatives belong together, so they are declared rather than",
+    "extracted."
   ],
-  "actions": {}
+
+  "parameter_glossary": {
+    "action": {"type": "string", "description": "The action to run."},
+    "airport_type": {"type": "integer", "description": "Which airport layout to build. Availability depends on the year and the map."},
+    "amount": {"type": "integer", "description": "An amount of money, in the game's currency units."},
+    "bridge_type": {"type": "integer", "description": "Which bridge design to use. Numbered by the running game: ask get_bridge_types. Designs differ in speed limit and cost."},
+    "cargo_id": {"type": "integer", "description": "Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming."},
+    "cargo_type": {"type": "integer", "description": "Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming."},
+    "compare_function": {"type": "integer", "description": "How a conditional order compares its value."},
+    "condition": {"type": "integer", "description": "What a conditional order tests."},
+    "days": {"type": "integer", "description": "A number of days."},
+    "delta": {"type": "integer", "description": "How much to add. Negative subtracts."},
+    "depot_tile": {"type": "integer", "description": "Tile index of the depot the vehicle is built in."},
+    "depot_x": {"type": "integer", "description": "X coordinate of the depot the vehicle is built in."},
+    "depot_y": {"type": "integer", "description": "Y coordinate of the depot the vehicle is built in."},
+    "dest_tile": {"type": "integer", "description": "Tile index the order sends the vehicle to."},
+    "dest_vehicle_id": {"type": "integer", "description": "The vehicle the wagon is moved to."},
+    "dest_wagon": {"type": "integer", "description": "Position in the destination vehicle to attach at. Use -1 for the end of the chain."},
+    "destination": {"type": "integer", "description": "Where the order sends the vehicle. Read as a tile index, and as a station id if that is not a valid tile."},
+    "direction": {"type": "integer", "description": "Which neighbouring tile the vehicle enters from: 0 is +x, 1 is +y, 2 is -x, 3 is -y. Any other value means the tile itself."},
+    "end_x": {"type": "integer", "description": "X coordinate of the far end."},
+    "end_y": {"type": "integer", "description": "Y coordinate of the far end."},
+    "engine_id": {"type": "integer", "description": "Which engine model to build. Numbered by the running game and gated by year, so ask get_engines."},
+    "engine_id_new": {"type": "integer", "description": "The engine model to replace with."},
+    "engine_id_old": {"type": "integer", "description": "The engine model to replace."},
+    "expense_type": {"type": "integer", "description": "Which column of the company accounts the money moves through."},
+    "from_hint_x": {"type": "integer", "description": "X coordinate of the tile the path should leave from, usually a station platform. Guides the first step so the track connects rather than merely reaching."},
+    "from_hint_y": {"type": "integer", "description": "Y coordinate of the tile the path should leave from, usually a station platform."},
+    "from_id": {"type": "integer", "description": "The industry or town the cargo is collected from, matching from_type."},
+    "from_index": {"type": "integer", "description": "Position in the order list to move from, counting from 0."},
+    "from_position": {"type": "integer", "description": "Position in the order list to move from, counting from 0."},
+    "from_type": {"type": "integer", "description": "Whether the source is an industry or a town."},
+    "from_x": {"type": "integer", "description": "X coordinate of the starting tile."},
+    "from_y": {"type": "integer", "description": "Y coordinate of the starting tile."},
+    "front_tile": {"type": "integer", "description": "Tile index the signal faces. Omit it and all four neighbours are tried."},
+    "front_x": {"type": "integer", "description": "X coordinate of the tile the signal faces."},
+    "front_y": {"type": "integer", "description": "Y coordinate of the tile the signal faces."},
+    "goal": {"type": "integer", "description": "How much cargo the town must receive."},
+    "group_id": {"type": "integer", "description": "Which vehicle group."},
+    "height": {"type": "integer", "description": "Extent along y, in tiles."},
+    "houses": {"type": "integer", "description": "How many houses to add."},
+    "industry_id": {"type": "integer", "description": "Which industry."},
+    "is_city": {"type": "boolean", "description": "Found a city rather than an ordinary town. Cities grow faster."},
+    "is_drive_through": {"type": "boolean", "description": "Build a drive-through stop, which vehicles pass through, rather than a bay they reverse out of."},
+    "is_truck_stop": {"type": "boolean", "description": "Build for freight rather than passengers."},
+    "keep_monitoring": {"type": "boolean", "description": "Leave the cargo monitors armed. Reading a monitor resets it, so a report covers only what moved since the last read."},
+    "keep_rail": {"type": "boolean", "description": "Leave the track behind when the station is removed."},
+    "key": {"type": "string", "description": "Name of a game setting, as it appears in openttd.cfg."},
+    "keys": {"type": "array", "description": "Names of game settings to read. An unknown name reads back as null rather than failing the call."},
+    "main_vehicle_id": {"type": "integer", "description": "The vehicle whose orders are the source."},
+    "max_iterations": {"type": "integer", "description": "How hard the pathfinder may try before giving up. Raising it costs time, not money."},
+    "max_results": {"type": "integer", "description": "How many results to return at most."},
+    "max_tiles": {"type": "integer", "description": "How many tiles to report at most. Guards against asking for an area larger than the reply can carry."},
+    "min_size": {"type": "integer", "description": "Smallest acceptable square of flat land, in tiles on a side."},
+    "move_chain": {"type": "boolean", "description": "Move the wagon and everything coupled behind it, rather than that wagon alone."},
+    "name": {"type": "string", "description": "A name to give."},
+    "num_platforms": {"type": "integer", "description": "How many parallel platforms to build."},
+    "num_wagons": {"type": "integer", "description": "How many wagons to build and couple on."},
+    "order_flags": {"type": "integer", "description": "Bitmask combining loading, unloading, non-stop and depot behaviour. Add the constants together."},
+    "order_index": {"type": "integer", "description": "Position in the order list, counting from 0."},
+    "order_pos": {"type": "integer", "description": "Position in the order list, counting from 0."},
+    "order_position": {"type": "integer", "description": "Position in the order list, counting from 0."},
+    "parent_group_id": {"type": "integer", "description": "Group to nest the new group inside. Omit for a top-level group."},
+    "params": {"type": "object", "description": "The parameters of the action being estimated, exactly as they would be submitted."},
+    "platform_length": {"type": "integer", "description": "How many tiles long each platform is. A train longer than its platform will not load fully."},
+    "radius": {"type": "integer", "description": "How far from the centre tile to search, in tiles."},
+    "rail_type": {"type": "integer", "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types."},
+    "required_cargo": {"type": "integer", "description": "Only report spots where a station would accept or produce this cargo."},
+    "road_layout": {"type": "integer", "description": "The street pattern the town grows into."},
+    "road_type": {"type": "integer", "description": "Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too."},
+    "sell_chain": {"type": "boolean", "description": "Sell the wagon and everything coupled behind it, rather than that wagon alone."},
+    "share_orders": {"type": "boolean", "description": "Share the original's order list rather than taking a copy. Shared orders change together afterwards."},
+    "sign_id": {"type": "integer", "description": "Which sign."},
+    "signal_type": {"type": "integer", "description": "Which kind of signal to place."},
+    "size": {"type": "integer", "description": "How large to start."},
+    "slope": {"type": "integer", "description": "Which corners of the tile to move, as a bitmask of the four compass corners."},
+    "source_vehicle_id": {"type": "integer", "description": "The vehicle the wagon is taken from."},
+    "source_wagon": {"type": "integer", "description": "Position of the wagon within the source vehicle, counting from 0."},
+    "start_x": {"type": "integer", "description": "X coordinate of the near end."},
+    "start_y": {"type": "integer", "description": "Y coordinate of the near end."},
+    "station_id": {"type": "integer", "description": "Which station."},
+    "station_test": {"type": "boolean", "description": "Check that a station would actually fit and be buildable, rather than only that the land is flat. Slower and more truthful."},
+    "steps": {"type": "array", "description": "The path to lay, as objects carrying x, y and an action. At least two are needed."},
+    "stop_location": {"type": "integer", "description": "Where along the platform a train stops."},
+    "tile": {"type": "integer", "description": "Tile index. Takes precedence over x and y when both are given."},
+    "tile_from": {"type": "integer", "description": "Tile index to start from. An alternative to from_x and from_y."},
+    "tile_to": {"type": "integer", "description": "Tile index to finish at. An alternative to to_x and to_y."},
+    "to_hint_x": {"type": "integer", "description": "X coordinate of the tile the path should arrive at, usually a station platform."},
+    "to_hint_y": {"type": "integer", "description": "Y coordinate of the tile the path should arrive at, usually a station platform."},
+    "to_id": {"type": "integer", "description": "The industry or town the cargo is delivered to, matching to_type."},
+    "to_index": {"type": "integer", "description": "Position in the order list to move to, counting from 0."},
+    "to_position": {"type": "integer", "description": "Position in the order list to move to, counting from 0."},
+    "to_type": {"type": "integer", "description": "Whether the destination is an industry or a town."},
+    "to_x": {"type": "integer", "description": "X coordinate of the finishing tile."},
+    "to_y": {"type": "integer", "description": "Y coordinate of the finishing tile."},
+    "town_effect": {"type": "integer", "description": "Which cargo effect the goal is set against."},
+    "town_id": {"type": "integer", "description": "Which town."},
+    "track": {"type": "integer", "description": "Which of the six track pieces on the tile to act on."},
+    "transport_type": {"type": "string", "description": "What the structure carries."},
+    "value": {"type": "integer", "description": "The value to set."},
+    "vehicle_id": {"type": "integer", "description": "Which vehicle."},
+    "vehicle_type": {"type": "string", "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order."},
+    "wagon": {"type": "integer", "description": "Position of the wagon within the vehicle, counting from 0."},
+    "wagon_id": {"type": "integer", "description": "Which wagon model to build and couple on."},
+    "width": {"type": "integer", "description": "Extent along x, in tiles."},
+    "x": {"type": "integer", "description": "X coordinate on the map, counting from 0."},
+    "x1": {"type": "integer", "description": "X coordinate of the first corner."},
+    "x2": {"type": "integer", "description": "X coordinate of the opposite corner."},
+    "y": {"type": "integer", "description": "Y coordinate on the map, counting from 0."},
+    "y1": {"type": "integer", "description": "Y coordinate of the first corner."},
+    "y2": {"type": "integer", "description": "Y coordinate of the opposite corner."}
+  },
+
+  "enum_bindings": {
+    "*.airport_type": {"class": "GSAirport", "prefix": "AT_"},
+    "*.order_flags": {"class": "GSOrder", "prefix": "OF_"},
+    "*.slope": {"class": "GSTile", "prefix": "SLOPE_"},
+    "build_rail_signal.signal_type": {"class": "GSRail", "prefix": "SIGNALTYPE_"},
+    "change_bank_balance.expense_type": {"class": "GSCompany", "prefix": "EXPENSES_"},
+    "create_subsidy.from_type": {"class": "GSSubsidy", "prefix": "SPT_"},
+    "create_subsidy.to_type": {"class": "GSSubsidy", "prefix": "SPT_"},
+    "found_town.road_layout": {"class": "GSTown", "prefix": "ROAD_LAYOUT_"},
+    "found_town.size": {"class": "GSTown", "prefix": "TOWN_SIZE_"},
+    "perform_town_action.action": {"class": "GSTown", "prefix": "TOWN_ACTION_"},
+    "remove_rail_track.track": {"class": "GSRail", "prefix": "RAILTRACK_"},
+    "set_cargo_goal.town_effect": {"class": "GSCargo", "prefix": "TE_"},
+    "set_order_compare_function.compare_function": {"class": "GSOrder", "prefix": "CF_"},
+    "set_order_condition.condition": {"class": "GSOrder", "prefix": "OC_"},
+    "set_stop_location.stop_location": {"class": "GSOrder", "prefix": "STOPLOCATION_"}
+  },
+
+  "actions": {
+    "build_airport": {
+      "description": "Build an airport with its north corner at the given tile. The whole footprint must be clear and level, and larger types only become available from the year they are introduced."
+    },
+    "build_bridge": {
+      "description": "Bridge the gap between two tiles. The ends must be in line and at the same height, with the span clear between them.",
+      "parameters": {
+        "transport_type": {"description": "What crosses the bridge: rail, water, or road. Anything else is treated as road."}
+      }
+    },
+    "build_dock": {
+      "description": "Build a dock on a coastal tile, giving ships somewhere to load. The tile must slope into water."
+    },
+    "build_tunnel": {
+      "description": "Bore a tunnel into the hillside at the given tile. OpenTTD picks the far end itself, following the slope until the land rises again, so the exit is reported back rather than chosen.",
+      "parameters": {
+        "transport_type": {"description": "What runs through the tunnel: rail or road. Anything else is treated as rail."}
+      }
+    },
+    "demolish_tile": {
+      "description": "Clear whatever is on the tile. Works on your own structures and on trees and rocks, and costs money."
+    },
+    "open_close_airport": {
+      "description": "Toggle an airport between accepting and refusing arrivals. Aircraft already inbound still land."
+    },
+    "remove_airport": {
+      "description": "Remove an airport, given any tile of it."
+    },
+
+    "build_company_hq": {
+      "description": "Place the company headquarters, which occupies four tiles with its north corner at the given tile. Building it again moves it, at the cost of the old one."
+    },
+    "rename_company": {
+      "description": "Rename your company."
+    },
+    "set_loan": {
+      "description": "Set the loan to an exact amount rather than adjusting it. Raising it pays out immediately, lowering it repays from the bank balance, and the amount is rounded to the game's loan interval."
+    },
+
+    "change_bank_balance": {
+      "description": "Move money into or out of a company's account directly. Operator-tier: this is scenario machinery, not play, and it is refused during a scored game."
+    },
+    "set_max_loan": {
+      "description": "Set the ceiling a company may borrow up to. Operator-tier: it changes the terms of the game rather than playing it."
+    },
+
+    "create_group": {
+      "description": "Create a group to organise vehicles of one type. Groups carry their own profit figures and can drive automatic replacement.",
+      "parameters": {
+        "vehicle_type": {"description": "One of train, road, ship or aircraft. An unrecognised value silently becomes train."}
+      }
+    },
+    "delete_group": {
+      "description": "Delete a group. The vehicles in it are not sold, they return to being ungrouped."
+    },
+    "move_to_group": {
+      "description": "Move a vehicle into a group."
+    },
+    "set_auto_replace": {
+      "description": "Have vehicles in a group replaced with a newer model when they next visit a depot. Set the new engine equal to the old one to cancel."
+    },
+
+    "level_tiles": {
+      "description": "Flatten the rectangle between two corners to a single height. Cost rises steeply with the amount of earth moved."
+    },
+    "lower_tile": {
+      "description": "Lower the named corners of a tile by one step."
+    },
+    "plant_tree": {
+      "description": "Plant a tree on a tile. Trees raise the town's opinion of you and offset the rating lost to construction."
+    },
+    "plant_tree_rectangle": {
+      "description": "Plant trees across a rectangle given as a corner and a size. Note this takes width and height, not a second corner."
+    },
+    "raise_tile": {
+      "description": "Raise the named corners of a tile by one step."
+    },
+
+    "build_buoy": {
+      "description": "Place a buoy on a water tile. Ships route through buoys, which is how a sea lane is steered around a headland."
+    },
+    "build_canal": {
+      "description": "Turn a flat land tile into canal. The tile must be at sea level or bounded by water or lock."
+    },
+    "build_lock": {
+      "description": "Build a lock so ships can change height. It must sit on the slope between two water levels."
+    },
+    "build_path": {
+      "description": "Lay a route that was already worked out, step by step. This exists for a pathfinder that plans elsewhere and hands the whole route over, rather than for placing track directly. Steps that only pass over existing infrastructure are skipped, and the reply reports what was built, skipped and refused.",
+      "parameters": {
+        "transport_type": {"description": "What the path carries: rail or road. Anything else is treated as road."}
+      }
+    },
+    "build_water_depot": {
+      "description": "Build a ship depot on water. It occupies two tiles, the second chosen by direction."
+    },
+    "remove_buoy": {
+      "description": "Remove a buoy. It fails while a ship still has an order pointing at it."
+    },
+    "remove_canal": {
+      "description": "Turn a canal tile back into land."
+    },
+    "remove_lock": {
+      "description": "Remove a lock."
+    },
+    "remove_water_depot": {
+      "description": "Remove a ship depot."
+    },
+
+    "add_order": {
+      "description": "Append an order to the end of a vehicle's list. The destination may be given as a station id or as a tile, and a station is checked against the vehicle type first, so a ship is not sent to a bus stop. Non-stop flags are dropped for aircraft and ships, which have no use for them.",
+      "one_of": [["station_id", "dest_tile", "destination"]]
+    },
+    "copy_orders": {
+      "description": "Replace a vehicle's orders with a copy of another's. The two lists are independent afterwards, unlike share_orders."
+    },
+    "insert_order": {
+      "description": "Insert an order at a position, pushing later orders down. Takes the same destination forms as add_order.",
+      "one_of": [["station_id", "dest_tile", "destination"], ["order_index", "order_position"]]
+    },
+    "move_order": {
+      "description": "Move an order to a different position in the list.",
+      "one_of": [["from_index", "from_position"], ["to_index", "to_position"]]
+    },
+    "remove_order": {
+      "description": "Remove one order from a vehicle's list.",
+      "one_of": [["order_index", "order_position"]]
+    },
+    "set_order_compare_function": {
+      "description": "Set how a conditional order compares the value it tests."
+    },
+    "set_order_compare_value": {
+      "description": "Set the value a conditional order compares against."
+    },
+    "set_order_condition": {
+      "description": "Turn an order into a conditional one and choose what it tests. Paired with a compare function and a value, this is how a vehicle skips part of its route."
+    },
+    "set_order_flags": {
+      "description": "Replace the flags on an existing order. This overwrites rather than adds, so include every flag you still want."
+    },
+    "set_stop_location": {
+      "description": "Choose where along the platform a train comes to rest. Only affects trains shorter than the platform."
+    },
+    "share_orders": {
+      "description": "Make a vehicle share another's order list. Editing either afterwards changes both, which is how a fleet is kept consistent."
+    },
+    "skip_to_order": {
+      "description": "Send a vehicle straight to a given order now, abandoning the current one.",
+      "one_of": [["order_index", "order_position"]]
+    },
+
+    "estimate_cost": {
+      "description": "Report what an action would cost without doing it. The action runs in test mode, so nothing is built and no money moves. A failure here is a genuine refusal and worth reading before committing.",
+      "parameters": {
+        "action": {"description": "Name of the action to price, exactly as it would be submitted."}
+      }
+    },
+
+    "find_airport_spots": {
+      "description": "Search near a town for places an airport of the given type would fit."
+    },
+    "find_bus_stop_spots": {
+      "description": "Search near a town for roadside tiles a bus or truck stop could be built on."
+    },
+    "find_depot_spots": {
+      "description": "Search near a town for places a road depot would fit."
+    },
+    "find_dock_spots": {
+      "description": "Search near a town for coastal tiles a dock could be built on."
+    },
+    "find_flat_spots": {
+      "description": "Search around a tile for level ground. With station_test it goes further and checks that a station would really be buildable there, which is slower and worth the cost before committing."
+    },
+    "find_rail_depot_spot": {
+      "description": "Find a tile near the given one where a rail depot would fit."
+    },
+    "find_station_spot": {
+      "description": "Find somewhere to put a station serving a given industry or town."
+    },
+    "find_water_depot_spots": {
+      "description": "Search near a town for water a ship depot could be built on."
+    },
+    "get_airport_types": {
+      "description": "List the airport types this game has, with their sizes and whether they are available yet."
+    },
+    "get_bridge_types": {
+      "description": "List the bridge designs available, with their speed limits, maximum spans and costs."
+    },
+    "get_cargo_flows": {
+      "description": "Report how much cargo your company has picked up and delivered per town and industry since the monitors were last read. Reading resets the counters unless keep_monitoring is set, so two reads in a row report different things."
+    },
+    "get_cargo_types": {
+      "description": "List the cargoes this game has, with their labels and ids."
+    },
+    "get_clients": {
+      "description": "List the clients connected to the server."
+    },
+    "get_companies": {
+      "description": "List the companies in the game, with their names, values and performance ratings."
+    },
+    "get_company_finance": {
+      "description": "Report your company's money, loan, income, expenses and value."
+    },
+    "get_date": {
+      "description": "Report the current in-game date."
+    },
+    "get_engine_details": {
+      "description": "Report everything about one engine model: capacity, speed, power, running cost, reliability and what it can carry."
+    },
+    "get_engines": {
+      "description": "List engine models that can be bought now. What is available changes with the year, so this is worth re-reading rather than caching for the whole game."
+    },
+    "get_expense_breakdown": {
+      "description": "Report income and costs split by category, which is where a fleet that runs at a loss becomes visible."
+    },
+    "get_game_settings": {
+      "description": "Read named game settings. An unknown name reads back as null rather than failing the call."
+    },
+    "get_groups": {
+      "description": "List your vehicle groups, with their profits and how they nest."
+    },
+    "get_hangars": {
+      "description": "List the hangar tiles of an airport, which is where aircraft are built and serviced."
+    },
+    "get_industries": {
+      "description": "List the industries on the map, with their locations, types and production."
+    },
+    "get_industry_info": {
+      "description": "Report one industry in detail: what it produces and accepts, recent production, and how much is waiting."
+    },
+    "get_infrastructure_costs": {
+      "description": "Report how much track, road and station you own and what it costs to maintain each month."
+    },
+    "get_map_size": {
+      "description": "Report the map dimensions in tiles."
+    },
+    "get_map_terrain": {
+      "description": "Report the terrain across a rectangle: height, slope, and whether each tile is water. Reading the whole map at once is large, so ask for the part you need."
+    },
+    "get_orders": {
+      "description": "List a vehicle's orders, with their destinations and flags."
+    },
+    "get_rail_types": {
+      "description": "List the rail technologies this game has and which are available yet."
+    },
+    "get_road_types": {
+      "description": "List the road technologies this game has, tram tracks included, and which are available yet."
+    },
+    "get_signs": {
+      "description": "List the signs on the map."
+    },
+    "get_station_info": {
+      "description": "Report one station in detail: what is waiting, what it accepts, and its cargo ratings."
+    },
+    "get_stations": {
+      "description": "List your stations, with what is waiting at each and how it is rated."
+    },
+    "get_subsidies": {
+      "description": "List the subsidies on offer and those already awarded."
+    },
+    "get_tile_area": {
+      "description": "Report height, slope and buildability across a rectangle. max_tiles bounds the reply."
+    },
+    "get_tile_info": {
+      "description": "Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to."
+    },
+    "get_town_info": {
+      "description": "Report one town in detail: population, houses, what it accepts and how fast it is growing."
+    },
+    "get_town_rating": {
+      "description": "Report how a town regards your company. A poor rating blocks building there, and planting trees is the usual remedy."
+    },
+    "get_towns": {
+      "description": "List the towns on the map, with their locations and populations."
+    },
+    "get_vehicle_info": {
+      "description": "Report one vehicle in detail: where it is, what it carries, its orders, age, reliability and profit."
+    },
+    "get_vehicles": {
+      "description": "List your vehicles, optionally of one type only, with their positions, cargo and orders."
+    },
+    "get_waypoints": {
+      "description": "List your waypoints."
+    },
+    "ping": {
+      "description": "Check that the GameScript is answering. Costs nothing and changes nothing."
+    },
+    "scan_town_area": {
+      "description": "Report the land around a town: what is buildable, what is already built, and where the roads run."
+    },
+
+    "build_rail_depot": {
+      "description": "Build a rail depot at a tile, entered from the neighbour picked by direction. Trains are built and serviced here."
+    },
+    "build_rail_signal": {
+      "description": "Place a signal on a track tile. Signals divide a line into blocks, which is what allows more than one train to use it safely."
+    },
+    "build_rail_station": {
+      "description": "Build a rail station with its north corner at the given tile. The whole footprint must be clear and level.",
+      "parameters": {
+        "direction": {"description": "Which way the platforms run: 0 lays them north-east to south-west, 1 north-west to south-east."}
+      }
+    },
+    "build_rail_waypoint": {
+      "description": "Build a waypoint on a track tile. Trains can be ordered through one without stopping, which is how a route is forced along a particular line."
+    },
+    "connect_rail": {
+      "description": "Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it."
+    },
+    "convert_rail": {
+      "description": "Convert existing track in a rectangle to another rail type. Trains that cannot run on the new type are stranded, so check the fleet first."
+    },
+    "remove_rail": {
+      "description": "Remove track along a line between two tiles."
+    },
+    "remove_rail_station": {
+      "description": "Remove the part of a rail station inside a rectangle."
+    },
+    "remove_rail_track": {
+      "description": "Remove one track piece from a tile. A tile can carry several, so the piece is named rather than implied."
+    },
+    "remove_signal": {
+      "description": "Remove a signal from a track tile. Give the tile it faces, or omit that and all four neighbours are tried."
+    },
+
+    "build_one_way_road": {
+      "description": "Build road between two tiles that may be driven in one direction only, running from the first tile to the second."
+    },
+    "build_one_way_road_full": {
+      "description": "Build one-way road between two tiles, covering both end tiles fully rather than stopping at their edges. Use this when the road must meet what is already there."
+    },
+    "build_road_depot": {
+      "description": "Build a road depot at a tile, entered from the neighbour picked by direction. Road vehicles are built and serviced here."
+    },
+    "build_road_stop": {
+      "description": "Build a bus or truck stop. A drive-through stop sits on the road and is passed through; a bay is entered and reversed out of, which is slower but takes less room."
+    },
+    "connect_road": {
+      "description": "Build road between two tiles, finding the route itself."
+    },
+    "convert_road_type": {
+      "description": "Convert existing road in a rectangle to another road type."
+    },
+    "remove_road": {
+      "description": "Remove road along a line between two tiles."
+    },
+    "remove_road_depot": {
+      "description": "Remove a road depot."
+    },
+    "remove_road_stop": {
+      "description": "Remove a bus or truck stop."
+    },
+
+    "set_game_setting": {
+      "description": "Change a game setting mid-game. Operator-tier: it alters the rules rather than playing by them, and is refused during a scored game."
+    },
+
+    "build_sign": {
+      "description": "Place a named sign on a tile. Signs are annotation only and affect nothing in the game."
+    },
+    "remove_sign": {
+      "description": "Remove a sign."
+    },
+
+    "create_subsidy": {
+      "description": "Create a subsidy for carrying a cargo between two places. Operator-tier: subsidies are part of setting a scenario, not of playing one."
+    },
+
+    "perform_town_action": {
+      "description": "Do something for a town: advertise, fund buildings, rebuild its roads, build a statue, buy exclusive rights, or bribe it. Each costs money and most raise the town's opinion of you. Not every action is available in every town, and that is refused rather than charged for."
+    },
+
+    "change_town_rating": {
+      "description": "Set a company's standing with a town directly. Operator-tier: it overrides the reputation a contestant is supposed to earn."
+    },
+    "expand_town": {
+      "description": "Grow a town by a number of houses at once. Operator-tier."
+    },
+    "found_town": {
+      "description": "Found a new town at a tile. Operator-tier: it changes the map the scenario is scored on."
+    },
+    "set_cargo_goal": {
+      "description": "Set how much of a cargo a town must receive. Operator-tier: this is goal-setting machinery for a scenario."
+    },
+    "set_town_growth": {
+      "description": "Set how often a town adds a house, in days. Operator-tier."
+    },
+
+    "build_train": {
+      "description": "Build a locomotive in a depot and optionally couple wagons to it. Wagons that cannot be attached are sold again rather than left loose, and the reply reports how many were attached.",
+      "one_of": [["depot_tile", ["depot_x", "depot_y"]]]
+    },
+    "buy_vehicle": {
+      "description": "Build a vehicle of any type in a depot. It starts stopped, so it needs orders and a start before it does anything.",
+      "one_of": [["depot_tile", ["depot_x", "depot_y"]]]
+    },
+    "clone_vehicle": {
+      "description": "Build a copy of an existing vehicle in its depot, optionally sharing the original's orders."
+    },
+    "move_wagon": {
+      "description": "Move a wagon from one train to another. Both must be stopped in a depot."
+    },
+    "refit_vehicle": {
+      "description": "Convert a vehicle to carry a different cargo. It must be stopped in a depot, and not every vehicle can carry everything.",
+      "one_of": [["cargo_id", "cargo_type"]]
+    },
+    "rename_vehicle": {
+      "description": "Rename a vehicle."
+    },
+    "reverse_vehicle": {
+      "description": "Turn a vehicle around."
+    },
+    "sell_vehicle": {
+      "description": "Sell a vehicle. It must be stopped in a depot."
+    },
+    "sell_wagon": {
+      "description": "Sell one wagon from a train, or that wagon and everything behind it. The train must be stopped in a depot."
+    },
+    "send_to_depot": {
+      "description": "Order a vehicle to the nearest depot and stop there. It finishes the current leg first."
+    },
+    "send_to_depot_service": {
+      "description": "Order a vehicle to the nearest depot for servicing, after which it resumes its orders rather than waiting."
+    },
+    "start_vehicle": {
+      "description": "Start a stopped vehicle. A newly built vehicle is stopped until this is called."
+    },
+    "stop_vehicle": {
+      "description": "Stop a vehicle where it is. Stopping outside a depot blocks the line behind it, and only a vehicle stopped in a depot can be sold or refitted."
+    }
+  }
 }
