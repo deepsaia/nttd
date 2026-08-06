@@ -170,7 +170,7 @@ def test_newly_exposed_actions_have_parameter_validation() -> None:
     Catching a missing parameter locally costs nothing; letting it through spends
     a round trip to the game to learn the same thing.
     """
-    from nttd.interpreter.validator import _REQUIRED_PARAMS
+    from nttd.config import action_manifest
 
     for action in (
         "raise_tile", "lower_tile", "level_tiles",
@@ -180,26 +180,29 @@ def test_newly_exposed_actions_have_parameter_validation() -> None:
         "set_order_compare_value", "set_stop_location",
         "estimate_cost",
     ):
-        assert action in _REQUIRED_PARAMS, f"{action} has no parameter validation"
+        assert action_manifest.required_parameters(action), (
+            f"{action} has no parameter validation"
+        )
 
 
 def test_declared_params_match_the_gamescript_handlers() -> None:
-    """Guards against the validator drifting from the handler it mirrors.
+    """Independently authored expectations, frozen here.
 
-    Verified live: the names below are what the GameScript actually requires, and
-    raise_tile, level_tiles, and build_one_way_road succeed against a real game
-    when given exactly these.
+    These names were verified live against a real game before the manifest existed:
+    raise_tile, level_tiles and build_one_way_road each succeed when given exactly
+    these. Keeping them as literals is what makes this a real check rather than the
+    manifest agreeing with itself.
     """
-    from nttd.interpreter.validator import _REQUIRED_PARAMS
+    from nttd.config import action_manifest
 
     expected = {
-        "raise_tile": ["x", "y", "slope"],
-        "level_tiles": ["x1", "y1", "x2", "y2"],
-        "build_one_way_road": ["x1", "y1", "x2", "y2"],
-        "set_stop_location": ["vehicle_id", "order_pos", "stop_location"],
+        "raise_tile": ["slope", "x", "y"],
+        "level_tiles": ["x1", "x2", "y1", "y2"],
+        "build_one_way_road": ["x1", "x2", "y1", "y2"],
+        "set_stop_location": ["order_pos", "stop_location", "vehicle_id"],
     }
     for action, params in expected.items():
-        assert _REQUIRED_PARAMS[action] == params, action
+        assert action_manifest.required_parameters(action) == params, action
 
 
 def test_missing_params_are_reported_with_the_action_name() -> None:
@@ -212,15 +215,31 @@ def test_missing_params_are_reported_with_the_action_name() -> None:
     assert "y" in errors[0] and "slope" in errors[0]
 
 
-def test_wrong_param_shape_gets_a_hint() -> None:
-    """A single x,y is the natural guess for an area operation."""
+def test_a_wrong_param_shape_is_told_the_real_one() -> None:
+    """A single x,y is the natural guess for an area operation.
+
+    The message names what the action actually accepts, generated from the manifest,
+    rather than a hand-written hint. The hints this replaced had drifted with the
+    table beside them: the one for plant_tree_rectangle advised the very parameter
+    names the GameScript refuses.
+    """
     from nttd.interpreter.action_schema import AgentAction
     from nttd.interpreter.validator import validate_actions
 
     errors = validate_actions([
         AgentAction(action_type="level_tiles", parameters={"x": 1, "y": 2, "width": 3, "height": 4}),
     ])
-    assert "corner pair" in errors[0]
+    for name in ("x1", "y1", "x2", "y2"):
+        assert name in errors[0], "the message must name the shape the game wants"
+
+    # And the reverse case the old hint got backwards: it advised x1,y1,x2,y2 for
+    # plant_tree_rectangle, which is precisely what the GameScript refuses.
+    errors = validate_actions([
+        AgentAction(action_type="plant_tree_rectangle", parameters={"x1": 1, "y1": 2}),
+    ])
+    for name in ("x", "y", "width", "height"):
+        assert name in errors[0]
+    assert "x1" not in errors[0]
 
 
 def test_operator_action_is_rejected_before_param_checks() -> None:
