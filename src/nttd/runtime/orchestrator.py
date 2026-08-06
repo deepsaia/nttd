@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from nttd.actions.gate import admit
+from nttd.actions.gs_reply import result_from_reply
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
@@ -384,25 +385,25 @@ class Orchestrator:
                     # in the GS and need more time than single-tile actions.
                     timeout = 120.0 if gs_action.startswith("connect_") else 10.0
                     result = await self.client.send_gamescript(gs_action, gs_params, timeout=timeout)
-                    if result.get("success"):
-                        if self.action_tracker:
-                            self.action_tracker.update_result(
-                                envelope.action_id, ActionStatus.SUCCESS,
-                                changed_entities=result.get("result") or {},
-                            )
-                        self._record_action(
-                            envelope, ActionStatus.SUCCESS,
-                            changed=result.get("result") or {},
+                    # Read by the same function the REST path uses. These were two
+                    # copies of one mapping, which is why the stepped path knew nothing
+                    # about partial builds or error codes while the other did.
+                    outcome = result_from_reply(envelope.action_id, result)
+                    if self.action_tracker:
+                        self.action_tracker.update_result(
+                            envelope.action_id, outcome.status, outcome.error,
+                            changed_entities=outcome.changed_entities,
                         )
+                    self._record_action(
+                        envelope, outcome.status, outcome.error,
+                        changed=outcome.changed_entities,
+                    )
+                    if outcome.status == ActionStatus.SUCCESS:
                         logger.info("Action %s succeeded", gs_action)
                     else:
-                        error = result.get("error", "GS returned failure")
-                        if self.action_tracker:
-                            self.action_tracker.update_result(
-                                envelope.action_id, ActionStatus.FAILED, error,
-                            )
-                        self._record_action(envelope, ActionStatus.FAILED, error)
-                        logger.warning("Action %s failed: %s", gs_action, error)
+                        logger.warning(
+                            "Action %s %s: %s", gs_action, outcome.status.value, outcome.error,
+                        )
             except Exception:
                 logger.exception("Failed to execute action: %s", gs_action)
                 if self.action_tracker:
