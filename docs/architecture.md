@@ -54,8 +54,11 @@ local RL policy and `$0.00` from a silent entry are not the same claim.
 Three ways in, all reaching the same routes:
 
 - **HTTP (REST)**: the primary surface. `GET /state/full`, `POST /actions/submit`.
-- **MCP**: the same observations and actions as MCP tools, for agents built around
-  a tool-calling loop.
+- **MCP**: five tools over the same routes, for agents built around a tool-calling
+  loop. The action vocabulary arrives as an enum in the tool schema rather than in a
+  prompt, so a client cannot send a name the game does not have. stdio and streamable
+  HTTP, because an agent that spawns its tools and a framework that connects to a
+  running one are both real consumers. See [mcp_guide.md](mcp_guide.md).
 - **Gym**: `nttd.rl.env.NttdEnv`, an ordinary client over the stepped routes. It
   holds no privileged access and takes no shortcut, deliberately: an RL entry that
   could act through a faster path would not be comparable to the entries beside it.

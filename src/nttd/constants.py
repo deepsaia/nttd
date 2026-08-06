@@ -5,7 +5,9 @@ action a human player can take through the OpenTTD GUI, and nothing more. Action
 with no human equivalent are operator-tier, available for scenario authoring and
 debugging but not for play.
 
-Used by: action_routes.py, interpreter/validator.py, mcp/tools/validation.py
+Used by: action_routes.py, the action manifest generator (which reads the tiers and
+categories from here), and mcp/action_types.py, which turns them into the enums an MCP
+client sees in its tool schema.
 """
 
 # ---------------------------------------------------------------------------
