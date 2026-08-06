@@ -147,6 +147,50 @@ class TestActionLogConsistent:
 # ---------------------------------------------------------------------------
 
 
+class TestActionsExplainTheWorld:
+    """The check that closes the emptied-log hole.
+
+    action_log_consistent compares the log against the result's own counts, which a
+    run reporting zero actions satisfies by recording nothing. Demonstrated before
+    this existed: an emptied log with refreshed digests earned `verified`.
+    """
+
+    def test_a_built_world_with_an_empty_log_fails(self) -> None:
+        built = {
+            "stations": [{"id": 1, "company_id": 0}, {"id": 2, "company_id": 0}],
+            "vehicles": [{"id": 5, "company_id": 0}],
+        }
+        outcome = checks.actions_explain_the_world([], _result(total_actions=0), built)
+        assert outcome.passed is False
+        assert "records nothing" in outcome.detail
+
+    def test_a_built_world_with_a_log_passes(self) -> None:
+        built = {"stations": [{"id": 1, "company_id": 0}], "vehicles": []}
+        outcome = checks.actions_explain_the_world(_actions(), _result(), built)
+        assert outcome.passed is True
+
+    def test_building_nothing_with_an_empty_log_passes(self) -> None:
+        """A run that only took a loan, or took no action at all, is legitimate."""
+        outcome = checks.actions_explain_the_world(
+            [], _result(total_actions=0), {"stations": [], "vehicles": []},
+        )
+        assert outcome.passed is True
+
+    def test_a_rivals_infrastructure_is_not_held_against_you(self) -> None:
+        """Only the scored company's own entities count."""
+        rival_built = {
+            "stations": [{"id": 1, "company_id": 1}],
+            "vehicles": [{"id": 2, "company_id": 1}],
+        }
+        outcome = checks.actions_explain_the_world([], _result(total_actions=0), rival_built)
+        assert outcome.passed is True
+
+    def test_a_missing_snapshot_does_not_fail_the_run(self) -> None:
+        """No end state to compare against is a gap, not a forgery."""
+        outcome = checks.actions_explain_the_world([], _result(total_actions=0), {})
+        assert outcome.passed is True
+
+
 class TestNoForbiddenCapability:
     def test_a_clean_log_passes(self) -> None:
         outcome = checks.no_forbidden_capability(_actions(), _result())

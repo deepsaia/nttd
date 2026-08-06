@@ -7,6 +7,7 @@ needed to interact with it: AdminClient, WorldState, Bridge, Orchestrator.
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
@@ -83,6 +84,10 @@ class SessionRuntime:
         self.data_dir = str(data_dir) if data_dir else str(Path(config_dir).parent)
         self.recorder = SessionRecorder(session_id, data_dir=self.data_dir)
         self.orchestrator = Orchestrator(self.world, self.admin_client, recorder=self.recorder)
+        # Commands issued in the OpenTTD game window land in the same action log as
+        # API submissions, tagged with their source. Registered here rather than at
+        # connect time because the callback outlives a reconnect.
+        self.admin_client.on_client_command(self._record_client_command)
         self.action_tracker = ActionTracker()
         self.agent_registry = AgentRegistry()
         self.snapshot_broker_registry: dict[str, AgentSnapshotBroker] = {}
@@ -437,3 +442,12 @@ class SessionRuntime:
             company_id=company_id,
             detail="did not step within the liveness timeout",
         )
+
+    def _record_client_command(self, command: dict[str, Any]) -> None:
+        """Write a command from the game window into the action log.
+
+        The game date comes from nttd's own DATE subscription rather than the packet:
+        pyopenttdadmin's frame field is always 0, because it reads the frame from the
+        payload buffer after reassigning that buffer to the payload slice.
+        """
+        self.recorder.record_client_command(command, self.world.game.game_date)

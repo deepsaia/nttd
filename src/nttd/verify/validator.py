@@ -29,6 +29,7 @@ from nttd.config.scenario_config import load, scenario_to_settings
 from nttd.runtime.final_save import FINAL_SAVE_NAME, SAVE_EXTENSION
 from nttd.schemas.verification import CheckOutcome, Verdict, VerificationReport
 from nttd.store.result_writer import read_result
+from nttd.store.submission_bundle import FINAL_SNAPSHOT_NAME
 from nttd.verify import checks, replay
 from nttd.verify.headless_openttd import HeadlessOpenTTD
 
@@ -85,6 +86,9 @@ class BundleValidator:
 
         actions = self._actions()
         outcomes.append(checks.action_log_consistent(actions, rows[0]))
+        outcomes.append(
+            checks.actions_explain_the_world(actions, rows[0], self._final_snapshot()),
+        )
         outcomes.append(checks.no_forbidden_capability(actions, rows[0]))
 
         savegame = self.bundle_dir / f"{FINAL_SAVE_NAME}{SAVE_EXTENSION}"
@@ -120,6 +124,22 @@ class BundleValidator:
         except Exception:
             logger.exception("Could not read %s", path)
             return []
+
+    def _final_snapshot(self) -> dict[str, Any]:
+        """The bundled end state, or empty if the run recorded none."""
+        path = self.bundle_dir / FINAL_SNAPSHOT_NAME
+        if not path.exists():
+            return {}
+        try:
+            import json
+
+            import pyarrow.parquet as pq
+
+            rows = pq.read_table(path).to_pylist()
+            return json.loads(rows[0]["snapshot_json"]) if rows else {}
+        except Exception:
+            logger.exception("Could not read %s", path)
+            return {}
 
     async def _recompute_score(
         self, savegame: Path, rows: list[dict[str, Any]],
