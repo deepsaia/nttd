@@ -338,6 +338,8 @@ class NttdGS extends GSController {
     local resp = { id = id };
     if ("success" in result) resp.rawset("success", result.success);
     if ("error" in result && result.error != null) resp.rawset("error", result.error);
+    if ("error_code" in result) resp.rawset("error_code", result.error_code);
+    if ("error_category" in result) resp.rawset("error_category", result.error_category);
     if ("result" in result && result.result != null) resp.rawset("result", result.result);
     GSAdmin.Send(resp);
   }
@@ -1651,7 +1653,7 @@ class NttdGS extends GSController {
     if (GSRoad.BuildRoad(pair.from.tile, pair.to.tile)) {
       return { success = true, result = { from_tile = pair.from.tile, to_tile = pair.to.tile } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildRoadLine(p) {
@@ -1669,7 +1671,7 @@ class NttdGS extends GSController {
       for (local y = y1; ; y += step) {
         local ft = GSMap.GetTileIndex(x1, y), tt = GSMap.GetTileIndex(x1, y + step);
         if (GSRoad.BuildRoad(ft, tt)) { built++; }
-        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x1, y = y, error = err }); } else { existing++; } }
+        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x1, y = y, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); } else { existing++; } }
         if (y + step == y2) break;
       }
     } else {
@@ -1677,7 +1679,7 @@ class NttdGS extends GSController {
       for (local x = x1; ; x += step) {
         local ft = GSMap.GetTileIndex(x, y1), tt = GSMap.GetTileIndex(x + step, y1);
         if (GSRoad.BuildRoad(ft, tt)) { built++; }
-        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x, y = y1, error = err }); } else { existing++; } }
+        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x, y = y1, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); } else { existing++; } }
         if (x + step == x2) break;
       }
     }
@@ -1702,7 +1704,7 @@ class NttdGS extends GSController {
     if (GSRoad.BuildRoadDepot(r.tile, this._GetAdjacentTile(r.tile, dir))) {
       return { success = true, result = { tile = r.tile, x = r.x, y = r.y } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildRoadStop(p) {
@@ -1723,7 +1725,7 @@ class NttdGS extends GSController {
       local sid = GSStation.GetStationID(r.tile);
       return { success = true, result = { tile = r.tile, x = r.x, y = r.y, type = is_truck ? "truck" : "bus", station_id = sid } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveRoad(p) {
@@ -1735,7 +1737,7 @@ class NttdGS extends GSController {
     if (GSRoad.RemoveRoad(pair.from.tile, pair.to.tile)) {
       return { success = true, result = { from_tile = pair.from.tile, to_tile = pair.to.tile } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveRoadDepot(p) {
@@ -1743,7 +1745,7 @@ class NttdGS extends GSController {
     local r = this._ResolveTile(p);
     if (r == null) return { success = false, error = "Need tile or x,y" };
     if (GSRoad.RemoveRoadDepot(r.tile)) return { success = true, result = { tile = r.tile } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveRoadStop(p) {
@@ -1751,7 +1753,7 @@ class NttdGS extends GSController {
     local r = this._ResolveTile(p);
     if (r == null) return { success = false, error = "Need tile or x,y" };
     if (GSRoad.RemoveRoadStation(r.tile)) return { success = true, result = { tile = r.tile } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -2095,6 +2097,46 @@ class NttdGS extends GSController {
   // Build road along a path returned by _FindRoadPath.
   // Names how much of a route is missing and why, since the failed list can be long
   // and the first reason is usually the reason for all of them.
+  // An OpenTTD refusal, with the machine-readable part kept apart from the prose.
+  //
+  // The error field used to carry everything interchangeably: OpenTTD error names,
+  // nttd's own sentences, and Squirrel exception text. A caller could not tell "the game
+  // said no" from "nttd would not send it", and RL and ES need a discrete signal rather
+  // than a string to pattern-match on.
+  //
+  // Only OpenTTD refusals carry a code and a category. nttd's own precondition failures
+  // deliberately do not, so the absence of a code is what identifies them.
+  function _Refused() {
+    return { success = false,
+             error = GSError.GetLastErrorString(),
+             error_code = GSError.GetLastError(),
+             error_category = GSError.GetErrorCategory() };
+  }
+
+  // Walk the finished route and ask the game whether it actually joins up.
+  //
+  // Counting successful builds is not the same question. A segment can build and still
+  // leave the line unconnected, and ERR_ALREADY_BUILT tells you something is there but
+  // not that it links to its neighbour. This is the only check that answers "can a
+  // vehicle get from one end to the other", which is the thing the caller wanted.
+  //
+  // Reported rather than enforced: a break here is worth knowing about even when every
+  // build succeeded, and refusing on it would discard work that is already paid for.
+  function _RouteGaps(path, is_rail) {
+    local gaps = [];
+    for (local i = 1; i < path.len(); i++) {
+      local a = path[i - 1].tile;
+      local b = path[i].tile;
+      // Bridges and tunnels span more than one tile, so adjacency does not apply.
+      if (GSMap.DistanceManhattan(a, b) != 1) continue;
+      local joined = is_rail
+        ? GSRail.AreTilesConnected(i > 1 ? path[i - 2].tile : a, a, b)
+        : GSRoad.AreRoadTilesConnected(a, b);
+      if (!joined) gaps.append({ x = path[i].x, y = path[i].y });
+    }
+    return gaps;
+  }
+
   function _PartialError(failed, total) {
     local first = failed[0];
     return failed.len() + " of " + total + " segments failed, first at ("
@@ -2121,7 +2163,7 @@ class NttdGS extends GSController {
         } else {
           local err = GSError.GetLastErrorString();
           if (err == "ERR_ALREADY_BUILT") { existing++; }
-          else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err }); }
+          else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
         }
         continue;
       }
@@ -2132,7 +2174,7 @@ class NttdGS extends GSController {
         } else {
           local err = GSError.GetLastErrorString();
           if (err == "ERR_ALREADY_BUILT") { existing++; }
-          else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err }); }
+          else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
         }
         continue;
       }
@@ -2145,7 +2187,7 @@ class NttdGS extends GSController {
         } else {
           local err = GSError.GetLastErrorString();
           if (err == "ERR_ALREADY_BUILT") { existing++; }
-          else { failed.append({ x = cur.x, y = cur.y, action = "road", error = err }); }
+          else { failed.append({ x = cur.x, y = cur.y, action = "road", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
         }
       }
       // Traversal over existing bridge/tunnel (dist > 1, no build needed).
@@ -2183,7 +2225,8 @@ class NttdGS extends GSController {
     // A segment that would not build leaves a gap, and a gap means no route. Saying
     // success here made a broken line indistinguishable from a working one to the
     // caller, the action log, and the route report.
-    local complete = (build.failed.len() == 0);
+    local gaps = this._RouteGaps(pf.path, false);
+    local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
       error = complete ? null : this._PartialError(build.failed, pf.path.len()),
       result = {
@@ -2192,6 +2235,7 @@ class NttdGS extends GSController {
       built = build.built,
       existing = build.existing,
       failed = build.failed,
+      gaps = gaps,
       iterations = pf.iterations,
       path = path_coords
     }};
@@ -2210,7 +2254,7 @@ class NttdGS extends GSController {
       local curr = GSMap.GetTileIndex(p.x, p.y);
       local next = GSMap.GetTileIndex(p.next_x, p.next_y);
       if (GSRail.BuildRail(prev, curr, next)) return { success = true, result = { tile = [p.x, p.y] } };
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
     local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
@@ -2220,7 +2264,7 @@ class NttdGS extends GSController {
     local ok1 = GSRail.BuildRail(before, from_tile, to_tile);
     local ok2 = GSRail.BuildRail(from_tile, to_tile, after);
     if (ok1 || ok2) return { success = true, result = { from = [p.from_x, p.from_y], to = [p.to_x, p.to_y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildRailTrack(p) {
@@ -2230,7 +2274,7 @@ class NttdGS extends GSController {
     GSRail.SetCurrentRailType(rail_type);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSRail.BuildRailTrack(tile, track)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildRailStation(p) {
@@ -2246,7 +2290,7 @@ class NttdGS extends GSController {
       local sid = GSStation.GetStationID(tile);
       return { success = true, result = { tile = [p.x, p.y], platforms = platforms, length = length, station_id = sid } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildRailDepot(p) {
@@ -2257,7 +2301,7 @@ class NttdGS extends GSController {
     local tile = GSMap.GetTileIndex(p.x, p.y);
     local front = this._GetAdjacentTile(tile, dir);
     if (!GSRail.BuildRailDepot(tile, front)) {
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     // Auto-connect: build rail on the front tile linking existing track to depot.
     // Find an adjacent rail tile next to the front tile (excluding the depot tile)
@@ -2280,14 +2324,14 @@ class NttdGS extends GSController {
     local signal_type = ("signal_type" in p) ? p.signal_type : 0;
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSRail.BuildSignal(tile, tile, signal_type)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildRailWaypoint(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSRail.BuildRailWaypoint(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveRail(p) {
@@ -2296,7 +2340,7 @@ class NttdGS extends GSController {
     local tile = GSMap.GetTileIndex(p.x, p.y);
     local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
     if (GSRail.RemoveRail(from_tile, tile, to_tile)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveRailTrack(p) {
@@ -2305,7 +2349,7 @@ class NttdGS extends GSController {
     local r = this._ResolveTile(p);
     if (r == null) return { success = false, error = "Need tile or x,y" };
     if (GSRail.RemoveRailTrack(r.tile, track)) return { success = true, result = { tile = r.tile } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveSignal(p) {
@@ -2316,12 +2360,12 @@ class NttdGS extends GSController {
     if ("front_tile" in p) {
       local ft = p.front_tile.tointeger();
       if (GSRail.RemoveSignal(r.tile, ft)) return { success = true, result = {} };
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     if (("front_x" in p) && ("front_y" in p)) {
       local ft = GSMap.GetTileIndex(p.front_x, p.front_y);
       if (GSRail.RemoveSignal(r.tile, ft)) return { success = true, result = {} };
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     // Auto-detect: try all 4 adjacent tiles as front
     local offsets = [
@@ -2346,13 +2390,13 @@ class NttdGS extends GSController {
     local r = this._ResolveTile(p);
     if (r != null) {
       if (GSRail.RemoveRailStationTileRectangle(r.tile, r.tile, keep_rail)) return { success = true, result = {} };
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     if (("x1" in p) && ("y1" in p) && ("x2" in p) && ("y2" in p)) {
       local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
       local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
       if (GSRail.RemoveRailStationTileRectangle(tile1, tile2, keep_rail)) return { success = true, result = {} };
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     return { success = false, error = "Need tile or x,y or x1,y1,x2,y2" };
   }
@@ -2364,13 +2408,13 @@ class NttdGS extends GSController {
     local r = this._ResolveTile(p);
     if (r != null) {
       if (GSRail.ConvertRailType(r.tile, r.tile, rail_type)) return { success = true, result = {} };
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     if (("x1" in p) && ("y1" in p) && ("x2" in p) && ("y2" in p)) {
       local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
       local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
       if (GSRail.ConvertRailType(tile1, tile2, rail_type)) return { success = true, result = {} };
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     }
     return { success = false, error = "Need tile or x,y or x1,y1,x2,y2" };
   }
@@ -2608,7 +2652,7 @@ class NttdGS extends GSController {
         } else {
           local err = GSError.GetLastErrorString();
           if (err == "ERR_ALREADY_BUILT") { existing++; }
-          else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err }); }
+          else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
         }
         continue;
       }
@@ -2619,7 +2663,7 @@ class NttdGS extends GSController {
         } else {
           local err = GSError.GetLastErrorString();
           if (err == "ERR_ALREADY_BUILT") { existing++; }
-          else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err }); }
+          else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
         }
         continue;
       }
@@ -2662,7 +2706,7 @@ class NttdGS extends GSController {
       } else {
         local err = GSError.GetLastErrorString();
         if (err == "ERR_ALREADY_BUILT") { existing++; }
-        else { failed.append({ x = cur.x, y = cur.y, action = "rail", error = err }); }
+        else { failed.append({ x = cur.x, y = cur.y, action = "rail", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
       }
     }
     return { built = built, existing = existing, failed = failed };
@@ -2707,7 +2751,8 @@ class NttdGS extends GSController {
     // A segment that would not build leaves a gap, and a gap means no route. Saying
     // success here made a broken line indistinguishable from a working one to the
     // caller, the action log, and the route report.
-    local complete = (build.failed.len() == 0);
+    local gaps = this._RouteGaps(pf.path, true);
+    local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
       error = complete ? null : this._PartialError(build.failed, pf.path.len()),
       result = {
@@ -2716,6 +2761,7 @@ class NttdGS extends GSController {
       built = build.built,
       existing = build.existing,
       failed = build.failed,
+      gaps = gaps,
       iterations = pf.iterations,
       path = path_coords
     }};
@@ -2729,21 +2775,21 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.BuildCanal(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildLock(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.BuildLock(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildBuoy(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.BuildBuoy(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildWaterDepot(p) {
@@ -2753,35 +2799,35 @@ class NttdGS extends GSController {
     if (GSMarine.BuildWaterDepot(tile, this._GetAdjacentTile(tile, dir))) {
       return { success = true, result = { tile = [p.x, p.y] } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveCanal(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.RemoveCanal(tile)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveLock(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.RemoveLock(tile)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveBuoy(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.RemoveBuoy(tile)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveWaterDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.RemoveWaterDepot(tile)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -2796,14 +2842,14 @@ class NttdGS extends GSController {
       local sid = GSStation.GetStationID(tile);
       return { success = true, result = { tile = [p.x, p.y], type = airport_type, station_id = sid } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveAirport(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSAirport.RemoveAirport(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdOpenCloseAirport(p) {
@@ -2811,7 +2857,7 @@ class NttdGS extends GSController {
     if (GSAirport.OpenCloseAirport(p.station_id)) {
       return { success = true, result = { station_id = p.station_id } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildDock(p) {
@@ -2821,7 +2867,7 @@ class NttdGS extends GSController {
       local sid = GSStation.GetStationID(tile);
       return { success = true, result = { tile = [p.x, p.y], station_id = sid } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildBridge(p) {
@@ -2834,7 +2880,7 @@ class NttdGS extends GSController {
     if (GSBridge.BuildBridge(vt, bridge_type, start_tile, end_tile)) {
       return { success = true, result = { start = [p.start_x, p.start_y], end_pos = [p.end_x, p.end_y] } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildTunnel(p) {
@@ -2849,7 +2895,7 @@ class NttdGS extends GSController {
         exit_pos = [GSMap.GetTileX(exit_tile), GSMap.GetTileY(exit_tile)]
       }};
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildPath(p) {
@@ -2896,7 +2942,7 @@ class NttdGS extends GSController {
           built++;
         } else {
           local err = GSError.GetLastErrorString();
-          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() });
           else existing++;
         }
         continue;
@@ -2910,7 +2956,7 @@ class NttdGS extends GSController {
           built++;
         } else {
           local err = GSError.GetLastErrorString();
-          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() });
           else existing++;
         }
         continue;
@@ -2932,7 +2978,7 @@ class NttdGS extends GSController {
             built++;
           } else {
             local err = GSError.GetLastErrorString();
-            if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+            if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() });
             else existing++;
           }
         } else {
@@ -2941,7 +2987,7 @@ class NttdGS extends GSController {
             built++;
           } else {
             local err = GSError.GetLastErrorString();
-            if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
+            if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() });
             else existing++;
           }
         }
@@ -2965,7 +3011,7 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSTile.DemolishTile(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -2976,7 +3022,7 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSCompany.BuildCompanyHQ(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSetLoan(p) {
@@ -2987,13 +3033,13 @@ class NttdGS extends GSController {
         balance = GSCompany.GetBankBalance(p.company_id)
       }};
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRenameCompany(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSCompany.SetName(p.name)) return { success = true, result = { name = p.name } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -3014,7 +3060,7 @@ class NttdGS extends GSController {
         x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc)
       }};
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdExpandTown(p) {
@@ -3026,7 +3072,7 @@ class NttdGS extends GSController {
         population = GSTown.GetPopulation(p.town_id)
       }};
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSetTownGrowth(p) {
@@ -3034,7 +3080,7 @@ class NttdGS extends GSController {
     if (GSTown.SetGrowthRate(p.town_id, p.days)) {
       return { success = true, result = { town_id = p.town_id, growth_rate = p.days } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdPerformTownAction(p) {
@@ -3045,7 +3091,7 @@ class NttdGS extends GSController {
     if (GSTown.PerformTownAction(p.town_id, p.action)) {
       return { success = true, result = { town_id = p.town_id, action = p.action } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdChangeTownRating(p) {
@@ -3056,7 +3102,7 @@ class NttdGS extends GSController {
         new_rating = GSTown.GetRating(p.town_id, p.company_id)
       }};
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSetCargoGoal(p) {
@@ -3064,7 +3110,7 @@ class NttdGS extends GSController {
     if (GSTown.SetCargoGoal(p.town_id, p.town_effect, p.goal)) {
       return { success = true, result = { town_id = p.town_id, town_effect = p.town_effect, goal = p.goal } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -3080,7 +3126,7 @@ class NttdGS extends GSController {
     if (GSSubsidy.Create(cargo, from_type, from_id, to_type, to_id)) {
       return { success = true, result = {} };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -3094,13 +3140,13 @@ class NttdGS extends GSController {
     if (GSSign.IsValidSign(sid)) {
       return { success = true, result = { sign_id = sid, name = p.name } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRemoveSign(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSSign.RemoveSign(p.sign_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -3113,19 +3159,19 @@ class NttdGS extends GSController {
     local parent_gid = ("parent_group_id" in p) ? p.parent_group_id : GSGroup.GROUP_INVALID;
     local gid = GSGroup.CreateGroup(vt, parent_gid);
     if (GSGroup.IsValidGroup(gid)) return { success = true, result = { group_id = gid } };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdDeleteGroup(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSGroup.DeleteGroup(p.group_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdMoveToGroup(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSGroup.MoveVehicle(p.group_id, p.vehicle_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSetAutoReplace(p) {
@@ -3133,7 +3179,7 @@ class NttdGS extends GSController {
     if (GSGroup.SetAutoReplace(p.group_id, p.engine_id_old, p.engine_id_new)) {
       return { success = true, result = {} };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -3149,7 +3195,7 @@ class NttdGS extends GSController {
     if (GSVehicle.IsValidVehicle(vid)) {
       return { success = true, result = { vehicle_id = vid, name = GSVehicle.GetName(vid) } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdBuildTrain(p) {
@@ -3159,7 +3205,7 @@ class NttdGS extends GSController {
       : GSMap.GetTileIndex(p.depot_x, p.depot_y);
     local vid = GSVehicle.BuildVehicle(depot_tile, p.engine_id);
     if (!GSVehicle.IsValidVehicle(vid))
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     local wagons_attached = 0;
     local wagons_failed = 0;
     if ("wagon_id" in p && p.wagon_id != null) {
@@ -3192,7 +3238,7 @@ class NttdGS extends GSController {
   function CmdSellVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSVehicle.SellVehicle(p.vehicle_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSellWagon(p) {
@@ -3202,7 +3248,7 @@ class NttdGS extends GSController {
       ? GSVehicle.SellWagonChain(p.vehicle_id, p.wagon)
       : GSVehicle.SellWagon(p.vehicle_id, p.wagon);
     if (ok) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdMoveWagon(p) {
@@ -3212,7 +3258,7 @@ class NttdGS extends GSController {
       ? GSVehicle.MoveWagonChain(p.source_vehicle_id, p.source_wagon, p.dest_vehicle_id, p.dest_wagon)
       : GSVehicle.MoveWagon(p.source_vehicle_id, p.source_wagon, p.dest_vehicle_id, p.dest_wagon);
     if (ok) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdStartVehicle(p) {
@@ -3220,26 +3266,26 @@ class NttdGS extends GSController {
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) {
       return { success = true, result = { running = !GSVehicle.IsStoppedInDepot(p.vehicle_id) } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdStopVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSVehicle.IsStoppedInDepot(p.vehicle_id)) return { success = true, result = { already_stopped = true } };
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSendToDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSVehicle.SendVehicleToDepot(p.vehicle_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSendToDepotService(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSVehicle.SendVehicleToDepotForServicing(p.vehicle_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdCloneVehicle(p) {
@@ -3250,7 +3296,7 @@ class NttdGS extends GSController {
     if (GSVehicle.IsValidVehicle(cid)) {
       return { success = true, result = { vehicle_id = cid, name = GSVehicle.GetName(cid) } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRefitVehicle(p) {
@@ -3258,13 +3304,13 @@ class NttdGS extends GSController {
     local cid = ("cargo_id" in p) ? p.cargo_id : ("cargo_type" in p) ? p.cargo_type : null;
     if (cid == null) return { success = false, error = "Need cargo_id or cargo_type" };
     if (GSVehicle.RefitVehicle(p.vehicle_id, cid)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdReverseVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSVehicle.ReverseVehicle(p.vehicle_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdRenameVehicle(p) {
@@ -3272,7 +3318,7 @@ class NttdGS extends GSController {
     if (GSVehicle.SetName(p.vehicle_id, p.name)) {
       return { success = true, result = { vehicle_id = p.vehicle_id, name = p.name } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   // ===========================================================================
@@ -3427,7 +3473,7 @@ class NttdGS extends GSController {
     if (GSOrder.RemoveOrder(p.vehicle_id, idx)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSkipToOrder(p) {
@@ -3436,7 +3482,7 @@ class NttdGS extends GSController {
                 ("order_position" in p) ? p.order_position : null;
     if (idx == null) return { success = false, error = "Need order_index or order_position" };
     if (GSOrder.SkipToOrder(p.vehicle_id, idx)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdMoveOrder(p) {
@@ -3447,7 +3493,7 @@ class NttdGS extends GSController {
                    ("to_position" in p) ? p.to_position : null;
     if (from_idx == null || to_idx == null) return { success = false, error = "Need from_index/to_index" };
     if (GSOrder.MoveOrder(p.vehicle_id, from_idx, to_idx)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdSetOrderFlags(p) {
@@ -3456,13 +3502,13 @@ class NttdGS extends GSController {
                 ("order_position" in p) ? p.order_position : null;
     if (idx == null) return { success = false, error = "Need order_index or order_position" };
     if (GSOrder.SetOrderFlags(p.vehicle_id, idx, p.order_flags)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdShareOrders(p) {
     local company_mode = GSCompanyMode(p.company_id);
     if (GSOrder.ShareOrders(p.vehicle_id, p.main_vehicle_id)) return { success = true, result = {} };
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdCopyOrders(p) {
@@ -3470,7 +3516,7 @@ class NttdGS extends GSController {
     if (GSOrder.CopyOrders(p.vehicle_id, p.main_vehicle_id)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
-    return { success = false, error = GSError.GetLastErrorString() };
+    return this._Refused();
   }
 
   function CmdGetOrders(p) {
@@ -3702,7 +3748,7 @@ class NttdGS extends GSController {
       return { success = false, error = "Invalid setting: " + p.key };
 
     local ok = GSGameSettings.SetValue(p.key, p.value);
-    if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    if (!ok) return this._Refused();
     return { success = true, result = { key = p.key, value = p.value } };
   }
 
@@ -3876,7 +3922,7 @@ class NttdGS extends GSController {
 
     local expense_type = ("expense_type" in p) ? p.expense_type : GSCompany.EXPENSES_OTHER;
     local ok = GSCompany.ChangeBankBalance(p.company_id, p.delta, expense_type);
-    if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    if (!ok) return this._Refused();
     return { success = true, result = {
       company_id = p.company_id,
       new_balance = GSCompany.GetBankBalance(p.company_id),
@@ -3890,7 +3936,7 @@ class NttdGS extends GSController {
       return { success = false, error = "Invalid company ID" };
 
     local ok = GSCompany.SetMaxLoanAmountForCompany(p.company_id, p.amount);
-    if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+    if (!ok) return this._Refused();
     return { success = true, result = { company_id = p.company_id, max_loan = p.amount } };
   }
 
@@ -3907,10 +3953,10 @@ class NttdGS extends GSController {
     if ("company_id" in p) {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id); ok = GSTile.RaiseTile(tile, p.slope); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSTile.RaiseTile(tile, p.slope))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { x = p.x, y = p.y } };
   }
@@ -3924,10 +3970,10 @@ class NttdGS extends GSController {
     if ("company_id" in p) {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id); ok = GSTile.LowerTile(tile, p.slope); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSTile.LowerTile(tile, p.slope))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { x = p.x, y = p.y } };
   }
@@ -3943,10 +3989,10 @@ class NttdGS extends GSController {
     if ("company_id" in p) {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id); ok = GSTile.LevelTiles(tile_from, tile_to); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSTile.LevelTiles(tile_from, tile_to))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { x1 = p.x1, y1 = p.y1, x2 = p.x2, y2 = p.y2 } };
   }
@@ -3962,7 +4008,7 @@ class NttdGS extends GSController {
     if (!GSMap.IsValidTile(tile)) return { success = false, error = "Invalid tile" };
 
     if (!GSTile.PlantTree(tile))
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     return { success = true, result = { x = p.x, y = p.y } };
   }
 
@@ -3973,7 +4019,7 @@ class NttdGS extends GSController {
     if (!GSMap.IsValidTile(tile)) return { success = false, error = "Invalid tile" };
 
     if (!GSTile.PlantTreeRectangle(tile, p.width, p.height))
-      return { success = false, error = GSError.GetLastErrorString() };
+      return this._Refused();
     return { success = true, result = { x = p.x, y = p.y, width = p.width, height = p.height } };
   }
 
@@ -3990,10 +4036,10 @@ class NttdGS extends GSController {
     if ("company_id" in p) {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id); ok = GSRoad.BuildOneWayRoad(from, to); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSRoad.BuildOneWayRoad(from, to))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { from = { x = p.x1, y = p.y1 }, to = { x = p.x2, y = p.y2 } } };
   }
@@ -4007,10 +4053,10 @@ class NttdGS extends GSController {
     if ("company_id" in p) {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id); ok = GSRoad.BuildOneWayRoadFull(from, to); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSRoad.BuildOneWayRoadFull(from, to))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { from = { x = p.x1, y = p.y1 }, to = { x = p.x2, y = p.y2 } } };
   }
@@ -4024,10 +4070,10 @@ class NttdGS extends GSController {
     if ("company_id" in p) {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id); ok = GSRoad.ConvertRoadType(from, to, p.road_type); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSRoad.ConvertRoadType(from, to, p.road_type))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { road_type = p.road_type } };
   }
@@ -4044,10 +4090,10 @@ class NttdGS extends GSController {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id);
         ok = GSOrder.SetOrderCondition(p.vehicle_id, p.order_pos, p.condition); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSOrder.SetOrderCondition(p.vehicle_id, p.order_pos, p.condition))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
   }
@@ -4060,10 +4106,10 @@ class NttdGS extends GSController {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id);
         ok = GSOrder.SetOrderCompareFunction(p.vehicle_id, p.order_pos, p.compare_function); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSOrder.SetOrderCompareFunction(p.vehicle_id, p.order_pos, p.compare_function))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
   }
@@ -4076,10 +4122,10 @@ class NttdGS extends GSController {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id);
         ok = GSOrder.SetOrderCompareValue(p.vehicle_id, p.order_pos, p.value); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSOrder.SetOrderCompareValue(p.vehicle_id, p.order_pos, p.value))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
   }
@@ -4092,10 +4138,10 @@ class NttdGS extends GSController {
       local ok = false;
       { local mode = GSCompanyMode(p.company_id);
         ok = GSOrder.SetStopLocation(p.vehicle_id, p.order_pos, p.stop_location); }
-      if (!ok) return { success = false, error = GSError.GetLastErrorString() };
+      if (!ok) return this._Refused();
     } else {
       if (!GSOrder.SetStopLocation(p.vehicle_id, p.order_pos, p.stop_location))
-        return { success = false, error = GSError.GetLastErrorString() };
+        return this._Refused();
     }
     return { success = true, result = { vehicle_id = p.vehicle_id, order_pos = p.order_pos } };
   }
