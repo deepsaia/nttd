@@ -360,3 +360,65 @@ class TestReadingAnOlderResult:
         output = capsys.readouterr().out
         assert "No business metrics" in output
         assert "days to first profit" not in output
+
+
+class TestTheTrajectoryTravelsWithTheBundle:
+    """Without it the run-wide metrics are claims.
+
+    Endpoint figures can be recomputed from the savegame. Operating margin over the run,
+    peak credit drawn, lowest cash and days to first profit cannot: they come from the
+    series, and the bundle carries only a one-row final snapshot. Ten integers a tick is
+    about 13 bytes a row, against roughly 4 KB a row for the full world as JSON.
+    """
+
+    def test_recomputing_from_the_trajectory_matches(self, tmp_path: Path) -> None:
+        """The property the whole thing rests on: what a verifier gets by reading the
+        bundle equals what nttd wrote from the session."""
+        session = _session(tmp_path, [
+            _snapshot(100, value=10, money=5000, loan=100_000, max_loan=300_000,
+                      income=1000, expenses=-400, cargo=50, stations=2),
+            _snapshot(200, value=90_000, money=250, loan=300_000, max_loan=300_000,
+                      income=8000, expenses=-2000, cargo=900, stations=5),
+            _snapshot(300, value=400_000, money=90_000, loan=0, max_loan=300_000,
+                      income=20_000, expenses=-9000, cargo=4200, stations=9),
+        ])
+        direct = business_metrics.compute(
+            session, 0, primary_score=700, total_cost_usd=2.0,
+            total_actions=80, successful_actions=70,
+        )
+        replayed = business_metrics.compute_from_trajectory(
+            business_metrics.trajectory_rows(session, 0),
+            primary_score=700, total_cost_usd=2.0,
+            total_actions=80, successful_actions=70,
+        )
+        assert replayed == direct
+
+    def test_the_run_wide_metrics_actually_differ_from_the_endpoint(
+        self, tmp_path: Path,
+    ) -> None:
+        """Guards the test above from being vacuous. If every metric were an endpoint
+        value the trajectory would not be needed at all."""
+        metrics = business_metrics.compute(_session(tmp_path, [
+            _snapshot(1, loan=300_000, max_loan=300_000, money=500),
+            _snapshot(2, loan=0, max_loan=300_000, money=90_000),
+        ]), 0)
+        assert metrics.peak_credit_used != metrics.final_credit_used
+        assert metrics.min_cash == 500
+
+    def test_every_column_the_metrics_read_is_carried(self, tmp_path: Path) -> None:
+        rows = business_metrics.trajectory_rows(
+            _session(tmp_path, [_snapshot(1, value=1)]), 0,
+        )
+        assert rows
+        for column in business_metrics.TRAJECTORY_COLUMNS:
+            assert column in rows[0], column
+
+    def test_a_session_without_snapshots_yields_no_trajectory(self, tmp_path: Path) -> None:
+        empty = tmp_path / "ses_none"
+        empty.mkdir()
+        assert business_metrics.trajectory_rows(empty, 0) == []
+
+    def test_the_bundle_names_it(self) -> None:
+        from nttd.store.submission_bundle import TRAJECTORY_NAME
+
+        assert TRAJECTORY_NAME == "trajectory.parquet"

@@ -72,6 +72,17 @@ _ARTIFACTS: tuple[tuple[str, bool], ...] = (
 # The one snapshot the bundle does carry, written from the last row of the series.
 FINAL_SNAPSHOT_NAME = "final_snapshot.parquet"
 
+# The contestant company's series, extracted from the snapshots: ten integers a tick
+# rather than the whole world as JSON. Roughly 13 bytes a row, so 11 KB for a 200-step
+# run and 1.3 MB for the longest plausible real-time one, against 146 MB if the full
+# series went in.
+#
+# It earns its place by making the run-wide metrics checkable. Endpoint figures can be
+# recomputed from the savegame, but operating margin over the run, peak credit drawn,
+# lowest cash and days to first profit come from the series, and without it they are
+# claims rather than evidence. It is also what a trend chart is drawn from.
+TRAJECTORY_NAME = "trajectory.parquet"
+
 
 class SubmissionBundle:
     """Assembles one session's submission."""
@@ -133,6 +144,10 @@ class SubmissionBundle:
             destination.write_bytes(source.read_bytes())
             copied[name] = destination
 
+        trajectory = self._write_trajectory(bundle_dir)
+        if trajectory:
+            copied[trajectory.name] = trajectory
+
         final_snapshot = self._write_final_snapshot(bundle_dir)
         if final_snapshot is not None:
             copied[final_snapshot.name] = final_snapshot
@@ -149,6 +164,39 @@ class SubmissionBundle:
             )
 
         return copied
+
+    def _write_trajectory(self, bundle_dir: Path) -> Path | None:
+        """Extract the contestant's series so the run-wide metrics can be rechecked.
+
+        Written with the same function that computes them, so a verifier reading this
+        back and recomputing is comparing like with like rather than reimplementing the
+        formulas and hoping they agree.
+        """
+        rows = self._contestant_trajectory()
+        if not rows:
+            return None
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+
+            destination = bundle_dir / TRAJECTORY_NAME
+            pq.write_table(pa.Table.from_pylist(rows), destination, compression="zstd")
+        except Exception:
+            logger.exception("Could not write a trajectory for %s", self.session_dir)
+            return None
+        return destination
+
+    def _contestant_trajectory(self) -> list[dict[str, int]]:
+        """The scored company's series. A scored run has exactly one contestant."""
+        from nttd.analysis import business_metrics
+        from nttd.store.result_writer import read_result
+
+        rows = read_result(self.session_dir)
+        if not rows:
+            return []
+        return business_metrics.trajectory_rows(
+            self.session_dir, int(rows[0].get("company_id", 0)),
+        )
 
     def _write_final_snapshot(self, bundle_dir: Path) -> Path | None:
         """Write the last recorded snapshot, dropping the rest of the series.
