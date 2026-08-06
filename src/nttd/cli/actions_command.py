@@ -17,6 +17,14 @@ _TIER_NOTE = {
     "read_only": " [dim](read-only query)[/]",
 }
 
+# Same split, and the same order, as docs/actions/. What the CLI prints and what the
+# reference says should not need reconciling.
+_TIER_SECTIONS = [
+    ("read_only", "Observations", "read the world, cost nothing"),
+    ("participant", "Actions", "change the world, cost money"),
+    ("operator", "Operator", "scenario setup, refused during scored play"),
+]
+
 
 def actions(
     action: Annotated[
@@ -28,7 +36,11 @@ def actions(
     ] = None,
     playable: Annotated[
         bool,
-        typer.Option("--playable", help="Only actions a contestant may submit"),
+        typer.Option("--playable", help="Only actions that change the world"),
+    ] = False,
+    observations: Annotated[
+        bool,
+        typer.Option("--observations", help="Only actions that read the world"),
     ] = False,
     as_json: Annotated[
         bool, typer.Option("--json", help="Emit the manifest as JSON")
@@ -40,8 +52,10 @@ def actions(
     client, so what you read here is what an agent sees.
 
     Examples:
-      nttd actions                        every action, by category
+      nttd actions                        everything, split by what it does
       nttd actions build_road_stop        one action's parameters
+      nttd actions --observations         only what reads the world
+      nttd actions --playable             only what changes it
       nttd actions --category rail        one category
       nttd actions --playable --json      what a contestant may submit, as JSON
     """
@@ -49,11 +63,17 @@ def actions(
         _show_one(action, as_json)
         return
 
+    wanted = set()
+    if playable:
+        wanted.add("participant")
+    if observations:
+        wanted.add("read_only")
+
     entries = {
         name: entry
         for name, entry in action_manifest.ACTIONS.items()
         if (not category or entry["category"] == category)
-        and (not playable or entry["tier"] == "participant")
+        and (not wanted or entry["tier"] in wanted)
     }
     if not entries:
         console.print(
@@ -70,7 +90,25 @@ def actions(
 
 
 def _show_list(entries: dict) -> None:
-    """One row per action, grouped by category."""
+    """One row per action, split by what running it does, then by category.
+
+    Reading the world and changing it are the two things on offer here, and mixing them
+    put get_stations next to build_rail_station.
+    """
+    for tier, heading, blurb in _TIER_SECTIONS:
+        section = {n: e for n, e in entries.items() if e["tier"] == tier}
+        if section:
+            console.print(f"\n[bold]{heading}[/] [dim]{blurb}[/]")
+            _show_category_tables(section)
+
+    console.print(
+        f"\n{len(entries)} action(s). [dim]Required parameters first, then optional.[/]"
+    )
+    _describe_gaps(entries)
+
+
+def _show_category_tables(entries: dict) -> None:
+    """One table per category within a section."""
     by_category: dict[str, list[tuple[str, dict]]] = {}
     for name, entry in sorted(entries.items()):
         by_category.setdefault(entry["category"], []).append((name, entry))
@@ -79,7 +117,6 @@ def _show_list(entries: dict) -> None:
         table = Table(title=category, show_header=True)
         table.add_column("Action", style="bold")
         table.add_column("Parameters")
-        table.add_column("Tier")
         for name, entry in rows:
             required = sorted(
                 p for p, m in entry["parameters"].items() if m.get("required")
@@ -95,13 +132,8 @@ def _show_list(entries: dict) -> None:
                 parts.append(", ".join(required))
             if optional:
                 parts.append(f"[dim]opt: {', '.join(optional)}[/]")
-            table.add_row(name, "  ".join(parts) or "[dim]none[/]", entry["tier"])
+            table.add_row(name, "  ".join(parts) or "[dim]none[/]")
         console.print(table)
-
-    console.print(
-        f"\n{len(entries)} action(s). [dim]Required parameters first, then optional.[/]"
-    )
-    _describe_gaps(entries)
 
 
 def _show_one(name: str, as_json: bool) -> None:
@@ -121,12 +153,19 @@ def _show_one(name: str, as_json: bool) -> None:
     console.print(f"[dim]category: {entry['category']}  "
                   f"gamescript: {entry['gamescript_function']}[/]\n")
 
+    for group in entry.get("one_of", []):
+        options = " or ".join(" and ".join(branch) for branch in group)
+        console.print(f"Supply one of: [bold]{options}[/]")
+    if entry.get("one_of"):
+        console.print()
+
     if not entry["parameters"]:
         console.print("[dim]Takes no parameters.[/]")
         return
 
     table = Table(show_header=True)
     table.add_column("Parameter", style="bold")
+    table.add_column("Type")
     table.add_column("Required")
     table.add_column("Default")
     table.add_column("Description")
@@ -137,11 +176,21 @@ def _show_one(name: str, as_json: bool) -> None:
             rendered = "[dim]tile or x,y[/]"
         table.add_row(
             param,
+            meta.get("type") or "",
             "yes" if meta.get("required") else "no",
             rendered,
             meta.get("description") or "[yellow]not described yet[/]",
         )
     console.print(table)
+
+    # The accepted constants, where there are any. Without these an agent has the
+    # parameter name and no way to pick a value: `condition` is an integer, and which
+    # integer is the whole question.
+    for param, meta in sorted(entry["parameters"].items()):
+        if "enum" not in meta:
+            continue
+        values = ", ".join(f"{n} = {v}" for n, v in meta["enum"]["values"].items())
+        console.print(f"\n[bold]{param}[/] accepts ([dim]{meta['enum']['class']}[/]): {values}")
 
 
 def _describe_gaps(entries: dict) -> None:
