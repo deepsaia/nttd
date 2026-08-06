@@ -1,4 +1,4 @@
-"""nttd session subcommands — create, start, stop, list, status."""
+"""nttd session subcommands: create, start, stop, list, status."""
 
 from typing import Annotated, Optional
 

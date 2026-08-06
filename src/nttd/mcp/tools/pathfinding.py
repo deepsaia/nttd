@@ -1,4 +1,4 @@
-"""Pathfinding tools — find routes between map coordinates."""
+"""Pathfinding tools: find routes between map coordinates."""
 
 import json
 
@@ -28,7 +28,7 @@ def register_pathfinding_tools(mcp: FastMCP, client: NttdMCPClient) -> None:
             from_y: Starting Y coordinate.
             to_x: Destination X coordinate.
             to_y: Destination Y coordinate.
-            transport_type: Transport mode — "road", "rail", or "water".
+            transport_type: Transport mode, "road", "rail", or "water".
             avoid_demolish: If True, avoid paths that require demolishing structures.
         """
         result = await client.pathfind(

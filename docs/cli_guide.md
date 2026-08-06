@@ -1,7 +1,7 @@
 # nttd CLI Guide
 
 Every command, with examples. The CLI drives the server, the session lifecycle, and the
-result record. It does **not** run agents — see [agent_guide.md](agent_guide.md) for
+result record. It does **not** run agents: see [agent_guide.md](agent_guide.md) for
 that side.
 
 ---
@@ -29,7 +29,7 @@ Use the installer, then set `NTTD_OPENTTD_BINARY` to the `openttd.exe` path.
 ### Base graphics, on every platform
 
 Launch OpenTTD once and install **OpenGFX2 Classic** from Online Content. `OpenSFX` and
-`OpenMSX` are optional. To check: restart, Online Content, search `Open` — installed
+`OpenMSX` are optional. To check: restart, Online Content, search `Open`, installed
 content shows a green dot.
 
 Override the binary path anywhere:
@@ -133,7 +133,7 @@ and the profile-derived keys that decide whether the run is scored and what boun
 **`start`** generates the world and spawns OpenTTD. `--agent-companies 1` creates the
 company your runner will play; without it there is nothing to play.
 
-**`attach`** prints the participant token and the routes — real-time and stepped. The
+**`attach`** prints the participant token and the routes: real-time and stepped. The
 token exists only in the `start` output and in `participants.json` otherwise, so this is
 how you recover it.
 
@@ -154,8 +154,8 @@ OpenTTD. Reports every problem at once and exits non-zero, so it works as a pre-
 gate in a script. Worth doing before a T4: otherwise the first check failure costs you a
 world generation.
 
-**`profile`** prints the rules in force — locked settings, permitted values per free
-dimension, the profile digest — and names its source, so you can
+**`profile`** prints the rules in force: locked settings, permitted values per free
+dimension, the profile digest, and names its source, so you can
 tell whether your edits to `config/benchmark/profile.conf` are taking effect.
 
 ---
@@ -436,7 +436,7 @@ A scenario carrying either is refused, with a message saying where it went.
 ```
 
 `time_limit` must be explicitly disabled. It defaults to **enabled at 60 minutes**, so a
-stepped scenario that simply omits it still ends on a wall clock — which is the one bound
+stepped scenario that simply omits it still ends on a wall clock, which is the one bound
 that means nothing when the clock only advances on request. nttd refuses the combination
 rather than letting it look reasonable.
 
@@ -457,7 +457,7 @@ Under `NTTD_SESSIONS_DIR` (default `logs/sessions`), per session:
 
 | File | |
 |---|---|
-| `result.parquet` | one row per scored company — the leaderboard artifact |
+| `result.parquet` | one row per scored company: the leaderboard artifact |
 | `actions.parquet` | every action, refusals included, with status and game date |
 | `snapshots.parquet` | full game state time-series |
 | `events.parquet` | lifecycle and game events |
@@ -492,18 +492,18 @@ uv run pytest tests/test_gs_integration.py --session-id ses_...
 
 ## Troubleshooting
 
-**"Cannot reach nttd server"** — start it with `nttd server`, or pass `--url`.
+**"Cannot reach nttd server"**: start it with `nttd server`, or pass `--url`.
 
-**`nttd analyze` says "Session not found"** while `nttd result` works — check
+**`nttd analyze` says "Session not found"** while `nttd result` works: check
 `NTTD_SESSIONS_DIR` is set for both. Both honour it.
 
-**A scored scenario is refused** — run `nttd scenario validate` on it. Every violation
+**A scored scenario is refused**: run `nttd scenario validate` on it. Every violation
 is reported at once, naming the setting and what it is fixed at.
 
-**Actions time out while the game is paused** — expected for pathfinding.
+**Actions time out while the game is paused**: expected for pathfinding.
 `connect_road` and `connect_rail` yield through `Sleep(1)`, which counts game ticks, so
 a long search cannot complete while paused. Stepped mode handles this by flushing with
 the game running.
 
-**No participant token** — the session was started without `--agent-companies`, so no
+**No participant token**: the session was started without `--agent-companies`, so no
 contestant company exists.

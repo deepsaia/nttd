@@ -1,4 +1,4 @@
-"""Validation tool — lets agents check proposed actions before execution."""
+"""Validation tool: lets agents check proposed actions before execution."""
 
 import json
 

@@ -1,4 +1,4 @@
-// nttd GameScript — bridge between the nttd API server and OpenTTD.
+// nttd GameScript: bridge between the nttd API server and OpenTTD.
 //
 // Copyright 2026 deepsaia. Licensed under the Apache License, Version 2.0.
 // See LICENSE at the repository root. NOTICE records why this file's license
@@ -81,7 +81,7 @@ class NttdGS extends GSController {
 
       local et = event.GetEventType();
 
-      // Admin port commands — our primary input channel
+      // Admin port commands: our primary input channel
       if (et == GSEvent.ET_ADMIN_PORT) {
         local admin_event = GSEventAdminPort.Convert(event);
         local data = admin_event.GetObject();
@@ -108,7 +108,7 @@ class NttdGS extends GSController {
   }
 
   // ---------------------------------------------------------------------------
-  // Yield point for pathfinding — process pending events between A* chunks.
+  // Yield point for pathfinding: process pending events between A* chunks.
   // Called from _FindRoadPath / _FindRailPath every 500 iterations instead of
   // plain Sleep(1). Non-pathfinding commands execute immediately so other agents
   // aren't blocked. New pathfinding commands are queued for sequential execution.
@@ -131,7 +131,7 @@ class NttdGS extends GSController {
           GSLog.Warning("nttd: invalid command (missing id or action)");
           continue;
         }
-        // Queue pathfinding commands — they run after the current pathfind completes.
+        // Queue pathfinding commands: they run after the current pathfind completes.
         if (data.action == "connect_road" || data.action == "connect_rail") {
           this._pathfind_queue.append(data);
           continue;
@@ -311,7 +311,7 @@ class NttdGS extends GSController {
   }
 
   // ---------------------------------------------------------------------------
-  // Response sending — automatic chunking for large arrays
+  // Response sending: automatic chunking for large arrays
   // ---------------------------------------------------------------------------
 
   function _SendResponse(id, result) {
@@ -395,7 +395,7 @@ class NttdGS extends GSController {
         }
       }
     }
-    // destination (for orders) — resolve to tile
+    // destination (for orders): resolve to tile
     if ("destination" in p) {
       local d = p.destination;
       if (typeof d == "integer" || typeof d == "float") {
@@ -1639,7 +1639,7 @@ class NttdGS extends GSController {
   }
 
   // ===========================================================================
-  // BUILDING — ROAD
+  // BUILDING: ROAD
   // ===========================================================================
 
   function CmdBuildRoad(p) {
@@ -1862,7 +1862,7 @@ class NttdGS extends GSController {
   // Cost model matches pathfinder.road defaults.
   function _FindRoadPath(from_tile, to_tile, max_iterations) {
     local test_mode = GSTestMode();
-    // Cost parameters — same as pathfinder.road.
+    // Cost parameters: same as pathfinder.road.
     local C_TILE = 100;
     local C_NO_ROAD = 40;
     local C_TURN = 100;
@@ -1965,14 +1965,14 @@ class NttdGS extends GSController {
           }
         }
       }
-      // Case 3: Normal tile — check 4 adjacent tiles + bridge/tunnel opportunities.
+      // Case 3: Normal tile, check 4 adjacent tiles + bridge/tunnel opportunities.
       else {
         foreach (offset in offsets) {
           local next_tile = cur_tile + offset;
           if (!GSMap.IsValidTile(next_tile)) continue;
 
           if (GSRoad.AreRoadTilesConnected(cur_tile, next_tile)) {
-            // Already connected — free to traverse.
+            // Already connected: free to traverse.
             neighbors.append({ tile = next_tile, extra_cost = 0, parent_tile = cur_tile, meta = null });
           } else if ((GSTile.IsBuildable(next_tile) || GSRoad.IsRoadTile(next_tile)) &&
                      (prev_tile == cur_tile || // Start tile, no parent constraint.
@@ -2173,7 +2173,7 @@ class NttdGS extends GSController {
   }
 
   // ===========================================================================
-  // BUILDING — RAIL
+  // BUILDING: RAIL
   // ===========================================================================
 
   function CmdBuildRail(p) {
@@ -2362,7 +2362,7 @@ class NttdGS extends GSController {
   // Runs inside GSTestMode. Returns path or null.
   function _FindRailPath(from_tile, to_tile, max_iterations) {
     local test_mode = GSTestMode();
-    // Cost parameters — matching nttd Python rail pathfinder (rail.py).
+    // Cost parameters: matching nttd Python rail pathfinder (rail.py).
     local C_FLAT = 100;
     local C_SLOPE = 200;
     local C_CURVE_45 = 100;
@@ -2688,7 +2688,7 @@ class NttdGS extends GSController {
   }
 
   // ===========================================================================
-  // BUILDING — MARINE
+  // BUILDING: MARINE
   // ===========================================================================
 
   function CmdBuildCanal(p) {
@@ -2751,7 +2751,7 @@ class NttdGS extends GSController {
   }
 
   // ===========================================================================
-  // BUILDING — OTHER
+  // BUILDING: OTHER
   // ===========================================================================
 
   function CmdBuildAirport(p) {
@@ -3639,7 +3639,7 @@ class NttdGS extends GSController {
   // ===========================================================================
 
   function CmdGetGameSettings(p) {
-    // p.keys = ["max_trains", "map_x", ...] — list of setting key names
+    // p.keys = ["max_trains", "map_x", ...]: list of setting key names
     if (!("keys" in p) || typeof p.keys != "array")
       return { success = false, error = "params.keys must be an array of setting names" };
 
@@ -3655,7 +3655,7 @@ class NttdGS extends GSController {
   }
 
   function CmdSetGameSetting(p) {
-    // p.key, p.value — deity-only setting change
+    // p.key, p.value: deity-only setting change
     if (!("key" in p) || !("value" in p))
       return { success = false, error = "params.key and params.value required" };
 
@@ -4093,7 +4093,7 @@ class NttdGS extends GSController {
   }
 
   // ===========================================================================
-  // TILE AREA (2.4.6) — batch tile scan for pathfinding cache
+  // TILE AREA (2.4.6): batch tile scan for pathfinding cache
   // ===========================================================================
 
   function CmdGetTileArea(p) {

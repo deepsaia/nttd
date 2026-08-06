@@ -80,7 +80,7 @@ class NttdMCPClient:
         return resp.json()
 
     async def gs_query(self, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        """POST /sessions/{sid}/state/gs/query — live GS round-trip."""
+        """POST /sessions/{sid}/state/gs/query: live GS round-trip."""
         await self._ensure_registered()
         resp = await self._http.post(
             f"{self._session_url}/state/gs/query",

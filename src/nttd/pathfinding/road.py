@@ -1,4 +1,4 @@
-"""Road pathfinder — A* on road-buildable tiles.
+"""Road pathfinder: A* on road-buildable tiles.
 
 Cost model aligned with YAPF and AI Pathfinder.Road v3:
   flat=100, slope=+200, bridge=150/tile, tunnel=120/tile, demolish=500
@@ -57,7 +57,7 @@ class RoadCostFunction:
                     action="build_road" if not tile.has_road else "move",
                 ))
             else:
-                # Tile is impassable — try bridge or tunnel
+                # Tile is impassable: try bridge or tunnel
                 bridge = self._try_bridge(node.x, node.y, direction)
                 if bridge is not None:
                     result.append(bridge)
@@ -145,17 +145,17 @@ class RoadCostFunction:
         if tile.slope != 0:
             cost += COST_SLOPE
 
-        # Already has road — free to use if ours or unowned
+        # Already has road: free to use if ours or unowned
         if tile.has_road:
             if tile.owner >= 0 and tile.owner != self._company_id:
                 return -1
             return cost // 2
 
-        # Has rail — crossing penalty
+        # Has rail: crossing penalty
         if tile.has_rail:
             cost += COST_CROSSING
 
-        # Not buildable — demolish needed
+        # Not buildable: demolish needed
         if not tile.buildable and not tile.has_road:
             if self._avoid_demolish:
                 return -1

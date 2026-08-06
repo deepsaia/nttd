@@ -1,4 +1,4 @@
-"""Water pathfinder — A* on water tiles + canal construction.
+"""Water pathfinder: A* on water tiles + canal construction.
 
 Existing water is free to traverse. Land tiles require canal construction.
 
@@ -51,7 +51,7 @@ class WaterCostFunction:
         return result
 
     def _tile_cost(self, tile: TileData, from_node: PathNode) -> int:
-        # Existing water — very cheap
+        # Existing water: very cheap
         if tile.water:
             from_tile = self._cache.get(from_node.x, from_node.y)
             # Height change between water bodies = lock needed
@@ -59,13 +59,13 @@ class WaterCostFunction:
                 return COST_LOCK
             return COST_WATER
 
-        # Coast — transition
+        # Coast: transition
         if tile.coast:
             return COST_COAST
 
-        # Buildable land — canal
+        # Buildable land: canal
         if tile.buildable:
             return COST_CANAL
 
-        # Not buildable, not water — impassable
+        # Not buildable, not water: impassable
         return -1

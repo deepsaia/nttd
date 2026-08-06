@@ -19,7 +19,7 @@ uv run nttd session attach ses_20260805_120000_abcd1234
 | | |
 |---|---|
 | **session id** | which run |
-| **participant token** | which company — sent as `X-Participant-Token` |
+| **participant token** | which company: sent as `X-Participant-Token` |
 | **base URL** | where the server is, `http://localhost:8000` by default |
 
 The token is *addressing*, not a secret. It answers "which company is this action for"
@@ -63,7 +63,7 @@ That is the whole required surface. Everything below is detail.
 subsidies, the map, and all of your own company's entities. Not rival internals.
 
 It is deliberately not filtered for you. Deciding what matters is part of the task, so
-nttd hands over everything and leaves filtering to your code — that is where it belongs
+nttd hands over everything and leaves filtering to your code: that is where it belongs
 in a multi-agent design, and it stops information differences confounding scores. The
 practical consequence is that a naive agent pays more tokens per step. That is the
 intended incentive.
@@ -140,7 +140,7 @@ bridge types and airport types are numbered per game and gated by year. Ask
 ### Read-only queries
 
 `POST /state/gs/query?action=<name>` reaches the GameScript for things a snapshot does
-not carry — finding a buildable tile, listing engines, pricing an action. Only the 44
+not carry: finding a buildable tile, listing engines, pricing an action. Only the 44
 read-only commands are accepted; a mutator is refused with a 403 that says so.
 
 ```python
@@ -187,7 +187,7 @@ Four outcomes, and they mean different things:
 | Status | Means |
 |---|---|
 | `success` | it happened; `changed_entities` says what |
-| `failed` | the game refused it — bad tile, not enough money, no valid path |
+| `failed` | the game refused it: bad tile, not enough money, no valid path |
 | `rejected` | not in your vocabulary, or operator-tier |
 | `blocked` | reserved; nothing issues it now that there is no action limit |
 
@@ -230,7 +230,7 @@ result["terminated"]      # an end condition fired
 
 `/step` returns only after the world has advanced and been re-observed, so you never
 have to guess when your actions took effect. A step carries a variable-length batch, up
-as large as you like — a step is not one action.
+as large as you like: a step is not one action.
 
 An empty `actions` list is a legitimate move: waiting while vehicles earn is real play.
 
@@ -245,7 +245,7 @@ obs, reward, terminated, truncated, info = env.step(action)
 ```
 
 `info["snapshot"]` is the full state. The ten-float observation vector is a convenience
-for a baseline policy, not a limit — build your own encoder from the snapshot.
+for a baseline policy, not a limit: build your own encoder from the snapshot.
 
 Reward is computed in the env, not by nttd. What to optimise is your choice.
 
@@ -360,13 +360,13 @@ offered subsidy), `found_town`, `expand_town`, `set_town_growth`, `change_town_r
 
 Everything a human *can* do is available, including the ones easy to miss: terraforming
 (`raise_tile`, `lower_tile`, `level_tiles`), conditional orders, one-way roads, road
-conversion, and `perform_town_action` — bribery and exclusive transport rights included,
+conversion, and `perform_town_action`: bribery and exclusive transport rights included,
 because those are buttons in the town window.
 
 `GET /v1/participant/sessions/{id}/actions/available` lists the vocabulary by category.
 
 In a **scored** session, reaching for an operator power is refused and recorded. It does
-not void your run — nothing happened — but the result reports `clean_run = false` and
+not void your run: nothing happened, but the result reports `clean_run = false` and
 names what was attempted.
 
 ---
@@ -378,7 +378,7 @@ uv run nttd result -s ses_...
 ```
 
 Shows the score, the task identity, code provenance, per-model spend, and an explicit
-list of verification gaps — the things that would stop someone checking your run.
+list of verification gaps: the things that would stop someone checking your run.
 
 The score is OpenTTD's own `performance_rating`: a 0–1000 composite of cargo delivered,
 profitable vehicles, station coverage, vehicle profit, quarterly revenue, cargo

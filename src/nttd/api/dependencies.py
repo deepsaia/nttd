@@ -1,6 +1,6 @@
 """Application-wide dependencies.
 
-The SessionManager is the primary singleton — it owns per-session runtimes
+The SessionManager is the primary singleton: it owns per-session runtimes
 (AdminClient, WorldState, Orchestrator, etc.) instead of global singletons.
 """
 

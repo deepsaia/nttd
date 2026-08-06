@@ -1,4 +1,4 @@
-"""Runtime orchestrator — controls heartbeat, async real-time, and assisted modes.
+"""Runtime orchestrator: controls heartbeat, async real-time, and assisted modes.
 
 Heartbeat mode is the primary mode for agent benchmarking:
   pause → GS refresh → snapshot → action window → execute actions → unpause → advance N days → repeat
@@ -70,7 +70,7 @@ class Orchestrator:
         self._last_snapshot_date: int = -1
         self._observers: list[Any] = []
 
-        # Heartbeat action queue — agents push here during the action window
+        # Heartbeat action queue: agents push here during the action window
         self._pending_actions: list[dict[str, Any]] = []
         self._action_deadline: asyncio.Event = asyncio.Event()
 
@@ -215,7 +215,7 @@ class Orchestrator:
             return
         self._refresh_cycle += 1
         try:
-            # Towns and industries change slowly — refresh every N cycles
+            # Towns and industries change slowly: refresh every N cycles
             if self._refresh_cycle % _STAGGER_INTERVAL == 1:
                 r = await self.client.send_gamescript("get_towns", timeout=15.0)
                 if r.get("success") and isinstance(r.get("result"), list):
@@ -225,7 +225,7 @@ class Orchestrator:
                 if r.get("success") and isinstance(r.get("result"), list):
                     self.world.apply_gs_industries(r["result"])
 
-            # Refresh company roster first — guarantees world.companies is current
+            # Refresh company roster first: guarantees world.companies is current
             # regardless of whether COMPANY_INFO admin-port events were received.
             r = await self.client.send_gamescript("get_companies", timeout=10.0)
             if r.get("success") and isinstance(r.get("result"), list):
@@ -414,7 +414,7 @@ class Orchestrator:
                 )
 
     # -------------------------------------------------------------------------
-    # Stepped mode — client-driven, for RL and ES
+    # Stepped mode: client-driven, for RL and ES
     # -------------------------------------------------------------------------
 
     async def enter_stepped(self) -> StateSnapshot:
@@ -604,7 +604,7 @@ class Orchestrator:
         self.world.set_paused(False)
 
     # -------------------------------------------------------------------------
-    # Heartbeat mode — server-driven stepping
+    # Heartbeat mode: server-driven stepping
     # -------------------------------------------------------------------------
 
     async def run_heartbeat(self, steps: int = 0) -> None:
@@ -693,7 +693,7 @@ class Orchestrator:
         logger.info("Heartbeat mode stopped after %d steps", step_count)
 
     # -------------------------------------------------------------------------
-    # Async real-time mode — human co-play
+    # Async real-time mode: human co-play
     # -------------------------------------------------------------------------
 
     def configure_end_conditions(self, config: EndConditionsConfig) -> None:
@@ -772,7 +772,7 @@ class Orchestrator:
         logger.info("Async real-time mode stopped")
 
     # -------------------------------------------------------------------------
-    # Assisted mode — human-triggered AI
+    # Assisted mode: human-triggered AI
     # -------------------------------------------------------------------------
 
     async def trigger_assist(self) -> StateSnapshot:

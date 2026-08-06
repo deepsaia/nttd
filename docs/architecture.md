@@ -18,7 +18,7 @@ over HTTP.
 
 It was not always this way, and the previous shape is worth understanding because it
 explains the current one. nttd used to run the contestant's agent in-process through
-framework adapters — a LangChain adapter, an OpenAI adapter, an HTTP adapter that
+framework adapters: a LangChain adapter, an OpenAI adapter, an HTTP adapter that
 called out to a neuro-san server. That inverted the control direction: because nttd
 drove the loop, the *scenario file* had to name the contestant's model, framework, and
 the path to a prompt function inside the contestant's own tree. The task definition
@@ -27,8 +27,8 @@ contestant's code, so a contestant running their own system could not use a ship
 scenario as written.
 
 The fix was not to move the configuration. It was to reverse the control direction:
-delete the adapters, and let the contestant drive. RL forces this anyway —
-`env.step(action)` means the policy calls the environment, never the reverse — so
+delete the adapters, and let the contestant drive. RL forces this anyway:
+`env.step(action)` means the policy calls the environment, never the reverse, so
 serving RL and serving an LLM agent turned out to be the same problem.
 
 ### What that costs
@@ -53,10 +53,10 @@ local RL policy and `$0.00` from a silent entry are not the same claim.
 
 Three ways in, all reaching the same routes:
 
-- **HTTP (REST)** — the primary surface. `GET /state/full`, `POST /actions/submit`.
-- **MCP** — the same observations and actions as MCP tools, for agents built around
+- **HTTP (REST)**: the primary surface. `GET /state/full`, `POST /actions/submit`.
+- **MCP**: the same observations and actions as MCP tools, for agents built around
   a tool-calling loop.
-- **Gym** — `nttd.rl.env.NttdEnv`, an ordinary client over the stepped routes. It
+- **Gym**: `nttd.rl.env.NttdEnv`, an ordinary client over the stepped routes. It
   holds no privileged access and takes no shortcut, deliberately: an RL entry that
   could act through a faster path would not be comparable to the entries beside it.
 
@@ -84,10 +84,10 @@ REST attempts appearing in `actions.parquet`.
 
 One per run, holding:
 
-- **The scored lock** — session state that refuses game-mutating operator operations
+- **The scored lock**: session state that refuses game-mutating operator operations
   for the life of a scored run.
-- **The orchestrator** — the real-time loop, or the step barrier for stepped mode.
-- **The recorder** — buffers to Parquet fragments, merged on stop.
+- **The orchestrator**: the real-time loop, or the step barrier for stepped mode.
+- **The recorder**: buffers to Parquet fragments, merged on stop.
 
 ### OpenTTD
 
@@ -97,7 +97,7 @@ protocol does not: towns, industries, vehicles, building, pathfinding.
 
 Ports are **reserved at allocation**, not when the runtime registers. A session is
 only added to the registry after its process spawns, about eight seconds later, with
-several awaits in between — so concurrent starts all read an empty registry and took
+several awaits in between, so concurrent starts all read an empty registry and took
 the same port. Measured: four concurrent starts were all handed port 4000. This
 matters for evolution strategies, which start a population at once.
 
@@ -117,7 +117,7 @@ model.
 
 **Tokens are addressing.** One per company. They answer "which company is this action
 for" in a form the caller cannot lie about. The company is derived from the token and
-*overwrites* anything in the request body — it previously used `setdefault`, so a
+*overwrites* anything in the request body: it previously used `setdefault`, so a
 caller-supplied value won and any client could act as any company, selling a rival's
 vehicles or claiming a rival's score.
 
@@ -127,7 +127,7 @@ credential: there is nothing for a contestant to hold wrongly. A scenario with
 every caller.
 
 A refusal does not void the run. Nothing happened, so the score stands and the attempt
-is recorded — voiding on a stray probe would destroy an otherwise legitimate
+is recorded: voiding on a stray probe would destroy an otherwise legitimate
 two-hour run. The result reports `clean_run = false` and names what was attempted.
 
 ### Detection over prevention
@@ -147,7 +147,7 @@ an offered subsidy), `change_bank_balance` and `set_max_loan` (free money, self-
 credit), plus `found_town`, `expand_town`, `set_town_growth`, `change_town_rating`,
 `set_cargo_goal`, `set_game_setting`.
 
-More interestingly, twelve capabilities were *implemented and unreachable* — the
+More interestingly, twelve capabilities were *implemented and unreachable*: the
 benchmark was measuring play without the features that separate expert from novice.
 Terraforming, conditional orders, one-way roads, road conversion, tree planting, and
 cost estimation are now available. `perform_town_action` is kept, bribery and exclusive
@@ -168,8 +168,8 @@ is that naive agents pay more tokens per step. That is the intended incentive.
 `observation_mode` is therefore pinned to `full` for scored runs and *refused* as a
 config key, rather than being quietly overruled at runtime.
 
-The entitlement boundary: the full world — towns, industries, subsidies, the map, all
-of the company's own entities — but not rival internals.
+The entitlement boundary: the full world, towns, industries, subsidies, the map, all
+of the company's own entities, but not rival internals.
 
 ### Prompt injection
 
@@ -188,7 +188,7 @@ meaning.
 ![What makes two runs comparable](images/benchmark_profile.svg)
 
 `config/benchmark/profile.conf` is the single authority, and is meant to be edited by
-hand — which worlds a leaderboard admits is operator policy, not an implementation
+hand, which worlds a leaderboard admits is operator policy, not an implementation
 detail, so it must be a reviewable diff rather than a Python literal.
 
 **Locked** settings must hold exactly, because a difference changes the problem without
@@ -197,7 +197,7 @@ with denser industry.
 
 **Allowed** settings may vary within an enumerated set, because each is a leaderboard
 column. Enumerations rather than bounds, which closed a hole: `terrain_type = "custom"`
-was accepted for a scored run and unlocks `custom_terrain_height` over 1..255 — an
+was accepted for a scored run and unlocks `custom_terrain_height` over 1..255: an
 unbounded world axis that no column discloses, so a height-240 world and a flat one
 produced rows reading identically.
 
@@ -232,7 +232,7 @@ separate processes.
 
 The scenario is snapshotted into the session directory as **fully resolved** HOCON, not
 copied. A copy preserves an `include` line but not the included file, so reparsing the
-snapshot failed the include — and because `load` treats a parse failure as "use
+snapshot failed the include, and because `load` treats a parse failure as "use
 defaults", the provenance record for a run generated at 2020 reported 1960. Silent, and
 wrong in the direction that matters most for a provenance record.
 
@@ -245,7 +245,7 @@ OpenTTD keeps two, and conflating them causes real mistakes.
 **The economy clock** governs cargo, payments, and finances, and is what `GSDate`
 reports and what every date in nttd refers to. It is fixed at **1 wall-minute per
 economy month**, about 1.97s per game-day. There is no `game_speed` setting in
-OpenTTD 15.3 — nttd used to expose one that silently failed while returning success.
+OpenTTD 15.3: nttd used to expose one that silently failed while returning success.
 
 **The calendar clock** governs vehicle and house introduction dates. It is set by
 `economy.minutes_per_calendar_year`, at map generation only, and is clamped to 12
@@ -271,7 +271,7 @@ costs zero game-days. Verified live: 20 seconds of thinking advanced the game by
 days.
 
 `POST /step` is synchronous. It fixes the target date, unpauses, flushes the batch,
-advances to the target, re-pauses, and returns the observation — so a policy never has
+advances to the target, re-pauses, and returns the observation, so a policy never has
 to guess when its actions took effect.
 
 Two details that are not obvious:
@@ -282,14 +282,14 @@ runs of the same scenario would span different horizons.
 
 **The flush unpauses.** A GameScript command completes on a game *tick*. The
 pathfinder yields every 500 iterations through `_YieldAndProcessEvents`, whose first
-statement is `Sleep(1)` — and `Sleep` counts ticks, of which a paused game delivers
+statement is `Sleep(1)`, and `Sleep` counts ticks, of which a paused game delivers
 none. So a *long* `connect_road` hangs while paused (measured: 25s to timeout) while a
 short one succeeds in 0.0s. Which of the two a given call will be is not knowable
 before running it, so the flush cannot be made conditional.
 
 `construction.command_pause_level = 3` is set for a different reason: at the default of
 1, a paused construction command times out, **wedges the GameScript** until unpause,
-and has *already executed* — so nttd would record a failure for an action that changed
+and has *already executed*, so nttd would record a failure for an action that changed
 the world.
 
 A stepped run is bounded by `max_heartbeats`, not wall time. nttd refuses the
@@ -379,7 +379,7 @@ Per session, under `logs/sessions/<session_id>/` (or `NTTD_SESSIONS_DIR`):
 
 | File | |
 |---|---|
-| `result.parquet` | one row per scored company — the leaderboard artifact |
+| `result.parquet` | one row per scored company: the leaderboard artifact |
 | `actions.parquet` | every action, including refusals, with status and game date |
 | `snapshots.parquet` | full game state time-series |
 | `events.parquet` | lifecycle and game events |
@@ -401,7 +401,7 @@ drift apart again.
 
 ### Scoring
 
-`performance_rating` is the primary score — OpenTTD's own 0–1000 composite of cargo
+`performance_rating` is the primary score: OpenTTD's own 0–1000 composite of cargo
 delivered, profitable vehicles, station coverage, vehicle profit, quarterly revenue,
 cargo diversity, cash, and loan status. Cargo delivered breaks ties. Company value is
 displayed but not ranked, because it rewards hoarding.

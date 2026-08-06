@@ -1,4 +1,4 @@
-"""Observation tools — read game state without modifying it."""
+"""Observation tools: read game state without modifying it."""
 
 import json
 

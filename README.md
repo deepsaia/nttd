@@ -4,7 +4,7 @@
 
 An agent has to build a transport network that turns a profit: survey a map, pick
 routes worth serving, lay track and roads, buy vehicles, set orders, and manage a
-loan. Nothing about it is a single-turn problem — a decision made in the first game
+loan. Nothing about it is a single-turn problem: a decision made in the first game
 month is still paying or costing you two game years later.
 
 nttd wraps an OpenTTD 15.3 dedicated server and exposes the game as a structured JSON
@@ -19,8 +19,8 @@ and a human all reach the game through the same surface and are recorded the sam
 
 ## Three things worth knowing before anything else
 
-**The scenario is the task.** It defines the world — map, seed, companies, end
-conditions — and nothing about who plays it. The same scenario file is played by an
+**The scenario is the task.** It defines the world: map, seed, companies, end
+conditions, and nothing about who plays it. The same scenario file is played by an
 LLM agent, an RL policy, or a person.
 
 **Your runner is the entry.** Which models, which prompts, which policy, which
@@ -72,7 +72,7 @@ uv run nttd benchmark --config config/benchmark/t2_example.conf # terminal 2
 ```
 
 `benchmark` creates the session, generates the world, prints the participant token,
-then waits for the end condition and writes the result. It does **not** run an agent —
+then waits for the end condition and writes the result. It does **not** run an agent:
 attach yours to the printed session id while it waits.
 
 If you would rather drive the lifecycle yourself:
@@ -104,7 +104,7 @@ Two examples of each. All of them use the same server and the same routes.
 The world runs continuously at 1 wall-minute per economy month. Your loop observes,
 decides, and submits whenever it is ready.
 
-**Example A — the smallest possible loop.**
+**Example A: the smallest possible loop.**
 
 ```python
 import requests
@@ -123,7 +123,7 @@ while True:
         })
 ```
 
-**Example B — with cost reporting, so the board can show what the run cost.**
+**Example B: with cost reporting, so the board can show what the run cost.**
 
 ```python
 requests.post(f"{P}/report", headers=H, json={
@@ -133,7 +133,7 @@ requests.post(f"{P}/report", headers=H, json={
 })
 ```
 
-nttd cannot observe tokens — you run the model, not nttd — so this is recorded as
+nttd cannot observe tokens: you run the model, not nttd, so this is recorded as
 *reported* and flagged as unverified. Action counts stay server-observed.
 
 ---
@@ -145,11 +145,11 @@ system runs internally is its own business: nttd sees one company and writes one
 row. There is no action ceiling in either mode, so how much a system submits is a
 question for the system rather than for nttd.
 
-**Example A — one token, several loops.** Every loop uses the same participant token,
+**Example A: one token, several loops.** Every loop uses the same participant token,
 because the token addresses a *company*. Coordination between them is your problem,
 which is the interesting part.
 
-**Example B — per-model spend, as a MAS actually spends it.** A front-man on a cheap
+**Example B: per-model spend, as a MAS actually spends it.** A front-man on a cheap
 model plus specialists on expensive ones is a different system from the same total
 spent uniformly, so report each separately. Repeated calls accumulate, so you can
 report per cycle:
@@ -178,13 +178,13 @@ company. Several *competing* companies is `--agent-companies N`, one token each.
 `uv run nttd session start -s ses_... --agent-companies 2` creates two contestant
 companies with one participant token each, in `participants.json`.
 
-**Example A — real-time.** Nothing special: each company acts on its own cadence with its
+**Example A: real-time.** Nothing special: each company acts on its own cadence with its
 own token. The score is per company, and observation is full state for
 everyone, so nobody has an information edge. Using one company's token against another is
 refused. The one shared resource is the GameScript: a rival issuing long `connect_rail`
 calls will slow your submissions.
 
-**Example B — stepped, from one process.** For self-play and population training:
+**Example B: stepped, from one process.** For self-play and population training:
 
 ```python
 import json
@@ -218,7 +218,7 @@ Real-time punishes a slow policy for being slow. Stepped mode does not: the game
 
 ![The step barrier](docs/images/step_barrier.svg)
 
-**Example A — through the Gym environment.**
+**Example A: through the Gym environment.**
 
 ```python
 from nttd.rl.env import NttdEnv
@@ -233,11 +233,11 @@ for _ in range(61):
 
 The env holds no privileged access: it posts to the same participant routes an LLM
 agent uses, so the scored lock and the audit trail apply identically.
-Reward is computed in the env from `info["snapshot"]`, not by nttd — what to optimise
+Reward is computed in the env from `info["snapshot"]`, not by nttd: what to optimise
 is your choice, and a reward baked into the platform would have every entry
 optimising nttd's opinion.
 
-**Example B — the routes directly, if you would rather not use Gym.**
+**Example B: the routes directly, if you would rather not use Gym.**
 
 ```bash
 curl -X POST $P/step/reset -H "X-Participant-Token: $TOKEN"
@@ -249,7 +249,7 @@ curl -X POST $P/step -H "X-Participant-Token: $TOKEN" \
 `/step` returns only after the world has advanced and been re-observed, so you never
 have to guess when your actions took effect. Use
 `config/benchmark/t2_stepped_example.conf`, which bounds the run in **steps** rather
-than wall-minutes — wall time in stepped mode measures your hardware, not your play.
+than wall-minutes: wall time in stepped mode measures your hardware, not your play.
 
 ---
 
@@ -258,11 +258,11 @@ than wall-minutes — wall time in stepped mode measures your hardware, not your
 One session per candidate, all on the same seed so every candidate faces the same
 world.
 
-**Example A — sequentially.** Create, start, play, stop, repeat. Setup and teardown
+**Example A: sequentially.** Create, start, play, stop, repeat. Setup and teardown
 measure about **13 seconds** per episode, against roughly 30 minutes of play for a T2
-episode — so the overhead is not what limits you.
+episode, so the overhead is not what limits you.
 
-**Example B — concurrently.** Sessions are independent processes on their own ports,
+**Example B: concurrently.** Sessions are independent processes on their own ports,
 so a generation parallelises. Four concurrent starts take about 8.6s against 33s
 serial. What actually bounds an ES run is wall-clock play time, so parallelism is the
 lever that matters.
@@ -273,10 +273,10 @@ lever that matters.
 
 A human is a first-class entry, ranked alongside the rest.
 
-**Example A — join the running server.** `nttd session start` prints a
+**Example A: join the running server.** `nttd session start` prints a
 `game_port`; connect an OpenTTD client to `127.0.0.1:<port>` and play normally.
 
-**Example B — for a comparable baseline**, play a scored scenario in real-time mode
+**Example B: for a comparable baseline**, play a scored scenario in real-time mode
 and stop the session when the end condition fires. The result record is written the
 same way, so a human row and an agent row on the same `task_id` are directly
 comparable.
@@ -340,13 +340,13 @@ You self-host nttd, so you hold every credential. nttd does not pretend otherwis
 - **Tiers are namespacing.** `/v1/operator`, `/v1/participant`, `/v1/public` make it
   obvious which side of the boundary a route is on.
 - **Tokens are addressing.** One per company. They answer "which company is this
-  action for" in a form the caller cannot lie about — the company is derived from the
+  action for" in a form the caller cannot lie about: the company is derived from the
   token and overwrites anything in the request body.
 - **The scored lock is the real protection**, because it is session state rather than
   a credential. A scored session refuses every game-mutating operator operation for
   its whole life, for every caller, and records each attempt.
 
-A refused attempt does not void the run — nothing happened — but it is recorded, so
+A refused attempt does not void the run: nothing happened, but it is recorded, so
 the result is no longer a *clean* run. That way an accident is visible without
 destroying an otherwise legitimate two-hour session.
 
@@ -354,7 +354,7 @@ destroying an otherwise legitimate two-hour session.
 human can do through the GUI, and nothing more. Nine superhuman actions are
 operator-only (`change_bank_balance`, `set_max_loan`, `found_town`, …), and twelve
 capabilities that had been unreachable were opened up, including terraforming,
-conditional orders, and cost estimation — the things that separate expert from novice
+conditional orders, and cost estimation: the things that separate expert from novice
 play.
 
 ---
@@ -406,7 +406,7 @@ uv run python scripts/generate_diagrams.py
 ```
 
 The GameScript lives in `ottd_config/game/nttd-gs/main.nut`. It is loaded from the
-per-session config directory, so editing it takes effect on the next session — no
+per-session config directory, so editing it takes effect on the next session: no
 rebuild.
 
 Reference runners live in

@@ -115,7 +115,7 @@ def build_session_config(
     """Create a per-session OpenTTD config directory.
 
     Game settings are baked into openttd.cfg so the initial map generation
-    uses them — no ``newgame`` RCON needed (which would break the GameScript).
+    uses them: no ``newgame`` RCON needed (which would break the GameScript).
 
     Args:
         base_config_dir: Template config directory (e.g. ottd_config/).
