@@ -296,7 +296,7 @@ artifact with its sha256, and states what the bundle cannot prove about itself.
 | `nttd_scenario.conf` | yes | rebuilding the world for `--regenerate` |
 | `tiles.parquet` | no | shows *where* two worlds differ, not just that they do |
 | `events.parquet` | no | human reading; kilobytes |
-| `final_snapshot.parquet` | no | the end state, readable without OpenTTD |
+| `final_snapshot.parquet`, `trajectory.parquet` | no | the end state, readable without OpenTTD |
 
 **The full snapshot series is not bundled.** No check reads it, and it dominates a long
 run: 2,000 snapshots measured 7.9 MB, so a T4 at one-day intervals is around 14 MB against

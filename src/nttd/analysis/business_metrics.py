@@ -109,6 +109,76 @@ class _CompanySeries:
         return len(self.game_dates)
 
 
+# The trajectory columns, in the order they are written to the bundle. Ten numbers per
+# tick, about 13 bytes a row compressed, and the size does not grow with how busy the
+# world is. The full snapshot series is 7.9 MB for 2,000 rows and is deliberately left
+# out; this is what the metrics are actually computed from.
+TRAJECTORY_COLUMNS = (
+    "game_date", "value", "money", "loan", "max_loan",
+    "income", "expenses", "cargo", "vehicles", "stations",
+    "profitable_vehicles", "idle_vehicles", "maintenance",
+)
+
+
+def trajectory_rows(session_dir: Path, company_id: int) -> list[dict[str, int]]:
+    """One company's series, as plain rows.
+
+    Written into the submission bundle so whoever verifies a run can recompute every
+    run-wide metric and compare. Without it the endpoint figures are checkable against
+    the savegame and the rest are only claims.
+    """
+    series = _read_series(session_dir, company_id)
+    if series is None:
+        return []
+    return [
+        {
+            "game_date": series.game_dates[i], "value": series.value[i],
+            "money": series.money[i], "loan": series.loan[i],
+            "max_loan": series.max_loan[i], "income": series.income[i],
+            "expenses": series.expenses[i], "cargo": series.cargo[i],
+            "vehicles": series.vehicles[i], "stations": series.stations[i],
+            "profitable_vehicles": series.profitable_vehicles[i],
+            "idle_vehicles": series.idle_vehicles[i],
+            "maintenance": series.maintenance[i],
+        }
+        for i in range(len(series))
+    ]
+
+
+def compute_from_trajectory(
+    rows: list[dict[str, int]],
+    primary_score: int = 0,
+    total_cost_usd: float = 0.0,
+    total_actions: int = 0,
+    successful_actions: int = 0,
+) -> BusinessMetrics:
+    """The same metrics, from a trajectory read back rather than from a session.
+
+    This is the entry point a verifier uses: it holds the bundle, not the session, and
+    recomputing from the same rows nttd used is what turns the figures from claims into
+    something checkable.
+    """
+    series = _CompanySeries()
+    for row in rows:
+        series.game_dates.append(int(row.get("game_date", 0)))
+        series.value.append(int(row.get("value", 0)))
+        series.money.append(int(row.get("money", 0)))
+        series.loan.append(int(row.get("loan", 0)))
+        series.max_loan.append(int(row.get("max_loan", 0)))
+        series.income.append(int(row.get("income", 0)))
+        series.expenses.append(int(row.get("expenses", 0)))
+        series.cargo.append(int(row.get("cargo", 0)))
+        series.vehicles.append(int(row.get("vehicles", 0)))
+        series.stations.append(int(row.get("stations", 0)))
+        series.profitable_vehicles.append(int(row.get("profitable_vehicles", 0)))
+        series.idle_vehicles.append(int(row.get("idle_vehicles", 0)))
+        series.maintenance.append(int(row.get("maintenance", 0)))
+    return _from_series(
+        series if len(series) else None,
+        primary_score, total_cost_usd, total_actions, successful_actions,
+    )
+
+
 def compute(
     session_dir: Path,
     company_id: int,
@@ -125,13 +195,27 @@ def compute(
     columns.
     """
     series = _read_series(session_dir, company_id)
-    metrics = BusinessMetrics()
-
-    if not series:
+    if series is None:
         logger.warning(
             "No snapshot series for company %d in %s, business metrics left empty",
             company_id, session_dir.name,
         )
+    return _from_series(
+        series, primary_score, total_cost_usd, total_actions, successful_actions,
+    )
+
+
+def _from_series(
+    series: _CompanySeries | None,
+    primary_score: int,
+    total_cost_usd: float,
+    total_actions: int,
+    successful_actions: int,
+) -> BusinessMetrics:
+    """Everything derived, from a series however it was obtained."""
+    metrics = BusinessMetrics()
+
+    if not series:
         return _decision_economy(
             metrics, primary_score, total_cost_usd, total_actions, successful_actions, 0,
         )
