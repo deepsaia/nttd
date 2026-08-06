@@ -71,6 +71,21 @@ intended incentive.
 `GET /state/compact?company_id=0` gives a smaller payload for development. A scored run
 observes fully regardless.
 
+### Finding out what you can do
+
+```bash
+uv run nttd actions --playable        # everything you may submit
+uv run nttd actions build_road_stop   # one action's parameters and defaults
+```
+
+Generated from the GameScript, so it cannot drift from what the game accepts. The same
+description backs `POST /actions/interpret/validate`, which tells you what an action is
+missing before you spend a round trip finding out:
+
+```
+plant_tree_rectangle missing required params: height, width, x, y
+```
+
 ### Read-only queries
 
 `POST /state/gs/query?action=<name>` reaches the GameScript for things a snapshot does

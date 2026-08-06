@@ -160,6 +160,37 @@ tell whether your edits to `config/benchmark/profile.conf` are taking effect.
 
 ---
 
+### `nttd actions`
+
+```bash
+uv run nttd actions                       # every action, grouped by category
+uv run nttd actions build_road_stop       # one action's parameters
+uv run nttd actions --category rail       # one category
+uv run nttd actions --playable --json     # what a contestant may submit, as JSON
+```
+
+What nttd can do, and what each action takes. **Generated from the GameScript**, not
+hand-written, so it cannot describe an action the game does not implement or miss one it
+does. 129 actions, 345 parameters.
+
+Each entry gives the required parameters, the optional ones with their defaults, and the
+tier: `participant` for anything a contestant may submit, `operator` for the nine powers
+with no human equivalent, `read_only` for queries.
+
+Regenerate after changing the GameScript:
+
+```bash
+uv run python scripts/generate_action_manifest.py
+```
+
+A test regenerates and compares, so a committed manifest cannot drift from the game it
+describes. That drift is why this exists: a hand-written table of 14 actions declared
+`plant_tree_rectangle` takes `x1, y1, x2, y2` while the GameScript reads
+`x, y, width, height` and refuses anything else, so a contestant following nttd's own
+validator was rejected by the game.
+
+---
+
 ### `nttd result`
 
 ```bash

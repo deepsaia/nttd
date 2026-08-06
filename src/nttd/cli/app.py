@@ -19,6 +19,7 @@ Commands:
   nttd session attach        Show what a runner needs to play a session
   nttd scenario validate     Check a scenario without running it
   nttd scenario profile      Show the rules a scored scenario must satisfy
+  nttd actions               Show the action surface, generated from the GameScript
   nttd benchmark             Stand up a benchmark task and wait for it to end
   nttd result                Show the scored result record for a session
   nttd submit                Package a session into a submission bundle
@@ -28,6 +29,7 @@ Commands:
 
 import typer
 
+from nttd.cli.actions_command import actions
 from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
 from nttd.cli.result_command import result
@@ -51,6 +53,7 @@ app.command()(result)
 app.command()(submit)
 app.command()(verify)
 app.command()(analyze)
+app.command()(actions)
 
 
 def main() -> None:

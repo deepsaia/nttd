@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "Hand-written prose for the action manifest. Kept apart from manifest.json so",
+    "regenerating from the GameScript can never destroy it: the generator merges this",
+    "in and rewrites the mechanical parts around it.",
+    "",
+    "Every action and parameter here must exist in the GameScript, and every one there",
+    "wants an entry here. The drift test enforces both directions.",
+    "",
+    "Describe what the GameScript actually does, checked against its implementation.",
+    "A plausible-sounding description inferred from a parameter name is worse than a",
+    "missing one: an agent will believe it."
+  ],
+  "actions": {}
+}
