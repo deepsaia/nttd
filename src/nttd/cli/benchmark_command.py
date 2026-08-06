@@ -68,7 +68,7 @@ def _print_attach_instructions(
 def benchmark(
     config: Annotated[str, typer.Option("--config", "-c", help="Path to HOCON scenario config")],
     seed: Annotated[int, typer.Option("--seed", help="Override map generation seed")] = -1,
-    ai_opponents: Annotated[int, typer.Option("--ai-opponents", help="Override AI opponent count")] = -1,
+    ai_opponents: Annotated[int, typer.Option("--ai-opponents", help="Override the extra company slot count")] = -1,
     output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output directory for results")] = None,
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
@@ -140,7 +140,7 @@ def benchmark(
         f"[bold]Map:[/]          {map_x}x{map_y}\n"
         f"[bold]Seed:[/]         "
         + (f"[cyan]{effective_seed}[/]" if effective_seed else "[yellow]random[/]") + "\n"
-        f"[bold]AI opponents:[/] {ai_count}\n"
+        f"[bold]Idle slots:[/] {ai_count}\n"
         + format_end_conditions_brief(cfg.end_conditions),
         title="Benchmark configuration",
     ))

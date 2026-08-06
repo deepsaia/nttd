@@ -297,5 +297,5 @@ Shipped examples, all scored on their own merits rather than because they say so
 | File | World | Mode |
 |---|---|---|
 | `t2_example.conf` | 256×256 flat | real time, 30 min |
-| `t3_example.conf` | 512×512 hilly, 2 AI opponents | real time, 60 min |
+| `t3_example.conf` | 512×512 hilly | real time, 60 min |
 | `t2_stepped_example.conf` | 256×256 flat | stepped, bounded in steps |

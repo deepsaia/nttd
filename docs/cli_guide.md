@@ -100,7 +100,7 @@ uv run nttd benchmark --config config/benchmark/t2_example.conf -o results/
 |---|---|
 | `--config`, `-c` | scenario path (required) |
 | `--seed` | override the map seed |
-| `--ai-opponents` | override the AI opponent count |
+| `--ai-opponents` | override the extra company slot count (these are idle, not opponents) |
 | `--output`, `-o` | directory for exported results |
 | `--url` | server URL |
 

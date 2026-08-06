@@ -324,7 +324,7 @@ setting changes it, so wall-minutes *are* the economy horizon:
 | T4 | 120 min | ~10 game years | longer-running businesses |
 
 Shipped examples: `t2_example.conf` (256×256 flat), `t3_example.conf` (512×512
-hilly, 2 AI opponents), and `t2_stepped_example.conf` (the same world as T2, bounded
+hilly), and `t2_stepped_example.conf` (the same world as T2, bounded
 in steps).
 
 ---
