@@ -187,9 +187,33 @@ Four outcomes, and they mean different things:
 | Status | Means |
 |---|---|
 | `success` | it happened; `changed_entities` says what |
-| `failed` | the game refused it: bad tile, not enough money, no valid path |
+| `failed` | the game refused it: bad tile, not enough money, no valid path, or a route that only partly built |
 | `rejected` | not in your vocabulary, or operator-tier |
 | `blocked` | reserved; nothing issues it now that there is no action limit |
+
+### A route that only partly built is a failure
+
+`connect_road`, `connect_rail` and `build_path` lay a whole route in one action, and one
+segment that would not build leaves a gap. A gap means no route, so these report `failed`
+unless every segment was laid. Do not read a reply as a working line without checking.
+
+They used to report `success` whatever happened, with the failures tucked inside the
+result, which made a broken line indistinguishable from a working one to your code, the
+action log and the reports.
+
+A partial build still changed the world, so `changed_entities` comes back with it:
+
+```json
+{"status": "partial", "path_length": 24, "built": 19, "existing": 2,
+ "failed": [{"x": 41, "y": 55, "action": "road", "error": "ERR_LAND_SLOPED_WRONG"}]}
+```
+
+`built` is what this call laid and paid for. `existing` is what was already there, which
+counts towards the route being connected but cost nothing. They are separate because
+adding them together overstates the work of laying a route across ground you already own.
+
+The error names the first failure and how many there were, since the list can be long and
+the first reason is usually the reason for all of them.
 
 A `rejected` for an operator-tier action says so explicitly rather than "unknown
 action", because an agent told only "no" retries forever.

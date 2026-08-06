@@ -242,7 +242,7 @@
       "description": "Build a lock so ships can change height. It must sit on the slope between two water levels."
     },
     "build_path": {
-      "description": "Lay a route that was already worked out, step by step. This exists for a pathfinder that plans elsewhere and hands the whole route over, rather than for placing track directly. Steps that only pass over existing infrastructure are skipped, and the reply reports what was built, skipped and refused.",
+      "description": "Lay a route that was already worked out, step by step. This exists for a pathfinder that plans elsewhere and hands the whole route over, rather than for placing track directly. Steps that only pass over existing infrastructure are skipped. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed.",
       "parameters": {
         "transport_type": {"description": "What the path carries: rail or road. Anything else is treated as road."}
       }
@@ -461,7 +461,7 @@
       "description": "Build a waypoint on a track tile. Trains can be ordered through one without stopping, which is how a route is forced along a particular line."
     },
     "connect_rail": {
-      "description": "Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it."
+      "description": "Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working line."
     },
     "convert_rail": {
       "description": "Convert existing track in a rectangle to another rail type. Trains that cannot run on the new type are stranded, so check the fleet first."
@@ -492,7 +492,7 @@
       "description": "Build a bus or truck stop. A drive-through stop sits on the road and is passed through; a bay is entered and reversed out of, which is slower but takes less room."
     },
     "connect_road": {
-      "description": "Build road between two tiles, finding the route itself."
+      "description": "Build road between two tiles, finding the route itself. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working road."
     },
     "convert_road_type": {
       "description": "Convert existing road in a rectangle to another road type."
