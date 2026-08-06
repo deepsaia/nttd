@@ -188,8 +188,9 @@ Supply one of: station_id or dest_tile or destination.
 condition accepts (GSOrder): OC_AGE = 3, OC_LOAD_PERCENTAGE = 0, ...
 ```
 
-The same content is in [the action reference](action_reference.md), split into three
-pages so an agent reading files can pull in only what it needs.
+The same content is in [the action reference](action_reference.md): an
+[index](actions/index.md) giving every action's call shape on one line, and three detail
+pages behind it so a reader pulls in only what it needs.
 
 Regenerate after changing the GameScript:
 

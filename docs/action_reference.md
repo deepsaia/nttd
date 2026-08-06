@@ -13,6 +13,10 @@ printed by `nttd actions`.
 Split by what running it does to the game, because that is the first thing worth
 knowing and because reading all of it at once is rarely what you want.
 
+Start with **[the index](actions/index.md)**: every action on one line with its
+call shape. Choosing one costs about 3k tokens there rather than the 16k of
+reading the detail pages below.
+
 | Reference | Count | What it is |
 | --- | --- | --- |
 | [Observations](actions/observations.md) | 44 | Read the world. Changes nothing. |

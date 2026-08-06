@@ -12,16 +12,16 @@ Part of the [action reference](../action_reference.md). 9 of 129 actions.
 - **subsidy**: `create_subsidy`
 - **town_deity**: `change_town_rating`, `expand_town`, `found_town`, `set_cargo_goal`, `set_town_growth`
 
+Every action on one line, across all three pages: [index.md](index.md).
+
 ## finance
 
 ### `change_bank_balance`
 
 Move money into or out of a company's account directly. Operator-tier: this is scenario machinery, not play, and it is refused during a scored game.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `delta` | integer | yes |  | How much to add. Negative subtracts. |
-| `expense_type` | integer | no | `GSCompany.EXPENSES_OTHER` | Which column of the company accounts the money moves through. |
+- `delta` (integer, required) How much to add. Negative subtracts.
+- `expense_type` (integer, default GSCompany.EXPENSES_OTHER) Which column of the company accounts the money moves through.
 
 `expense_type` accepts (GSCompany): `EXPENSES_AIRCRAFT_INC` = 9, `EXPENSES_AIRCRAFT_RUN` = 4, `EXPENSES_CONSTRUCTION` = 0, `EXPENSES_LOAN_INT` = 11, `EXPENSES_NEW_VEHICLES` = 1, `EXPENSES_OTHER` = 12, `EXPENSES_PROPERTY` = 6, `EXPENSES_ROADVEH_INC` = 8, `EXPENSES_ROADVEH_RUN` = 3, `EXPENSES_SHIP_INC` = 10, `EXPENSES_SHIP_RUN` = 5, `EXPENSES_TRAIN_INC` = 7, `EXPENSES_TRAIN_RUN` = 2
 
@@ -29,9 +29,7 @@ Move money into or out of a company's account directly. Operator-tier: this is s
 
 Set the ceiling a company may borrow up to. Operator-tier: it changes the terms of the game rather than playing it.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `amount` | integer | yes |  | An amount of money, in the game's currency units. |
+- `amount` (integer, required) An amount of money, in the game's currency units.
 
 ## settings
 
@@ -39,10 +37,8 @@ Set the ceiling a company may borrow up to. Operator-tier: it changes the terms 
 
 Change a game setting mid-game. Operator-tier: it alters the rules rather than playing by them, and is refused during a scored game.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `key` | string | yes |  | Name of a game setting, as it appears in openttd.cfg. |
-| `value` | integer | yes |  | The value to set. |
+- `key` (string, required) Name of a game setting, as it appears in openttd.cfg.
+- `value` (integer, required) The value to set.
 
 ## subsidy
 
@@ -50,13 +46,11 @@ Change a game setting mid-game. Operator-tier: it alters the rules rather than p
 
 Create a subsidy for carrying a cargo between two places. Operator-tier: subsidies are part of setting a scenario, not of playing one.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `cargo_type` | integer | yes |  | Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming. |
-| `from_id` | integer | yes |  | The industry or town the cargo is collected from, matching from_type. |
-| `from_type` | integer | yes |  | Whether the source is an industry or a town. |
-| `to_id` | integer | yes |  | The industry or town the cargo is delivered to, matching to_type. |
-| `to_type` | integer | yes |  | Whether the destination is an industry or a town. |
+- `cargo_type` (integer, required) Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming.
+- `from_id` (integer, required) The industry or town the cargo is collected from, matching from_type.
+- `from_type` (integer, required) Whether the source is an industry or a town.
+- `to_id` (integer, required) The industry or town the cargo is delivered to, matching to_type.
+- `to_type` (integer, required) Whether the destination is an industry or a town.
 
 `from_type` accepts (GSSubsidy): `SPT_INDUSTRY` = 0, `SPT_TOWN` = 1
 
@@ -68,32 +62,26 @@ Create a subsidy for carrying a cargo between two places. Operator-tier: subsidi
 
 Set a company's standing with a town directly. Operator-tier: it overrides the reputation a contestant is supposed to earn.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `delta` | integer | yes |  | How much to add. Negative subtracts. |
-| `town_id` | integer | yes |  | Which town. |
+- `delta` (integer, required) How much to add. Negative subtracts.
+- `town_id` (integer, required) Which town.
 
 ### `expand_town`
 
 Grow a town by a number of houses at once. Operator-tier.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `houses` | integer | no | `5` | How many houses to add. |
-| `town_id` | integer | yes |  | Which town. |
+- `houses` (integer, default 5) How many houses to add.
+- `town_id` (integer, required) Which town.
 
 ### `found_town`
 
 Found a new town at a tile. Operator-tier: it changes the map the scenario is scored on.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `is_city` | boolean | no | `false` | Found a city rather than an ordinary town. Cities grow faster. |
-| `name` | string | no | `null` | A name to give. |
-| `road_layout` | integer | no | `GSTown.ROAD_LAYOUT_ORIGINAL` | The street pattern the town grows into. |
-| `size` | integer | no | `GSTown.TOWN_SIZE_SMALL` | How large to start. |
-| `x` | integer | yes |  | X coordinate on the map, counting from 0. |
-| `y` | integer | yes |  | Y coordinate on the map, counting from 0. |
+- `is_city` (boolean, default false) Found a city rather than an ordinary town. Cities grow faster.
+- `name` (string, default null) A name to give.
+- `road_layout` (integer, default GSTown.ROAD_LAYOUT_ORIGINAL) The street pattern the town grows into.
+- `size` (integer, default GSTown.TOWN_SIZE_SMALL) How large to start.
+- `x` (integer, required) X coordinate on the map, counting from 0.
+- `y` (integer, required) Y coordinate on the map, counting from 0.
 
 `road_layout` accepts (GSTown): `ROAD_LAYOUT_2x2` = 2, `ROAD_LAYOUT_3x3` = 3, `ROAD_LAYOUT_BETTER_ROADS` = 1, `ROAD_LAYOUT_ORIGINAL` = 0, `ROAD_LAYOUT_RANDOM` = 4
 
@@ -103,11 +91,9 @@ Found a new town at a tile. Operator-tier: it changes the map the scenario is sc
 
 Set how much of a cargo a town must receive. Operator-tier: this is goal-setting machinery for a scenario.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `goal` | integer | yes |  | How much cargo the town must receive. |
-| `town_effect` | integer | yes |  | Which cargo effect the goal is set against. |
-| `town_id` | integer | yes |  | Which town. |
+- `goal` (integer, required) How much cargo the town must receive.
+- `town_effect` (integer, required) Which cargo effect the goal is set against.
+- `town_id` (integer, required) Which town.
 
 `town_effect` accepts (GSCargo): `TE_FOOD` = 5, `TE_GOODS` = 3, `TE_MAIL` = 2, `TE_NONE` = 0, `TE_PASSENGERS` = 1, `TE_WATER` = 4
 
@@ -115,8 +101,6 @@ Set how much of a cargo a town must receive. Operator-tier: this is goal-setting
 
 Set how often a town adds a house, in days. Operator-tier.
 
-| Parameter | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `days` | integer | yes |  | A number of days. |
-| `town_id` | integer | yes |  | Which town. |
+- `days` (integer, required) A number of days.
+- `town_id` (integer, required) Which town.
 
