@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
 from nttd.actions.gate import admit
+from nttd.actions.gs_reply import result_from_reply
 from nttd.api.participant_auth import (
     AuthorizationHeader,
     ParticipantToken,
@@ -35,6 +36,33 @@ operator_router = APIRouter(prefix=_ACTIONS_PREFIX, tags=["actions"])
 router = APIRouter()
 
 
+# Statuses an action does not move on from. A resend of one of these is a retry of
+# something already decided, not a new request. PENDING and EXECUTING are excluded on
+# purpose: a resend while the first attempt is still running is a different problem, and
+# answering it from the tracker would report a result that does not exist yet.
+_SETTLED = frozenset({
+    ActionStatus.SUCCESS,
+    ActionStatus.PARTIAL,
+    ActionStatus.FAILED,
+    ActionStatus.REJECTED,
+    ActionStatus.BLOCKED,
+})
+
+
+def _already_settled(runtime: Any, action_id: str) -> ActionResult | None:
+    """The stored result for an action that has already run, if there is one.
+
+    ``action_id`` is supplied by the caller, which makes it usable as an idempotency
+    key. ``connect_road`` can take two minutes, and a proxy or an impatient client that
+    gives up and resends would otherwise build the route a second time and pay for it
+    twice.
+    """
+    existing = runtime.action_tracker.get_result(action_id)
+    if existing is not None and existing.status in _SETTLED:
+        return existing
+    return None
+
+
 @participant_router.post("/submit", response_model=ActionResult)
 async def submit_action(
     session_id: str,
@@ -44,6 +72,16 @@ async def submit_action(
 ) -> ActionResult:
     """Submit an action. If action_type maps to a GS command, execute it immediately."""
     runtime = deps.get_runtime(session_id)
+
+    # A retry of an action already carried out returns what happened the first time
+    # rather than doing it again. connect_road can run for two minutes, which is long
+    # enough for a proxy or an impatient client to give up and resend, and building the
+    # route twice would charge twice for track that is already there.
+    settled = _already_settled(runtime, envelope.action_id)
+    if settled is not None:
+        logger.info("Replaying settled action %s rather than running it again", envelope.action_id)
+        return settled
+
     runtime.action_tracker.submit(envelope)
 
     if not runtime.admin_client.connected:
@@ -94,32 +132,11 @@ async def submit_action(
         # and need more time than single-tile actions.
         timeout = 120.0 if envelope.action_type.startswith("connect_") else 10.0
         gs_result = await runtime.admin_client.send_gamescript(envelope.action_type, params, timeout=timeout)
-        if gs_result.get("success"):
-            runtime.action_tracker.update_result(
-                envelope.action_id, ActionStatus.SUCCESS,
-                changed_entities=gs_result.get("result", {}),
-            )
-            result = ActionResult(
-                action_id=envelope.action_id,
-                status=ActionStatus.SUCCESS,
-                changed_entities=gs_result.get("result") or {},
-            )
-        else:
-            error = gs_result.get("error", "GS returned failure")
-            # A refusal usually changes nothing, but a compound build that laid half a
-            # route is a failure that moved the world. Dropping its result would record
-            # nothing for track that exists and was paid for, and would leave the agent
-            # with an error and no account of what it now owns.
-            partial = gs_result.get("result") or {}
-            runtime.action_tracker.update_result(
-                envelope.action_id, ActionStatus.FAILED, error, changed_entities=partial,
-            )
-            result = ActionResult(
-                action_id=envelope.action_id,
-                status=ActionStatus.FAILED,
-                error=error,
-                changed_entities=partial,
-            )
+        result = result_from_reply(envelope.action_id, gs_result)
+        runtime.action_tracker.update_result(
+            envelope.action_id, result.status, result.error,
+            changed_entities=result.changed_entities,
+        )
     except Exception as exc:
         logger.exception("Action execution failed: %s", envelope.action_type)
         runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, str(exc))

@@ -182,20 +182,45 @@ game ticks, so a long search cannot complete while the world is stopped.
 `POST /actions/submit` takes one action. `POST /actions/submit-batch` takes a list and
 returns a result per envelope, in order.
 
-Four outcomes, and they mean different things:
+Five outcomes, and they mean different things:
 
 | Status | Means |
 |---|---|
 | `success` | it happened; `changed_entities` says what |
-| `failed` | the game refused it: bad tile, not enough money, no valid path, or a route that only partly built |
+| `partial` | a compound build laid part of what you asked; the world moved and was paid for, but the result is not usable |
+| `failed` | the game refused it: bad tile, not enough money, no valid path |
 | `rejected` | not in your vocabulary, or operator-tier |
 | `blocked` | reserved; nothing issues it now that there is no action limit |
+
+### Reading a failure
+
+The error used to be one string carrying OpenTTD's error names, nttd's own sentences and
+Squirrel exception text interchangeably, so acting on a failure meant matching substrings
+that had no promise of staying the same. The machine-readable part is now separate:
+
+```json
+{"status": "failed", "error": "ERR_NOT_ENOUGH_CASH",
+ "error_code": 257, "error_name": "ERR_NOT_ENOUGH_CASH", "error_category": "general"}
+```
+
+**`error_code` is present only when OpenTTD refused.** nttd's own precondition failures,
+such as `Need tile or x,y`, carry no code, and that absence is how you tell the two apart:
+one means the game said no, the other means the request never reached it. The first is
+worth reacting to, the second is worth fixing.
+
+The names come from the OpenTTD build itself rather than a table in nttd, so they are
+right for the version you are playing.
 
 ### A route that only partly built is a failure
 
 `connect_road`, `connect_rail` and `build_path` lay a whole route in one action, and one
-segment that would not build leaves a gap. A gap means no route, so these report `failed`
+segment that would not build leaves a gap. A gap means no route, so these report `partial`
 unless every segment was laid. Do not read a reply as a working line without checking.
+
+They also walk the finished route and ask the game whether it actually joins up, which is
+a different question from whether the builds succeeded: a segment can build and still
+leave the line unconnected, and `ERR_ALREADY_BUILT` says something is there but not that
+it links to its neighbour. Any breaks come back in `gaps`.
 
 They used to report `success` whatever happened, with the failures tucked inside the
 result, which made a broken line indistinguishable from a working one to your code, the
@@ -213,7 +238,21 @@ counts towards the route being connected but cost nothing. They are separate bec
 adding them together overstates the work of laying a route across ground you already own.
 
 The error names the first failure and how many there were, since the list can be long and
-the first reason is usually the reason for all of them.
+the first reason is usually the reason for all of them. Each entry in `failed` carries its
+own `error_code` and `error_category`, because a route that ran out of money is a
+different problem from one that hit a slope.
+
+### Retrying is safe
+
+`action_id` is yours to choose and doubles as an idempotency key. Resending an action that
+has already finished returns what happened the first time rather than doing it again,
+which matters for `connect_road`: it can run for two minutes, long enough for a proxy or
+an impatient client to give up, and building the route twice would pay for it twice.
+
+Reusing an id only replays an action that has *settled*. A resend while the first attempt
+is still running is not answered from the log, because there is no result yet and
+inventing one would be worse than doing the work twice. Two actions you genuinely want
+performed twice need two different ids.
 
 A `rejected` for an operator-tier action says so explicitly rather than "unknown
 action", because an agent told only "no" retries forever.
