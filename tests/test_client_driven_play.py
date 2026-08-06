@@ -165,51 +165,34 @@ def test_the_gate_admits_a_participant_action() -> None:
     assert admit("build_road_stop", company_id=0).allowed is True
 
 
-def test_the_gate_refuses_an_over_budget_submission() -> None:
-    """BLOCKED rather than REJECTED: the scenario's limit, not the contestant's
-    mistake, and a reader of the action log needs to tell those apart."""
-    from nttd.actions.gate import admit
-    from nttd.runtime.action_budget import ActionBudget
-
-    budget = ActionBudget(max_per_submission=5, enforced=True)
-    admission = admit("build_road_stop", company_id=0, budget=budget, count=50)
-    assert admission.allowed is False
-    assert admission.status is ActionStatus.BLOCKED
 
 
-def test_the_gate_checks_the_vocabulary_before_the_budget() -> None:
-    """A refusal that never had a chance of succeeding must not spend budget."""
-    from nttd.actions.gate import admit
-    from nttd.runtime.action_budget import ActionBudget
 
-    budget = ActionBudget(max_per_submission=5, enforced=True)
-    admit("set_max_loan", company_id=0, budget=budget, count=99)
-    assert budget.usage()["total_refused"] == 0, (
-        "an operator-tier refusal charged the budget"
-    )
-
-
-def test_the_gate_does_not_consume_budget() -> None:
-    """Checked but not consumed: the caller consumes where the action goes ahead, so
-    a refusal on another path cannot spend it."""
-    from nttd.actions.gate import admit
-    from nttd.runtime.action_budget import ActionBudget
-
-    budget = ActionBudget(max_per_submission=15, enforced=True)
-    admit("build_road_stop", company_id=0, budget=budget)
-    assert budget.usage()["used_actions"] == {}
+def test_real_time_play_has_no_action_ceiling() -> None:
+    """The world moves whether or not a contestant acts, so spending actions already
+    costs game time. How many a multi-agent system fires in real time is its own
+    business, and capping it made a MAS's parallel work look like cheating rather
+    than like work it paid for."""
+    for route in (action_routes.submit_action, action_routes.submit_action_batch):
+        source = inspect.getsource(route)
+        assert "action_budget" not in source, f"{route.__name__} still applies a ceiling"
 
 
-def test_submit_consumes_after_admission() -> None:
+def test_real_time_still_refuses_operator_actions() -> None:
+    """Removing the ceiling must not remove the tier check with it."""
     source = inspect.getsource(action_routes.submit_action)
-    assert source.index("admit(") < source.index("consume(")
-    assert source.index("consume(") < source.index("send_gamescript")
+    assert "admit(" in source
 
 
-def test_a_batch_is_checked_against_its_full_count() -> None:
-    """Otherwise batching sidesteps the ceiling one action at a time."""
-    source = inspect.getsource(action_routes.submit_action_batch)
-    assert "count=len(envelopes)" in source
+def test_there_is_no_action_ceiling_on_either_path() -> None:
+    """How many actions to spend is the contestant's optimisation problem. A stepped
+    run is bounded by its step count and step size, both fixed by the scenario, so an
+    unbounded batch cannot buy more world than another contestant gets."""
+    from nttd.runtime import orchestrator
+
+    assert not hasattr(orchestrator.Orchestrator, "check_batch_size")
+    for route in (action_routes.submit_action, action_routes.submit_action_batch):
+        assert "action_budget" not in inspect.getsource(route)
 
 
 def test_the_stepped_path_records_its_actions() -> None:

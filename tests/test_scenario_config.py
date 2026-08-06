@@ -411,7 +411,7 @@ def test_strict_refuses_a_scenario_fairness_block(tmp_path: Any) -> None:
     path = tmp_path / "fair.conf"
     path.write_text(
         'scenario { map { size_x = 256, size_y = 256 }, '
-        'fairness { max_actions_per_decision = 200 } }'
+        'fairness { max_actions_per_step = 200 } }'
     )
     with pytest.raises(ScenarioConfigError, match="operator policy"):
         scenario_to_settings(load(path), strict=True)

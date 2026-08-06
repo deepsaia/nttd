@@ -203,74 +203,26 @@ def test_the_default_step_size_comes_from_the_scenario() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The batch ceiling
+# No action ceiling, in either mode
 # ---------------------------------------------------------------------------
-# Found by live probe: _execute_actions admits each action with count=1, so a
-# 16-action batch passed sixteen checks of one and the per-submission ceiling never
-# saw it. Verified 16/16 allowed against a limit of 15 before this was added.
+# There was one, at 15 per submission. It is gone: how many actions to spend is the
+# contestant's own optimisation problem, in stepped play as much as in real time. A
+# stepped run is bounded by how many steps it takes and how many game-days each step
+# advances, both fixed by the scenario, so an unbounded batch cannot buy more world.
 
 
-def test_an_over_ceiling_batch_is_refused_whole() -> None:
-    """Whole rather than truncated: a policy that planned a route as one batch
-    should not discover half of it was built."""
-    import asyncio
-
-    from nttd.runtime.action_budget import ActionBudget
-    from nttd.runtime.step_errors import StepBatchTooLarge
-    from nttd.state.world import WorldState
-
-    orchestrator = Orchestrator(WorldState(), _StubClient())
-    orchestrator.action_budget = ActionBudget(max_per_submission=15, enforced=True)
-    batch = [{"action": "set_loan", "params": {"company_id": 0}}] * 16
-
-    try:
-        asyncio.run(orchestrator.step(actions=batch, days=1))
-    except StepBatchTooLarge as exc:
-        assert "exceeds the ceiling" in str(exc)
-    else:
-        raise AssertionError("a 16-action batch passed a ceiling of 15")
+def test_nothing_checks_a_batch_size_any_more() -> None:
+    assert not hasattr(Orchestrator, "check_batch_size")
 
 
-def test_a_batch_at_the_ceiling_is_admitted() -> None:
-    """Off-by-one guard: 15 is allowed, 16 is not."""
-    from nttd.runtime.action_budget import ActionBudget
-    from nttd.state.world import WorldState
-
-    orchestrator = Orchestrator(WorldState(), _StubClient())
-    orchestrator.action_budget = ActionBudget(max_per_submission=15, enforced=True)
-    batch = [{"action": "set_loan", "params": {"company_id": 0}}] * 15
-    orchestrator.check_batch_size(batch)  # must not raise
-
-
-def test_the_batch_check_runs_before_anything_executes() -> None:
-    """A ceiling checked after the first action has run is not a ceiling."""
+def test_the_step_does_not_measure_its_batch() -> None:
+    """A step flushes whatever it is given. What bounds a stepped run is how many
+    steps it takes and how many game-days each advances, both fixed by the scenario,
+    so a larger batch cannot buy more world than another contestant gets."""
     source = _code_only(inspect.getsource(Orchestrator.step))
-    assert source.index("check_batch_size") < source.index("_execute_actions")
+    for word in ("ceiling", "budget", "check_batch_size", "too large"):
+        assert word not in source.lower(), f"step still limits its batch: {word}"
 
-
-def test_a_refused_batch_is_recorded() -> None:
-    """Every entry, so the audit log shows what was attempted rather than a gap."""
-    source = inspect.getsource(Orchestrator.check_batch_size)
-    assert "_record_action" in source
-    assert "ActionStatus.BLOCKED" in source
-
-
-class _StubClient:
-    """Minimal AdminClient stand-in: the batch check runs before any I/O."""
-
-    connected = False
-
-    def on_game_event(self, _callback: object) -> None:
-        return
-
-
-# ---------------------------------------------------------------------------
-# The audit trail
-# ---------------------------------------------------------------------------
-# A stepped run left no actions.parquet at all before this. Then the recording call
-# was added but passed error=None into ActionResult.error, which is a plain str --
-# so every successful action raised ValidationError inside _record_action's
-# try/except and was logged and dropped. The run looked fine and recorded nothing.
 
 
 def test_recording_a_successful_action_does_not_raise() -> None:
