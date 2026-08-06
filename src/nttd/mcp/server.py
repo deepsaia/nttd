@@ -1,73 +1,111 @@
-"""MCP server for nttd: exposes observation and validation tools for LLM agents.
+"""The nttd MCP server: five tools that are enough to play a whole game.
 
-Agents use MCP tools to observe game state and validate proposed actions.
-Execution happens through a separate interpreter layer, not through MCP.
+    uv run python -m nttd.mcp.server --session ses_abc --token <participant-token>
+    uv run python -m nttd.mcp.server --session ses_abc --token <tok> --transport http
 
-Each MCP server instance is configured for a specific session and company via
-environment variables. Run with::
+What this replaces was not a play surface. It had 33 tools, 30 of them getters wrapping
+one REST call each, and no way to act or step at all: its own docstring said execution
+happened somewhere else. An agent connected to it could look at the game and do nothing.
 
-    NTTD_URL=http://localhost:8000 \\
-    NTTD_SESSION_ID=ses_abc123 \\
-    NTTD_AGENT_ID=mcp_agent_1 \\
-    NTTD_COMPANY_ID=0 \\
-    python -m nttd.mcp.server
+Five, because the tools are the verbs and there are only five:
 
-Or configure in Claude Desktop / Claude Code mcp.json.
+    nttd_observe   read the world
+    nttd_act       change it, in real time
+    nttd_step      change it and advance, for stepped play
+    nttd_query     ask something the snapshot does not carry
+    nttd_actions   look up what an action takes
+
+The 120 actions are not hidden by this. ``action_type`` is an enum, so every name is in
+the tool schema where a client already looks, and 30 near-identical getters were never
+the vocabulary anyway: they were one wrapper per endpoint, which is a shape that grows
+with the API rather than with the game.
+
+Both transports are supported because both kinds of client matter here: stdio for an
+agent that launches the server as a subprocess, and streamable HTTP for a multi-agent
+framework that connects to one already running.
+
+One server is one seat. It holds a single session and a single participant token, so no
+tool takes a session argument and no client can act for a company it was not given.
 """
 
+from __future__ import annotations
+
+import argparse
+import logging
 import os
 
 from mcp.server.fastmcp import FastMCP
 
-from nttd.mcp.client import NttdMCPClient
-from nttd.mcp.tools.observation import register_observation_tools
-from nttd.mcp.tools.pathfinding import register_pathfinding_tools
-from nttd.mcp.tools.validation import register_validation_tools
+from nttd.mcp.participant_client import ParticipantClient
+from nttd.mcp.tools import act, catalogue, observe, query, step
 
-# Read config from environment
-NTTD_URL = os.environ.get("NTTD_URL", "http://localhost:8000")
-NTTD_SESSION_ID = os.environ.get("NTTD_SESSION_ID", "")
-NTTD_AGENT_ID = os.environ.get("NTTD_AGENT_ID", "mcp_agent")
-NTTD_COMPANY_ID = int(os.environ.get("NTTD_COMPANY_ID", "0"))
+logger = logging.getLogger(__name__)
 
-if not NTTD_SESSION_ID:
-    raise ValueError("NTTD_SESSION_ID environment variable is required")
+DEFAULT_URL = "http://localhost:8000"
 
-# Create the MCP server and nttd client
-mcp = FastMCP(
-    "nttd",
-    instructions=(
-        "OpenTTD game observation and planning tools. You are advising company "
-        f"{NTTD_COMPANY_ID} in session {NTTD_SESSION_ID}. "
-        "Use observation tools to understand the game state (towns, industries, "
-        "vehicles, finances). Use pathfind for route planning. Use validate_actions "
-        "to verify your proposed action list before it is executed.\n\n"
-        "You do NOT execute actions directly. Instead, output your decisions as a "
-        "JSON action list. Each action should have 'action_type' and 'parameters'. "
-        "Example:\n"
-        '[\n'
-        '  {"action_type": "build_road_stop", "parameters": {"tile": 12345, "is_truck_stop": true}},\n'
-        '  {"action_type": "buy_vehicle", "parameters": {"depot_tile": 67890, "engine_id": 5}}\n'
-        ']'
-    ),
-)
+_INSTRUCTIONS = """\
+You are playing OpenTTD as one company, through nttd.
 
-client = NttdMCPClient(
-    base_url=NTTD_URL,
-    session_id=NTTD_SESSION_ID,
-    agent_id=NTTD_AGENT_ID,
-    company_id=NTTD_COMPANY_ID,
-)
+You build transport infrastructure and run vehicles to move cargo and passengers for
+profit. You are scored on OpenTTD's own performance rating, which rewards delivered
+cargo, vehicle count, station count, profit and money in hand.
 
-# Register tool modules: observation, pathfinding, and validation only
-register_observation_tools(mcp, client)
-register_pathfinding_tools(mcp, client)
-register_validation_tools(mcp, client)
+Start by calling nttd_observe to see the world, and nttd_actions to look up anything you
+have not called before. Prefer nttd_query for what the snapshot does not carry, such as
+where a station will fit or which engines exist this year.
+
+Actions are refused for ordinary reasons: too little money, a tile that will not take the
+structure, a town with a poor opinion of you. A refusal is information, not a fault.
+"""
+
+
+def build(base_url: str, session_id: str, token: str, host: str, port: int) -> FastMCP:
+    """Wire one seat's tools onto a server."""
+    mcp = FastMCP("nttd", instructions=_INSTRUCTIONS, host=host, port=port)
+    client = ParticipantClient(base_url, session_id, token)
+
+    observe.register(mcp, client)
+    act.register(mcp, client)
+    step.register(mcp, client)
+    query.register(mcp, client)
+    catalogue.register(mcp)
+    return mcp
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="nttd MCP server (one session, one seat)")
+    parser.add_argument("--url", default=os.getenv("NTTD_URL", DEFAULT_URL))
+    parser.add_argument("--session", default=os.getenv("NTTD_SESSION_ID"))
+    parser.add_argument("--token", default=os.getenv("NTTD_PARTICIPANT_TOKEN"))
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default=os.getenv("NTTD_MCP_TRANSPORT", "stdio"),
+        help="stdio for a client that launches this, http for one that connects to it",
+    )
+    parser.add_argument("--host", default=os.getenv("NTTD_MCP_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("NTTD_MCP_PORT", "8100")))
+    return parser.parse_args()
 
 
 def main() -> None:
     """Entry point for ``python -m nttd.mcp.server``."""
-    mcp.run()
+    logging.basicConfig(level=logging.INFO)
+    args = _parse_args()
+
+    # Checked here rather than on the first tool call. Under stdio a missing token
+    # surfaces as every tool failing with a 401, which reads as nttd being broken.
+    missing = [name for name, value in (("--session", args.session), ("--token", args.token)) if not value]
+    if missing:
+        raise SystemExit(
+            f"Missing {' and '.join(missing)}. Get both from `nttd session attach <id>`."
+        )
+
+    mcp = build(args.url, args.session, args.token, args.host, args.port)
+    logger.info(
+        "nttd MCP serving session %s over %s (nttd at %s)", args.session, args.transport, args.url,
+    )
+    mcp.run(transport="streamable-http" if args.transport == "http" else "stdio")
 
 
 if __name__ == "__main__":
