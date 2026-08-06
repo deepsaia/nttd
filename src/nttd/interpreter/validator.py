@@ -31,21 +31,33 @@ def _validate_params(action: AgentAction) -> str | None:
     contradict the game.
     """
     required = action_manifest.required_parameters(action.action_type)
-    if not required:
-        return None
-
     missing = [name for name in required if name not in action.parameters]
-    if not missing:
-        return None
+    if missing:
+        message = f"{action.action_type} missing required params: {', '.join(missing)}"
+        # Only when it adds something. Repeating the missing list back is noise, but an
+        # agent that sent the wrong shape entirely needs to see the right one.
+        accepted = action_manifest.accepted_parameters(action.action_type)
+        if set(accepted) != set(missing):
+            message += f" (accepts: {', '.join(accepted)})"
+        return message
 
-    message = f"{action.action_type} missing required params: {', '.join(missing)}"
+    return _validate_alternatives(action)
 
-    # Only when it adds something. Repeating the missing list back is noise, but an
-    # agent that sent the wrong shape entirely needs to see the right one.
-    accepted = action_manifest.accepted_parameters(action.action_type)
-    if set(accepted) != set(missing):
-        message += f" (accepts: {', '.join(accepted)})"
-    return message
+
+def _validate_alternatives(action: AgentAction) -> str | None:
+    """Report an alternation the action satisfies no branch of.
+
+    Several actions accept a choice: ``add_order`` takes a station id or a destination
+    tile, and every action resolving a tile takes ``tile`` or an ``x,y`` pair. None of
+    those parameters is required on its own, so checking requiredness alone lets an
+    action through that names no destination at all.
+    """
+    for group in action_manifest.alternatives(action.action_type):
+        if any(all(name in action.parameters for name in branch) for branch in group):
+            continue
+        options = " or ".join(", ".join(branch) for branch in group)
+        return f"{action.action_type} needs one of: {options}"
+    return None
 
 
 def validate_actions(actions: list[AgentAction]) -> dict[int, str]:
