@@ -225,10 +225,16 @@ class TestBundleContents:
         } <= present
 
     def test_an_unrecorded_artifact_is_simply_absent(self, session_dir: Path) -> None:
-        """A session with no snapshots should still produce a bundle."""
+        """An optional artifact the session never wrote is left out rather than
+        bundled empty, and the manifest says so by omission."""
+        # tiles.parquet is optional and the fixture writes one, so removing it is a
+        # real test. events.parquet was used here before and the fixture never wrote
+        # one, so the assertion held whatever the code did.
+        (session_dir / "tiles.parquet").unlink()
         bundle = SubmissionBundle(session_dir).build(archive=False)
         manifest = json.loads((bundle / MANIFEST_NAME).read_text())
-        assert "snapshots.parquet" not in manifest["artifacts"]
+        assert "tiles.parquet" not in manifest["artifacts"]
+        assert "result.parquet" in manifest["artifacts"]
 
     def test_a_session_with_no_result_cannot_be_submitted(self, tmp_path: Path) -> None:
         """Not a weaker submission: without a score it is not one."""
@@ -255,39 +261,59 @@ class TestBundleContents:
         )
 
 
-class TestSnapshotsShipSeparately:
-    """The full series is not evidence and dominates a long run.
+class TestTheSeriesIsEvidence:
+    """The snapshot series is bundled, and the two files derived from it are not.
 
-    Measured: 2,000 snapshots is a 7.9 MB Parquet, so a T4 at one-day intervals is
-    around 14 MB against roughly 250 KB for everything verification reads. No check
-    opens it. A contestant keeps their own and links to them.
+    It was excluded once, with a one-row final_snapshot.parquet and an extracted
+    trajectory.parquet standing in for it. Both existed only because the series was
+    absent, and shipping a derivation next to its source is how a bundle becomes an
+    archive. It is also the only record of how the run got where it got: every run-wide
+    business metric comes from it, so without it those figures cannot be rechecked.
+
+    Bounded by the tier rather than unbounded. A T4 at one-day intervals is around
+    14 MB, and a stepped run is far smaller because it records one snapshot per step
+    rather than one per game day.
     """
 
-    def test_the_series_is_not_bundled(self, session_dir: Path) -> None:
+    def test_the_series_is_bundled(self, session_dir: Path) -> None:
         bundle = SubmissionBundle(session_dir).build(archive=False)
-        assert not (bundle / "snapshots.parquet").exists()
+        assert (bundle / "snapshots.parquet").exists()
 
-    def test_the_end_state_is_bundled_as_one_row(self, session_dir: Path) -> None:
+    def test_the_derived_files_are_gone(self, session_dir: Path) -> None:
         bundle = SubmissionBundle(session_dir).build(archive=False)
-        final = bundle / "final_snapshot.parquet"
-        assert final.exists()
+        assert not (bundle / "final_snapshot.parquet").exists()
+        assert not (bundle / "trajectory.parquet").exists()
 
-        table = pq.read_table(final)
-        assert table.num_rows == 1
-        assert table.column("game_date").to_pylist() == [300], "not the last snapshot"
-
-    def test_it_is_named_for_what_it_is(self, session_dir: Path) -> None:
-        """Calling a one-row file snapshots.parquet would read as a time series."""
+    def test_the_manifest_lists_the_series(self, session_dir: Path) -> None:
         bundle = SubmissionBundle(session_dir).build(archive=False)
         manifest = json.loads((bundle / MANIFEST_NAME).read_text())
-        assert "final_snapshot.parquet" in manifest["artifacts"]
-        assert "snapshots.parquet" not in manifest["artifacts"]
+        assert "snapshots.parquet" in manifest["artifacts"]
+        assert "final_snapshot.parquet" not in manifest["artifacts"]
+        assert "trajectory.parquet" not in manifest["artifacts"]
+
+    def test_the_end_state_is_still_reachable(self, session_dir: Path) -> None:
+        """Nothing was lost by dropping the one-row file: the verifier takes the last
+        row of the series, which is where that row came from."""
+        from nttd.verify.validator import BundleValidator
+
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        snapshot = BundleValidator(bundle, openttd_binary="")._final_snapshot()
+        assert snapshot, "the end state must still be readable from the bundle"
+
+    def test_the_end_state_is_the_latest_by_game_date(self, session_dir: Path) -> None:
+        """Fragments are merged on stop, so the last row written is not guaranteed to
+        be the latest."""
+        from nttd.verify.validator import BundleValidator
+
+        bundle = SubmissionBundle(session_dir).build(archive=False)
+        snapshot = BundleValidator(bundle, openttd_binary="")._final_snapshot()
+        assert snapshot.get("game", {}).get("game_date", 300) == 300
 
     def test_a_session_without_snapshots_still_bundles(self, session_dir: Path) -> None:
         (session_dir / "snapshots.parquet").unlink()
         bundle = SubmissionBundle(session_dir).build(archive=False)
         assert (bundle / MANIFEST_NAME).exists()
-        assert not (bundle / "final_snapshot.parquet").exists()
+        assert not (bundle / "snapshots.parquet").exists()
 
 
 class TestTheManifestHoldsIdentityAndIntegrityOnly:

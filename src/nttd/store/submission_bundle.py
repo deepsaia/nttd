@@ -52,36 +52,32 @@ BUNDLE_DIR_NAME = "submission"
 
 # Recorded artifacts a verifier needs, and whether the bundle is useless without them.
 #
-# The full snapshot series is deliberately absent. No check reads it, and it dominates a
-# long run: 2,000 snapshots measured 7.9 MB, so a T4 at one-day intervals is around 14 MB
-# against roughly 250 KB for everything verification actually uses. A bundle should be
-# the evidence, not the archive. Keep your own snapshots and link to them; the bundle
-# carries the end state, which is what a score is computed from.
+# One file per job. Everything here is either evidence, which cannot be derived from
+# anything else, or the claim being checked against it, or the digests that make both
+# tamper-evident.
 #
-# tiles.parquet stays: no check opens it either, because the world check regenerates its
-# own scan and compares digests, but it is what lets a human see *where* two worlds
+# snapshots.parquet is evidence. It is the only record of how the run got where it got,
+# and every run-wide business metric is computed from it, so without it those figures
+# could not be rechecked by anyone. Bounded by the tier: a T4 at one-day intervals is
+# around 14 MB, and a stepped run is far smaller because it records one snapshot per
+# step rather than one per game day.
+#
+# It replaced two files that were derived from it, final_snapshot.parquet and
+# trajectory.parquet. Both existed only because the series was absent, and shipping a
+# derivation next to its source is how a bundle becomes an archive.
+#
+# tiles.parquet stays even though no check opens it, because the world check regenerates
+# its own scan and compares digests: it is what lets a human see *where* two worlds
 # differ rather than only that they do.
 _ARTIFACTS: tuple[tuple[str, bool], ...] = (
     ("result.parquet", True),
+    ("snapshots.parquet", False),
     ("actions.parquet", False),
     ("events.parquet", False),
     ("tiles.parquet", False),
     ("nttd_scenario.conf", False),
 )
 
-# The one snapshot the bundle does carry, written from the last row of the series.
-FINAL_SNAPSHOT_NAME = "final_snapshot.parquet"
-
-# The contestant company's series, extracted from the snapshots: ten integers a tick
-# rather than the whole world as JSON. Roughly 13 bytes a row, so 11 KB for a 200-step
-# run and 1.3 MB for the longest plausible real-time one, against 146 MB if the full
-# series went in.
-#
-# It earns its place by making the run-wide metrics checkable. Endpoint figures can be
-# recomputed from the savegame, but operating margin over the run, peak credit drawn,
-# lowest cash and days to first profit come from the series, and without it they are
-# claims rather than evidence. It is also what a trend chart is drawn from.
-TRAJECTORY_NAME = "trajectory.parquet"
 
 
 class SubmissionBundle:
@@ -144,14 +140,6 @@ class SubmissionBundle:
             destination.write_bytes(source.read_bytes())
             copied[name] = destination
 
-        trajectory = self._write_trajectory(bundle_dir)
-        if trajectory:
-            copied[trajectory.name] = trajectory
-
-        final_snapshot = self._write_final_snapshot(bundle_dir)
-        if final_snapshot is not None:
-            copied[final_snapshot.name] = final_snapshot
-
         save = self.session_dir / "save" / f"{FINAL_SAVE_NAME}{SAVE_EXTENSION}"
         if save.exists():
             destination = bundle_dir / save.name
@@ -164,66 +152,6 @@ class SubmissionBundle:
             )
 
         return copied
-
-    def _write_trajectory(self, bundle_dir: Path) -> Path | None:
-        """Extract the contestant's series so the run-wide metrics can be rechecked.
-
-        Written with the same function that computes them, so a verifier reading this
-        back and recomputing is comparing like with like rather than reimplementing the
-        formulas and hoping they agree.
-        """
-        rows = self._contestant_trajectory()
-        if not rows:
-            return None
-        try:
-            import pyarrow as pa
-            import pyarrow.parquet as pq
-
-            destination = bundle_dir / TRAJECTORY_NAME
-            pq.write_table(pa.Table.from_pylist(rows), destination, compression="zstd")
-        except Exception:
-            logger.exception("Could not write a trajectory for %s", self.session_dir)
-            return None
-        return destination
-
-    def _contestant_trajectory(self) -> list[dict[str, int]]:
-        """The scored company's series. A scored run has exactly one contestant."""
-        from nttd.analysis import business_metrics
-        from nttd.store.result_writer import read_result
-
-        rows = read_result(self.session_dir)
-        if not rows:
-            return []
-        return business_metrics.trajectory_rows(
-            self.session_dir, int(rows[0].get("company_id", 0)),
-        )
-
-    def _write_final_snapshot(self, bundle_dir: Path) -> Path | None:
-        """Write the last recorded snapshot, dropping the rest of the series.
-
-        One row rather than thousands. The end state is what a score is computed from,
-        and the intermediate series is analysis material a contestant can keep and link
-        to. Named for what it is, so nobody reads a one-row file as a time series.
-        """
-        source = self.session_dir / "snapshots.parquet"
-        if not source.exists():
-            return None
-
-        try:
-            import pyarrow.parquet as pq
-
-            table = pq.read_table(source)
-            if table.num_rows == 0:
-                return None
-            dates = table.column("game_date").to_pylist()
-            last = max(range(len(dates)), key=lambda index: dates[index])
-            destination = bundle_dir / FINAL_SNAPSHOT_NAME
-            pq.write_table(table.slice(last, 1), destination)
-        except Exception:
-            logger.exception("Could not extract a final snapshot from %s", source)
-            return None
-
-        return destination
 
     def _manifest(
         self, rows: list[dict[str, Any]], copied: dict[str, Path],

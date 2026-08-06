@@ -362,7 +362,7 @@ class TestReadingAnOlderResult:
         assert "days to first profit" not in output
 
 
-class TestTheTrajectoryTravelsWithTheBundle:
+class TestTheSeriesTravelsWithTheBundle:
     """Without it the run-wide metrics are claims.
 
     Endpoint figures can be recomputed from the savegame. Operating margin over the run,
@@ -371,9 +371,14 @@ class TestTheTrajectoryTravelsWithTheBundle:
     about 13 bytes a row, against roughly 4 KB a row for the full world as JSON.
     """
 
-    def test_recomputing_from_the_trajectory_matches(self, tmp_path: Path) -> None:
+    def test_recomputing_from_the_bundle_matches(self, tmp_path: Path) -> None:
         """The property the whole thing rests on: what a verifier gets by reading the
-        bundle equals what nttd wrote from the session."""
+        bundle equals what nttd wrote from the session.
+
+        Now asserted end to end. The bundle carries snapshots.parquet, so a verifier
+        points compute() at the bundle directory and gets the same numbers, with no
+        separate extract to keep in step.
+        """
         session = _session(tmp_path, [
             _snapshot(100, value=10, money=5000, loan=100_000, max_loan=300_000,
                       income=1000, expenses=-400, cargo=50, stations=2),
@@ -386,9 +391,14 @@ class TestTheTrajectoryTravelsWithTheBundle:
             session, 0, primary_score=700, total_cost_usd=2.0,
             total_actions=80, successful_actions=70,
         )
-        replayed = business_metrics.compute_from_trajectory(
-            business_metrics.trajectory_rows(session, 0),
-            primary_score=700, total_cost_usd=2.0,
+
+        bundle = tmp_path / "bundle"
+        bundle.mkdir()
+        (bundle / "snapshots.parquet").write_bytes(
+            (session / "snapshots.parquet").read_bytes(),
+        )
+        replayed = business_metrics.compute(
+            bundle, 0, primary_score=700, total_cost_usd=2.0,
             total_actions=80, successful_actions=70,
         )
         assert replayed == direct
@@ -418,7 +428,7 @@ class TestTheTrajectoryTravelsWithTheBundle:
         empty.mkdir()
         assert business_metrics.trajectory_rows(empty, 0) == []
 
-    def test_the_bundle_names_it(self) -> None:
-        from nttd.store.submission_bundle import TRAJECTORY_NAME
+    def test_the_series_is_a_bundled_artifact(self) -> None:
+        from nttd.store.submission_bundle import _ARTIFACTS
 
-        assert TRAJECTORY_NAME == "trajectory.parquet"
+        assert "snapshots.parquet" in dict(_ARTIFACTS)

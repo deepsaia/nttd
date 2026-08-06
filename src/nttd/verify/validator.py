@@ -29,7 +29,6 @@ from nttd.config.scenario_config import load, scenario_to_settings
 from nttd.runtime.final_save import FINAL_SAVE_NAME, SAVE_EXTENSION
 from nttd.schemas.verification import CheckOutcome, Verdict, VerificationReport
 from nttd.store.result_writer import read_result
-from nttd.store.submission_bundle import FINAL_SNAPSHOT_NAME
 from nttd.verify import checks, replay
 from nttd.verify.headless_openttd import HeadlessOpenTTD
 
@@ -126,8 +125,13 @@ class BundleValidator:
             return []
 
     def _final_snapshot(self) -> dict[str, Any]:
-        """The bundled end state, or empty if the run recorded none."""
-        path = self.bundle_dir / FINAL_SNAPSHOT_NAME
+        """The end state, taken from the last row of the bundled series.
+
+        It used to come from a one-row ``final_snapshot.parquet`` written beside the
+        series. That file existed only because the series itself was not bundled, and
+        a derivation shipped next to its source is how a bundle turns into an archive.
+        """
+        path = self.bundle_dir / "snapshots.parquet"
         if not path.exists():
             return {}
         try:
@@ -135,8 +139,13 @@ class BundleValidator:
 
             import pyarrow.parquet as pq
 
-            rows = pq.read_table(path).to_pylist()
-            return json.loads(rows[0]["snapshot_json"]) if rows else {}
+            rows = pq.read_table(path, columns=["game_date", "snapshot_json"]).to_pylist()
+            if not rows:
+                return {}
+            # By game date rather than file order: fragments are merged on stop and
+            # the last row written is not guaranteed to be the latest.
+            last = max(rows, key=lambda row: row.get("game_date") or 0)
+            return json.loads(last["snapshot_json"]) if last.get("snapshot_json") else {}
         except Exception:
             logger.exception("Could not read %s", path)
             return {}

@@ -123,9 +123,10 @@ TRAJECTORY_COLUMNS = (
 def trajectory_rows(session_dir: Path, company_id: int) -> list[dict[str, int]]:
     """One company's series, as plain rows.
 
-    Written into the submission bundle so whoever verifies a run can recompute every
-    run-wide metric and compare. Without it the endpoint figures are checkable against
-    the savegame and the rest are only claims.
+    The bundle carries ``snapshots.parquet`` itself, so nothing needs this to verify a
+    run: ``compute`` reads the same file straight out of the bundle. It is here for
+    drawing a trend, where ten integers a tick is a far cheaper thing to hand a plotting
+    library than the whole world as JSON.
     """
     series = _read_series(session_dir, company_id)
     if series is None:
@@ -143,40 +144,6 @@ def trajectory_rows(session_dir: Path, company_id: int) -> list[dict[str, int]]:
         }
         for i in range(len(series))
     ]
-
-
-def compute_from_trajectory(
-    rows: list[dict[str, int]],
-    primary_score: int = 0,
-    total_cost_usd: float = 0.0,
-    total_actions: int = 0,
-    successful_actions: int = 0,
-) -> BusinessMetrics:
-    """The same metrics, from a trajectory read back rather than from a session.
-
-    This is the entry point a verifier uses: it holds the bundle, not the session, and
-    recomputing from the same rows nttd used is what turns the figures from claims into
-    something checkable.
-    """
-    series = _CompanySeries()
-    for row in rows:
-        series.game_dates.append(int(row.get("game_date", 0)))
-        series.value.append(int(row.get("value", 0)))
-        series.money.append(int(row.get("money", 0)))
-        series.loan.append(int(row.get("loan", 0)))
-        series.max_loan.append(int(row.get("max_loan", 0)))
-        series.income.append(int(row.get("income", 0)))
-        series.expenses.append(int(row.get("expenses", 0)))
-        series.cargo.append(int(row.get("cargo", 0)))
-        series.vehicles.append(int(row.get("vehicles", 0)))
-        series.stations.append(int(row.get("stations", 0)))
-        series.profitable_vehicles.append(int(row.get("profitable_vehicles", 0)))
-        series.idle_vehicles.append(int(row.get("idle_vehicles", 0)))
-        series.maintenance.append(int(row.get("maintenance", 0)))
-    return _from_series(
-        series if len(series) else None,
-        primary_score, total_cost_usd, total_actions, successful_actions,
-    )
 
 
 def compute(
