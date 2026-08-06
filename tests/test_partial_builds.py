@@ -148,26 +148,50 @@ class TestABrokenRouteIsNotASuccess:
 
 
 class TestTheFailureReachesThePythonSide:
-    def test_a_partial_build_is_recorded_as_failed(self) -> None:
-        """The route-completion report and the plots count status == success. With the
+    """Exercised through the mapping rather than by reading the route's source.
+
+    These used to grep submit_action for the expressions it happened to contain, which
+    broke the moment the mapping moved into a shared function even though the behaviour
+    was identical. Calling it says the same thing and survives being tidied.
+    """
+
+    def test_a_partial_build_is_not_a_success(self) -> None:
+        """The route-completion report and the plots count status == success. Under the
         old unconditional success they counted a broken route as a finished one."""
-        import inspect
+        from nttd.actions.gs_reply import result_from_reply
+        from nttd.schemas.action_result import ActionStatus
 
-        from nttd.api import action_routes
-
-        source = inspect.getsource(action_routes.submit_action)
-        assert 'gs_result.get("success")' in source
+        result = result_from_reply("a1", {
+            "success": False,
+            "error": "2 of 24 segments failed, first at (41,55): ERR_LAND_SLOPED_WRONG",
+            "result": {"status": "partial", "built": 19, "existing": 3, "failed": [{}, {}]},
+        })
+        assert result.status == ActionStatus.PARTIAL
+        assert result.status != ActionStatus.SUCCESS
 
     def test_what_was_built_survives_the_failure(self) -> None:
         """Recording nothing would understate a half-laid route: the track exists and
         was paid for."""
-        import inspect
+        from nttd.actions.gs_reply import result_from_reply
 
-        from nttd.api import action_routes
+        result = result_from_reply("a1", {
+            "success": False,
+            "error": "partial",
+            "result": {"status": "partial", "built": 19, "existing": 3},
+        })
+        assert result.changed_entities["built"] == 19
+        assert result.changed_entities["existing"] == 3
 
-        source = inspect.getsource(action_routes.submit_action)
-        partial = source.split("else:")[-1]
-        assert "changed_entities=partial" in partial
+    def test_an_outright_refusal_is_still_failed(self) -> None:
+        """Only a compound build reports partial. A dock that would not build is a
+        plain refusal and must not be softened into one."""
+        from nttd.actions.gs_reply import result_from_reply
+        from nttd.schemas.action_result import ActionStatus
+
+        result = result_from_reply("a1", {
+            "success": False, "error": "ERR_SITE_UNSUITABLE", "error_code": 266,
+        })
+        assert result.status == ActionStatus.FAILED
 
     def test_the_tracker_accepts_a_result_alongside_a_failure(self) -> None:
         import inspect
