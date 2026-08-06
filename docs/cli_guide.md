@@ -205,8 +205,22 @@ changing the OpenTTD build:
 uv run python scripts/dump_gs_enums.py
 ```
 
-A test regenerates and compares, so a committed manifest cannot drift from the game it
-describes. That drift is why this exists: a hand-written table of 14 actions declared
+Four things are checked, because regenerating only proves the output matches the input it
+was made from:
+
+- **Nothing the handler reads is missing**, and **nothing published is absent from the
+  handler**. Both directions, extracted independently of the generator, so a bug in the
+  generator's own parsing cannot hide behind it.
+- **Hand-written prose that matches nothing is an error**, not a silent no-op. A
+  description for a deleted action, a glossary entry nobody uses, or an enum binding
+  whose class moved would otherwise rot quietly: the parameter just loses its values.
+- **Examples in the source are validated.** Both were wrong when this landed:
+  `build_road_stop` was shown taking `length`, and `add_order` an `order_index` that
+  belongs to `insert_order`. An agent copies the format it is shown.
+- **The reference pages are regenerated and compared**, since a stale page reads exactly
+  like a current one.
+
+That drift is why this exists: a hand-written table of 14 actions declared
 `plant_tree_rectangle` takes `x1, y1, x2, y2` while the GameScript reads
 `x, y, width, height` and refuses anything else, so a contestant following nttd's own
 validator was rejected by the game.

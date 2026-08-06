@@ -1,4 +1,4 @@
-"""MCP server for nttd — exposes observation and validation tools for LLM agents.
+"""MCP server for nttd: exposes observation and validation tools for LLM agents.
 
 Agents use MCP tools to observe game state and validate proposed actions.
 Execution happens through a separate interpreter layer, not through MCP.
@@ -46,7 +46,7 @@ mcp = FastMCP(
         "JSON action list. Each action should have 'action_type' and 'parameters'. "
         "Example:\n"
         '[\n'
-        '  {"action_type": "build_road_stop", "parameters": {"tile": 12345, "length": 1}},\n'
+        '  {"action_type": "build_road_stop", "parameters": {"tile": 12345, "is_truck_stop": true}},\n'
         '  {"action_type": "buy_vehicle", "parameters": {"depot_tile": 67890, "engine_id": 5}}\n'
         ']'
     ),
@@ -59,7 +59,7 @@ client = NttdMCPClient(
     company_id=NTTD_COMPANY_ID,
 )
 
-# Register tool modules — observation, pathfinding, and validation only
+# Register tool modules: observation, pathfinding, and validation only
 register_observation_tools(mcp, client)
 register_pathfinding_tools(mcp, client)
 register_validation_tools(mcp, client)
