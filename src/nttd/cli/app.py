@@ -32,6 +32,7 @@ import typer
 from nttd.cli.actions_command import actions
 from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
+from nttd.cli.mcp_command import mcp
 from nttd.cli.result_command import result
 from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
@@ -54,6 +55,7 @@ app.command()(submit)
 app.command()(verify)
 app.command()(analyze)
 app.command()(actions)
+app.command()(mcp)
 
 
 def main() -> None:
