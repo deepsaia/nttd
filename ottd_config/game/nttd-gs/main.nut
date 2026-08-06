@@ -1663,13 +1663,13 @@ class NttdGS extends GSController {
     local x1 = pair.from.x, y1 = pair.from.y, x2 = pair.to.x, y2 = pair.to.y;
     if (x1 != x2 && y1 != y2) return { success = false, error = "Only straight lines (same x or same y)" };
     if (x1 == x2 && y1 == y2) return { success = false, error = "Start and end are the same tile" };
-    local built = 0, failed = [];
+    local built = 0, existing = 0, failed = [];
     if (x1 == x2) {
       local step = (y2 > y1) ? 1 : -1;
       for (local y = y1; ; y += step) {
         local ft = GSMap.GetTileIndex(x1, y), tt = GSMap.GetTileIndex(x1, y + step);
         if (GSRoad.BuildRoad(ft, tt)) { built++; }
-        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x1, y = y, error = err }); } else { built++; } }
+        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x1, y = y, error = err }); } else { existing++; } }
         if (y + step == y2) break;
       }
     } else {
@@ -1677,11 +1677,19 @@ class NttdGS extends GSController {
       for (local x = x1; ; x += step) {
         local ft = GSMap.GetTileIndex(x, y1), tt = GSMap.GetTileIndex(x + step, y1);
         if (GSRoad.BuildRoad(ft, tt)) { built++; }
-        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x, y = y1, error = err }); } else { built++; } }
+        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x, y = y1, error = err }); } else { existing++; } }
         if (x + step == x2) break;
       }
     }
-    return { success = true, result = { built = built, failed = failed, total = built + failed.len() } };
+    // A gap in the line means no line, the same as for connect_road. This reported
+    // success whatever happened, and was missed when the other compound builders were
+    // fixed because its failure branch is written on one line.
+    local complete = (failed.len() == 0);
+    return { success = complete,
+      error = complete ? null : this._PartialError(failed, built + existing + failed.len()),
+      result = { status = complete ? "complete" : "partial",
+                 built = built, existing = existing, failed = failed,
+                 total = built + existing + failed.len() } };
   }
 
   function CmdBuildRoadDepot(p) {
