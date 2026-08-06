@@ -323,6 +323,14 @@ per seed.
 Start the session with `--agent-companies N`. You get one token per company, in
 `logs/sessions/<id>/participants.json`, and `nttd session attach` prints them.
 
+**These runs are not scored.** A scored result is one company's performance on one
+world, and co-contestants sharing a map compete for the same towns and industries, which
+is a different problem that nothing on a result row records. Two such runs are not
+comparable with each other, and neither is comparable with a solo run on the same map.
+
+The shape is still supported and still useful, for self-play and population training.
+nttd says so when the session starts rather than letting you find out at submission.
+
 ### Real-time
 
 Nothing special. Each company acts on its own cadence with its own token. The ceiling and

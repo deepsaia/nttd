@@ -14,6 +14,7 @@ from nttd.cli.helpers import (
     resolve_session,
     session_option,
 )
+from nttd.config import single_company
 
 session_app = typer.Typer(help="Session lifecycle management")
 
@@ -113,6 +114,12 @@ def session_start(
         payload["ai_opponents"] = ai_opponents
     if agent_companies >= 0:
         payload["agent_companies"] = agent_companies
+
+    # Said here rather than left to the server log. A contestant who finds out at
+    # submission time that the run was never scoreable has wasted the whole run.
+    blocks = single_company.blocks_scoring(agent_companies)
+    if blocks:
+        console.print(f"[yellow]This session will not be scored.[/] {blocks}")
 
     with console.status("Starting OpenTTD server..."):
         resp = requests.post(

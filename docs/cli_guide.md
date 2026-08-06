@@ -133,6 +133,10 @@ and the profile-derived keys that decide whether the run is scored and what boun
 **`start`** generates the world and spawns OpenTTD. `--agent-companies 1` creates the
 company your runner will play; without it there is nothing to play.
 
+More than one contestant company makes the run **unscored**, and `start` says so. A
+scored result is one company on one world; several sharing a map is a different problem.
+Self-play still works, it simply cannot be ranked.
+
 **`attach`** prints the participant token and the routes: real-time and stepped. The
 token exists only in the `start` output and in `participants.json` otherwise, so this is
 how you recover it.
