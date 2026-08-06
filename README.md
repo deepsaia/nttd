@@ -373,6 +373,7 @@ nttd session status         Show detailed session status
 nttd scenario validate      Check a scenario without running it
 nttd scenario profile       Show the rules a scored scenario must satisfy
 nttd actions                Show every action and what it takes
+nttd actions --observations Show only the actions that read the world
 nttd submit                 Package a session into a submission bundle
 nttd verify                 Self-check a bundle before submitting it
 nttd result                 Show the scored result record
@@ -391,6 +392,7 @@ Full API at `http://localhost:8000/docs` once the server is running.
 | [Play modes and scoring](docs/play_modes.md) | Which worlds are scoreable, the two modes, and how a run is ranked |
 | [CLI guide](docs/cli_guide.md) | Every command, with examples |
 | [Agent guide](docs/agent_guide.md) | Writing a runner against the participant routes |
+| [Action reference](docs/action_reference.md) | All 129 actions, their parameters and accepted values |
 | [Session analysis](docs/session_analyzer.md) | Reading a completed run |
 
 ---
