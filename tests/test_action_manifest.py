@@ -268,6 +268,31 @@ class TestItIsReproducible:
                 "run uv run python scripts/generate_action_manifest.py"
             )
 
+    def test_the_index_covers_everything_and_stays_small(
+        self, actions: dict[str, Any],
+    ) -> None:
+        """Choosing an action should not cost reading every action.
+
+        actions.md is about 9k tokens. The question "which action do I want" is answered
+        by the index at roughly a third of that, for all 129 rather than one tier.
+        """
+        index = (_ROOT / "docs" / "actions" / "index.md").read_text()
+        for name in actions:
+            assert f"`{name}(" in index, f"{name} has no signature in the index"
+
+        detail = (_ROOT / "docs" / "actions" / "actions.md").read_text()
+        assert len(index) < len(detail), (
+            "the index covers all three tiers and must still be smaller than one "
+            "detail page, or it is not worth reading first"
+        )
+
+    def test_a_signature_shows_what_a_call_needs(self) -> None:
+        """Required first, choices as a|b, optional in brackets. Without this an agent
+        must open the section to learn whether it can call the thing at all."""
+        index = (_ROOT / "docs" / "actions" / "index.md").read_text()
+        assert "`remove_order(vehicle_id, order_index|order_position)`" in index
+        assert "`build_train(engine_id, depot_tile|depot_x,depot_y," in index
+
     def test_the_reference_is_split_by_what_an_action_does(self) -> None:
         """The whole surface is about 16k tokens. An agent deciding what to observe
         should not have to read 76 build actions to do it."""

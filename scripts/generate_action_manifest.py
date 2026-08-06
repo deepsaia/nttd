@@ -402,6 +402,10 @@ def _markdown(manifest: dict[str, Any]) -> str:
         "Split by what running it does to the game, because that is the first thing worth",
         "knowing and because reading all of it at once is rarely what you want.",
         "",
+        "Start with **[the index](actions/index.md)**: every action on one line with its",
+        "call shape. Choosing one costs about 3k tokens there rather than the 16k of",
+        "reading the detail pages below.",
+        "",
         "| Reference | Count | What it is |",
         "| --- | --- | --- |",
         f"| [Observations](actions/observations.md) | {counts['read_only']} "
@@ -436,6 +440,46 @@ def _markdown(manifest: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _markdown_index_page(manifest: dict[str, Any]) -> str:
+    """Every action as one line: signature and what it does.
+
+    The detail pages are the wrong thing to read when the question is "which action do I
+    want". actions.md is about 11k tokens, and answering that question should not cost
+    that. This is the whole surface at roughly a fifth of the size, with a pointer to the
+    section that has the parameters and accepted values.
+    """
+    actions = manifest["actions"]
+    lines = [
+        "# Every action, one line each",
+        "",
+        "The whole surface at a glance, for choosing what to call. For a parameter's type,",
+        "default, and the constants it accepts, follow the link or run",
+        "`nttd actions <name>`.",
+        "",
+        "**Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.",
+        "",
+        "Signatures read: required parameters first, then a choice as `a|b`, then optional",
+        "ones in brackets. So `remove_order(vehicle_id, order_index|order_position)` needs",
+        "the vehicle and one of the two positions.",
+        "",
+    ]
+    for tier, filename, title, _ in _TIER_SECTIONS:
+        entries = {n: e for n, e in actions.items() if e["tier"] == tier}
+        if not entries:
+            continue
+        lines += [
+            f"## {title}",
+            "",
+            f"Full detail in [{filename}.md]({filename}.md).",
+            "",
+        ]
+        for name, entry in sorted(entries.items()):
+            summary = entry["description"].split(". ")[0].rstrip(".")
+            lines.append(f"- `{_signature(name, entry)}` {summary}.")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def _markdown_section(
     manifest: dict[str, Any], tier: str, title: str, blurb: str
 ) -> str:
@@ -464,7 +508,7 @@ def _markdown_section(
     for category in sorted(by_category):
         names = ", ".join(f"`{name}`" for name, _ in sorted(by_category[category]))
         lines.append(f"- **{category}**: {names}")
-    lines.append("")
+    lines += ["", "Every action on one line, across all three pages: [index.md](index.md).", ""]
 
     for category in sorted(by_category):
         lines += [f"## {category}", ""]
@@ -488,16 +532,11 @@ def _markdown_action(name: str, entry: dict[str, Any]) -> list[str]:
         lines += ["Takes no parameters.", ""]
         return lines
 
-    lines += [
-        "| Parameter | Type | Required | Default | Description |",
-        "| --- | --- | --- | --- | --- |",
-    ]
+    # A list rather than a table. 93 of the 129 actions take three parameters or fewer,
+    # and a table spends two lines of scaffolding before saying anything: about 2400
+    # tokens across the reference, for punctuation.
     for param, meta in entry["parameters"].items():
-        lines.append(
-            f"| `{param}` | {meta.get('type') or ''} | "
-            f"{'yes' if meta.get('required') else 'no'} | "
-            f"{_markdown_default(meta)} | {meta.get('description') or ''} |"
-        )
+        lines.append(f"- `{param}` ({_markdown_facts(meta)}) {meta.get('description') or ''}")
     lines.append("")
 
     for param, meta in entry["parameters"].items():
@@ -508,16 +547,42 @@ def _markdown_action(name: str, entry: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _markdown_default(meta: dict[str, Any]) -> str:
-    """How a default renders in the table."""
-    if meta.get("via") == "tile_resolver":
-        return "_tile or x,y_"
-    if "default" not in meta:
-        return ""
-    default = meta["default"]
-    if isinstance(default, dict):
-        return f"`{default.get('expression', '')}`"
-    return f"`{json.dumps(default)}`"
+def _markdown_facts(meta: dict[str, Any]) -> str:
+    """Type, requiredness and default, compressed into one parenthesis."""
+    facts = [meta.get("type") or "value"]
+    if meta.get("required"):
+        facts.append("required")
+    elif "default" in meta:
+        default = meta["default"]
+        rendered = (
+            default.get("expression", "") if isinstance(default, dict) else json.dumps(default)
+        )
+        facts.append(f"default {rendered}")
+    else:
+        facts.append("optional")
+    return ", ".join(facts)
+
+
+def _signature(name: str, entry: dict[str, Any]) -> str:
+    """A one-line call shape, for choosing an action without reading its section.
+
+    Required parameters first, then each choice as ``a|b``, then the optional ones in
+    brackets. This is what makes the index usable: an agent picking between
+    build_road_stop and build_rail_station can see the difference without either
+    section.
+    """
+    grouped = {p for group in entry.get("one_of", []) for branch in group for p in branch}
+    required = [p for p, m in entry["parameters"].items() if m.get("required")]
+    optional = sorted(
+        p for p, m in entry["parameters"].items() if not m.get("required") and p not in grouped
+    )
+
+    parts = sorted(required)
+    for group in entry.get("one_of", []):
+        parts.append("|".join(",".join(branch) for branch in group))
+    if optional:
+        parts.append(f"[{', '.join(optional)}]")
+    return f"{name}({', '.join(parts)})"
 
 
 def main() -> None:
@@ -527,6 +592,7 @@ def main() -> None:
     REFERENCE.parent.mkdir(parents=True, exist_ok=True)
     REFERENCE.write_text(_markdown(manifest))
     REFERENCE_DIR.mkdir(parents=True, exist_ok=True)
+    (REFERENCE_DIR / "index.md").write_text(_markdown_index_page(manifest))
     for tier, filename, title, blurb in _TIER_SECTIONS:
         path = REFERENCE_DIR / f"{filename}.md"
         path.write_text(_markdown_section(manifest, tier, title, blurb))

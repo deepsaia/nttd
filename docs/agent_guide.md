@@ -79,9 +79,22 @@ uv run nttd actions --playable        # the 76 ways to change it
 uv run nttd actions build_road_stop   # one action's parameters and defaults
 ```
 
-Or read it as files, split so you can pull in only the half you need:
-[observations](actions/observations.md), [actions](actions/actions.md),
-[operator](actions/operator.md).
+Or read it as files. Start with [the index](actions/index.md): every action on one line
+with its call shape, so choosing one costs about 3k tokens rather than reading all of
+them.
+
+```
+remove_order(vehicle_id, order_index|order_position)
+build_train(engine_id, depot_tile|depot_x,depot_y, [cargo_id, num_wagons, wagon_id])
+```
+
+Required parameters first, then a choice as `a|b`, then optional ones in brackets. For
+the full detail of one, follow through to [observations](actions/observations.md),
+[actions](actions/actions.md) or [operator](actions/operator.md), or run
+`nttd actions <name>`.
+
+If you are calling nttd rather than reading it, prefer `GET /v1/public/actions` or the
+MCP tool schemas: same content, already structured, and no parsing.
 
 Generated from the GameScript, so it cannot drift from what the game accepts. The same
 description backs `POST /actions/interpret/validate`, which tells you what an action is
