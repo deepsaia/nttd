@@ -50,8 +50,10 @@ class StepRequest(BaseModel):
 
     Attributes:
         actions: Variable length, because a step is not one action. A policy that
-            wants to lay a whole route in one step may, up to the profile's
-            ``max_actions_per_decision`` ceiling; one that wants to act once may.
+            wants to lay a whole route in one step may, and one that wants to act
+            once may. There is no ceiling: a stepped run is bounded by how many
+            steps it takes and how many game-days each advances, both fixed by the
+            scenario, so a larger batch buys no more world than anyone else gets.
         days: Override the scenario's step size. Present for experimentation, and
             ignored for a scored run, where the step size is part of the task.
     """
