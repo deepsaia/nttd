@@ -56,14 +56,114 @@ def _sessions_dir() -> Path:
     return session_paths.sessions_dir()
 
 
+def _print_business_metrics(rows: list[dict]) -> None:
+    """How the company was run, grouped so the families read as families.
+
+    The score says how well it did. These say how it got there, which is the part a
+    contestant can act on: a run that scored well on 90 percent borrowed money and one
+    that compounded steadily are different pieces of work.
+
+    A percentage is rendered as one, and a currency figure as an integer, because the
+    raw floats are unreadable side by side.
+    """
+    groups: list[tuple[str, list[tuple[str, str, str]]]] = [
+        ("Profitability", [
+            ("operating_margin_final", "operating margin, final", "pct"),
+            ("operating_margin_mean", "operating margin, mean", "pct"),
+            ("profitable_quarters_share", "quarters in profit", "pct"),
+            ("maintenance_burden_final", "upkeep as share of revenue", "pct"),
+        ]),
+        ("Capital", [
+            ("return_on_capital", "return on capital", "pct"),
+            ("peak_capital_deployed", "peak capital commanded", "money"),
+        ]),
+        ("Growth", [
+            ("value_at_25pct", "value at 25% of the run", "money"),
+            ("value_at_50pct", "value at 50%", "money"),
+            ("value_at_75pct", "value at 75%", "money"),
+            ("company_value", "value at the end", "money"),
+            ("days_to_first_profit", "days to first profit", "days"),
+        ]),
+        ("Risk", [
+            ("peak_credit_used", "peak credit drawn", "pct"),
+            ("final_credit_used", "credit drawn at the end", "pct"),
+            ("min_cash", "lowest cash", "money"),
+            ("ended_in_debt", "ended in debt", "bool"),
+        ]),
+        ("Operations", [
+            ("vehicles_final", "vehicles", "int"),
+            ("stations_final", "stations", "int"),
+            ("profitable_vehicle_share", "vehicles running at a profit", "pct"),
+            ("idle_vehicle_share", "vehicles parked", "pct"),
+            ("cargo_per_vehicle", "cargo per vehicle", "float"),
+            ("cargo_per_station", "cargo per station", "float"),
+        ]),
+        ("Decisions", [
+            ("action_success_rate", "actions that succeeded", "pct"),
+            ("value_per_action", "value per action", "float"),
+            ("usd_per_score_point", "dollars per score point", "usd"),
+        ]),
+    ]
+
+    for row in rows:
+        # A result written before these existed reads back as zeros, and zeros are a
+        # claim: "days to first profit: 0" says profitable immediately, when the truth
+        # is that nobody measured. The version is empty exactly then, so say so.
+        if not row.get("metrics_version"):
+            console.print(
+                f"\n[yellow]No business metrics for "
+                f"{row['company_name'] or row['company_id']}.[/] "
+                f"[dim]This result was recorded before they were computed. "
+                f"Replaying the session would produce them.[/]"
+            )
+            continue
+
+        table = Table(
+            title=f"How it was run: {row['company_name'] or row['company_id']} "
+                  f"({row['metrics_version']})",
+            show_header=False,
+        )
+        for heading, fields in groups:
+            table.add_row(f"[bold]{heading}[/]", "")
+            for key, label, kind in fields:
+                table.add_row(f"  {label}", _format_metric(row.get(key), kind))
+        console.print(table)
+
+
+def _format_metric(value: object, kind: str) -> str:
+    """Render one metric, saying plainly when there is nothing to render."""
+    if value is None:
+        return "[dim]not recorded[/]"
+    if kind == "bool":
+        return "yes" if value else "no"
+    if kind == "days":
+        # -1 is the sentinel for never, which is not the same as day zero.
+        return "[yellow]never[/]" if value == -1 else str(value)
+    if kind == "usd":
+        # Zero means spend was not reported. Rendering $0.00 would claim it was free.
+        return "[dim]not reported[/]" if not value else f"${value:.4f}"
+    if kind == "pct":
+        return f"{float(value) * 100:.1f}%"
+    if kind == "money":
+        return f"{int(value):,}"
+    if kind == "float":
+        return f"{float(value):,.2f}"
+    return str(value)
+
+
 def result(
     session: Annotated[str, typer.Option("--session", "-s", help="Session ID")],
     as_json: Annotated[bool, typer.Option("--json", help="Emit raw JSON rows")] = False,
+    business: Annotated[
+        bool,
+        typer.Option("--business", help="Show how the company was run, not just its score"),
+    ] = False,
 ) -> None:
     """Show the scored result record for a session.
 
     Examples:
       nttd result -s ses_20260803_120000_abcd1234
+      nttd result -s ses_... --business      how the company was run
       nttd result -s ses_... --json > entry.json
     """
     from nttd.store.result_writer import read_result
@@ -164,6 +264,11 @@ def result(
     # and a cheap router in front of one expensive planner is a different system from
     # the same total spent uniformly.
     _print_model_breakdown(rows)
+
+    # Behind a flag: the score and provenance are what most readers came for, and
+    # twenty-eight more numbers by default would bury them.
+    if business:
+        _print_business_metrics(rows)
 
     # Flag what would block verification, so gaps are visible before submission.
     # Derived in store/verification_gaps.py so a submission bundle records the same
