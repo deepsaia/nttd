@@ -106,11 +106,19 @@ async def submit_action(
             )
         else:
             error = gs_result.get("error", "GS returned failure")
-            runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, error)
+            # A refusal usually changes nothing, but a compound build that laid half a
+            # route is a failure that moved the world. Dropping its result would record
+            # nothing for track that exists and was paid for, and would leave the agent
+            # with an error and no account of what it now owns.
+            partial = gs_result.get("result") or {}
+            runtime.action_tracker.update_result(
+                envelope.action_id, ActionStatus.FAILED, error, changed_entities=partial,
+            )
             result = ActionResult(
                 action_id=envelope.action_id,
                 status=ActionStatus.FAILED,
                 error=error,
+                changed_entities=partial,
             )
     except Exception as exc:
         logger.exception("Action execution failed: %s", envelope.action_type)
