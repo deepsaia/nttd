@@ -260,7 +260,7 @@ class SessionManager:
         await runtime.start_companies(ai_count, agent_companies)
 
         # Issue one participant token per contestant company. Companies are
-        # allocated from 0, and AI opponents occupy the slots after the agent
+        # allocated from 0, and the extra idle slots come after the agent
         # ones, so the first agent_companies ids are the contestant's.
         #
         # Tokens are also written to the session directory because a contestant's
@@ -371,7 +371,14 @@ class SessionManager:
         final_save: Path | None = None,
     ) -> None:
         """Score the finished session and write its immutable result record."""
-        scores = rank_companies(list(runtime.world.companies.values()))
+        # Only companies somebody played. See rank_companies: every slot is created by
+        # an idle AI, so without this a run configured for "AI opponents" scores them.
+        played = {p.company_id for p in runtime.participants.participants()} | {
+            company_id
+            for company_id, counts in runtime.recorder.action_counts().items()
+            if counts.get("total_actions", 0) > 0
+        }
+        scores = rank_companies(list(runtime.world.companies.values()), contested_by=played)
         if not scores:
             logger.warning("Session %s: no active companies to score", session_id)
             return
