@@ -96,8 +96,21 @@ Nine operator actions exist and are not in any of this: no session can call one,
 documenting how to would only waste your context. They are named in
 [the reference](action_reference.md) so you know what nttd holds back.
 
-If you are calling nttd rather than reading it, prefer `GET /v1/public/actions` or the
-MCP tool schemas: same content, already structured, and no parsing.
+If you are calling nttd rather than reading it, use the endpoint instead. Same content,
+already structured, no parsing:
+
+```bash
+curl localhost:8000/v1/public/actions                      # everything you may submit
+curl localhost:8000/v1/public/actions?tier=read_only       # just the observations
+curl localhost:8000/v1/public/actions/build_road_stop      # one action in full
+```
+
+Public tier, so it answers before a session exists. Working out what you can do should
+not require starting a game first.
+
+The listing leaves out the nine operator actions, and says so in an `excluded` field
+rather than silently. A mistyped name gets the nearest matches back instead of a bare
+404, so a typo costs one request rather than a refetch of the manifest.
 
 Generated from the GameScript, so it cannot drift from what the game accepts. The same
 description backs `POST /actions/interpret/validate`, which tells you what an action is
