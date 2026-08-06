@@ -1,0 +1,2553 @@
+{
+  "manifest_version": 1,
+  "generated_from": "ottd_config/game/nttd-gs/main.nut",
+  "actions": {
+    "add_order": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdAddOrder",
+      "parameters": {
+        "dest_tile": {
+          "description": "",
+          "required": true
+        },
+        "destination": {
+          "description": "",
+          "required": true
+        },
+        "order_flags": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "station_id": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_airport": {
+      "description": "",
+      "tier": "participant",
+      "category": "air_and_other",
+      "gamescript_function": "CmdBuildAirport",
+      "parameters": {
+        "airport_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_bridge": {
+      "description": "",
+      "tier": "participant",
+      "category": "air_and_other",
+      "gamescript_function": "CmdBuildBridge",
+      "parameters": {
+        "bridge_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "end_x": {
+          "description": "",
+          "required": true
+        },
+        "end_y": {
+          "description": "",
+          "required": true
+        },
+        "start_x": {
+          "description": "",
+          "required": true
+        },
+        "start_y": {
+          "description": "",
+          "required": true
+        },
+        "transport_type": {
+          "description": "",
+          "required": false,
+          "default": "road"
+        }
+      }
+    },
+    "build_buoy": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdBuildBuoy",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_canal": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdBuildCanal",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_company_hq": {
+      "description": "",
+      "tier": "participant",
+      "category": "company",
+      "gamescript_function": "CmdBuildCompanyHQ",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_dock": {
+      "description": "",
+      "tier": "participant",
+      "category": "air_and_other",
+      "gamescript_function": "CmdBuildDock",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_lock": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdBuildLock",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_one_way_road": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdBuildOneWayRoad",
+      "parameters": {
+        "x1": {
+          "description": "",
+          "required": true
+        },
+        "x2": {
+          "description": "",
+          "required": true
+        },
+        "y1": {
+          "description": "",
+          "required": true
+        },
+        "y2": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_one_way_road_full": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdBuildOneWayRoadFull",
+      "parameters": {
+        "x1": {
+          "description": "",
+          "required": true
+        },
+        "x2": {
+          "description": "",
+          "required": true
+        },
+        "y1": {
+          "description": "",
+          "required": true
+        },
+        "y2": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_path": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdBuildPath",
+      "parameters": {
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "road_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "steps": {
+          "description": "",
+          "required": true
+        },
+        "transport_type": {
+          "description": "",
+          "required": false,
+          "default": "road"
+        }
+      }
+    },
+    "build_rail_depot": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdBuildRailDepot",
+      "parameters": {
+        "direction": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_rail_signal": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdBuildRailSignal",
+      "parameters": {
+        "signal_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_rail_station": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdBuildRailStation",
+      "parameters": {
+        "direction": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "num_platforms": {
+          "description": "",
+          "required": false,
+          "default": 2
+        },
+        "platform_length": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_rail_waypoint": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdBuildRailWaypoint",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_road_depot": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdBuildRoadDepot",
+      "parameters": {
+        "direction": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "road_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "build_road_stop": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdBuildRoadStop",
+      "parameters": {
+        "direction": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "is_drive_through": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "is_truck_stop": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "road_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "build_sign": {
+      "description": "",
+      "tier": "participant",
+      "category": "sign",
+      "gamescript_function": "CmdBuildSign",
+      "parameters": {
+        "name": {
+          "description": "",
+          "required": true
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_train": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdBuildTrain",
+      "parameters": {
+        "cargo_id": {
+          "description": "",
+          "required": true
+        },
+        "depot_tile": {
+          "description": "",
+          "required": true
+        },
+        "depot_x": {
+          "description": "",
+          "required": true
+        },
+        "depot_y": {
+          "description": "",
+          "required": true
+        },
+        "engine_id": {
+          "description": "",
+          "required": true
+        },
+        "num_wagons": {
+          "description": "",
+          "required": false,
+          "default": 1
+        },
+        "wagon_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_tunnel": {
+      "description": "",
+      "tier": "participant",
+      "category": "air_and_other",
+      "gamescript_function": "CmdBuildTunnel",
+      "parameters": {
+        "transport_type": {
+          "description": "",
+          "required": false,
+          "default": "rail"
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "build_water_depot": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdBuildWaterDepot",
+      "parameters": {
+        "direction": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "buy_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdBuyVehicle",
+      "parameters": {
+        "depot_tile": {
+          "description": "",
+          "required": true
+        },
+        "depot_x": {
+          "description": "",
+          "required": true
+        },
+        "depot_y": {
+          "description": "",
+          "required": true
+        },
+        "engine_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "change_bank_balance": {
+      "description": "",
+      "tier": "operator",
+      "category": "finance",
+      "gamescript_function": "CmdChangeBankBalance",
+      "parameters": {
+        "delta": {
+          "description": "",
+          "required": true
+        },
+        "expense_type": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "GSCompany.EXPENSES_OTHER"
+          }
+        }
+      }
+    },
+    "change_town_rating": {
+      "description": "",
+      "tier": "operator",
+      "category": "town_deity",
+      "gamescript_function": "CmdChangeTownRating",
+      "parameters": {
+        "delta": {
+          "description": "",
+          "required": true
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "clone_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdCloneVehicle",
+      "parameters": {
+        "share_orders": {
+          "description": "",
+          "required": false,
+          "default": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "connect_rail": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdConnectRail",
+      "parameters": {
+        "from_hint_x": {
+          "description": "",
+          "required": true
+        },
+        "from_hint_y": {
+          "description": "",
+          "required": true
+        },
+        "from_x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "from_y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "max_iterations": {
+          "description": "",
+          "required": false,
+          "default": 50000
+        },
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "tile_from": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "tile_to": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "to_hint_x": {
+          "description": "",
+          "required": true
+        },
+        "to_hint_y": {
+          "description": "",
+          "required": true
+        },
+        "to_x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "to_y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "connect_road": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdConnectRoad",
+      "parameters": {
+        "from_x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "from_y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "max_iterations": {
+          "description": "",
+          "required": false,
+          "default": 50000
+        },
+        "road_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "tile_from": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "tile_to": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "to_x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "to_y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "convert_rail": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdConvertRail",
+      "parameters": {
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x1": {
+          "description": "",
+          "required": true
+        },
+        "x2": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y1": {
+          "description": "",
+          "required": true
+        },
+        "y2": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "convert_road_type": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdConvertRoadType",
+      "parameters": {
+        "road_type": {
+          "description": "",
+          "required": true
+        },
+        "x1": {
+          "description": "",
+          "required": true
+        },
+        "x2": {
+          "description": "",
+          "required": true
+        },
+        "y1": {
+          "description": "",
+          "required": true
+        },
+        "y2": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "copy_orders": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdCopyOrders",
+      "parameters": {
+        "main_vehicle_id": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "create_group": {
+      "description": "",
+      "tier": "participant",
+      "category": "group",
+      "gamescript_function": "CmdCreateGroup",
+      "parameters": {
+        "parent_group_id": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "GSGroup.GROUP_INVALID"
+          }
+        },
+        "vehicle_type": {
+          "description": "",
+          "required": false,
+          "default": "train"
+        }
+      }
+    },
+    "create_subsidy": {
+      "description": "",
+      "tier": "operator",
+      "category": "subsidy",
+      "gamescript_function": "CmdCreateSubsidy",
+      "parameters": {
+        "cargo_type": {
+          "description": "",
+          "required": true
+        },
+        "from_id": {
+          "description": "",
+          "required": true
+        },
+        "from_type": {
+          "description": "",
+          "required": true
+        },
+        "to_id": {
+          "description": "",
+          "required": true
+        },
+        "to_type": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "delete_group": {
+      "description": "",
+      "tier": "participant",
+      "category": "group",
+      "gamescript_function": "CmdDeleteGroup",
+      "parameters": {
+        "group_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "demolish_tile": {
+      "description": "",
+      "tier": "participant",
+      "category": "air_and_other",
+      "gamescript_function": "CmdDemolishTile",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "estimate_cost": {
+      "description": "",
+      "tier": "participant",
+      "category": "planning",
+      "gamescript_function": "CmdEstimateCost",
+      "parameters": {
+        "action": {
+          "description": "",
+          "required": true
+        },
+        "params": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "expand_town": {
+      "description": "",
+      "tier": "operator",
+      "category": "town_deity",
+      "gamescript_function": "CmdExpandTown",
+      "parameters": {
+        "houses": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "find_airport_spots": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindAirportSpots",
+      "parameters": {
+        "airport_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 20
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "find_bus_stop_spots": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindBusStopSpots",
+      "parameters": {
+        "is_truck_stop": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 10
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 15
+        },
+        "road_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "find_depot_spots": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindDepotSpots",
+      "parameters": {
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 15
+        },
+        "road_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "find_dock_spots": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindDockSpots",
+      "parameters": {
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 20
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "find_flat_spots": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindFlatSpots",
+      "parameters": {
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 10
+        },
+        "min_size": {
+          "description": "",
+          "required": false,
+          "default": 1
+        },
+        "platform_length": {
+          "description": "",
+          "required": false,
+          "default": 3
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 10
+        },
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "required_cargo": {
+          "description": "",
+          "required": false,
+          "default": null
+        },
+        "station_test": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "find_rail_depot_spot": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindRailDepotSpot",
+      "parameters": {
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 10
+        },
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "tile": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "find_station_spot": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindStationSpot",
+      "parameters": {
+        "industry_id": {
+          "description": "",
+          "required": true
+        },
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "platform_length": {
+          "description": "",
+          "required": false,
+          "default": 3
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 15
+        },
+        "rail_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "find_water_depot_spots": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdFindWaterDepotSpots",
+      "parameters": {
+        "max_results": {
+          "description": "",
+          "required": false,
+          "default": 5
+        },
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 20
+        },
+        "tile": {
+          "description": "",
+          "required": true
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "found_town": {
+      "description": "",
+      "tier": "operator",
+      "category": "town_deity",
+      "gamescript_function": "CmdFoundTown",
+      "parameters": {
+        "is_city": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "name": {
+          "description": "",
+          "required": false,
+          "default": null
+        },
+        "road_layout": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "GSTown.ROAD_LAYOUT_ORIGINAL"
+          }
+        },
+        "size": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "GSTown.TOWN_SIZE_SMALL"
+          }
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_airport_types": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetAirportTypes",
+      "parameters": {}
+    },
+    "get_bridge_types": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetBridgeTypes",
+      "parameters": {}
+    },
+    "get_cargo_flows": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetCargoFlows",
+      "parameters": {
+        "keep_monitoring": {
+          "description": "",
+          "required": false,
+          "default": true
+        }
+      }
+    },
+    "get_cargo_types": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetCargoTypes",
+      "parameters": {}
+    },
+    "get_clients": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetClients",
+      "parameters": {}
+    },
+    "get_companies": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetCompanies",
+      "parameters": {}
+    },
+    "get_company_finance": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetCompanyFinance",
+      "parameters": {}
+    },
+    "get_date": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetDate",
+      "parameters": {}
+    },
+    "get_engine_details": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetEngineDetails",
+      "parameters": {
+        "engine_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_engines": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetEngines",
+      "parameters": {
+        "vehicle_type": {
+          "description": "",
+          "required": false,
+          "default": "train"
+        }
+      }
+    },
+    "get_expense_breakdown": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetExpenseBreakdown",
+      "parameters": {}
+    },
+    "get_game_settings": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetGameSettings",
+      "parameters": {
+        "keys": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_groups": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetGroups",
+      "parameters": {}
+    },
+    "get_hangars": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetHangars",
+      "parameters": {}
+    },
+    "get_industries": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetIndustries",
+      "parameters": {}
+    },
+    "get_industry_info": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetIndustryInfo",
+      "parameters": {
+        "industry_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_infrastructure_costs": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetInfrastructureCosts",
+      "parameters": {}
+    },
+    "get_map_size": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetMapSize",
+      "parameters": {}
+    },
+    "get_map_terrain": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetMapTerrain",
+      "parameters": {
+        "from_y": {
+          "description": "",
+          "required": false,
+          "default": 1
+        },
+        "to_y": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "max_y"
+          }
+        }
+      }
+    },
+    "get_orders": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetOrders",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_rail_types": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetRailTypes",
+      "parameters": {}
+    },
+    "get_road_types": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetRoadTypes",
+      "parameters": {}
+    },
+    "get_signs": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetSigns",
+      "parameters": {}
+    },
+    "get_station_info": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetStationInfo",
+      "parameters": {
+        "station_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_stations": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetStations",
+      "parameters": {}
+    },
+    "get_subsidies": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetSubsidies",
+      "parameters": {}
+    },
+    "get_tile_area": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetTileArea",
+      "parameters": {
+        "max_tiles": {
+          "description": "",
+          "required": false,
+          "default": 400
+        },
+        "x1": {
+          "description": "",
+          "required": true
+        },
+        "x2": {
+          "description": "",
+          "required": true
+        },
+        "y1": {
+          "description": "",
+          "required": true
+        },
+        "y2": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_tile_info": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetTileInfo",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_town_info": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetTownInfo",
+      "parameters": {
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_town_rating": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetTownRating",
+      "parameters": {
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_towns": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetTowns",
+      "parameters": {}
+    },
+    "get_vehicle_info": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetVehicleInfo",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "get_vehicles": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetVehicles",
+      "parameters": {
+        "vehicle_type": {
+          "description": "",
+          "required": false,
+          "default": null
+        }
+      }
+    },
+    "get_waypoints": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetWaypoints",
+      "parameters": {}
+    },
+    "insert_order": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdInsertOrder",
+      "parameters": {
+        "dest_tile": {
+          "description": "",
+          "required": true
+        },
+        "destination": {
+          "description": "",
+          "required": true
+        },
+        "order_flags": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "order_index": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "(\"order_position\" in p"
+          }
+        },
+        "order_position": {
+          "description": "",
+          "required": true
+        },
+        "station_id": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "level_tiles": {
+      "description": "",
+      "tier": "participant",
+      "category": "landscape",
+      "gamescript_function": "CmdLevelTiles",
+      "parameters": {
+        "x1": {
+          "description": "",
+          "required": true
+        },
+        "x2": {
+          "description": "",
+          "required": true
+        },
+        "y1": {
+          "description": "",
+          "required": true
+        },
+        "y2": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "lower_tile": {
+      "description": "",
+      "tier": "participant",
+      "category": "landscape",
+      "gamescript_function": "CmdLowerTile",
+      "parameters": {
+        "slope": {
+          "description": "",
+          "required": true
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "move_order": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdMoveOrder",
+      "parameters": {
+        "from_index": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "(\"from_position\" in p"
+          }
+        },
+        "from_position": {
+          "description": "",
+          "required": true
+        },
+        "to_index": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "(\"to_position\" in p"
+          }
+        },
+        "to_position": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "move_to_group": {
+      "description": "",
+      "tier": "participant",
+      "category": "group",
+      "gamescript_function": "CmdMoveToGroup",
+      "parameters": {
+        "group_id": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "move_wagon": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdMoveWagon",
+      "parameters": {
+        "dest_vehicle_id": {
+          "description": "",
+          "required": true
+        },
+        "dest_wagon": {
+          "description": "",
+          "required": true
+        },
+        "move_chain": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "source_vehicle_id": {
+          "description": "",
+          "required": true
+        },
+        "source_wagon": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "open_close_airport": {
+      "description": "",
+      "tier": "participant",
+      "category": "air_and_other",
+      "gamescript_function": "CmdOpenCloseAirport",
+      "parameters": {
+        "station_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "perform_town_action": {
+      "description": "",
+      "tier": "participant",
+      "category": "town",
+      "gamescript_function": "CmdPerformTownAction",
+      "parameters": {
+        "action": {
+          "description": "",
+          "required": true
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "ping": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "inline",
+      "parameters": {}
+    },
+    "plant_tree": {
+      "description": "",
+      "tier": "participant",
+      "category": "landscape",
+      "gamescript_function": "CmdPlantTree",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "plant_tree_rectangle": {
+      "description": "",
+      "tier": "participant",
+      "category": "landscape",
+      "gamescript_function": "CmdPlantTreeRectangle",
+      "parameters": {
+        "height": {
+          "description": "",
+          "required": true
+        },
+        "width": {
+          "description": "",
+          "required": true
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "raise_tile": {
+      "description": "",
+      "tier": "participant",
+      "category": "landscape",
+      "gamescript_function": "CmdRaiseTile",
+      "parameters": {
+        "slope": {
+          "description": "",
+          "required": true
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "refit_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdRefitVehicle",
+      "parameters": {
+        "cargo_id": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "(\"cargo_type\" in p"
+          }
+        },
+        "cargo_type": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_airport": {
+      "description": "",
+      "tier": "participant",
+      "category": "air_and_other",
+      "gamescript_function": "CmdRemoveAirport",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_buoy": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdRemoveBuoy",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_canal": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdRemoveCanal",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_lock": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdRemoveLock",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_order": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdRemoveOrder",
+      "parameters": {
+        "order_index": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "(\"order_position\" in p"
+          }
+        },
+        "order_position": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_rail": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdRemoveRail",
+      "parameters": {
+        "from_x": {
+          "description": "",
+          "required": true
+        },
+        "from_y": {
+          "description": "",
+          "required": true
+        },
+        "to_x": {
+          "description": "",
+          "required": true
+        },
+        "to_y": {
+          "description": "",
+          "required": true
+        },
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_rail_station": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdRemoveRailStation",
+      "parameters": {
+        "keep_rail": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x1": {
+          "description": "",
+          "required": true
+        },
+        "x2": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y1": {
+          "description": "",
+          "required": true
+        },
+        "y2": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_rail_track": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdRemoveRailTrack",
+      "parameters": {
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "track": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "GSRail.RAILTRACK_NE_SW"
+          }
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "remove_road": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdRemoveRoad",
+      "parameters": {
+        "from_x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "from_y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "road_type": {
+          "description": "",
+          "required": false,
+          "default": 0
+        },
+        "tile_from": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "tile_to": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "to_x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "to_y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "remove_road_depot": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdRemoveRoadDepot",
+      "parameters": {
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "remove_road_stop": {
+      "description": "",
+      "tier": "participant",
+      "category": "road",
+      "gamescript_function": "CmdRemoveRoadStop",
+      "parameters": {
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "remove_sign": {
+      "description": "",
+      "tier": "participant",
+      "category": "sign",
+      "gamescript_function": "CmdRemoveSign",
+      "parameters": {
+        "sign_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "remove_signal": {
+      "description": "",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdRemoveSignal",
+      "parameters": {
+        "front_tile": {
+          "description": "",
+          "required": true
+        },
+        "front_x": {
+          "description": "",
+          "required": true
+        },
+        "front_y": {
+          "description": "",
+          "required": true
+        },
+        "tile": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "x": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        },
+        "y": {
+          "description": "",
+          "required": false,
+          "via": "tile_resolver"
+        }
+      }
+    },
+    "remove_water_depot": {
+      "description": "",
+      "tier": "participant",
+      "category": "marine",
+      "gamescript_function": "CmdRemoveWaterDepot",
+      "parameters": {
+        "x": {
+          "description": "",
+          "required": true
+        },
+        "y": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "rename_company": {
+      "description": "",
+      "tier": "participant",
+      "category": "company",
+      "gamescript_function": "CmdRenameCompany",
+      "parameters": {
+        "name": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "rename_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdRenameVehicle",
+      "parameters": {
+        "name": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "reverse_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdReverseVehicle",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "scan_town_area": {
+      "description": "",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdScanTownArea",
+      "parameters": {
+        "radius": {
+          "description": "",
+          "required": false,
+          "default": 15
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "sell_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdSellVehicle",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "sell_wagon": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdSellWagon",
+      "parameters": {
+        "sell_chain": {
+          "description": "",
+          "required": false,
+          "default": false
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        },
+        "wagon": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "send_to_depot": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdSendToDepot",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "send_to_depot_service": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdSendToDepotService",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_auto_replace": {
+      "description": "",
+      "tier": "participant",
+      "category": "group",
+      "gamescript_function": "CmdSetAutoReplace",
+      "parameters": {
+        "engine_id_new": {
+          "description": "",
+          "required": true
+        },
+        "engine_id_old": {
+          "description": "",
+          "required": true
+        },
+        "group_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_cargo_goal": {
+      "description": "",
+      "tier": "operator",
+      "category": "town_deity",
+      "gamescript_function": "CmdSetCargoGoal",
+      "parameters": {
+        "goal": {
+          "description": "",
+          "required": true
+        },
+        "town_effect": {
+          "description": "",
+          "required": true
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_game_setting": {
+      "description": "",
+      "tier": "operator",
+      "category": "settings",
+      "gamescript_function": "CmdSetGameSetting",
+      "parameters": {
+        "key": {
+          "description": "",
+          "required": true
+        },
+        "value": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_loan": {
+      "description": "",
+      "tier": "participant",
+      "category": "company",
+      "gamescript_function": "CmdSetLoan",
+      "parameters": {
+        "amount": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_max_loan": {
+      "description": "",
+      "tier": "operator",
+      "category": "finance",
+      "gamescript_function": "CmdSetMaxLoan",
+      "parameters": {
+        "amount": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_order_compare_function": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdSetOrderCompareFunction",
+      "parameters": {
+        "compare_function": {
+          "description": "",
+          "required": true
+        },
+        "order_pos": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_order_compare_value": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdSetOrderCompareValue",
+      "parameters": {
+        "order_pos": {
+          "description": "",
+          "required": true
+        },
+        "value": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_order_condition": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdSetOrderCondition",
+      "parameters": {
+        "condition": {
+          "description": "",
+          "required": true
+        },
+        "order_pos": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_order_flags": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdSetOrderFlags",
+      "parameters": {
+        "order_flags": {
+          "description": "",
+          "required": true
+        },
+        "order_index": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "(\"order_position\" in p"
+          }
+        },
+        "order_position": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_stop_location": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdSetStopLocation",
+      "parameters": {
+        "order_pos": {
+          "description": "",
+          "required": true
+        },
+        "stop_location": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "set_town_growth": {
+      "description": "",
+      "tier": "operator",
+      "category": "town_deity",
+      "gamescript_function": "CmdSetTownGrowth",
+      "parameters": {
+        "days": {
+          "description": "",
+          "required": true
+        },
+        "town_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "share_orders": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdShareOrders",
+      "parameters": {
+        "main_vehicle_id": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "skip_to_order": {
+      "description": "",
+      "tier": "participant",
+      "category": "order",
+      "gamescript_function": "CmdSkipToOrder",
+      "parameters": {
+        "order_index": {
+          "description": "",
+          "required": false,
+          "default": {
+            "expression": "(\"order_position\" in p"
+          }
+        },
+        "order_position": {
+          "description": "",
+          "required": true
+        },
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "start_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdStartVehicle",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    },
+    "stop_vehicle": {
+      "description": "",
+      "tier": "participant",
+      "category": "vehicle",
+      "gamescript_function": "CmdStopVehicle",
+      "parameters": {
+        "vehicle_id": {
+          "description": "",
+          "required": true
+        }
+      }
+    }
+  }
+}
