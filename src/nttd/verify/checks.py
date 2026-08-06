@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 ARTIFACT_INTEGRITY = "artifact_integrity"
 ACTION_LOG_CONSISTENT = "action_log_consistent"
+ACTIONS_EXPLAIN_THE_WORLD = "actions_explain_the_world"
 NO_FORBIDDEN_CAPABILITY = "no_forbidden_capability"
 
 # Matches the truncation `file_digest` uses, so digests are comparable.
@@ -157,6 +158,59 @@ def no_forbidden_capability(
             + (f"; {len(refused)} refused and disclosed" if refused else "")
         ),
     )
+
+
+def actions_explain_the_world(
+    actions: list[dict[str, Any]], result: dict[str, Any], final_snapshot: dict[str, Any],
+) -> CheckOutcome:
+    """Something built what the save shows, and the log has to say what.
+
+    ``action_log_consistent`` compares the log against the result's own counts, which a
+    run reporting zero actions satisfies by recording nothing. Demonstrated: emptying
+    the log, claiming zero actions and refreshing the manifest digests earned a
+    `verified` verdict, because no check compared the log against the world.
+
+    So this compares them. A company holding stations or vehicles did something, and a
+    log that shows nothing is missing it. Commands issued in the game window are
+    recorded too, so a human playing by hand has an action log like anyone else -- a
+    run that still shows none was played somewhere nttd could not see.
+    """
+    company_id = result.get("company_id")
+    owned = _owned_by(final_snapshot, company_id)
+    mine = [a for a in actions if a.get("company_id") == company_id]
+
+    if not owned:
+        return CheckOutcome(
+            name=ACTIONS_EXPLAIN_THE_WORLD, passed=True,
+            detail=f"company {company_id} built nothing, so an empty log is consistent",
+        )
+
+    if not mine:
+        return CheckOutcome(
+            name=ACTIONS_EXPLAIN_THE_WORLD, passed=False,
+            detail=(
+                f"company {company_id} holds {owned} station(s) and vehicle(s) in the "
+                f"final snapshot but the action log records nothing -- something built "
+                f"them where nttd could not see it"
+            ),
+        )
+
+    return CheckOutcome(
+        name=ACTIONS_EXPLAIN_THE_WORLD, passed=True,
+        detail=f"{len(mine)} action(s) recorded against {owned} owned entities",
+    )
+
+
+def _owned_by(final_snapshot: dict[str, Any], company_id: Any) -> int:
+    """Count the stations and vehicles a company holds in the final snapshot."""
+    if not final_snapshot:
+        return 0
+    owned = 0
+    for key in ("stations", "vehicles"):
+        for entity in final_snapshot.get(key) or []:
+            if entity.get("company_id") == company_id:
+                owned += 1
+    return owned
 
 
 def read_manifest(bundle_dir: Path) -> dict[str, Any] | None:
