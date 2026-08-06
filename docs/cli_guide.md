@@ -296,13 +296,26 @@ artifact with its sha256, and states what the bundle cannot prove about itself.
 | `nttd_scenario.conf` | yes | rebuilding the world for `--regenerate` |
 | `tiles.parquet` | no | shows *where* two worlds differ, not just that they do |
 | `events.parquet` | no | human reading; kilobytes |
-| `final_snapshot.parquet`, `trajectory.parquet` | no | the end state, readable without OpenTTD |
+| `final_snapshot.parquet` | no | the end state, readable without OpenTTD |
+| `trajectory.parquet` | no | the contestant's series, so run-wide metrics can be rechecked |
 
-**The full snapshot series is not bundled.** No check reads it, and it dominates a long
-run: 2,000 snapshots measured 7.9 MB, so a T4 at one-day intervals is around 14 MB against
+**The full snapshot series is not bundled.** It dominates a long run: 2,000 snapshots
+measured 7.9 MB, so a real-time run at one-day intervals reaches tens of megabytes against
 roughly 250 KB for everything verification uses. A bundle should be the evidence, not the
-archive. Keep your own `snapshots.parquet` and link to it; the bundle carries the last row
-as `final_snapshot.parquet`.
+archive. Keep your own `snapshots.parquet` and link to it.
+
+**What is bundled instead** is the last row, as `final_snapshot.parquet`, and the
+contestant company's series as `trajectory.parquet`: ten integers a tick rather than the
+whole world as JSON. About 11 KB for a 200-step run and 1.3 MB for the longest plausible
+real-time one, where the full series would be 146 MB.
+
+It is there because the endpoint figures can be recomputed from the savegame and the
+run-wide ones cannot. Operating margin across the run, peak credit drawn, lowest cash and
+days to first profit come from the series, so without it they would be claims rather than
+something a verifier can check. It is also what a trend chart is drawn from.
+
+Stepped runs are the cheap case here: one snapshot per step, where real-time takes one per
+game day.
 
 **Nothing here is magic.** The layout above is the whole format, so you can assemble a
 bundle by hand, and `nttd verify` only reads files. The commands are a convenience.
