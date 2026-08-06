@@ -140,17 +140,3 @@ Full detail in [actions.md](actions.md).
 - `start_vehicle(vehicle_id)` Start a stopped vehicle.
 - `stop_vehicle(vehicle_id)` Stop a vehicle where it is.
 
-## Operator
-
-Full detail in [operator.md](operator.md).
-
-- `change_bank_balance(delta, [expense_type])` Move money into or out of a company's account directly.
-- `change_town_rating(delta, town_id)` Set a company's standing with a town directly.
-- `create_subsidy(cargo_type, from_id, from_type, to_id, to_type)` Create a subsidy for carrying a cargo between two places.
-- `expand_town(town_id, [houses])` Grow a town by a number of houses at once.
-- `found_town(x, y, [is_city, name, road_layout, size])` Found a new town at a tile.
-- `set_cargo_goal(goal, town_effect, town_id)` Set how much of a cargo a town must receive.
-- `set_game_setting(key, value)` Change a game setting mid-game.
-- `set_max_loan(amount)` Set the ceiling a company may borrow up to.
-- `set_town_growth(days, town_id)` Set how often a town adds a house, in days.
-

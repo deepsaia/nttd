@@ -167,6 +167,7 @@ uv run nttd actions                       # everything, split by what it does
 uv run nttd actions build_road_stop       # one action's parameters
 uv run nttd actions --observations        # only what reads the world
 uv run nttd actions --playable            # only what changes it
+uv run nttd actions --operator            # only the scenario-setup powers
 uv run nttd actions --category rail       # one category
 uv run nttd actions --playable --json     # what a contestant may submit, as JSON
 ```
@@ -189,8 +190,11 @@ condition accepts (GSOrder): OC_AGE = 3, OC_LOAD_PERCENTAGE = 0, ...
 ```
 
 The same content is in [the action reference](action_reference.md): an
-[index](actions/index.md) giving every action's call shape on one line, and three detail
-pages behind it so a reader pulls in only what it needs.
+[index](actions/index.md) giving every action's call shape on one line, and two detail
+pages behind it so a reader pulls in only what it needs. The nine operator actions are
+named there but not documented: no session can call one, so their parameters would be
+about 1100 tokens spent telling a reader about things they cannot use. `--operator`
+prints them here, which is where an operator setting up a scenario looks.
 
 Regenerate after changing the GameScript:
 

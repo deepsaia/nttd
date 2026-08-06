@@ -42,6 +42,10 @@ def actions(
         bool,
         typer.Option("--observations", help="Only actions that read the world"),
     ] = False,
+    operator: Annotated[
+        bool,
+        typer.Option("--operator", help="Only operator actions, for scenario setup"),
+    ] = False,
     as_json: Annotated[
         bool, typer.Option("--json", help="Emit the manifest as JSON")
     ] = False,
@@ -56,6 +60,7 @@ def actions(
       nttd actions build_road_stop        one action's parameters
       nttd actions --observations         only what reads the world
       nttd actions --playable             only what changes it
+      nttd actions --operator             only the scenario-setup powers
       nttd actions --category rail        one category
       nttd actions --playable --json      what a contestant may submit, as JSON
     """
@@ -63,11 +68,15 @@ def actions(
         _show_one(action, as_json)
         return
 
+    # The CLI keeps all three, unlike the reference pages. This is where an operator
+    # setting up a scenario looks, and they are the only reader who can call one.
     wanted = set()
     if playable:
         wanted.add("participant")
     if observations:
         wanted.add("read_only")
+    if operator:
+        wanted.add("operator")
 
     entries = {
         name: entry

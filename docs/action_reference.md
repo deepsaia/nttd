@@ -21,7 +21,6 @@ reading the detail pages below.
 | --- | --- | --- |
 | [Observations](actions/observations.md) | 44 | Read the world. Changes nothing. |
 | [Actions](actions/actions.md) | 76 | Change the world. This is play. |
-| [Operator](actions/operator.md) | 9 | Scenario setup. Refused during scored play. |
 
 One caveat worth stating plainly: `get_cargo_flows` is filed as an observation
 but is not free of consequence. Reading it resets the cargo monitors, so a
@@ -43,4 +42,26 @@ because a wrong constant is worse than a missing one: `OF_UNLOAD` and
 `company_id` is never a parameter. nttd takes it from the participant token and
 overwrites whatever was sent, so an action always runs as the company that
 submitted it.
+
+## The actions nobody can play
+
+9 actions have no human equivalent: no amount of skill at OpenTTD lets a
+person found a town or set their own bank balance. They exist because building a
+scenario needs them, they are reachable only through the operator routes, and a
+scored session refuses them.
+
+- `change_bank_balance` Move money into or out of a company's account directly.
+- `change_town_rating` Set a company's standing with a town directly.
+- `create_subsidy` Create a subsidy for carrying a cargo between two places.
+- `expand_town` Grow a town by a number of houses at once.
+- `found_town` Found a new town at a tile.
+- `set_cargo_goal` Set how much of a cargo a town must receive.
+- `set_game_setting` Change a game setting mid-game.
+- `set_max_loan` Set the ceiling a company may borrow up to.
+- `set_town_growth` Set how often a town adds a house, in days.
+
+Their parameters are in `config/actions/manifest.json` and printed by
+`nttd actions --operator`, which is where an operator setting up a scenario
+would look. They are deliberately absent from the two pages above: a reader of
+those cannot call one, and saying so at length would cost more than it tells.
 

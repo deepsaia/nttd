@@ -90,8 +90,11 @@ build_train(engine_id, depot_tile|depot_x,depot_y, [cargo_id, num_wagons, wagon_
 
 Required parameters first, then a choice as `a|b`, then optional ones in brackets. For
 the full detail of one, follow through to [observations](actions/observations.md),
-[actions](actions/actions.md) or [operator](actions/operator.md), or run
-`nttd actions <name>`.
+[actions](actions/actions.md), or run `nttd actions <name>`.
+
+Nine operator actions exist and are not in any of this: no session can call one, so
+documenting how to would only waste your context. They are named in
+[the reference](action_reference.md) so you know what nttd holds back.
 
 If you are calling nttd rather than reading it, prefer `GET /v1/public/actions` or the
 MCP tool schemas: same content, already structured, and no parsing.

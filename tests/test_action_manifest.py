@@ -471,7 +471,8 @@ class TestItIsReproducible:
         by the index at roughly a third of that, for all 129 rather than one tier.
         """
         index = (_ROOT / "docs" / "actions" / "index.md").read_text()
-        for name in actions:
+        playable = [n for n, e in actions.items() if e["tier"] != "operator"]
+        for name in playable:
             assert f"`{name}(" in index, f"{name} has no signature in the index"
 
         detail = (_ROOT / "docs" / "actions" / "actions.md").read_text()
@@ -495,7 +496,56 @@ class TestItIsReproducible:
         assert "get_stations" in observations
         assert "### `build_rail_station`" not in observations
         assert "### `build_rail_station`" in (reference / "actions.md").read_text()
-        assert "### `found_town`" in (reference / "operator.md").read_text()
+
+
+class TestOperatorActionsAreNotDocumentedForPlayers:
+    """Nobody playing a session can call one, so the pages a player reads do not carry
+    their parameters. That cost about 1100 tokens to tell a reader about actions they
+    cannot use.
+
+    They are still named in the index page, because nttd's claim is that nine superhuman
+    actions exist and are refused, and a claim nobody can check is worth less.
+    """
+
+    def _operators(self, actions: dict[str, Any]) -> list[str]:
+        return sorted(n for n, e in actions.items() if e["tier"] == "operator")
+
+    def test_they_have_no_page_of_their_own(self) -> None:
+        assert not (_ROOT / "docs" / "actions" / "operator.md").exists()
+
+    def test_they_are_absent_from_the_pages_a_player_reads(
+        self, actions: dict[str, Any],
+    ) -> None:
+        pages = ["index.md", "observations.md", "actions.md"]
+        for filename in pages:
+            text = (_ROOT / "docs" / "actions" / filename).read_text()
+            for name in self._operators(actions):
+                assert f"`{name}(" not in text, f"{name} is documented in {filename}"
+
+    def test_the_reference_still_names_every_one(self, actions: dict[str, Any]) -> None:
+        """Removing the page should not make them undiscoverable. A benchmark that
+        quietly holds powers it does not mention is harder to trust than one that lists
+        them and says they are refused."""
+        text = (_ROOT / "docs" / "action_reference.md").read_text()
+        for name in self._operators(actions):
+            assert f"`{name}`" in text
+
+    def test_they_keep_their_full_entry_in_the_manifest(
+        self, actions: dict[str, Any],
+    ) -> None:
+        """The admin routes that can call them look them up here."""
+        entry = actions["found_town"]
+        assert entry["parameters"]["x"]["description"]
+        assert entry["parameters"]["size"]["enum"]["values"]["TOWN_SIZE_SMALL"] == 0
+
+    def test_the_cli_still_prints_them(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """An operator setting up a scenario needs somewhere to look."""
+        from nttd.cli.actions_command import actions as actions_command
+
+        actions_command(operator=True)
+        output = capsys.readouterr().out
+        assert "found_town" in output
+        assert "build_rail_station" not in output
 
     def test_it_records_where_it_came_from(self, manifest: dict[str, Any]) -> None:
         assert manifest["generated_from"].endswith("main.nut")

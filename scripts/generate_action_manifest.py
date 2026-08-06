@@ -46,6 +46,14 @@ MANIFEST_VERSION = 1
 # The reference splits on tier before category, because the first thing a reader needs to
 # know about an action is whether running it costs anything. Grouping by category alone
 # put get_stations next to build_rail_station.
+#
+# Operator actions get no page. Nobody playing a session can call them, so a reader of
+# these pages cannot use one, and their parameter tables cost about 1100 tokens to say
+# so. They keep their entries in manifest.json and the GameScript, where the admin routes
+# that can call them look them up, and `nttd actions --operator` prints them in full.
+# The reference still names them, because "nine superhuman actions exist and are refused"
+# is a fairness claim rather than an implementation detail, and a claim that cannot be
+# checked is worth less.
 _TIER_SECTIONS = [
     (
         "read_only",
@@ -59,13 +67,6 @@ _TIER_SECTIONS = [
         "Actions",
         "Change the world. These cost money, take effect in the game, and are recorded "
         "against your company.",
-    ),
-    (
-        "operator",
-        "operator",
-        "Operator",
-        "Scenario setup rather than play. Refused during a scored game, and listed here "
-        "so it is clear they exist and why they are unavailable.",
     ),
 ]
 
@@ -448,10 +449,9 @@ def _markdown(manifest: dict[str, Any]) -> str:
     than call endpoints get the same content the validator enforces.
     """
     actions = manifest["actions"]
-    counts = {tier: 0 for tier, _, _, _ in _TIER_SECTIONS}
+    counts: dict[str, int] = {}
     for entry in actions.values():
-        if entry["tier"] in counts:
-            counts[entry["tier"]] += 1
+        counts[entry["tier"]] = counts.get(entry["tier"], 0) + 1
 
     lines = [
         "# Action reference",
@@ -479,8 +479,6 @@ def _markdown(manifest: dict[str, Any]) -> str:
         "| Read the world. Changes nothing. |",
         f"| [Actions](actions/actions.md) | {counts['participant']} "
         "| Change the world. This is play. |",
-        f"| [Operator](actions/operator.md) | {counts['operator']} "
-        "| Scenario setup. Refused during scored play. |",
         "",
         "One caveat worth stating plainly: `get_cargo_flows` is filed as an observation",
         "but is not free of consequence. Reading it resets the cargo monitors, so a",
@@ -504,7 +502,40 @@ def _markdown(manifest: dict[str, Any]) -> str:
         "submitted it.",
         "",
     ]
+    lines += _markdown_operator_note(actions, counts["operator"])
     return "\n".join(lines) + "\n"
+
+
+def _markdown_operator_note(actions: dict[str, Any], count: int) -> list[str]:
+    """Name the operator actions without documenting how to call them.
+
+    Nobody playing a session can call one, so parameter tables for them are noise in a
+    reference an agent reads. They are still named, because nttd's claim is that these
+    exist and are refused, and a claim nobody can check is worth less than one they can.
+    """
+    operators = sorted(name for name, entry in actions.items() if entry["tier"] == "operator")
+    lines = [
+        "## The actions nobody can play",
+        "",
+        f"{count} actions have no human equivalent: no amount of skill at OpenTTD lets a",
+        "person found a town or set their own bank balance. They exist because building a",
+        "scenario needs them, they are reachable only through the operator routes, and a",
+        "scored session refuses them.",
+        "",
+    ]
+    for name in operators:
+        summary = actions[name]["description"].split(". ")[0].rstrip(".")
+        summary = summary.replace(" Operator-tier", "").rstrip(":").rstrip()
+        lines.append(f"- `{name}` {summary}.")
+    lines += [
+        "",
+        "Their parameters are in `config/actions/manifest.json` and printed by",
+        "`nttd actions --operator`, which is where an operator setting up a scenario",
+        "would look. They are deliberately absent from the two pages above: a reader of",
+        "those cannot call one, and saying so at length would cost more than it tells.",
+        "",
+    ]
+    return lines
 
 
 def _markdown_index_page(manifest: dict[str, Any]) -> str:
