@@ -372,6 +372,7 @@ nttd session list           List sessions
 nttd session status         Show detailed session status
 nttd scenario validate      Check a scenario without running it
 nttd scenario profile       Show the rules a scored scenario must satisfy
+nttd actions                Show every action and what it takes
 nttd submit                 Package a session into a submission bundle
 nttd verify                 Self-check a bundle before submitting it
 nttd result                 Show the scored result record
