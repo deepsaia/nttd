@@ -6,7 +6,6 @@ from pydantic import BaseModel
 class RuntimeMode(StrEnum):
     HEARTBEAT = "heartbeat"
     ASYNC_REALTIME = "async_realtime"
-    ASSISTED = "assisted"
     # Client-driven stepping, for RL and ES. No loop runs on the server: the game
     # stays paused until the contestant asks for a step, which flushes its actions
     # and advances a fixed number of game-days. Distinct from HEARTBEAT, where the

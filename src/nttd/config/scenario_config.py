@@ -104,7 +104,7 @@ _TOWN_NAMES_MAP: dict[str, str] = {
 # imported from schemas.game so config validation does not depend on runtime
 # state; a test asserts the two agree.
 _KNOWN_RUNTIME_MODES: frozenset[str] = frozenset({
-    "async_realtime", "heartbeat", "stepped", "assisted",
+    "async_realtime", "heartbeat", "stepped",
 })
 
 # OpenTTD water_borders bitmask: NE=1, SE=2, SW=4, NW=8, random=16
