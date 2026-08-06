@@ -359,6 +359,73 @@ def _enum_for(action: str, param: str, written: dict[str, Any]) -> dict[str, Any
     return {"class": binding["class"], "values": dict(sorted(values.items()))}
 
 
+def problems(manifest: dict[str, Any], written: dict[str, Any]) -> list[str]:
+    """Report hand-written entries that no longer match the GameScript.
+
+    The generator merges prose by key and ignores keys that match nothing, which is what
+    makes regenerating safe. It also means stale prose rots quietly: a description for a
+    deleted action, a glossary entry nobody reads, an enum binding whose class moved. The
+    parameter simply loses its values and nothing says so.
+
+    This is the direction the reproducibility test cannot see. Regenerating reproduces the
+    same manifest whether or not descriptions.json is full of entries that match nothing.
+    """
+    actions = manifest["actions"]
+    found: list[str] = []
+
+    for name, prose in (written.get("actions") or {}).items():
+        entry = actions.get(name)
+        if entry is None:
+            found.append(
+                f"descriptions.json describes '{name}', "
+                f"which the GameScript does not dispatch"
+            )
+            continue
+        for param in prose.get("parameters") or {}:
+            if param not in entry["parameters"]:
+                found.append(
+                    f"descriptions.json overrides '{name}.{param}', "
+                    f"which that action does not take"
+                )
+        for group in prose.get("one_of") or []:
+            for param in [p for branch in group for p in _branch(branch)]:
+                if param not in entry["parameters"]:
+                    found.append(
+                        f"descriptions.json lists '{name}.{param}' as an alternative, "
+                        f"which that action does not take"
+                    )
+
+    used = {param for entry in actions.values() for param in entry["parameters"]}
+    for param in written.get("parameter_glossary") or {}:
+        if param not in used:
+            found.append(f"the glossary describes '{param}', which no action takes")
+
+    for key, binding in (written.get("enum_bindings") or {}).items():
+        found.extend(_binding_problems(key, binding, actions))
+
+    return found
+
+
+def _binding_problems(key: str, binding: dict[str, str], actions: dict[str, Any]) -> list[str]:
+    """Report an enum binding that matches no parameter or resolves to no values."""
+    action_name, _, param = key.rpartition(".")
+    if action_name == "*":
+        matched = [n for n, e in actions.items() if param in e["parameters"]]
+    else:
+        matched = [action_name] if param in (actions.get(action_name) or {}).get("parameters", {}) else []
+
+    if not matched:
+        return [f"enum_bindings binds '{key}', which matches no action parameter"]
+
+    members = _enum_document().get("enums", {}).get(binding["class"], {})
+    if not any(name.startswith(binding["prefix"]) for name in members):
+        return [
+            f"enum_bindings binds '{key}' to {binding['class']}.{binding['prefix']}*, "
+            f"which the OpenTTD dump has no constants for"
+        ]
+    return []
+
+
 def _descriptions() -> dict[str, Any]:
     """Hand-written prose, kept in its own file so regenerating cannot destroy it."""
     if not DESCRIPTIONS.exists():
@@ -606,6 +673,13 @@ def main() -> None:
         for meta in entry["parameters"].values()
         if not meta["description"]
     )
+
+    stale = problems(manifest, _descriptions())
+    if stale:
+        print("Hand-written entries that match nothing in the GameScript:", file=sys.stderr)
+        for problem in stale:
+            print(f"  {problem}", file=sys.stderr)
+        raise SystemExit(1)
 
     print(f"Wrote {OUTPUT.relative_to(ROOT)} and {REFERENCE.relative_to(ROOT)}")
     print(f"  actions        : {len(actions)}")
