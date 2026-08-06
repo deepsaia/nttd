@@ -124,7 +124,9 @@ def build_session_config(
         admin_port: Admin port for nttd control.
         admin_password: Password for admin port authentication.
         settings: Game settings to bake into the config (key=value pairs).
-        ai_opponents: Number of AI opponent companies to configure.
+        ai_opponents: Extra company slots to create. Not opponents: nttd ships only
+            the "nttd Idle" AI, which sleeps forever so that a slot exists for a
+            contestant to act through, and this simply makes more of them.
         agent_companies: Number of idle company slots for nttd agents.
         scenario_path: The scenario file this session was built from. Copied into
             the session directory so the run stays verifiable even if the source

@@ -256,3 +256,53 @@ def test_absent_dimensions_record_as_absent_not_guessed(tmp_path: Path) -> None:
     assert rows[0]["map_size_x"] == 0
     assert rows[0]["landscape"] == ""
     assert rows[0]["profile_version"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Only companies somebody played are scored
+# ---------------------------------------------------------------------------
+# Every company in an nttd session is created by the "nttd Idle" AI, which sleeps
+# forever so a slot exists for a contestant to act through. num_ai_companies makes
+# more of the same rather than opponents. Verified: a t3_example session configured
+# for two "AI opponents" wrote three scored rows, the contestant plus two "Unnamed"
+# companies at score 0 with no actions, so a board would read three entries for one
+# run.
+
+
+def _company(company_id: int, active: bool = True):
+    from nttd.schemas.company import Company
+
+    return Company(id=company_id, name=f"c{company_id}", is_active=active)
+
+
+def test_unplayed_slots_are_not_scored() -> None:
+    from nttd.analysis.score import rank_companies
+
+    companies = [_company(0), _company(1), _company(2)]
+    scores = rank_companies(companies, contested_by={0})
+
+    assert [s.company_id for s in scores] == [0]
+
+
+def test_a_company_with_no_token_but_recorded_actions_is_scored() -> None:
+    """A human joins a slot from the game window and holds no participant token.
+    Filtering on tokens alone would drop them."""
+    from nttd.analysis.score import rank_companies
+
+    scores = rank_companies([_company(0), _company(1)], contested_by={0, 1})
+    assert {s.company_id for s in scores} == {0, 1}
+
+
+def test_no_filter_keeps_every_active_company() -> None:
+    """A caller without that knowledge should get everything, not a silent filter."""
+    from nttd.analysis.score import rank_companies
+
+    scores = rank_companies([_company(0), _company(1)])
+    assert len(scores) == 2
+
+
+def test_inactive_companies_are_still_excluded() -> None:
+    from nttd.analysis.score import rank_companies
+
+    scores = rank_companies([_company(0), _company(1, active=False)], contested_by={0, 1})
+    assert [s.company_id for s in scores] == [0]

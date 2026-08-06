@@ -12,9 +12,7 @@ from typing import Any
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.bridge import Bridge
-from nttd.config.fairness import FairnessConfig
 from nttd.config.task_instance import TaskInstance
-from nttd.runtime.action_budget import ActionBudget
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.participant_report import ParticipantReport
@@ -99,15 +97,6 @@ class SessionRuntime:
         # protection for a benchmark run: session state rather than a credential,
         # because a self-hosting contestant holds every credential anyway.
         self.scored_lock = ScoredLock()
-        # Pacing and budget limits imposed by the scenario. Replaced at session
-        # start from the scenario settings; the default is unenforced, so an
-        # ad-hoc session keeps whatever the caller asked for.
-        self.fairness = FairnessConfig()
-        # Per-company action budget for the REST path. FairnessConfig binds at
-        # agent registration, so without this a contestant posting straight to
-        # /actions/submit has no pacing limit -- which every bundled example does.
-        # Assigned through the property so the orchestrator gets the same object.
-        self.action_budget = ActionBudget()
         self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
         # Per-company contestant detail for the result record. The contestant runs
         # its own loop, so nttd tallies action counts from its own action log and
@@ -124,22 +113,6 @@ class SessionRuntime:
         self.poll_task: asyncio.Task[None] | None = None
         self.orchestrator_task: asyncio.Task[None] | None = None
 
-    @property
-    def action_budget(self) -> ActionBudget:
-        """The session's action budget.
-
-        A property because SessionManager replaces it after construction, once the
-        scenario's limits are known. The orchestrator needs the same object -- the
-        stepped path flushes batches through it, and without the budget stepped play
-        was unbounded -- so the setter keeps the two in step rather than relying on a
-        reference captured at construction time.
-        """
-        return self._action_budget
-
-    @action_budget.setter
-    def action_budget(self, budget: ActionBudget) -> None:
-        self._action_budget = budget
-        self.orchestrator.action_budget = budget
 
     @property
     def connected(self) -> bool:

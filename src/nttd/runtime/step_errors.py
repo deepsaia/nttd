@@ -8,14 +8,6 @@ raise an HTTP error. The route translates it into a 400.
 from __future__ import annotations
 
 
-class StepBatchTooLarge(ValueError):
-    """A step carried more actions than the profile's ceiling permits.
-
-    Refused whole rather than truncated: a policy that planned a route as one batch
-    should not discover half of it was built.
-    """
-
-
 class NotRegisteredForStepping(LookupError):
     """A company stepped without registering at the barrier first.
 

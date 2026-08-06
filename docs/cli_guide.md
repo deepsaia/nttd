@@ -100,7 +100,7 @@ uv run nttd benchmark --config config/benchmark/t2_example.conf -o results/
 |---|---|
 | `--config`, `-c` | scenario path (required) |
 | `--seed` | override the map seed |
-| `--ai-opponents` | override the AI opponent count |
+| `--ai-opponents` | override the extra company slot count (these are idle, not opponents) |
 | `--output`, `-o` | directory for exported results |
 | `--url` | server URL |
 
@@ -155,7 +155,7 @@ gate in a script. Worth doing before a T4: otherwise the first check failure cos
 world generation.
 
 **`profile`** prints the rules in force — locked settings, permitted values per free
-dimension, the action ceiling, the profile digest — and names its source, so you can
+dimension, the profile digest — and names its source, so you can
 tell whether your edits to `config/benchmark/profile.conf` are taking effect.
 
 ---

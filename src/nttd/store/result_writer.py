@@ -94,16 +94,6 @@ _SCHEMA = pa.schema([
     ("blocked_attempts", pa.int32()),
     ("blocked_operations", pa.string()),
     ("capability_digest", pa.string()),
-    # Effective fairness limits. Recorded because they decide how much the
-    # contestant was allowed to do, so a reader cannot compare two results without
-    # knowing them.
-    ("fairness_enforced", pa.bool_()),
-    ("max_actions_per_decision", pa.int32()),
-    ("observation_mode", pa.string()),
-    # Actions the budget refused. A contestant who ran into the ceiling played a
-    # different run from one who never approached it, so the count is recorded.
-    ("budget_refused_actions", pa.int32()),
-    # Provenance of the code that ran
     ("nttd_git_sha", pa.string()),
     ("nttd_git_dirty", pa.bool_()),
     ("gamescript_digest", pa.string()),
@@ -192,8 +182,6 @@ class ResultWriter:
         final_save: Path | None = None,
         openttd_binary: str = "",
         capability: dict[str, Any] | None = None,
-        fairness: dict[str, Any] | None = None,
-        budget: dict[str, Any] | None = None,
         dimensions: dict[str, str] | None = None,
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
@@ -208,8 +196,6 @@ class ResultWriter:
             openttd_binary: Path to the OpenTTD binary, queried for its version.
             capability: Attestation from the session's scored lock -- whether the
                 run was scored and whether it stayed within the participant tier.
-            fairness: The effective pacing and budget limits the run was held to.
-            budget: Action-budget usage, including how many actions were refused.
             dimensions: The world settings a scored scenario is allowed to vary, in
                 readable form. Recorded because they are permitted to differ only on
                 condition of being disclosed: a reader comparing two rows needs to
@@ -231,8 +217,6 @@ class ResultWriter:
         # The capability set the run was allowed, hashed so a verifier can tell
         # whether two results were scored under the same rules.
         attest = capability or {}
-        limits = fairness or {}
-        spend = budget or {}
         dims = dimensions or {}
         blocked_ops = attest.get("blocked_operations") or []
 
@@ -284,12 +268,6 @@ class ResultWriter:
                 "blocked_attempts": int(attest.get("blocked_attempts", 0)),
                 "blocked_operations": ",".join(blocked_ops),
                 "capability_digest": capability_digest(),
-                "fairness_enforced": bool(limits.get("enforced", False)),
-                "max_actions_per_decision": int(
-                    limits.get("max_actions_per_decision", 0)
-                ),
-                "observation_mode": str(limits.get("observation_mode", "")),
-                "budget_refused_actions": int(spend.get("total_refused", 0)),
                 "nttd_git_sha": git_sha,
                 "nttd_git_dirty": git_dirty,
                 "gamescript_digest": gs_digest or "",

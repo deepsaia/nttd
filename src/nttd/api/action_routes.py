@@ -61,10 +61,15 @@ async def submit_action(
     token = extract_token(x_participant_token, authorization)
     company_id = apply_company_scope(runtime, params, token, envelope.company_id)
 
-    # Operator tier, allowlist, and budget, in one check shared with the stepped
-    # path. They used to be three inline branches here and nothing at all there, so
-    # the stepped loop reached operator-tier commands unguarded.
-    admission = admit(envelope.action_type, company_id, budget=runtime.action_budget)
+    # Operator tier and allowlist, in one check shared with the stepped path. They
+    # used to be inline branches here and nothing at all there, so the stepped loop
+    # reached operator-tier commands unguarded.
+    #
+    # No budget: real-time play has no action ceiling. The world moves whether or not
+    # a contestant acts, so spending actions already costs game time, and how many a
+    # multi-agent system fires is its own business. The ceiling belongs to stepped
+    # play, where the world waits and an unbounded batch would be a free lunch.
+    admission = admit(envelope.action_type, company_id)
     if not admission.allowed:
         runtime.action_tracker.update_result(
             envelope.action_id, admission.status, admission.error,
@@ -78,7 +83,6 @@ async def submit_action(
         # into the ceiling, is exactly what an auditor wants to see.
         _record(runtime, envelope, params, result)
         return result
-    runtime.action_budget.consume(company_id)
 
     # The scored clock starts on the first contestant action, so provisioning
     # time is not charged against the wall-clock budget. Idempotent.
@@ -162,27 +166,17 @@ async def submit_action_batch(
 ) -> list[ActionResult]:
     """Submit a batch of actions. All are executed sequentially under the company lock.
 
-    Returns a result for each envelope in the same order. A batch larger than the
-    scenario's per-window budget is refused whole rather than part-executed, so a
-    contestant cannot use batching to sidestep the ceiling one action at a time.
+    Returns a result for each envelope in the same order.
+
+    No ceiling here. Real-time play is unbounded: the world moves whether or not a
+    contestant acts, so a large batch already pays for itself in game time, and a
+    multi-agent system that wants to submit more is doing work it paid for. The
+    ceiling belongs to stepped play, where the world waits for the batch.
     """
     runtime = deps.get_runtime(session_id)
     token = extract_token(x_participant_token, authorization)
     if envelopes:
-        company_id = resolve_company_id(runtime, token, envelopes[0].company_id)
-        decision = runtime.action_budget.check(company_id, count=len(envelopes))
-        if not decision.allowed:
-            error = f"Action budget exceeded: {decision.reason}"
-            results = []
-            for envelope in envelopes:
-                result = ActionResult(
-                    action_id=envelope.action_id, status=ActionStatus.BLOCKED, error=error,
-                )
-                # Recorded like any other refusal: an auditor reading the action log
-                # should see the whole attempt, not only the count in the result row.
-                _record(runtime, envelope, dict(envelope.parameters), result)
-                results.append(result)
-            return results
+        resolve_company_id(runtime, token, envelopes[0].company_id)
 
     results: list[ActionResult] = []
     for envelope in envelopes:

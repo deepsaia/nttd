@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 from nttd.analysis.score import rank_companies
 from nttd.config.benchmark_profile import dimensions_from_settings
-from nttd.config.fairness import from_settings as fairness_from_settings
 from nttd.config.scenario_config import (
     BankruptcyConfig,
     CargoThresholdConfig,
@@ -30,7 +29,6 @@ from nttd.config.scenario_config import (
     TimeLimitConfig,
 )
 from nttd.config.task_instance import compute_task_instance
-from nttd.runtime.action_budget import from_fairness as budget_from_fairness
 from nttd.runtime.config_builder import build_session_config
 from nttd.runtime.final_save import FinalSaveCapture
 from nttd.runtime.participant_registry import ParticipantRegistry
@@ -232,8 +230,6 @@ class SessionManager:
         # Lock a scored session before the server is up, so the window between
         # spawn and lock cannot be used.
         runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
-        runtime.fairness = fairness_from_settings(effective_settings)
-        runtime.action_budget = budget_from_fairness(runtime.fairness)
         runtime.dimensions = dimensions_from_settings(effective_settings)
         _apply_step_size(runtime, effective_settings)
         if runtime.scored_lock.scored:
@@ -260,7 +256,7 @@ class SessionManager:
         await runtime.start_companies(ai_count, agent_companies)
 
         # Issue one participant token per contestant company. Companies are
-        # allocated from 0, and AI opponents occupy the slots after the agent
+        # allocated from 0, and the extra idle slots come after the agent
         # ones, so the first agent_companies ids are the contestant's.
         #
         # Tokens are also written to the session directory because a contestant's
@@ -371,7 +367,14 @@ class SessionManager:
         final_save: Path | None = None,
     ) -> None:
         """Score the finished session and write its immutable result record."""
-        scores = rank_companies(list(runtime.world.companies.values()))
+        # Only companies somebody played. See rank_companies: every slot is created by
+        # an idle AI, so without this a run configured for "AI opponents" scores them.
+        played = {p.company_id for p in runtime.participants.participants()} | {
+            company_id
+            for company_id, counts in runtime.recorder.action_counts().items()
+            if counts.get("total_actions", 0) > 0
+        }
+        scores = rank_companies(list(runtime.world.companies.values()), contested_by=played)
         if not scores:
             logger.warning("Session %s: no active companies to score", session_id)
             return
@@ -406,8 +409,6 @@ class SessionManager:
             gamescript_path=self.base_config_dir / "game" / "nttd-gs" / "main.nut",
             openttd_binary=self.openttd_binary,
             capability=runtime.scored_lock.summary(),
-            fairness=runtime.fairness.as_dict(),
-            budget=runtime.action_budget.usage(),
             dimensions=runtime.dimensions,
             final_save=final_save,
         )
@@ -552,8 +553,6 @@ class SessionManager:
             # unlocked and unbounded, so an nttd restart would silently turn a
             # scored run into an unprotected one.
             runtime.scored_lock.scored = stored.get("_scored") == "1"
-            runtime.fairness = fairness_from_settings(stored)
-            runtime.action_budget = budget_from_fairness(runtime.fairness)
             runtime.dimensions = dimensions_from_settings(stored)
             _apply_step_size(runtime, stored)
             if runtime.scored_lock.scored:

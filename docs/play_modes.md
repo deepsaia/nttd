@@ -130,8 +130,12 @@ The world runs continuously at a fixed 1 wall-minute per economy month. Your loo
 observes, decides, and submits whenever it is ready.
 
 This measures play **and speed together**: a faster model takes more decisions in the same
-economy horizon, and that is a real advantage it keeps. Bounded by wall-minutes, with a
-ceiling of 15 actions per submission per company.
+economy horizon, and that is a real advantage it keeps. Bounded by wall-minutes.
+
+**No action ceiling.** The world moves whether or not you act, so every action already
+costs game time, and how much a contestant submits is its own business. That includes a
+multi-agent system running several loops against one company: coordinating parallel work
+is what such a system is for, and it pays for it in tokens.
 
 One thing to know before writing a real-time loop: `state/full` is served from the last
 GameScript refresh, so it **lags your own actions** by up to about 7 seconds. Observe, act,
@@ -151,6 +155,15 @@ stepped mode measures the contestant's hardware.
 `POST /step` is synchronous: it fixes the target date, unpauses, flushes the batch,
 advances, re-pauses, and returns the observation, so a policy never has to guess when its
 actions took effect.
+
+**No action ceiling here either.** A step carries as many actions as you care to send.
+What bounds a stepped run is how many steps it takes and how many game-days each one
+advances, both fixed by the scenario, so a larger batch cannot buy more world than
+another contestant gets.
+
+A multi-agent system still submits one batch per company per step, because the barrier
+refuses a second concurrent step from the same company. How it divides that batch among
+its own agents is its business.
 
 ### Which bounds are legal
 
@@ -201,8 +214,10 @@ recorded, which it is.
 Worth separating, because they are scored differently:
 
 - **Several loops, one company.** A coordinator plus specialists, all holding the same
-  participant token. They share the company's action ceiling, because scoring is per
-  company and three loops must not get three times the actions of one.
+  participant token. nttd sees one company and writes one result row, so how many
+  agents the system runs is its own business. In stepped mode they share one batch per
+  step, so if one agent spends 5 the rest have 10 between them; in real time there is no
+  ceiling at all.
 - **Several companies, one each.** `--agent-companies N` gives one token per company. Each
   gets its own ceiling and its own result row, and they compete for cargo and town
   ratings.
@@ -297,5 +312,5 @@ Shipped examples, all scored on their own merits rather than because they say so
 | File | World | Mode |
 |---|---|---|
 | `t2_example.conf` | 256×256 flat | real time, 30 min |
-| `t3_example.conf` | 512×512 hilly, 2 AI opponents | real time, 60 min |
+| `t3_example.conf` | 512×512 hilly | real time, 60 min |
 | `t2_stepped_example.conf` | 256×256 flat | stepped, bounded in steps |

@@ -130,9 +130,6 @@ def show_profile() -> None:
     limits = Table(title="Fairness", show_header=False)
     limits.add_column("Setting", style="bold")
     limits.add_column("Value")
-    for key, value in sorted(profile.fairness.items()):
-        limits.add_row(key, str(int(value) if float(value).is_integer() else value))
-    console.print(limits)
 
     console.print(
         f"\n[bold]profile version:[/] {profile.version}  "

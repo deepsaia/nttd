@@ -116,7 +116,7 @@ H = {"X-Participant-Token": TOKEN}
 while True:
     state = requests.get(f"{P}/state/full", timeout=60).json()
     actions = my_policy(state)                    # your code
-    for i, a in enumerate(actions[:15]):          # 15 per submission
+    for i, a in enumerate(actions):               # as many as you like
         requests.post(f"{P}/actions/submit", headers=H, timeout=120, json={
             "action_id": f"a{i}", "action_type": a["action_type"],
             "parameters": a["parameters"], "company_id": 0,
@@ -140,8 +140,10 @@ nttd cannot observe tokens — you run the model, not nttd — so this is record
 
 #### 2. Multi-agent system, real-time
 
-Several loops sharing one company. They share its action ceiling too: scoring is per
-company, so three loops must not get three times the actions of one.
+Several loops sharing one company, through one participant token. How many agents a
+system runs internally is its own business: nttd sees one company and writes one result
+row. There is no action ceiling in either mode, so how much a system submits is a
+question for the system rather than for nttd.
 
 **Example A — one token, several loops.** Every loop uses the same participant token,
 because the token addresses a *company*. Coordination between them is your problem,
@@ -177,7 +179,7 @@ company. Several *competing* companies is `--agent-companies N`, one token each.
 companies with one participant token each, in `participants.json`.
 
 **Example A — real-time.** Nothing special: each company acts on its own cadence with its
-own token. The ceiling and the score are per company, and observation is full state for
+own token. The score is per company, and observation is full state for
 everyone, so nobody has an information edge. Using one company's token against another is
 refused. The one shared resource is the GameScript: a rival issuing long `connect_rail`
 calls will slow your submissions.
@@ -230,7 +232,7 @@ for _ in range(61):
 ```
 
 The env holds no privileged access: it posts to the same participant routes an LLM
-agent uses, so the ceiling, the scored lock, and the audit trail apply identically.
+agent uses, so the scored lock and the audit trail apply identically.
 Reward is computed in the env from `info["snapshot"]`, not by nttd — what to optimise
 is your choice, and a reward baked into the platform would have every entry
 optimising nttd's opinion.
@@ -324,7 +326,7 @@ setting changes it, so wall-minutes *are* the economy horizon:
 | T4 | 120 min | ~10 game years | longer-running businesses |
 
 Shipped examples: `t2_example.conf` (256×256 flat), `t3_example.conf` (512×512
-hilly, 2 AI opponents), and `t2_stepped_example.conf` (the same world as T2, bounded
+hilly), and `t2_stepped_example.conf` (the same world as T2, bounded
 in steps).
 
 ---

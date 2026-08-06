@@ -64,12 +64,34 @@ def score_company(company: Company) -> CompanyScore:
     )
 
 
-def rank_companies(companies: list[Company]) -> list[CompanyScore]:
-    """Score and rank companies best-first.
+def rank_companies(
+    companies: list[Company],
+    contested_by: set[int] | None = None,
+) -> list[CompanyScore]:
+    """Score and rank the companies somebody actually played, best-first.
 
-    Inactive companies are excluded: a bankrupt or removed company has no
-    standing result.
+    Inactive companies are excluded: a bankrupt or removed company has no standing
+    result.
+
+    So are company slots nobody played. Every company in an nttd session is created by
+    the ``nttd Idle`` AI, which sleeps forever so that a slot exists for a contestant to
+    act through, and ``num_ai_companies`` adds more of the same rather than opponents.
+    Without this filter a session configured for two "AI opponents" wrote three scored
+    rows: the contestant, and two "Unnamed" companies at score 0 with no actions. A
+    board ingesting that bundle would read three entries for one run.
+
+    Args:
+        contested_by: Company ids somebody played, meaning they hold a participant
+            token or have a recorded action. None keeps every active company, which is
+            what a caller without that knowledge should get rather than a silent
+            filter. The action half matters for humans: somebody who joins a slot from
+            the game window has no token, and dropping them would be worse than the
+            phantom rows this removes.
     """
-    scores = [score_company(c) for c in companies if c.is_active]
+    scored = [
+        company for company in companies
+        if company.is_active and (contested_by is None or company.id in contested_by)
+    ]
+    scores = [score_company(company) for company in scored]
     scores.sort(key=CompanyScore.sort_key, reverse=True)
     return scores

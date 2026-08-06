@@ -92,7 +92,7 @@ can price a whole batch during deliberation for free.
 
 The finders use `GSTestMode()` dry-run validation, so a coordinate they return is one
 the corresponding build will accept. Guessing tiles and handling the failures is
-allowed, but it costs you actions against the ceiling for nothing.
+allowed, but it wastes a round trip and some of the game time you are spending.
 
 ### Building a route, by transport mode
 
@@ -123,24 +123,27 @@ Four outcomes, and they mean different things:
 | `success` | it happened; `changed_entities` says what |
 | `failed` | the game refused it — bad tile, not enough money, no valid path |
 | `rejected` | not in your vocabulary, or operator-tier |
-| `blocked` | the scenario's action ceiling |
+| `blocked` | reserved; nothing issues it now that there is no action limit |
 
 A `rejected` for an operator-tier action says so explicitly rather than "unknown
 action", because an agent told only "no" retries forever.
 
-### The ceiling
+### How many actions to take
 
-At most **15 actions per submission**, per company. Enough for a route — loan, two
-stations, a connection, a vehicle, orders — with room to spare. A batch over the ceiling
-is refused *whole* rather than part-executed, so a route planned as one batch never ends
-up half-built.
+Your call, in both modes. There is no ceiling.
 
-Loops sharing a company share the ceiling. Scoring is per company, so three loops must
-not get three times the actions of one.
+That is deliberate: how much to attempt per decision is part of what a benchmark should
+measure, not something to equalise. A multi-agent system coordinating parallel work, an
+RL policy batching a whole route, and an agent taking one action at a time are making
+different bets, and each pays for its own in tokens and compute.
 
-There is no rate limit. How often you act is up to you.
+Nothing is bought by capping it. In real time the world moves whether or not you act, so
+every action already costs game time. In stepped mode the run is bounded by how many
+steps it takes and how many game-days each one advances, both fixed by the scenario, so
+a larger batch cannot buy you more world than anyone else gets.
 
----
+Loops sharing a company share nothing but the company: nttd sees one contestant and
+writes one result row, and how many agents you run inside it is your business.
 
 ## Stepped mode, for RL and ES
 
@@ -161,7 +164,7 @@ result["terminated"]      # an end condition fired
 
 `/step` returns only after the world has advanced and been re-observed, so you never
 have to guess when your actions took effect. A step carries a variable-length batch, up
-to the same ceiling — a step is not one action.
+as large as you like — a step is not one action.
 
 An empty `actions` list is a legitimate move: waiting while vehicles earn is real play.
 
@@ -223,7 +226,7 @@ What that means for your runner:
   10-minute liveness timeout, after which a silent company is dropped from the barrier for
   the rest of the run and the remaining companies carry on without it.
 - **One step per company per window.** A second concurrent `/step` from the same company
-  gets a 409: two batches in one window would be the action ceiling bypassed.
+  gets a 409: two batches in one window would make a step mean two different things.
 - `result["steppers"]` lists whose actions were in the window, so you can tell whether a
   rival was still playing.
 

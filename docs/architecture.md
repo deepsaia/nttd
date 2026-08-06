@@ -68,7 +68,8 @@ surface it came from. In order:
 1. **Operator tier?** Refused with an explanation rather than "unknown action", so an
    agent that reaches for a superhuman power learns why instead of retrying forever.
 2. **In the vocabulary?** 76 participant actions.
-3. **Within budget?** At most 15 actions per submission, per company.
+3. There is no third check. An action limit existed and was removed: how many
+   actions to spend is the contestant's own optimisation problem.
 
 The order matters: the budget is checked last so a refusal that never had a chance of
 succeeding does not consume it.
@@ -318,7 +319,7 @@ from that, because one of them has a clock the contestants control.
 The world runs continuously and each company submits whenever it likes. Verified on a
 two-company session: both acted independently, and company 0's token targeting company 1
 was refused with `Token is scoped to company 0 but the request targets company 1`. The
-action ceiling is already per company, scoring is already per company, and observation is
+scoring is already per company, and observation is
 full state for everyone, so it is symmetric.
 
 The one thing to know is that every company's actions funnel through one GameScript.
@@ -352,11 +353,6 @@ should reach it.
 **Registration is explicit**, via `POST /step/reset`. Inferring the barrier's size from
 the session's company count would stall every window for 10 minutes on a company whose
 runner never attached.
-
-**The ceiling is checked per company, before joining the window.** Two companies each
-submitting a legal 15 is 30 actions in the merged flush. Checking the merged batch would
-let one contestant's legal batch refuse everybody's window; an earlier version read the
-company off the first action, which had exactly that effect.
 
 **The flush is ordered by company, not by arrival.** Which company happened to call first
 should not decide whose road gets built on a contested tile.
@@ -422,10 +418,13 @@ Things a reader might expect and will not find:
 - **No reward function.** What to optimise is the contestant's choice; a reward defined
   by nttd would have every RL entry optimising nttd's opinion. `StepResult` carries no
   reward field.
-- **No rate limit.** One was built and removed: at 15 actions per 10s a 30-minute
-  real-time run allowed ~2,700 actions against ~900 for the same task played stepped,
-  so it made the modes threefold incomparable while presenting itself as a fairness
-  guarantee. It also bounded rhythm rather than work.
+- **No action limit of any kind.** Two were built and removed. A sliding rate window
+  went first: at 15 actions per 10s a 30-minute real-time run allowed ~2,700 actions
+  against ~900 for the same task played stepped, making the modes threefold
+  incomparable while presenting itself as a fairness guarantee. A per-submission
+  ceiling of 15 followed it, and went for a different reason: how much to attempt per
+  decision is part of what the benchmark measures. Real time is bounded by
+  wall-minutes and stepped by step count and step size, so neither mode needs it.
 - **No LLM timeout or history cap.** Both are unenforceable against a loop running in
   the contestant's own process, and stating an unenforceable suggestion as a limit
   misleads whoever reads the result.

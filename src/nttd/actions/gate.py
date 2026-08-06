@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
 from nttd.schemas.action_result import ActionStatus
@@ -54,12 +53,7 @@ _OPERATOR_TIER_REASON = (
 )
 
 
-def admit(
-    action_type: str,
-    company_id: int,
-    budget: Any = None,
-    count: int = 1,
-) -> Admission:
+def admit(action_type: str, company_id: int) -> Admission:
     """Decide whether one submission may execute.
 
     Args:
@@ -67,10 +61,6 @@ def admit(
         company_id: The company the action is for, already resolved from the
             participant token by the caller. Not re-derived here: this module decides
             what may happen, not who is asking.
-        budget: The session's ``ActionBudget``, or None to skip the budget check.
-            Checked but NOT consumed -- the caller consumes on the path where the
-            action actually goes ahead, so a refusal elsewhere cannot spend it.
-        count: How many actions this submission carries, for the budget check.
 
     Returns:
         An ``Admission``. When refused, the caller records ``status`` and ``error``
@@ -90,14 +80,5 @@ def admit(
             status=ActionStatus.REJECTED,
             error=f"Unknown action_type: {action_type}",
         )
-
-    if budget is not None:
-        decision = budget.check(company_id, count=count)
-        if not decision.allowed:
-            return Admission(
-                allowed=False,
-                status=ActionStatus.BLOCKED,
-                error=f"Action budget exceeded: {decision.reason}",
-            )
 
     return Admission(allowed=True)

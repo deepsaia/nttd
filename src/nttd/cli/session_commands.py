@@ -76,7 +76,7 @@ def session_create(
         f"[bold]Map:[/]         {map_x}x{map_y}\n"
         f"[bold]Seed:[/]        "
         + (f"[cyan]{seed}[/]" if seed else "[yellow]random (not reproducible)[/]") + "\n"
-        f"[bold]AI opponents:[/] {ai_count}\n"
+        f"[bold]Idle slots:[/] {ai_count}\n"
         f"[bold]Runtime:[/]     {cfg.runtime.mode}\n"
         + format_end_conditions_brief(cfg.end_conditions),
         title="Session created",
@@ -87,7 +87,7 @@ def session_create(
 @session_app.command("start")
 def session_start(
     session: Annotated[str, session_option()],
-    ai_opponents: Annotated[int, typer.Option("--ai-opponents", "-a", help="Number of AI opponents")] = -1,
+    ai_opponents: Annotated[int, typer.Option("--ai-opponents", "-a", help="Extra idle company slots")] = -1,
     agent_companies: Annotated[int, typer.Option(
         "--agent-companies", help="Number of idle company slots for nttd agents",
     )] = -1,
