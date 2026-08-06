@@ -242,6 +242,73 @@ def test_a_wrong_param_shape_is_told_the_real_one() -> None:
     assert "x1" not in errors[0]
 
 
+def test_an_action_offering_a_choice_accepts_any_branch() -> None:
+    """The regression this guards is one the manifest itself caused.
+
+    Marking every mentioned parameter required made insert_order demand station_id and
+    dest_tile and destination at once, so a correct submission naming one destination
+    was refused by nttd before the game ever saw it.
+    """
+    from nttd.interpreter.action_schema import AgentAction
+    from nttd.interpreter.validator import validate_actions
+
+    for destination in ({"station_id": 3}, {"dest_tile": 4096}, {"destination": 4096}):
+        errors = validate_actions([
+            AgentAction(
+                action_type="insert_order",
+                parameters={"vehicle_id": 1, "order_index": 0, **destination},
+            ),
+        ])
+        assert errors == {}, f"{destination} should satisfy the choice: {errors}"
+
+
+def test_an_action_satisfying_no_branch_is_refused() -> None:
+    """The other half: none of those parameters is required on its own, so checking
+    requiredness alone would let through an order naming nowhere to go."""
+    from nttd.interpreter.action_schema import AgentAction
+    from nttd.interpreter.validator import validate_actions
+
+    errors = validate_actions([
+        AgentAction(action_type="insert_order", parameters={"vehicle_id": 1, "order_index": 0}),
+    ])
+    assert 0 in errors
+    assert "one of" in errors[0]
+    assert "station_id" in errors[0]
+
+
+def test_a_paired_branch_needs_both_of_its_parameters() -> None:
+    """build_train takes depot_tile, or depot_x and depot_y together. Half a pair is
+    not a branch."""
+    from nttd.interpreter.action_schema import AgentAction
+    from nttd.interpreter.validator import validate_actions
+
+    assert validate_actions([
+        AgentAction(action_type="build_train", parameters={"engine_id": 1, "depot_x": 5}),
+    ])
+    assert validate_actions([
+        AgentAction(
+            action_type="build_train",
+            parameters={"engine_id": 1, "depot_x": 5, "depot_y": 6},
+        ),
+    ]) == {}
+
+
+def test_a_tile_can_be_given_either_way() -> None:
+    """Actions resolving a tile take an index or a coordinate pair, and refuse neither."""
+    from nttd.interpreter.action_schema import AgentAction
+    from nttd.interpreter.validator import validate_actions
+
+    assert validate_actions([
+        AgentAction(action_type="remove_rail_track", parameters={"tile": 4096}),
+    ]) == {}
+    assert validate_actions([
+        AgentAction(action_type="remove_rail_track", parameters={"x": 10, "y": 12}),
+    ]) == {}
+    assert validate_actions([
+        AgentAction(action_type="remove_rail_track", parameters={"track": 1}),
+    ])
+
+
 def test_operator_action_is_rejected_before_param_checks() -> None:
     """The tier refusal must be the reason given, not a parameter complaint."""
     from nttd.interpreter.action_schema import AgentAction
