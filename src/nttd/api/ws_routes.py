@@ -20,7 +20,7 @@ _admin_ws_connections: dict[str, list[WebSocket]] = {}  # session_id -> [ws]
 
 @router.websocket("/ws/{session_id}/admin")
 async def admin_websocket(websocket: WebSocket, session_id: str) -> None:
-    """Unauthenticated WebSocket for the admin console — receives event notifications."""
+    """Unauthenticated WebSocket for the admin console: receives event notifications."""
     await websocket.accept()
     _admin_ws_connections.setdefault(session_id, []).append(websocket)
     logger.info("Admin WebSocket connected for session %s", session_id)
@@ -96,7 +96,7 @@ async def _push_loop(session_id: str, agent_id: str, websocket: WebSocket) -> No
         except asyncio.CancelledError:
             break
         except Exception:
-            logger.warning("Push loop error for session=%s agent=%s — stopping", session_id, agent_id, exc_info=True)
+            logger.warning("Push loop error for session=%s agent=%s: stopping", session_id, agent_id, exc_info=True)
             break
 
 

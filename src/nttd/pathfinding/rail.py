@@ -1,4 +1,4 @@
-"""Rail pathfinder — direction-aware A* on rail-buildable tiles.
+"""Rail pathfinder: direction-aware A* on rail-buildable tiles.
 
 Tracks direction because trains can't make arbitrary turns.
 Cost model: flat=100, slope=+200, curve45=100, curve90=600, bridge/tunnel.
@@ -67,7 +67,7 @@ class RailCostFunction:
                     action="build_rail" if not tile.has_rail else "move",
                 ))
             else:
-                # Tile impassable — try bridge/tunnel in the same direction
+                # Tile impassable: try bridge/tunnel in the same direction
                 # Only attempt if continuing straight (no turn into bridge)
                 if entry_dir < 0 or new_dir == entry_dir:
                     bridge = self._try_bridge(node.x, node.y, new_dir)
@@ -163,7 +163,7 @@ class RailCostFunction:
             elif turn == 2:
                 return -1  # 180 blocked above, but safety
 
-        # Existing rail — check ownership
+        # Existing rail: check ownership
         if tile.has_rail:
             if tile.owner >= 0 and tile.owner != self._company_id:
                 return -1

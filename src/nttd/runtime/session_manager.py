@@ -179,7 +179,7 @@ class SessionManager:
         session_row = await session_repo.get_session_by_id(session_id)
         scenario_path = (session_row or {}).get("meta", {}).get("config_path")
 
-        # Build per-session config directory — settings baked into openttd.cfg
+        # Build per-session config directory: settings baked into openttd.cfg
         # so the initial map generation uses them (no newgame RCON needed).
         session_dir = self.sessions_dir / session_id
         build_session_config(
@@ -252,7 +252,7 @@ class SessionManager:
         pid = runtime.process.pid if runtime.process else 0
         await session_repo.mark_session_active(session_id, pid)
 
-        # Start AI companies (no newgame needed — settings already in config)
+        # Start AI companies (no newgame needed: settings already in config)
         await runtime.start_companies(ai_count, agent_companies)
 
         # Issue one participant token per contestant company. Companies are

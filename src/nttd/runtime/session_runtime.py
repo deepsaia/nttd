@@ -208,7 +208,7 @@ class SessionRuntime:
         else:
             logger.warning("GameScript not responding for session %s: %s", self.session_id, ping_result)
 
-        # Initial world state refresh — populate towns, industries, companies
+        # Initial world state refresh: populate towns, industries, companies
         # so a contestant's first observation has data immediately.
         await self.orchestrator._refresh_world_from_gs()
         logger.info(

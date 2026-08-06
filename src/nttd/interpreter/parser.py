@@ -32,7 +32,7 @@ def parse_action_list(agent_output: str | list[dict[str, Any]]) -> list[AgentAct
             normalized = _normalize_action_fields(item)
             actions.append(AgentAction.model_validate(normalized))
         except Exception as e:
-            logger.warning("Skipping invalid action at index %d: %s — %s", i, item, e)
+            logger.warning("Skipping invalid action at index %d: %s, %s", i, item, e)
     return actions
 
 

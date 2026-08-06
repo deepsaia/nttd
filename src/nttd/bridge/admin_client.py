@@ -349,7 +349,7 @@ class AdminClient:
             except (ConnectionError, asyncio.IncompleteReadError, OSError):
                 if self._intentional_disconnect:
                     break
-                logger.error("Connection lost — will attempt reconnect")
+                logger.error("Connection lost: will attempt reconnect")
                 self._connected = False
                 # Cancel pending GS requests
                 for event in self._gs_events.values():

@@ -1,6 +1,6 @@
 # nttd GameScript
 
-The `game/nttd-gs/` directory contains the nttd GameScript — Squirrel code that runs inside OpenTTD and handles all queries and game actions that the admin port cannot provide natively.
+The `game/nttd-gs/` directory contains the nttd GameScript: Squirrel code that runs inside OpenTTD and handles all queries and game actions that the admin port cannot provide natively.
 
 Communication is JSON over the OpenTTD admin port GameScript channel. The Python admin client (`src/nttd/bridge/admin_client.py`) sends commands and reassembles chunked responses.
 
@@ -27,12 +27,12 @@ All action commands require `company_id` in params. OpenTTD's `GSCompanyMode` is
 
 ### Adding a new command
 
-**Step 1 — Add a case to `_Dispatch()` in `main.nut`:**
+**Step 1: Add a case to `_Dispatch()` in `main.nut`:**
 ```squirrel
 case "my_new_action": return this.CmdMyNewAction(p);
 ```
 
-**Step 2 — Implement the handler function:**
+**Step 2: Implement the handler function:**
 ```squirrel
 function CmdMyNewAction(p) {
   local company_mode = GSCompanyMode(p.company_id);  // if company-scoped
@@ -45,20 +45,20 @@ function CmdMyNewAction(p) {
 }
 ```
 
-**Step 3 — Register it in the Python action registry** (`src/nttd/api/action_routes.py`, `_KNOWN_ACTIONS` set) if agents should be able to call it via `POST /actions/submit`.
+**Step 3: Register it in the Python action registry** (`src/nttd/api/action_routes.py`, `_KNOWN_ACTIONS` set) if agents should be able to call it via `POST /actions/submit`.
 
-**Step 4 — Restart the server** (OpenTTD recompiles the GS on startup):
+**Step 4: Restart the server** (OpenTTD recompiles the GS on startup):
 ```bash
 ./scripts/start_openttd_server.sh
 ```
-Check server output for compile errors — they show `file.nut:LINE/COL: error message`.
+Check server output for compile errors: they show `file.nut:LINE/COL: error message`.
 
 ### Squirrel gotchas
 - **Reserved keywords**: `clone`, `parent`, `delete`, `in`, `for`, `function`, `class`, `extends`, `null`, `true`, `false`. Use `cid` instead of `clone`, `parent_id` instead of `parent`.
 - **No null coalescing**: Use `("key" in table) ? table.key : default` for optional params.
-- **GSCompany.GetLoanAmount()** takes **no arguments** — it uses the current `GSCompanyMode` context.
+- **GSCompany.GetLoanAmount()** takes **no arguments**: it uses the current `GSCompanyMode` context.
 - **GSBridge.GetName(type, vehicle_type)** takes two args (second is `GSVehicle.VT_ROAD` etc.).
-- **GSAirport.GetNoiseLevelIncrease(tile, type)** — tile comes first.
+- **GSAirport.GetNoiseLevelIncrease(tile, type)**: tile comes first.
 - **Table keys with rawset**: Use `resp.rawset("key", value)` when the key name conflicts with a Squirrel built-in.
 - **Array responses**: Return `result = [...]` to get automatic chunking. Return `result = {...}` for single-packet table responses.
 
@@ -69,21 +69,21 @@ Edit the `CmdXxx()` function body. Parameters are read from `p` (the params tabl
 ### API reference sources
 
 The full OpenTTD GameScript API is in `~/exp/OpenTTD/src/script/api/`. Key files:
-- `script_tile.hpp` — tile queries and demolish
-- `script_road.hpp` — road build/remove
-- `script_rail.hpp` — rail build/remove/convert
-- `script_marine.hpp` — waterways
-- `script_airport.hpp` — airports
-- `script_bridge.hpp` / `script_tunnel.hpp` — bridges and tunnels
-- `script_vehicle.hpp` — vehicle management
-- `script_order.hpp` — order management
-- `script_company.hpp` — company data and actions
-- `script_town.hpp` — town data; GS-exclusive: FoundTown, ExpandTown, SetGrowthRate, ChangeRating, SetCargoGoal
-- `script_industry.hpp` — industry data
-- `script_station.hpp` / `script_basestation.hpp` — station data
-- `script_group.hpp` — vehicle groups
-- `script_sign.hpp` — signs
-- `script_subsidy.hpp` — subsidies; GS-exclusive: Create
+- `script_tile.hpp`: tile queries and demolish
+- `script_road.hpp`: road build/remove
+- `script_rail.hpp`: rail build/remove/convert
+- `script_marine.hpp`: waterways
+- `script_airport.hpp`: airports
+- `script_bridge.hpp` / `script_tunnel.hpp`: bridges and tunnels
+- `script_vehicle.hpp`: vehicle management
+- `script_order.hpp`: order management
+- `script_company.hpp`: company data and actions
+- `script_town.hpp`: town data; GS-exclusive: FoundTown, ExpandTown, SetGrowthRate, ChangeRating, SetCargoGoal
+- `script_industry.hpp`: industry data
+- `script_station.hpp` / `script_basestation.hpp`: station data
+- `script_group.hpp`: vehicle groups
+- `script_sign.hpp`: signs
+- `script_subsidy.hpp`: subsidies; GS-exclusive: Create
 
 ---
 
@@ -97,7 +97,7 @@ The full OpenTTD GameScript API is in `~/exp/OpenTTD/src/script/api/`. Key files
 
 ---
 
-### Queries — No Side Effects
+### Queries: No Side Effects
 
 #### `ping`
 No params. Returns `{ pong: true }`. Use to verify the GS is alive.
@@ -411,14 +411,14 @@ All marine commands take `company_id`* and `x`*, `y`* (tile).
 
 | Command | Extra params | Notes |
 |---------|-------------|-------|
-| `build_canal` | — | |
-| `build_lock` | — | Placed on a slope next to water |
-| `build_buoy` | — | Navigation waypoint for ships |
+| `build_canal` | none | |
+| `build_lock` | none | Placed on a slope next to water |
+| `build_buoy` | none | Navigation waypoint for ships |
 | `build_water_depot` | `direction`? (default `0`) | Front tile direction |
-| `remove_canal` | — | |
-| `remove_lock` | — | |
-| `remove_buoy` | — | |
-| `remove_water_depot` | — | |
+| `remove_canal` | none | |
+| `remove_lock` | none | |
+| `remove_buoy` | none | |
+| `remove_water_depot` | none | |
 
 ---
 

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 class Subsidy(BaseModel):
     """An OpenTTD subsidy: a bonus payment for establishing a specific cargo route.
 
-    Subsidies expire after a few years if not claimed. They are GS-exclusive —
+    Subsidies expire after a few years if not claimed. They are GS-exclusive:
     the admin port does not expose them.
     """
 

@@ -1,4 +1,4 @@
-"""Pathfinding service — orchestrates tile loading and A* execution.
+"""Pathfinding service: orchestrates tile loading and A* execution.
 
 Derived from the OpenTTD multiplayer/agent study, §14.7 (local research notes, not in the repo).
 """

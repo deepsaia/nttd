@@ -1,4 +1,4 @@
-"""Tests for A* pathfinding — core algorithm, road, rail, bridge/tunnel expansion."""
+"""Tests for A* pathfinding: core algorithm, road, rail, bridge/tunnel expansion."""
 
 import pytest
 
@@ -88,7 +88,7 @@ class TestRoadBridge:
         result = find_path(
             1, 5, 25, 5, RoadCostFunction(cache), max_iterations=5000,
         )
-        # Should fail — no bridge can span 17 tiles (max=10)
+        # Should fail: no bridge can span 17 tiles (max=10)
         assert not result.found
 
 
