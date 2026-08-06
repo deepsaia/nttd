@@ -13,6 +13,7 @@ from pyopenttdadmin.packet import (
     AdminJoinPacket,
     AdminRconPacket,
     AdminSubscribePacket,
+    CmdLoggingPacket,
     GameScriptPacket,
     Packet,
     ProtocolPacket,
@@ -22,7 +23,15 @@ from pyopenttdadmin.packet import (
     WelcomePacket,
 )
 
+from nttd.bridge.command_names import parse_command_names
+from nttd.bridge.poll_packet import AdminPollPacket
+
 logger = logging.getLogger(__name__)
+
+# OpenTTD's own client id. Commands from the server itself -- the GameScript executing
+# an nttd action, an AI, or a rename at session start -- carry this. Joining clients are
+# numbered from 2 upward, so this is what separates a person at a keyboard from nttd.
+CLIENT_ID_SERVER = 1
 
 _RECONNECT_BASE_DELAY = 2.0   # seconds before first retry
 _RECONNECT_MAX_DELAY  = 30.0  # cap on backoff
@@ -72,6 +81,12 @@ class AdminClient:
 
         # Callbacks for unsolicited GS game events (_event=true)
         self._event_callbacks: list[Callable[[dict[str, Any]], Any]] = []
+        # Commands issued from a connected OpenTTD client, as opposed to actions sent
+        # through nttd's own API. See on_client_command.
+        self._command_callbacks: list[Callable[[dict[str, Any]], Any]] = []
+        # command id -> name, from our own parser. See bridge/command_names.py: the
+        # library's is broken and returns confident, wrong names.
+        self._command_names: dict[int, str] = {}
 
     @property
     def connected(self) -> bool:
@@ -80,6 +95,15 @@ class AdminClient:
     def on_reconnect(self, callback: Callable[[], Any]) -> None:
         """Register a callback to be called after every successful (re)connect."""
         self._reconnect_callbacks.append(callback)
+
+    def on_client_command(self, callback: Callable[[dict[str, Any]], Any]) -> None:
+        """Register a callback for commands issued from a connected OpenTTD client.
+
+        These are what a human does in the game window. nttd's own API actions do not
+        appear here: they reach the game through the GameScript, not as client
+        commands, which is exactly what makes the two distinguishable.
+        """
+        self._command_callbacks.append(callback)
 
     def on_game_event(self, callback: Callable[[dict[str, Any]], Any]) -> None:
         """Register a callback for unsolicited GS game events."""
@@ -166,6 +190,25 @@ class AdminClient:
         await self.subscribe(AdminUpdateType.CHAT, AdminUpdateFrequency.AUTOMATIC)
         await self.subscribe(AdminUpdateType.CONSOLE, AdminUpdateFrequency.AUTOMATIC)
         await self.subscribe(AdminUpdateType.GAMESCRIPT, AdminUpdateFrequency.AUTOMATIC)
+        # Commands issued in the game window. Without this a human playing there is
+        # recorded as having done nothing, and an action log that records nothing is
+        # trivially satisfied by a run that submitted nothing.
+        #
+        # CMD_LOGGING is AUTOMATIC-only and CMD_NAMES is POLL-only: OpenTTD closes the
+        # admin connection outright on an unsupported frequency, which presents as
+        # "Connection lost" at session start with no hint of the cause. The names are
+        # polled once, below, rather than subscribed.
+        await self.subscribe(AdminUpdateType.CMD_LOGGING, AdminUpdateFrequency.AUTOMATIC)
+        await self.poll_command_names()
+
+    async def poll_command_names(self) -> None:
+        """Ask once for the command id-to-name list.
+
+        A poll rather than a subscription because CMD_NAMES permits only POLL, and
+        OpenTTD drops the connection on any other frequency. The list does not change
+        during a game, so once is enough.
+        """
+        await self._send(AdminPollPacket(AdminUpdateType.CMD_NAMES))
 
     async def send_rcon(self, command: str) -> list[str]:
         self._rcon_buffer.clear()
@@ -228,6 +271,47 @@ class AdminClient:
                 merged_result.append(result)
 
         return {"id": correlation_id, "success": chunks[0].get("success", True), "result": merged_result}
+
+    def _handle_client_command(self, packet: CmdLoggingPacket) -> None:
+        """Turn a logged client command into a dict the recorder can write.
+
+        ``packet.frame`` is not used: pyopenttdadmin reads it from the payload buffer
+        *after* reassigning that buffer to the payload slice, so it is always 0.
+        Verified against a hand-built packet. nttd has the game date from its own DATE
+        subscription anyway.
+
+        ``packet.data`` is the raw OpenTTD command payload. Decoding it into named
+        parameters means implementing version-specific command serialisation, so it is
+        deliberately not attempted: what a command was, who issued it and for which
+        company is enough to tell a human apart from an agent and to stop an empty
+        action log passing for a real one.
+
+        Server-side commands are dropped. CMD_LOGGING reports *every* command the game
+        accepts, including the ones nttd's own GameScript issues, so an API submission
+        arrives twice: once as the action nttd recorded and once as the game command it
+        became. Verified live -- a single `set_loan` produced an `api` row and a
+        `CmdIncreaseLoan` row, and counting both doubled the company's action total.
+        """
+        if packet.client_id == CLIENT_ID_SERVER:
+            return
+
+        command = {
+            "command": self.command_name(packet.cmd),
+            "command_id": packet.cmd,
+            "client_id": packet.client_id,
+            "company_id": packet.company_id,
+        }
+        for callback in self._command_callbacks:
+            try:
+                result = callback(command)
+                if asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+            except Exception:
+                logger.exception("Client command callback error")
+
+    def command_name(self, command_id: int) -> str:
+        """Resolve a numeric command id, falling back to the number itself."""
+        return self._command_names.get(command_id, f"cmd_{command_id}")
 
     def _handle_gs_response(self, data: dict[str, Any]) -> None:
         # Unsolicited game event from GS event listener
@@ -296,6 +380,10 @@ class AdminClient:
                 self._rcon_event.set()
                 continue
 
+            if isinstance(packet, CmdLoggingPacket):
+                self._handle_client_command(packet)
+                continue
+
             if isinstance(packet, GameScriptPacket):
                 try:
                     raw = packet.json.rstrip("\x00")
@@ -332,6 +420,18 @@ class AdminClient:
         header = await self._reader.readexactly(2)
         packet_len = int.from_bytes(header, "little")
         body = await self._reader.readexactly(packet_len - 2)
+
+        # Handled here rather than in the dispatch below because the library cannot
+        # decode this packet at all: it treats binary command ids as UTF-8 and the
+        # whole table is dropped as an unknown packet type.
+        if body and body[0] == PacketType.SERVER_CMD_NAMES.value:
+            # Merged, not replaced: the table does not fit one packet. OpenTTD sends
+            # it in several, and assigning each one discarded every batch but the last
+            # -- 137 names arrived and 8 survived.
+            self._command_names.update(parse_command_names(body))
+            logger.debug("Command names known: %d", len(self._command_names))
+            return None
+
         try:
             return Packet.create_packet(body)
         except (ValueError, KeyError) as e:
