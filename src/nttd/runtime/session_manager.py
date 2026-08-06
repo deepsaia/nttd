@@ -29,6 +29,7 @@ from nttd.config.scenario_config import (
     TimeLimitConfig,
 )
 from nttd.config.task_instance import compute_task_instance
+from nttd.pathfinding import service as pathfinding_service
 from nttd.runtime.config_builder import build_session_config
 from nttd.runtime.final_save import FinalSaveCapture
 from nttd.runtime.participant_registry import ParticipantRegistry
@@ -317,6 +318,10 @@ class SessionManager:
         recompute the score, so it outlives the session by design.
         """
         runtime = self.runtimes.pop(session_id, None)
+        # The pathfinding cache is keyed by session and holds a tile record for every
+        # tile on the map. Left behind, a long-lived server accumulates one per session
+        # it has ever run.
+        pathfinding_service.drop_cache(session_id)
         if runtime:
             # Save BEFORE shutdown: it needs the live admin connection. Every mode
             # ends here, including stepped and manual stops, which is why the capture
