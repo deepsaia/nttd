@@ -30,7 +30,6 @@ from nttd.api.scored_guard import require_unscored
 from nttd.runtime.step_errors import (
     AlreadyWaitingAtBarrier,
     NotRegisteredForStepping,
-    StepBatchTooLarge,
 )
 from nttd.schemas.game import GameState, RuntimeMode
 from nttd.schemas.spend_report import SpendReport
@@ -253,16 +252,6 @@ async def take_step(
             ),
         )
 
-    # The batch ceiling is per company, so it is checked against this caller's batch
-    # before the batches are merged. Checking the merged flush instead would let one
-    # company's legitimate 15 actions blow the ceiling for everybody.
-    try:
-        runtime.orchestrator.check_batch_size(actions)
-    except StepBatchTooLarge as exc:
-        # 400 rather than 403: the batch is malformed for this scenario, not
-        # forbidden. Splitting it across steps is the fix, and the message says so.
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     # partial rather than a closure: the barrier drives the advance, and it needs a
     # callable that takes only the merged batch.
     advance = functools.partial(_advance_world, runtime, days)
@@ -273,8 +262,6 @@ async def take_step(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except AlreadyWaitingAtBarrier as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except StepBatchTooLarge as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @operator_router.post("/heartbeat/interval")

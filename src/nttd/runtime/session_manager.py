@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 from nttd.analysis.score import rank_companies
 from nttd.config.benchmark_profile import dimensions_from_settings
-from nttd.config.fairness import from_settings as fairness_from_settings
 from nttd.config.scenario_config import (
     BankruptcyConfig,
     CargoThresholdConfig,
@@ -30,7 +29,6 @@ from nttd.config.scenario_config import (
     TimeLimitConfig,
 )
 from nttd.config.task_instance import compute_task_instance
-from nttd.runtime.action_budget import from_fairness as budget_from_fairness
 from nttd.runtime.config_builder import build_session_config
 from nttd.runtime.final_save import FinalSaveCapture
 from nttd.runtime.participant_registry import ParticipantRegistry
@@ -232,8 +230,6 @@ class SessionManager:
         # Lock a scored session before the server is up, so the window between
         # spawn and lock cannot be used.
         runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
-        runtime.fairness = fairness_from_settings(effective_settings)
-        runtime.action_budget = budget_from_fairness(runtime.fairness)
         runtime.dimensions = dimensions_from_settings(effective_settings)
         _apply_step_size(runtime, effective_settings)
         if runtime.scored_lock.scored:
@@ -413,8 +409,6 @@ class SessionManager:
             gamescript_path=self.base_config_dir / "game" / "nttd-gs" / "main.nut",
             openttd_binary=self.openttd_binary,
             capability=runtime.scored_lock.summary(),
-            fairness=runtime.fairness.as_dict(),
-            budget=runtime.action_budget.usage(),
             dimensions=runtime.dimensions,
             final_save=final_save,
         )
@@ -559,8 +553,6 @@ class SessionManager:
             # unlocked and unbounded, so an nttd restart would silently turn a
             # scored run into an unprotected one.
             runtime.scored_lock.scored = stored.get("_scored") == "1"
-            runtime.fairness = fairness_from_settings(stored)
-            runtime.action_budget = budget_from_fairness(runtime.fairness)
             runtime.dimensions = dimensions_from_settings(stored)
             _apply_step_size(runtime, stored)
             if runtime.scored_lock.scored:

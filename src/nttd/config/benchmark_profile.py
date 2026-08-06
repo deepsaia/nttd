@@ -17,9 +17,6 @@ So a scored scenario is limited to a profile with four parts:
     are recorded as leaderboard columns. A reader can see that one run was 512x512
     mountainous and another 256x256 flat, and discount the comparison themselves.
 
-  * FAIRNESS limits how much a contestant may do and how fast, enforced as a
-    sliding window on the action route.
-
   * An optional SCENARIO ALLOWLIST, empty by default, for when the board needs a
     fixed slate rather than open admission.
 
@@ -85,15 +82,6 @@ SIZE_FIELDS = ("size_x", "size_y")
 # leaving the column permanently empty would lose information for no gain.
 REPORTED_LOCKED = ("landscape",)
 
-# Actions permitted in one submission, per company. See config/fairness.py.
-_FALLBACK_FAIRNESS: dict[str, float] = {"max_actions_per_decision": 15}
-
-# Bounds on the fairness values themselves. Clamped rather than defaulted, so an
-# operator's intent survives as far as it is expressible. A ceiling of 0 would refuse
-# every action; one in the thousands is not a ceiling.
-_FAIRNESS_LIMITS: dict[str, tuple[float, float]] = {
-    "max_actions_per_decision": (1, 200),
-}
 
 # Prefix for the emitted display copies of the allowed dimensions. These are
 # projections of settings already carried as game_creation.* and difficulty.*, kept
@@ -111,7 +99,6 @@ class BenchmarkProfile:
     Attributes:
         locked: Settings that must match exactly.
         allowed: Settings that may vary, mapped to their permitted values.
-        fairness: The action ceiling, as ``max_actions_per_decision``.
         scenario_allowlist: Scenario ids permitted to be scored. Empty means any
             conforming scenario may be, which is the default.
         source: Where the rules came from, for diagnostics.
@@ -121,13 +108,11 @@ class BenchmarkProfile:
         self,
         locked: dict[str, Any],
         allowed: dict[str, tuple[Any, ...]],
-        fairness: dict[str, float] | None = None,
         scenario_allowlist: tuple[str, ...] = (),
         source: str = "",
     ) -> None:
         self.locked = locked
         self.allowed = allowed
-        self.fairness = fairness or dict(_FALLBACK_FAIRNESS)
         self.scenario_allowlist = scenario_allowlist
         self.source = source
 
@@ -147,7 +132,6 @@ class BenchmarkProfile:
                     key: [str(v) for v in values]
                     for key, values in sorted(self.allowed.items())
                 },
-                "fairness": {key: str(value) for key, value in sorted(self.fairness.items())},
             },
             separators=(",", ":"),
         )
@@ -289,26 +273,6 @@ def _matches(actual: Any, expected: Any) -> bool:
     return str(actual) == str(expected)
 
 
-def _clamped_fairness(raw: dict[str, Any]) -> dict[str, float]:
-    """Read the fairness block, clamping each value into a usable range."""
-    values: dict[str, float] = dict(_FALLBACK_FAIRNESS)
-    for key, (low, high) in _FAIRNESS_LIMITS.items():
-        if key not in raw:
-            continue
-        try:
-            value = float(raw[key])
-        except (TypeError, ValueError):
-            logger.warning("Ignoring non-numeric fairness.%s = %r", key, raw[key])
-            continue
-        clamped = min(max(value, low), high)
-        if clamped != value:
-            logger.warning(
-                "fairness.%s = %s is outside [%s, %s]; clamped to %s",
-                key, value, low, high, clamped,
-            )
-        values[key] = clamped
-    return values
-
 
 def load_profile(path: Path | str | None = None) -> BenchmarkProfile:
     """Read the profile from HOCON, falling back to the built-in values.
@@ -321,7 +285,6 @@ def load_profile(path: Path | str | None = None) -> BenchmarkProfile:
     fallback = BenchmarkProfile(
         locked=dict(_FALLBACK_LOCKED),
         allowed=dict(_FALLBACK_ALLOWED),
-        fairness=dict(_FALLBACK_FAIRNESS),
         source="built-in fallback",
     )
 
@@ -349,7 +312,6 @@ def load_profile(path: Path | str | None = None) -> BenchmarkProfile:
         return BenchmarkProfile(
             locked=locked,
             allowed=allowed,
-            fairness=_clamped_fairness(dict(node.get("fairness", {}))),
             scenario_allowlist=tuple(str(x) for x in node.get("scenario_allowlist", [])),
             source=str(profile_path),
         )
