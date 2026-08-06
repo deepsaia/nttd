@@ -2085,8 +2085,17 @@ class NttdGS extends GSController {
   }
 
   // Build road along a path returned by _FindRoadPath.
+  // Names how much of a route is missing and why, since the failed list can be long
+  // and the first reason is usually the reason for all of them.
+  function _PartialError(failed, total) {
+    local first = failed[0];
+    return failed.len() + " of " + total + " segments failed, first at ("
+           + first.x + "," + first.y + "): " + first.error;
+  }
+
   function _BuildRoadPath(path) {
     local built = 0;
+    local existing = 0;
     local failed = [];
     for (local i = 1; i < path.len(); i++) {
       if (i % 50 == 0) this.Sleep(1); // Yield on long paths to avoid blocking
@@ -2103,7 +2112,7 @@ class NttdGS extends GSController {
           built++;
         } else {
           local err = GSError.GetLastErrorString();
-          if (err == "ERR_ALREADY_BUILT") { built++; }
+          if (err == "ERR_ALREADY_BUILT") { existing++; }
           else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err }); }
         }
         continue;
@@ -2114,7 +2123,7 @@ class NttdGS extends GSController {
           built++;
         } else {
           local err = GSError.GetLastErrorString();
-          if (err == "ERR_ALREADY_BUILT") { built++; }
+          if (err == "ERR_ALREADY_BUILT") { existing++; }
           else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err }); }
         }
         continue;
@@ -2122,21 +2131,21 @@ class NttdGS extends GSController {
       // Normal road segment (adjacent tiles).
       if (dist == 1) {
         if (GSRoad.AreRoadTilesConnected(prev_tile, cur_tile)) {
-          built++; // Already connected.
+          existing++; // Already connected: nothing built, nothing paid.
         } else if (GSRoad.BuildRoad(prev_tile, cur_tile)) {
           built++;
         } else {
           local err = GSError.GetLastErrorString();
-          if (err == "ERR_ALREADY_BUILT") { built++; }
+          if (err == "ERR_ALREADY_BUILT") { existing++; }
           else { failed.append({ x = cur.x, y = cur.y, action = "road", error = err }); }
         }
       }
       // Traversal over existing bridge/tunnel (dist > 1, no build needed).
       else {
-        built++;
+        existing++;
       }
     }
-    return { built = built, failed = failed };
+    return { built = built, existing = existing, failed = failed };
   }
 
   function CmdConnectRoad(p) {
@@ -2163,9 +2172,17 @@ class NttdGS extends GSController {
       path_coords.append({ x = pt.x, y = pt.y });
     }
 
-    return { success = true, result = {
+    // A segment that would not build leaves a gap, and a gap means no route. Saying
+    // success here made a broken line indistinguishable from a working one to the
+    // caller, the action log, and the route report.
+    local complete = (build.failed.len() == 0);
+    return { success = complete,
+      error = complete ? null : this._PartialError(build.failed, pf.path.len()),
+      result = {
+      status = complete ? "complete" : "partial",
       path_length = pf.path.len(),
       built = build.built,
+      existing = build.existing,
       failed = build.failed,
       iterations = pf.iterations,
       path = path_coords
@@ -2565,6 +2582,7 @@ class NttdGS extends GSController {
   // Rail needs 3-tile context: GSRail.BuildRail(prev, cur, next).
   function _BuildRailPath(path, from_hint = null, to_hint = null) {
     local built = 0;
+    local existing = 0;
     local failed = [];
 
     for (local i = 0; i < path.len(); i++) {
@@ -2581,7 +2599,7 @@ class NttdGS extends GSController {
           built++;
         } else {
           local err = GSError.GetLastErrorString();
-          if (err == "ERR_ALREADY_BUILT") { built++; }
+          if (err == "ERR_ALREADY_BUILT") { existing++; }
           else { failed.append({ x = cur.x, y = cur.y, action = "bridge", error = err }); }
         }
         continue;
@@ -2592,7 +2610,7 @@ class NttdGS extends GSController {
           built++;
         } else {
           local err = GSError.GetLastErrorString();
-          if (err == "ERR_ALREADY_BUILT") { built++; }
+          if (err == "ERR_ALREADY_BUILT") { existing++; }
           else { failed.append({ x = cur.x, y = cur.y, action = "tunnel", error = err }); }
         }
         continue;
@@ -2635,11 +2653,11 @@ class NttdGS extends GSController {
         built++;
       } else {
         local err = GSError.GetLastErrorString();
-        if (err == "ERR_ALREADY_BUILT") { built++; }
+        if (err == "ERR_ALREADY_BUILT") { existing++; }
         else { failed.append({ x = cur.x, y = cur.y, action = "rail", error = err }); }
       }
     }
-    return { built = built, failed = failed };
+    return { built = built, existing = existing, failed = failed };
   }
 
   function CmdConnectRail(p) {
@@ -2678,9 +2696,17 @@ class NttdGS extends GSController {
       path_coords.append({ x = pt.x, y = pt.y, dir = pt.dir });
     }
 
-    return { success = true, result = {
+    // A segment that would not build leaves a gap, and a gap means no route. Saying
+    // success here made a broken line indistinguishable from a working one to the
+    // caller, the action log, and the route report.
+    local complete = (build.failed.len() == 0);
+    return { success = complete,
+      error = complete ? null : this._PartialError(build.failed, pf.path.len()),
+      result = {
+      status = complete ? "complete" : "partial",
       path_length = pf.path.len(),
       built = build.built,
+      existing = build.existing,
       failed = build.failed,
       iterations = pf.iterations,
       path = path_coords
@@ -2836,6 +2862,7 @@ class NttdGS extends GSController {
 
     local steps = p.steps;
     local built = 0;
+    local existing = 0;
     local skipped = 0;
     local failed = [];
 
@@ -2862,7 +2889,7 @@ class NttdGS extends GSController {
         } else {
           local err = GSError.GetLastErrorString();
           if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
-          else built++;
+          else existing++;
         }
         continue;
       }
@@ -2876,7 +2903,7 @@ class NttdGS extends GSController {
         } else {
           local err = GSError.GetLastErrorString();
           if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
-          else built++;
+          else existing++;
         }
         continue;
       }
@@ -2898,7 +2925,7 @@ class NttdGS extends GSController {
           } else {
             local err = GSError.GetLastErrorString();
             if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
-            else built++;
+            else existing++;
           }
         } else {
           // Road: connect prev to curr
@@ -2907,7 +2934,7 @@ class NttdGS extends GSController {
           } else {
             local err = GSError.GetLastErrorString();
             if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err });
-            else built++;
+            else existing++;
           }
         }
         continue;
@@ -2916,8 +2943,12 @@ class NttdGS extends GSController {
       skipped++;
     }
 
-    return { success = true, result = {
-      built = built, failed = failed, skipped = skipped,
+    local complete = (failed.len() == 0);
+    return { success = complete,
+      error = complete ? null : this._PartialError(failed, steps.len()),
+      result = {
+      status = complete ? "complete" : "partial",
+      built = built, existing = existing, failed = failed, skipped = skipped,
       total_steps = steps.len(), errors = failed.len()
     }};
   }
