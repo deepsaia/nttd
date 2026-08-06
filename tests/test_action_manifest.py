@@ -14,10 +14,13 @@ following nttd's own validator was rejected by the game.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -25,6 +28,15 @@ import pytest
 _ROOT = Path(__file__).parent.parent
 _MANIFEST = _ROOT / "config" / "actions" / "manifest.json"
 _GENERATOR = _ROOT / "scripts" / "generate_action_manifest.py"
+
+
+def _load_generator() -> ModuleType:
+    """Import the generator, which lives in scripts/ rather than on the path."""
+    spec = importlib.util.spec_from_file_location("_generate_action_manifest", _GENERATOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture(scope="module")
@@ -247,6 +259,188 @@ class TestAlternatives:
         That comes from the helper rather than being declared 11 times."""
         for name in ("build_road_stop", "remove_rail_track", "find_flat_spots"):
             assert [["tile"], ["x", "y"]] in actions[name]["one_of"], name
+
+
+def _handler_bodies() -> dict[str, str]:
+    """Each dispatched action's handler body, found without the generator's help.
+
+    Deliberately a second implementation. Reusing the generator's own parsing would make
+    the drift test the generator agreeing with itself, which is the failure mode this
+    whole file exists to avoid.
+    """
+    source = (_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut").read_text()
+    dispatch = dict(re.findall(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cmd\w+)\(', source))
+
+    bodies: dict[str, str] = {}
+    for action, function in dispatch.items():
+        start = source.find(f"function {function}(")
+        if start < 0:
+            continue
+        opening = source.index("{", start)
+        depth, index = 1, opening + 1
+        while index < len(source) and depth:
+            depth += {"{": 1, "}": -1}.get(source[index], 0)
+            index += 1
+        bodies[action] = source[opening:index]
+    return bodies
+
+
+def _parameters_the_handler_reads(body: str) -> set[str]:
+    """Every parameter name the body touches, by a simpler route than the generator."""
+    read = set(re.findall(r"\bp\.([a-z_0-9]+)", body))
+    tested = set(re.findall(r'"([a-z_0-9]+)"\s+in\s+p\b', body))
+    return (read | tested) - {"company_id"}
+
+
+class TestTheManifestAndTheGameScriptAgreeBothWays:
+    """Neither side may hold a parameter the other does not.
+
+    The reproducibility test covers one direction and only by construction: regenerate,
+    and of course the output matches the input it was made from. It says nothing about
+    whether the extraction is reading the handler correctly, and nothing at all about
+    hand-written prose that has stopped matching anything.
+    """
+
+    def test_no_parameter_the_handler_reads_is_missing(self, actions: dict[str, Any]) -> None:
+        """A dropped parameter is invisible: the action still works for anyone who knows
+        to pass it, and is undiscoverable for everyone else."""
+        missing: list[str] = []
+        for action, body in _handler_bodies().items():
+            published = set(actions[action]["parameters"])
+            for param in _parameters_the_handler_reads(body) - published:
+                missing.append(f"{action}.{param}")
+        assert sorted(missing) == []
+
+    def test_no_published_parameter_is_absent_from_the_handler(
+        self, actions: dict[str, Any],
+    ) -> None:
+        """The opposite rot: a parameter offered to agents that the game ignores.
+
+        Parameters supplied by a shared tile helper are exempt, because the helper reads
+        them and the handler never names them.
+        """
+        from_helper = {"tile", "x", "y", "tile_from", "tile_to",
+                       "from_x", "from_y", "to_x", "to_y"}
+        invented: list[str] = []
+        for action, body in _handler_bodies().items():
+            read = _parameters_the_handler_reads(body)
+            for param in set(actions[action]["parameters"]) - read - from_helper:
+                invented.append(f"{action}.{param}")
+        assert sorted(invented) == []
+
+
+class TestTheExamplesInTheSourceAreReal:
+    """Every ``{"action_type": ..., "parameters": {...}}`` shown to an agent.
+
+    These are the most quietly wrong thing in the repo, because an agent copies the
+    format it is shown rather than looking the action up. The example in
+    ``action_schema.py`` passed ``length`` to ``build_road_stop``, which takes
+    ``direction``, ``is_drive_through``, ``is_truck_stop``, ``road_type`` and a tile, and
+    nothing named ``length`` at all. It was repeated in the MCP server's system prompt.
+    """
+
+    def _examples(self) -> list[tuple[Path, str, dict[str, Any]]]:
+        pattern = re.compile(
+            r'\{\\?"action_type\\?":\s*\\?"([a-z_0-9]+)\\?",\s*\\?"parameters\\?":\s*(\{[^{}]*\})'
+        )
+        found: list[tuple[Path, str, dict[str, Any]]] = []
+        for path in sorted((_ROOT / "src").rglob("*.py")):
+            for action, params in pattern.findall(path.read_text()):
+                cleaned = params.replace('\\"', '"')
+                try:
+                    parsed = json.loads(cleaned)
+                except json.JSONDecodeError:
+                    continue
+                found.append((path, action, parsed))
+        return found
+
+    def test_there_are_examples_to_check(self) -> None:
+        """A pattern that silently matches nothing would pass every assertion below."""
+        assert len(self._examples()) >= 4
+
+    def test_every_example_names_a_real_action(self) -> None:
+        from nttd.config import action_manifest
+
+        wrong = [
+            f"{path.name}: {action}"
+            for path, action, _ in self._examples()
+            if action not in action_manifest.ACTIONS
+        ]
+        assert wrong == []
+
+    def test_every_example_parameter_is_one_the_action_takes(self) -> None:
+        from nttd.config import action_manifest
+
+        wrong = [
+            f"{path.name}: {action} has no parameter '{param}'"
+            for path, action, params in self._examples()
+            for param in params
+            if param not in action_manifest.parameters(action)
+        ]
+        assert wrong == []
+
+    def test_every_example_would_pass_validation(self) -> None:
+        """Naming real parameters is not enough: the example must also satisfy whatever
+        choice the action offers, or it is a shape that gets refused."""
+        from nttd.interpreter.action_schema import AgentAction
+        from nttd.interpreter.validator import validate_actions
+
+        for path, action, params in self._examples():
+            errors = validate_actions([AgentAction(action_type=action, parameters=params)])
+            assert errors == {}, f"{path.name}: {errors}"
+
+
+class TestStaleProseIsReported:
+    """The direction regenerating cannot see.
+
+    The generator merges prose by key and ignores keys matching nothing, which is what
+    makes regenerating safe to run. It also means a description for a deleted action, or
+    an enum binding whose class moved, rots silently: the parameter loses its values and
+    nothing says so.
+    """
+
+    def _problems(self, written: dict[str, Any]) -> list[str]:
+        generator = _load_generator()
+        manifest = json.loads(_MANIFEST.read_text())
+        return generator.problems(manifest, written)
+
+    def test_the_committed_prose_is_clean(self) -> None:
+        generator = _load_generator()
+        assert self._problems(generator._descriptions()) == []
+
+    def test_a_description_for_a_vanished_action_is_caught(self) -> None:
+        found = self._problems({"actions": {"build_monorail_to_the_moon": {"description": "x"}}})
+        assert any("build_monorail_to_the_moon" in problem for problem in found)
+
+    def test_an_override_for_a_parameter_the_action_lacks_is_caught(self) -> None:
+        found = self._problems({
+            "actions": {"build_dock": {"parameters": {"altitude": {"description": "x"}}}},
+        })
+        assert any("build_dock.altitude" in problem for problem in found)
+
+    def test_a_glossary_entry_nobody_uses_is_caught(self) -> None:
+        found = self._problems({"parameter_glossary": {"velocity": {"type": "integer"}}})
+        assert any("velocity" in problem for problem in found)
+
+    def test_a_binding_matching_no_parameter_is_caught(self) -> None:
+        found = self._problems({
+            "enum_bindings": {"build_dock.mooring": {"class": "GSMarine", "prefix": "MO_"}},
+        })
+        assert any("build_dock.mooring" in problem for problem in found)
+
+    def test_a_binding_to_constants_openttd_does_not_have_is_caught(self) -> None:
+        """The quiet one. The binding still names a real parameter, so nothing looks
+        wrong, and the parameter simply loses every value it should have offered."""
+        found = self._problems({
+            "enum_bindings": {"set_order_condition.condition": {"class": "GSOrder", "prefix": "ZZ_"}},
+        })
+        assert any("ZZ_" in problem for problem in found)
+
+    def test_an_alternative_naming_an_absent_parameter_is_caught(self) -> None:
+        found = self._problems({
+            "actions": {"build_dock": {"one_of": [["x", "harbour_id"]]}},
+        })
+        assert any("build_dock.harbour_id" in problem for problem in found)
 
 
 class TestItIsReproducible:
