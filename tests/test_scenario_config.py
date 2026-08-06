@@ -75,7 +75,7 @@ def test_load_end_conditions() -> None:
 def test_load_runtime_config() -> None:
     cfg = load()
     assert isinstance(cfg.runtime, RuntimeConfig)
-    assert cfg.runtime.mode in ("async_realtime", "heartbeat", "assisted")
+    assert cfg.runtime.mode in ("async_realtime", "heartbeat", "stepped")
 
 
 # ---------------------------------------------------------------------------

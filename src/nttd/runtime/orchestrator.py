@@ -1,4 +1,4 @@
-"""Runtime orchestrator: controls heartbeat, async real-time, and assisted modes.
+"""Runtime orchestrator: controls the heartbeat and async real-time loops.
 
 Heartbeat mode is the primary mode for agent benchmarking:
   pause → GS refresh → snapshot → action window → execute actions → unpause → advance N days → repeat
@@ -76,11 +76,6 @@ class Orchestrator:
         self._action_deadline: asyncio.Event = asyncio.Event()
 
         # Assisted mode state machine: idle → waiting → executing → idle
-        self._assist_state: str = "idle"
-        self._assist_snapshot: StateSnapshot | None = None
-        self._assist_ready: asyncio.Event = asyncio.Event()
-        self._assist_approved: asyncio.Event = asyncio.Event()
-        self._assist_actions: list[dict[str, Any]] = []
 
         # Forward GS game events (vehicle crash, subsidy, industry open/close, etc.)
         # to the session recorder so they appear in events.parquet and analysis.
@@ -169,7 +164,6 @@ class Orchestrator:
     def stop(self) -> None:
         self._running = False
         self._action_deadline.set()
-        self._assist_approved.set()
 
     async def _notify_observers(self, snapshot: StateSnapshot) -> None:
         for observer in self._observers:
@@ -771,59 +765,6 @@ class Orchestrator:
         if self.recorder:
             self.recorder.record_event(self.world.game.game_date, "session_stop", detail="async_realtime")
         logger.info("Async real-time mode stopped")
-
-    # -------------------------------------------------------------------------
-    # Assisted mode: human-triggered AI
-    # -------------------------------------------------------------------------
-
-    async def trigger_assist(self) -> StateSnapshot:
-        """Pause the game, refresh state, and return a snapshot for human review.
-
-        The game stays paused until approve_assist() or cancel_assist() is called.
-        """
-        self._assist_state = "waiting"
-        self._assist_ready.clear()
-        self._assist_approved.clear()
-
-        if self.client.connected:
-            await self.client.send_rcon("pause")
-        self.world.set_paused(True)
-
-        await self._refresh_world_from_gs()
-        self._assist_snapshot = self.world.snapshot()
-
-        self._assist_state = "ready"
-        return self._assist_snapshot
-
-    async def approve_assist(self, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Execute the approved action list and unpause."""
-        if self._assist_state != "ready":
-            return [{"error": "No active assist session"}]
-
-        self._assist_state = "executing"
-        self._assist_actions = actions
-
-        results = []
-        for action in actions:
-            gs_action = action.get("action")
-            gs_params = action.get("params", {})
-            if gs_action and self.client.connected:
-                timeout = 120.0 if gs_action.startswith("connect_") else 10.0
-                result = await self.client.send_gamescript(gs_action, gs_params, timeout=timeout)
-                results.append({"action": gs_action, "result": result})
-
-        if self.client.connected:
-            await self.client.send_rcon("unpause")
-        self.world.set_paused(False)
-        self._assist_state = "idle"
-        return results
-
-    async def cancel_assist(self) -> None:
-        """Cancel the assist session and unpause without executing anything."""
-        self._assist_state = "idle"
-        if self.client.connected:
-            await self.client.send_rcon("unpause")
-        self.world.set_paused(False)
 
     # -------------------------------------------------------------------------
     # Internal helpers

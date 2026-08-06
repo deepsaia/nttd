@@ -4,7 +4,7 @@ Three routers because these routes are not equally dangerous:
 
   ``public_router``       reading session status
   ``participant_router``  gameplay: stepping and submitting actions
-  ``operator_router``     rcon, save/load, mode, scenario, assist
+  ``operator_router``     rcon, save/load, mode, scenario
 
 ``router`` aggregates all three so legacy unprefixed paths keep working.
 See ``nttd.api.tiers``.
@@ -348,32 +348,6 @@ async def load_game(session_id: str, filename: str) -> dict[str, Any]:
     response = await runtime.admin_client.send_rcon(f"load {filename}")
     return {"filename": filename, "response": response}
 
-
-@operator_router.post("/assist")
-async def trigger_assist(session_id: str) -> dict[str, Any]:
-    """Pause the game and capture a fresh snapshot for human/agent review."""
-    runtime = deps.get_runtime(session_id)
-    if not runtime.admin_client.connected:
-        raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    snapshot = await runtime.orchestrator.trigger_assist()
-    return snapshot.model_dump()
-
-
-@operator_router.post("/assist/approve")
-async def approve_assist(session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
-    """Execute the approved action list and unpause the game."""
-    runtime = deps.get_runtime(session_id)
-    require_unscored(runtime, "assist/approve", detail=f"{len(actions)} action(s)")
-    results = await runtime.orchestrator.approve_assist(actions)
-    return {"executed": len(results), "results": results}
-
-
-@operator_router.post("/assist/cancel")
-async def cancel_assist(session_id: str) -> dict[str, str]:
-    """Cancel the assist session and unpause without executing anything."""
-    runtime = deps.get_runtime(session_id)
-    await runtime.orchestrator.cancel_assist()
-    return {"status": "cancelled"}
 
 
 @operator_router.post("/scenario")
