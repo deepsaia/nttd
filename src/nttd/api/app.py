@@ -10,6 +10,7 @@ import nttd.api.dependencies as deps
 from nttd.api.action_routes import operator_router as action_operator_router
 from nttd.api.action_routes import participant_router as action_participant_router
 from nttd.api.action_routes import router as action_router
+from nttd.api.actions_routes import router as actions_router
 from nttd.api.admin_routes import router as admin_router
 from nttd.api.agent_routes import router as agent_router
 from nttd.api.analysis_routes import router as analysis_router
@@ -111,6 +112,9 @@ app.include_router(observation_router, prefix=Tier.PARTICIPANT.prefix, tags=[Tie
 app.include_router(control_public_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
 app.include_router(metrics_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
 app.include_router(analysis_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
+# Public rather than participant: the manifest describes the build, not a session, so it
+# answers before one exists. That is when an agent most needs it.
+app.include_router(actions_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
 
 # --- Legacy unprefixed paths ----------------------------------------------
 #

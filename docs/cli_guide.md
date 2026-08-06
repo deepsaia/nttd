@@ -189,7 +189,11 @@ Supply one of: station_id or dest_tile or destination.
 condition accepts (GSOrder): OC_AGE = 3, OC_LOAD_PERCENTAGE = 0, ...
 ```
 
-The same content is in [the action reference](action_reference.md): an
+The same content is served at `GET /v1/public/actions`, which is what a running agent
+should use: already structured, and it answers without a session. `?tier=` and
+`?category=` filter it, and `/v1/public/actions/<name>` returns one.
+
+It is also in [the action reference](action_reference.md): an
 [index](actions/index.md) giving every action's call shape on one line, and two detail
 pages behind it so a reader pulls in only what it needs. The nine operator actions are
 named there but not documented: no session can call one, so their parameters would be
