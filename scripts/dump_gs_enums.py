@@ -46,6 +46,7 @@ PROBED_CLASSES = [
     "GSBridge",
     "GSCargo",
     "GSCompany",
+    "GSError",
     "GSEngine",
     "GSGroup",
     "GSIndustryType",
