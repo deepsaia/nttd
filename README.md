@@ -169,7 +169,8 @@ requests.post(f"{P}/report", headers=H, json={
 `nttd result` then shows the breakdown per model and role.
 
 Note the distinction from the next section: this is several loops cooperating as **one**
-company. Several *competing* companies is `--agent-companies N`, one token each.
+company, which is scoreable. Several *competing* companies is `--agent-companies N`, one
+token each, and that is **not** scoreable: a scored result is one company on one world.
 
 ---
 
