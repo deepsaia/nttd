@@ -343,6 +343,18 @@ signature would prove authorship rather than honesty: a contestant signing their
 claim. The per-artifact digests are the load-bearing part, and they are tamper-evident
 after the fact.
 
+**A bundle carries its map seed, so anyone can play the same world.** `result.parquet`
+holds `map_seed` alongside `map_size_x`, `map_size_y` and `terrain_type`, and
+`nttd_scenario.conf` holds the same value as `_map_seed`. That is everything needed to
+generate an identical map, which is exactly what `--regenerate` does when it reconciles a
+world against its declared seed, and it is why a board can publish the seed on every row:
+a result can be reproduced rather than taken on trust. The seed was already in the bundle
+twice for that reason; nothing was added to make it publishable.
+
+```bash
+uv run nttd result -s ses_... --json | jq '{map_seed, map_size_x, map_size_y, terrain_type}'
+```
+
 ---
 
 ### `nttd verify`
