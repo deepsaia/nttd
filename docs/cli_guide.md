@@ -133,9 +133,10 @@ and the profile-derived keys that decide whether the run is scored and what boun
 **`start`** generates the world and spawns OpenTTD. `--agent-companies 1` creates the
 company your runner will play; without it there is nothing to play.
 
-More than one contestant company makes the run **unscored**, and `start` says so. A
-scored result is one company on one world; several sharing a map is a different problem.
-Self-play still works, it simply cannot be ranked.
+More than one contestant company is **refused**, before anything spawns. A scored result
+is one company on one world, and several sharing a map is a different problem that
+nothing on a result row records. A multi-agent entry is several agents driving that one
+company. For extra companies that do not compete, use `--ai-opponents N`.
 
 **`attach`** prints the participant token and the routes: real-time and stepped. The
 token exists only in the `start` output and in `participants.json` otherwise, so this is
@@ -537,7 +538,7 @@ Under `NTTD_SESSIONS_DIR` (default `logs/sessions`), per session:
 
 ```bash
 uv run pytest -q
-uv run pytest tests/test_step_barrier.py -v
+uv run pytest tests/test_stepped_mode.py -v
 uv run ruff check src/ tests/
 ```
 

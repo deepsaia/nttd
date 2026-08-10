@@ -31,10 +31,11 @@ class StepResult(BaseModel):
         terminated: Whether an end condition fired. The run is over; further steps
             will not advance a finished session.
         end_reason: Which condition, empty while the run continues.
-        steppers: The companies whose actions were flushed into this window, in
-            company order. One entry in a single-agent run. Present because with
-            several companies stepping one world, what a step was worth depends on who
-            was in it, and a reader reconstructing the run cannot infer that.
+
+    A ``steppers`` list used to sit here, naming the companies whose actions went into
+    one advance. It answered a question that can no longer be asked: a session holds one
+    contestant, so a step is always that company's and the field said only what the
+    token already did.
     """
 
     snapshot: StateSnapshot
@@ -42,7 +43,6 @@ class StepResult(BaseModel):
     days_advanced: int = 0
     terminated: bool = False
     end_reason: str = ""
-    steppers: list[int] = Field(default_factory=list)
 
 
 class StepRequest(BaseModel):

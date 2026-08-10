@@ -1,4 +1,4 @@
-"""The step barrier: client-driven stepping for RL and ES.
+"""Stepped mode: client-driven stepping for RL, ES and multi-agent entries.
 
 A step is one synchronous call that flushes a batch of actions, advances the world a
 fixed number of game-days, re-pauses, and returns the observation. Between steps the
@@ -14,7 +14,9 @@ Verified against a live OpenTTD 15.3 session: 20 seconds of thinking advanced th
 game by 0 days, and a step with one action applied it, advanced exactly 15 days, and
 returned only after the world had moved.
 
-Run with: uv run pytest tests/test_step_barrier.py -v
+Run with: uv run pytest tests/test_stepped_mode.py -v
+
+The gate that admits a step is tested separately, in test_step_gate.py.
 """
 
 from __future__ import annotations

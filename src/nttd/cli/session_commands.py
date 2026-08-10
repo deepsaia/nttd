@@ -14,7 +14,7 @@ from nttd.cli.helpers import (
     resolve_session,
     session_option,
 )
-from nttd.config import single_company
+from nttd.constants import MAX_CONTESTANT_COMPANIES
 
 session_app = typer.Typer(help="Session lifecycle management")
 
@@ -90,20 +90,37 @@ def session_start(
     session: Annotated[str, session_option()],
     ai_opponents: Annotated[int, typer.Option("--ai-opponents", "-a", help="Extra idle company slots")] = -1,
     agent_companies: Annotated[int, typer.Option(
-        "--agent-companies", help="Number of idle company slots for nttd agents",
+        "--agent-companies", help="Company slots for a contestant: 0 or 1",
     )] = -1,
     base_url: Annotated[str, typer.Option("--url", help="nttd server URL")] = "",
 ) -> None:
     """Start an OpenTTD server for a session.
 
     Spawns the OpenTTD process, allocates ports, applies settings, and starts the game.
-    Use --agent-companies to pre-create idle company slots for nttd-controlled agents.
+    Use --agent-companies 1 to pre-create the company a contestant plays.
+
+    One contestant company per session, in every mode. Several agents playing together
+    drive that one company: their orchestrator decides what it does and submits one
+    batch per step. Use --ai-opponents for extra idle slots, which do not compete.
 
     Examples:
       nttd session start -s ses_abc123
-      nttd session start --session ses_abc123 --agent-companies 2
+      nttd session start --session ses_abc123 --agent-companies 1
     """
     import requests
+
+    # Before the server is contacted. The argument is wrong whether or not anything is
+    # running, and checking connectivity first reported a network problem for what is
+    # actually a typo. Refused here as well as by the server so the reason is a
+    # sentence rather than a validation error quoting a bound.
+    if agent_companies > MAX_CONTESTANT_COMPANIES:
+        console.print(
+            f"[red]A session holds {MAX_CONTESTANT_COMPANIES} contestant company.[/] "
+            f"Several agents playing together drive that one company, so pass "
+            f"--agent-companies 1. For extra idle slots that do not compete, use "
+            f"--ai-opponents."
+        )
+        raise typer.Exit(1)
 
     session_id = resolve_session(session)
     url = base_url or get_base_url()
@@ -114,12 +131,6 @@ def session_start(
         payload["ai_opponents"] = ai_opponents
     if agent_companies >= 0:
         payload["agent_companies"] = agent_companies
-
-    # Said here rather than left to the server log. A contestant who finds out at
-    # submission time that the run was never scoreable has wasted the whole run.
-    blocks = single_company.blocks_scoring(agent_companies)
-    if blocks:
-        console.print(f"[yellow]This session will not be scored.[/] {blocks}")
 
     with console.status("Starting OpenTTD server..."):
         resp = requests.post(

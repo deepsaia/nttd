@@ -11,6 +11,23 @@ client sees in its tool schema.
 """
 
 # ---------------------------------------------------------------------------
+# How many companies a contestant plays
+
+MAX_CONTESTANT_COMPANIES = 1
+"""One company per session, in every mode.
+
+A multi-agent entry is several agents driving *one* company: the orchestrator decides
+what the company does and submits one batch per step. RL and ES runs are one policy per
+session and spawn their own. So nothing needs a second contestant company, and allowing
+one would produce runs nothing can compare: a world shared by two contestants is a
+different problem from a solo run on the same world, and no result row records which it
+was.
+
+Extra *non-contestant* companies are unaffected. ``num_ai_companies`` still creates idle
+slots; they do not compete for cargo or town ratings.
+"""
+
+# ---------------------------------------------------------------------------
 # Participant tier: actions a human player can take through the GUI
 # ---------------------------------------------------------------------------
 

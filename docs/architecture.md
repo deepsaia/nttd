@@ -89,7 +89,7 @@ One per run, holding:
 
 - **The scored lock**: session state that refuses game-mutating operator operations
   for the life of a scored run.
-- **The orchestrator**: the real-time loop, or the step barrier for stepped mode.
+- **The orchestrator**: the real-time loop, or the step gate for stepped mode.
 - **The recorder**: buffers to Parquet fragments, merged on stop.
 
 ### OpenTTD
@@ -263,9 +263,9 @@ unclamped and every transport mode has more stock than at 1960 (train 39 → 40,
 
 ---
 
-## The step barrier
+## Stepped mode
 
-![The step barrier](images/step_barrier.svg)
+![Stepped mode](images/step_barrier.svg)
 
 Real-time is a wall-clock race: a faster model takes more decisions in the same
 economy horizon. Stepped mode removes that, so RL and ES can be compared on policy
@@ -329,50 +329,39 @@ The one thing to know is that every company's actions funnel through one GameScr
 A company issuing long `connect_rail` calls will slow its rivals' submissions. That is a
 shared-resource property of the game, not something nttd schedules around.
 
-### Stepped needs a barrier
+### Stepped mode, and the barrier that used to be here
 
-There is one world with one clock, so N companies cannot each hold their own. Measured
-on a two-company session before this was built: each company took **one** step, and the
-world advanced **60** days when the calls were staggered and **30** when they arrived
-together. "Ten steps" meant a different amount of world depending on request timing, and
-the two companies got step numbers 3 and 4 out of a shared counter.
+A session holds **one contestant company**, so stepping is simple: `/step/reset` pauses
+the world and registers the stepper, and each `/step` flushes a batch, advances the world
+once and returns the new observation. `StepGate` enforces the two rules that survive:
+reset before step, and one step in flight at a time. The second is refused rather than
+queued, because a caller that issued two concurrent steps has a bug and serialising them
+would hand back a result that looks correct having moved the world twice.
 
-So the clock is synchronised and participation is not. A window opens when the first
-company arrives and closes when every registered stepper has arrived; the last arriver
-drives the single world advance, and everyone gets the same post-advance observation and
-the same step number. N companies times K steps is K windows, the same horizon one
-company stepping K times would cover.
+It was a barrier, and the name was earned. While a session could hold several contestant
+companies, the clock had to be synchronised even though participation was not: a window
+opened when the first company arrived and closed when every registered stepper had
+arrived, and the last arriver drove the single advance. Measured on a two-company session
+before that existed, each company took **one** step and the world advanced **60** days
+when the calls were staggered and **30** when they arrived together, with the two
+companies drawing step numbers 3 and 4 from a shared counter.
 
-Four properties worth stating, because each was a decision:
+That is now unreachable rather than guarded against. Refusing a second contestant at
+session start removed the windows, the eviction path, the 10-minute liveness timeout and
+the company-ordered flush, because each existed to answer "who else are we waiting for"
+and the answer is always nobody.
 
-**No decision deadline.** Removing wall-clock pressure from deliberation is the entire
-point of stepping, so a slow policy is never truncated. The only timeout is a liveness
-one, defaulting to 10 minutes: a registered stepper that goes silent past it is evicted
-for the rest of the run and recorded as `stepper_evicted`, so a crashed runner cannot
-hang a session. Over HTTP a runner that is thinking hard is indistinguishable from one
-that has died; the timeout is set far above any real deliberation so only the second case
-should reach it.
+### Multi-agent entries
 
-**Registration is explicit**, via `POST /step/reset`. Inferring the barrier's size from
-the session's company count would stall every window for 10 minutes on a company whose
-runner never attached.
+A multi-agent entry is several agents deciding what **one** company does. They agree on a
+batch and one runner submits it, so nttd sees a single stepper however many agents
+produced the decision. Nothing in the protocol needs to know the difference, which is why
+there is no multi-agent surface: `NttdEnv` and the participant routes are it.
 
-**The flush is ordered by company, not by arrival.** Which company happened to call first
-should not decide whose road gets built on a contested tile.
-
-### Two shapes of multi-agent entry
-
-| Shape | What it is | What drives it |
-|---|---|---|
-| Independent runners | N processes, N tokens, one `NttdEnv` each | the server's barrier |
-| One process, N policies | self-play and population training | `NttdParallelEnv` |
-
-`NttdParallelEnv` is the PettingZoo `ParallelEnv` shape and an ordinary client of the
-same routes. It issues its N `POST /step` calls on a thread pool, not for speed but
-because each blocks until the window closes: issued one after another, the first would
-wait forever. An agent omitted from its `actions` dict still steps, with an empty batch,
-for the same reason. There is no `pettingzoo` dependency; taking the package for two base
-classes would push it onto every nttd install.
+Several *contestant* companies are refused. Two contestants sharing a map compete for the
+same towns and industries, which is a different problem from a solo run on the same
+world, and nothing on a result row records which it was. Extra non-contestant companies
+are unaffected: `--ai-opponents N` creates idle slots that do not compete.
 
 ---
 
@@ -431,11 +420,12 @@ Things a reader might expect and will not find:
 - **No LLM timeout or history cap.** Both are unenforceable against a loop running in
   the contestant's own process, and stating an unenforceable suggestion as a limit
   misleads whoever reads the result.
-- **No `pettingzoo` dependency**, though `NttdParallelEnv` follows its `ParallelEnv`
-  shape. Taking the package for two base classes would push it onto every nttd install.
-- **No per-agent termination.** One world means one set of end conditions, so a stepped
-  run ends for every company at once. A company going bankrupt ends the session rather
-  than removing that agent and continuing.
-- **No decision deadline at the step barrier.** A slow policy is never truncated; only a
-  silent one is evicted. The consequence is that one hung runner costs the other
-  companies one liveness timeout before the run continues without it.
+- **No `pettingzoo` dependency and no `ParallelEnv`.** A `NttdParallelEnv` drove several
+  companies from one process, for self-play and population training. It went with
+  multi-company sessions: one contestant means one env, and RL and ES spawn a session
+  each.
+- **No per-agent termination.** One world means one set of end conditions, so a run ends
+  once. A company going bankrupt ends the session.
+- **No decision deadline, and no liveness timeout either.** A slow policy is never
+  truncated, and with one contestant nothing else is waiting on it, so a runner that
+  hangs stalls only its own run.

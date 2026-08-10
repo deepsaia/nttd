@@ -17,7 +17,7 @@ from nttd.runtime.orchestrator import Orchestrator
 from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.participant_report import ParticipantReport
 from nttd.runtime.scored_lock import ScoredLock
-from nttd.runtime.step_barrier import StepBarrier
+from nttd.runtime.step_gate import StepGate
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
@@ -102,12 +102,10 @@ class SessionRuntime:
         # its own loop, so nttd tallies action counts from its own action log and
         # records model and spend only as declared. See participant_report.
         self.participant_report = ParticipantReport()
-        # Synchronises several companies stepping one shared world. With a single
-        # stepper it is a pass-through: that company is the last arriver on arrival and
-        # drives the advance immediately. See step_barrier for why the clock has to be
-        # shared even though participation is not.
-        self.step_barrier = StepBarrier()
-        self.step_barrier.set_evict_callback(self._record_eviction)
+        # Admits one step at a time for the one company playing this session. See
+        # step_gate for what a barrier here used to have to do, and why it no longer
+        # does.
+        self.step_gate = StepGate()
 
         self.process: asyncio.subprocess.Process | None = None
         self.poll_task: asyncio.Task[None] | None = None
@@ -401,20 +399,6 @@ class SessionRuntime:
             elapsed += _CONNECT_POLL_INTERVAL
 
         return False
-
-    def _record_eviction(self, company_id: int) -> None:
-        """Record that a company was dropped from the step barrier for going silent.
-
-        Recorded rather than merely logged: a reader comparing this run to a
-        single-company one needs to see that a stepper stopped participating, since the
-        remaining companies then had the world to themselves.
-        """
-        self.recorder.record_event(
-            self.world.game.game_date,
-            "stepper_evicted",
-            company_id=company_id,
-            detail="did not step within the liveness timeout",
-        )
 
     def _record_client_command(self, command: dict[str, Any]) -> None:
         """Write a command from the game window into the action log.

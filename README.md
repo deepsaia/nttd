@@ -168,47 +168,26 @@ requests.post(f"{P}/report", headers=H, json={
 
 `nttd result` then shows the breakdown per model and role.
 
-Note the distinction from the next section: this is several loops cooperating as **one**
-company, which is scoreable. Several *competing* companies is `--agent-companies N`, one
-token each, and that is **not** scoreable: a scored result is one company on one world.
+This is several loops cooperating as **one** company, which is the only shape a
+multi-agent entry takes. A session holds one contestant company, so however many agents
+you run, they agree on a batch and one runner submits it.
 
 ---
 
-#### 2b. Several competing companies
+#### 2b. Why not several competing companies
 
-`uv run nttd session start -s ses_... --agent-companies 2` creates two contestant
-companies with one participant token each, in `participants.json`.
+`--agent-companies 2` is refused. Two contestants sharing a map compete for the same
+towns and industries, which is a different problem from a solo run on the same world, and
+nothing on a result row records which it was, so the two could never be compared.
 
-**Example A: real-time.** Nothing special: each company acts on its own cadence with its
-own token. The score is per company, and observation is full state for
-everyone, so nobody has an information edge. Using one company's token against another is
-refused. The one shared resource is the GameScript: a rival issuing long `connect_rail`
-calls will slow your submissions.
+That refusal is why stepping is simple. While several companies could share one clock,
+each step had to wait for every registered stepper: two companies each taking one step
+advanced the world 60 days when staggered and 30 when simultaneous, which made a
+two-company run both incomparable to a one-company one and non-deterministic against
+itself. One contestant removes the windows, the eviction path and the liveness timeout.
 
-**Example B: stepped, from one process.** For self-play and population training:
-
-```python
-import json
-from nttd.rl.multi_env import NttdParallelEnv
-
-tokens = {int(k): v for k, v in json.load(open(f"logs/sessions/{SID}/participants.json")).items()}
-env = NttdParallelEnv(session_id=SID, tokens=tokens)
-observations, infos = env.reset()
-observations, rewards, terminations, truncations, infos = env.step({
-    "company_0": my_policy(observations["company_0"]),
-    "company_1": [],                      # waiting is a legitimate move
-})
-```
-
-Stepped play gathers each company's step into a shared **window**: the world advances once
-per window, so K steps is K intervals whether one company plays or four. Without that, two
-companies each taking one step advanced the world 60 days when staggered and 30 when
-simultaneous, which would make a two-company run incomparable to a one-company one and
-non-deterministic against itself.
-
-There is no decision deadline, so a slow policy is never truncated; a company that goes
-silent for 10 minutes is dropped and the rest carry on. For N independent policies in N
-processes, use N `NttdEnv` instances and nothing else.
+For extra companies that do **not** compete, use `--ai-opponents N`. They are idle slots:
+nothing contests cargo or town ratings.
 
 ---
 
@@ -217,7 +196,7 @@ processes, use N `NttdEnv` instances and nothing else.
 Real-time punishes a slow policy for being slow. Stepped mode does not: the game is
 **paused between steps**, so deliberation costs zero game-days.
 
-![The step barrier](docs/images/step_barrier.svg)
+![Stepped mode](docs/images/step_barrier.svg)
 
 **Example A: through the Gym environment.**
 
