@@ -324,11 +324,19 @@ class Orchestrator:
             # The audit trail must not be able to fail the action it describes.
             logger.exception("Could not record action %s", envelope.action_id)
 
-    async def _execute_actions(self, actions: list[dict[str, Any]]) -> None:
+    async def _execute_actions(self, actions: list[dict[str, Any]]) -> list[ActionResult]:
         """Execute a list of GS action dicts, tracking each in ActionTracker.
 
         Uses per-company locks to serialize same-company actions.
+
+        Returns what happened to each action, in the order submitted. It always knew
+        this and used to discard it: every outcome was written to the tracker and to
+        actions.parquet and then dropped, so a stepped contestant received an
+        observation with no way to tell which of its actions had caused it. Reading the
+        world back is not a substitute, because a refusal often changes nothing at all
+        and is indistinguishable from an action that was never sent.
         """
+        outcomes: list[ActionResult] = []
         # The run is under way once a contestant acts.
         self.start_scored_clock()
 
@@ -360,6 +368,12 @@ class Orchestrator:
                     )
                 self._record_action(envelope, admission.status, admission.error)
                 logger.info("Action %s refused: %s", gs_action, admission.error)
+                outcomes.append(ActionResult(
+                    action_id=envelope.action_id,
+                    action_type=gs_action,
+                    status=admission.status,
+                    error=admission.error,
+                ))
                 continue
 
             if not self.client.connected:
@@ -370,6 +384,12 @@ class Orchestrator:
                 self._record_action(
                     envelope, ActionStatus.FAILED, "Not connected to OpenTTD",
                 )
+                outcomes.append(ActionResult(
+                    action_id=envelope.action_id,
+                    action_type=gs_action,
+                    status=ActionStatus.FAILED,
+                    error="Not connected to OpenTTD",
+                ))
                 continue
 
             lock = self.company_locks.get_lock(company_id)
@@ -392,6 +412,8 @@ class Orchestrator:
                         envelope, outcome.status, outcome.error,
                         changed=outcome.changed_entities,
                     )
+                    outcome.action_type = gs_action
+                    outcomes.append(outcome)
                     if outcome.status == ActionStatus.SUCCESS:
                         logger.info("Action %s succeeded", gs_action)
                     else:
@@ -407,6 +429,14 @@ class Orchestrator:
                 self._record_action(
                     envelope, ActionStatus.FAILED, "exception during execution",
                 )
+                outcomes.append(ActionResult(
+                    action_id=envelope.action_id,
+                    action_type=gs_action,
+                    status=ActionStatus.FAILED,
+                    error="exception during execution",
+                ))
+
+        return outcomes
 
     # -------------------------------------------------------------------------
     # Stepped mode: client-driven, for RL and ES
@@ -491,8 +521,9 @@ class Orchestrator:
         # actually executed -- so nttd would record a failure for an action that
         # mutated the world.
         await self._unpause()
+        action_results: list[ActionResult] = []
         if batch:
-            await self._execute_actions(batch)
+            action_results = await self._execute_actions(batch)
         await self._wait_until_game_date(target_date)
         await self._pause()
 
@@ -523,6 +554,7 @@ class Orchestrator:
             days_advanced=max(0, snapshot.game.game_date - start_date),
             terminated=end_result.triggered,
             end_reason=end_result.reason if end_result.triggered else "",
+            action_results=action_results,
         )
 
     async def _authoritative_game_date(self) -> int:

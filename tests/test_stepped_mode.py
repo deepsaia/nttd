@@ -311,3 +311,55 @@ def test_reading_the_date_falls_back_to_the_cache() -> None:
     source = _code_only(inspect.getsource(Orchestrator._authoritative_game_date))
     assert "except Exception" in source
     assert "return self.world.game.game_date" in source
+
+
+class TestAStepSaysWhatItsActionsDid:
+    """The channel that was missing, and that four hand-written prompts assumed.
+
+    StepResult carried snapshot, step, days_advanced, terminated and end_reason, and
+    nothing about the batch it had just flushed. Every "read the error and adjust" and
+    "do not repeat a failed action" rule was therefore unsatisfiable, and the prompts
+    branched on invented fields (action_history, previous_actions) to fill the hole.
+
+    The observation cannot answer it. A refused action often changes nothing at all, so
+    a world that looks unchanged is indistinguishable from one where the action was
+    never sent. The outcomes were always computed and written to the action log; the
+    step simply discarded them.
+
+    Verified live: a step submitting set_loan and a build_dock on tile 1 returned
+    success with changed {balance, loan} for the first and failed with "Invalid tile ID"
+    for the second.
+    """
+
+    def test_the_step_result_carries_action_results(self) -> None:
+        from nttd.schemas.step_result import StepResult
+
+        assert "action_results" in StepResult.model_fields
+
+    def test_it_defaults_to_empty_rather_than_none(self) -> None:
+        """A step that submitted nothing has no results, and None would make every
+        caller check before iterating. This defaulted to None once and raised a
+        pydantic validation error on the first real step."""
+        from nttd.schemas.game import GameState
+        from nttd.schemas.snapshot import StateSnapshot
+        from nttd.schemas.step_result import StepResult
+
+        result = StepResult(snapshot=StateSnapshot(game=GameState(game_date=1)))
+        assert result.action_results == []
+
+    def test_execute_actions_returns_what_it_recorded(self) -> None:
+        """Signature check. It collected outcomes and fell off the end returning None,
+        which type checking did not catch and the first live step did."""
+        import inspect
+
+        from nttd.runtime.orchestrator import Orchestrator
+
+        source = inspect.getsource(Orchestrator._execute_actions)
+        assert source.rstrip().endswith("return outcomes")
+
+    def test_a_result_names_the_action_it_belongs_to(self) -> None:
+        """So a caller reading a batch does not have to correlate on action_id to learn
+        which of its actions was refused."""
+        from nttd.schemas.action_result import ActionResult
+
+        assert "action_type" in ActionResult.model_fields

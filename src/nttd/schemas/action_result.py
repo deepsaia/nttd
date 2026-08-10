@@ -32,6 +32,10 @@ class ActionResult(BaseModel):
     is now separate from the prose.
 
     Attributes:
+        action_type: Which action this was. Carried so a caller reading a batch of
+            results does not have to correlate on action_id to learn which of its
+            actions was refused. Empty on a result read back from storage, where the
+            action log already names it.
         error: One line, for a person.
         error_code: OpenTTD's error number, when the game was the one that refused.
             Absent for nttd's own precondition failures, and that absence is what
@@ -41,6 +45,7 @@ class ActionResult(BaseModel):
     """
 
     action_id: str
+    action_type: str = ""
     status: ActionStatus
     error: str = ""
     error_code: int | None = None

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from nttd.schemas.action_result import ActionResult
 from nttd.schemas.snapshot import StateSnapshot
 
 
@@ -31,6 +32,14 @@ class StepResult(BaseModel):
         terminated: Whether an end condition fired. The run is over; further steps
             will not advance a finished session.
         end_reason: Which condition, empty while the run continues.
+        action_results: What happened to each action in the batch this step flushed, in
+            the order submitted. Empty for a step that submitted nothing.
+
+            Present because the observation alone cannot answer it. A refused action
+            often changes nothing at all, so a world that looks unchanged is
+            indistinguishable from one where the action was never sent, and a policy
+            cannot learn not to repeat it. The outcomes were always computed and written
+            to the action log; they were simply not handed back.
 
     A ``steppers`` list used to sit here, naming the companies whose actions went into
     one advance. It answered a question that can no longer be asked: a session holds one
@@ -43,6 +52,7 @@ class StepResult(BaseModel):
     days_advanced: int = 0
     terminated: bool = False
     end_reason: str = ""
+    action_results: list[ActionResult] = Field(default_factory=list)
 
 
 class StepRequest(BaseModel):
