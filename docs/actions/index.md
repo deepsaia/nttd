@@ -73,10 +73,11 @@ Full detail in [actions.md](actions.md).
 - `build_lock(x, y)` Build a lock so ships can change height.
 - `build_one_way_road(x1, x2, y1, y2)` Build road between two tiles that may be driven in one direction only, running from the first tile to the second.
 - `build_one_way_road_full(x1, x2, y1, y2)` Build one-way road between two tiles, covering both end tiles fully rather than stopping at their edges.
-- `build_path(steps, [rail_type, road_type, transport_type])` Lay a route that was already worked out, step by step.
+- `build_path(steps, [rail_type, road_type, transport_type])` Lay a route you have already chosen, tile by tile.
 - `build_rail_depot(x, y, [direction, rail_type])` Build a rail depot at a tile, entered from the neighbour picked by direction.
 - `build_rail_signal(x, y, [signal_type])` Place a signal on a track tile.
 - `build_rail_station(x, y, [direction, num_platforms, platform_length, rail_type])` Build a rail station with its north corner at the given tile.
+- `build_rail_track(x, y, [rail_type, track])` Lay one track piece on one tile, in a chosen orientation.
 - `build_rail_waypoint(x, y)` Build a waypoint on a track tile.
 - `build_road_depot(tile|x,y, [direction, road_type])` Build a road depot at a tile, entered from the neighbour picked by direction.
 - `build_road_stop(tile|x,y, [direction, is_drive_through, is_truck_stop, road_type])` Build a bus or truck stop.

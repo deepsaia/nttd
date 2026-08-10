@@ -649,3 +649,64 @@ class TestTheActionsCommand:
         output = capsys.readouterr().out
         assert "Supply one of" in output
         assert "station_id" in output
+
+
+class TestHandlersTheDispatchTableNeverReaches:
+    """The blind spot the other checks structurally cannot see.
+
+    Everything else here compares the manifest against the GameScript, and the manifest
+    is *derived from* the dispatch table. A handler with no ``case`` is therefore not a
+    mismatch anywhere: it is absent from the manifest, the docs and every parity test,
+    which all agree with each other about a function nobody can call.
+
+    Four accumulated that way. Three were build_path with a shorter list; the fourth was
+    ``build_rail_track``, the missing inverse of ``remove_rail_track``, so the surface
+    had a remove with no build for as long as nobody read the Squirrel.
+    """
+
+    def test_the_gamescript_has_no_unreachable_handlers(self) -> None:
+        generator = _load_generator()
+        assert generator._orphan_problems() == []
+
+    def test_an_unreachable_handler_is_caught(self, tmp_path: Path) -> None:
+        """Proved by removing a real dispatch case rather than by inspection: a check
+        that has never fired is a check nobody knows the shape of."""
+        generator = _load_generator()
+        original = generator.GAMESCRIPT.read_text()
+        case = 'case "build_rail_track":    return this.CmdBuildRailTrack(p);'
+        assert case in original, "the case this test removes has been reworded"
+
+        stand_in = tmp_path / "main.nut"
+        stand_in.write_text(original.replace(case, ""))
+        generator.GAMESCRIPT = stand_in
+
+        found = generator._orphan_problems()
+        assert any("CmdBuildRailTrack" in problem for problem in found)
+        assert generator.GAMESCRIPT.read_text() != original
+
+    def test_build_rail_track_is_reachable_and_described(
+        self, actions: dict[str, Any],
+    ) -> None:
+        """The one orphan that was kept, because a path implies its orientations from
+        the tiles either side and a siding has no path to imply anything."""
+        entry = actions["build_rail_track"]
+        assert entry["gamescript_function"] == "CmdBuildRailTrack"
+        assert entry["tier"] == "participant"
+        assert entry["category"] == "rail"
+        assert entry["parameters"]["track"]["enum"]["values"]["RAILTRACK_NE_SW"] == 1
+
+    @pytest.mark.parametrize("gone", ["build_road", "build_road_line", "build_rail"])
+    def test_the_three_redundant_ones_are_gone(
+        self, actions: dict[str, Any], gone: str,
+    ) -> None:
+        assert gone not in actions
+
+    def test_build_path_tells_an_agent_it_can_lay_its_own_route(
+        self, actions: dict[str, Any],
+    ) -> None:
+        """It could always do this. The description said it existed 'for a pathfinder
+        that plans elsewhere', which reads as 'not for you' to somebody writing an agent,
+        and that framing is why the redundant primitives looked like a missing feature."""
+        description = actions["build_path"]["description"]
+        assert "route you have already chosen" in description
+        assert "nothing has to reason about track orientation" in description

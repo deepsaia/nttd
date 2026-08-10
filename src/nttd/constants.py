@@ -27,6 +27,7 @@ ACTION_CATEGORIES: dict[str, list[str]] = {
         "connect_rail",
         "build_rail_station", "build_rail_depot",
         "build_rail_signal", "build_rail_waypoint",
+        "build_rail_track",
         "remove_rail", "remove_rail_track", "remove_signal", "remove_rail_station",
         "convert_rail",
     ],

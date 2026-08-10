@@ -404,7 +404,31 @@ def problems(manifest: dict[str, Any], written: dict[str, Any]) -> list[str]:
     for key, binding in (written.get("enum_bindings") or {}).items():
         found.extend(_binding_problems(key, binding, actions))
 
+    found.extend(_orphan_problems())
+
     return found
+
+
+def _orphan_problems() -> list[str]:
+    """Report handlers the dispatch table never reaches.
+
+    The blind spot this closes: the manifest is *derived from* the dispatch table, so a
+    handler with no ``case`` is not a mismatch anywhere. It is absent from the manifest,
+    absent from the docs, and absent from every parity test, which all agree with each
+    other about a function that cannot be called. Four accumulated that way before
+    anyone noticed, and one of them was the missing inverse of a remove.
+
+    Deleting a handler is a fine answer and so is dispatching it. Leaving it is not,
+    because the surface then depends on which file you read.
+    """
+    source = GAMESCRIPT.read_text()
+    defined = set(_FUNCTION.findall("\n" + source))
+    reached = set(re.findall(r"this\.(Cmd\w+)\s*\(", source))
+    return [
+        f"the GameScript defines '{name}', which no case dispatches: "
+        f"delete it or give it a case"
+        for name in sorted(defined - reached)
+    ]
 
 
 def _binding_problems(key: str, binding: dict[str, str], actions: dict[str, Any]) -> list[str]:

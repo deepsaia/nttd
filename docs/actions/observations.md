@@ -3,7 +3,7 @@
 Read the world. These cost nothing, change nothing, and can be repeated freely.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 44 of 129 actions.
+Part of the [action reference](../action_reference.md). 44 of 130 actions.
 
 ## Contents
 

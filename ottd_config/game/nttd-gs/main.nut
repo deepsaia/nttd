@@ -474,6 +474,7 @@ class NttdGS extends GSController {
         case "build_rail_depot":    return this.CmdBuildRailDepot(p);
         case "build_rail_signal":   return this.CmdBuildRailSignal(p);
         case "build_rail_waypoint": return this.CmdBuildRailWaypoint(p);
+        case "build_rail_track":    return this.CmdBuildRailTrack(p);
         case "remove_rail":         return this.CmdRemoveRail(p);
         case "remove_rail_track":   return this.CmdRemoveRailTrack(p);
         case "remove_signal":       return this.CmdRemoveSignal(p);
@@ -1644,55 +1645,10 @@ class NttdGS extends GSController {
   // BUILDING: ROAD
   // ===========================================================================
 
-  function CmdBuildRoad(p) {
-    local company_mode = GSCompanyMode(p.company_id);
-    local road_type = ("road_type" in p) ? p.road_type : 0;
-    GSRoad.SetCurrentRoadType(road_type);
-    local pair = this._ResolveTilePair(p);
-    if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
-    if (GSRoad.BuildRoad(pair.from.tile, pair.to.tile)) {
-      return { success = true, result = { from_tile = pair.from.tile, to_tile = pair.to.tile } };
-    }
-    return this._Refused();
-  }
-
-  function CmdBuildRoadLine(p) {
-    local company_mode = GSCompanyMode(p.company_id);
-    local road_type = ("road_type" in p) ? p.road_type : 0;
-    GSRoad.SetCurrentRoadType(road_type);
-    local pair = this._ResolveTilePair(p);
-    if (pair == null) return { success = false, error = "Need tile_from+tile_to or from_x,from_y,to_x,to_y" };
-    local x1 = pair.from.x, y1 = pair.from.y, x2 = pair.to.x, y2 = pair.to.y;
-    if (x1 != x2 && y1 != y2) return { success = false, error = "Only straight lines (same x or same y)" };
-    if (x1 == x2 && y1 == y2) return { success = false, error = "Start and end are the same tile" };
-    local built = 0, existing = 0, failed = [];
-    if (x1 == x2) {
-      local step = (y2 > y1) ? 1 : -1;
-      for (local y = y1; ; y += step) {
-        local ft = GSMap.GetTileIndex(x1, y), tt = GSMap.GetTileIndex(x1, y + step);
-        if (GSRoad.BuildRoad(ft, tt)) { built++; }
-        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x1, y = y, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); } else { existing++; } }
-        if (y + step == y2) break;
-      }
-    } else {
-      local step = (x2 > x1) ? 1 : -1;
-      for (local x = x1; ; x += step) {
-        local ft = GSMap.GetTileIndex(x, y1), tt = GSMap.GetTileIndex(x + step, y1);
-        if (GSRoad.BuildRoad(ft, tt)) { built++; }
-        else { local err = GSError.GetLastErrorString(); if (err != "ERR_ALREADY_BUILT") { failed.append({ x = x, y = y1, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); } else { existing++; } }
-        if (x + step == x2) break;
-      }
-    }
-    // A gap in the line means no line, the same as for connect_road. This reported
-    // success whatever happened, and was missed when the other compound builders were
-    // fixed because its failure branch is written on one line.
-    local complete = (failed.len() == 0);
-    return { success = complete,
-      error = complete ? null : this._PartialError(failed, built + existing + failed.len()),
-      result = { status = complete ? "complete" : "partial",
-                 built = built, existing = existing, failed = failed,
-                 total = built + existing + failed.len() } };
-  }
+  // CmdBuildRoad and CmdBuildRoadLine used to sit here, dispatched by nothing. Both are
+  // build_path with a shorter list: a two-tile hop and a straight run. Keeping them meant
+  // three ways to lay road, only one of which was reachable, tested, or able to report a
+  // partial build honestly.
 
   function CmdBuildRoadDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
@@ -2245,28 +2201,15 @@ class NttdGS extends GSController {
   // BUILDING: RAIL
   // ===========================================================================
 
-  function CmdBuildRail(p) {
-    local company_mode = GSCompanyMode(p.company_id);
-    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
-    GSRail.SetCurrentRailType(rail_type);
-    if ("prev_x" in p && "x" in p && "next_x" in p) {
-      local prev = GSMap.GetTileIndex(p.prev_x, p.prev_y);
-      local curr = GSMap.GetTileIndex(p.x, p.y);
-      local next = GSMap.GetTileIndex(p.next_x, p.next_y);
-      if (GSRail.BuildRail(prev, curr, next)) return { success = true, result = { tile = [p.x, p.y] } };
-      return this._Refused();
-    }
-    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
-    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
-    local dx = p.to_x - p.from_x, dy = p.to_y - p.from_y;
-    local before = GSMap.GetTileIndex(p.from_x - dx, p.from_y - dy);
-    local after = GSMap.GetTileIndex(p.to_x + dx, p.to_y + dy);
-    local ok1 = GSRail.BuildRail(before, from_tile, to_tile);
-    local ok2 = GSRail.BuildRail(from_tile, to_tile, after);
-    if (ok1 || ok2) return { success = true, result = { from = [p.from_x, p.from_y], to = [p.to_x, p.to_y] } };
-    return this._Refused();
-  }
-
+  // CmdBuildRail used to sit here, dispatched by nothing. It asked the caller for the
+  // prev/curr/next triple that GSRail.BuildRail needs, which is exactly the arithmetic
+  // build_path already does from a plain list of tiles. Its second branch guessed the
+  // missing context by extrapolating, and reported success if either guess took, so a
+  // caller could not tell which piece it had actually laid.
+  //
+  // CmdBuildRailTrack stays, because it is the one thing build_path cannot say: a single
+  // piece with a chosen orientation, which is what a siding or a junction stub is. It is
+  // also the inverse of remove_rail_track, and a remove with no build is not a surface.
   function CmdBuildRailTrack(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;

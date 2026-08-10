@@ -67,7 +67,7 @@ class TestOperatorActionsAreLeftOutButNotHidden:
 
 class TestFiltering:
     @pytest.mark.parametrize(
-        ("tier", "expected"), [("read_only", 44), ("participant", 76), ("operator", 9)],
+        ("tier", "expected"), [("read_only", 44), ("participant", 77), ("operator", 9)],
     )
     def test_by_tier(self, client: TestClient, tier: str, expected: int) -> None:
         body = client.get("/v1/public/actions", params={"tier": tier}).json()
