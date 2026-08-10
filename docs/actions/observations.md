@@ -92,6 +92,8 @@ Find somewhere to put a station serving a given industry or town.
 
 Search near a town for water a ship depot could be built on.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `max_results` (integer, default 5) How many results to return at most.
 - `radius` (integer, default 20) How far from the centre tile to search, in tiles.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
@@ -270,8 +272,11 @@ Report height, slope and buildability across a rectangle. max_tiles bounds the r
 
 Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `get_town_info`
 

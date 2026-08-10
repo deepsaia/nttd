@@ -98,12 +98,25 @@ _TILE_HELPERS = {
 # the call outright when given neither, so the alternation is part of the contract rather
 # than a convenience. Derived from the helper rather than declared per action, because
 # every one of the 11 callers has the same requirement.
-_TILE_HELPER_ALTERNATIVES = {
-    "_ResolveTile(p)": [[["tile"], ["x", "y"]]],
-    "_ResolveTilePair(p)": [
-        [["tile_from"], ["from_x", "from_y"]],
-        [["tile_to"], ["to_x", "to_y"]],
-    ],
+# What ``_Dispatch`` resolves before ANY handler runs, keyed by the coordinate pair it
+# produces. This is a property of the dispatcher, not of a handler, so it applies to
+# every action taking that pair whether or not the handler calls a helper.
+#
+# It used to be keyed on the helper call instead, which under-reported badly: an action
+# reading p.x directly got no alternative, so the manifest said x and y were the only way
+# in. That is not a documentation nicety. ``interpreter/validator.py`` drives its
+# required-parameter check off this manifest and sits on the submit path, so nttd refused
+# build_dock(tile=N) with "missing required params: x, y" while the GameScript would have
+# resolved it happily. Measured before the fix: build_dock(tile=..) rejected,
+# build_road_stop(tile=..) accepted, and the only difference was which one called a helper.
+#
+# It matters for agents in particular because the find_*_spots family returns
+# {tile, x, y}, so tile is the natural thing to hand back.
+_DISPATCH_TILE_RESOLUTIONS = {
+    ("x", "y"): "tile",
+    ("from_x", "from_y"): "tile_from",
+    ("to_x", "to_y"): "tile_to",
+    ("depot_x", "depot_y"): "depot_tile",
 }
 
 # company_id is supplied by nttd from the participant token and overwritten on the way
@@ -232,8 +245,9 @@ def build() -> dict[str, Any]:
 
     for name, function in _DISPATCH_WITH_PARAMS.findall(source):
         body = bodies.get(function, "")
+        params = _parameters(body)
         actions[name] = _entry(
-            name, function, _parameters(body), tiers, categories, written, _tile_alternatives(body)
+            name, function, params, tiers, categories, written, _tile_alternatives(params)
         )
 
     for name, function in _DISPATCH_NO_PARAMS.findall(source):
@@ -274,6 +288,11 @@ def _entry(
     alternatives = {param for group in one_of for branch in group for param in branch}
     for param in alternatives & set(params):
         params[param]["required"] = False
+    # A tile the dispatcher resolves never appears in the handler body, so it is absent
+    # from the extracted parameters and would be advertised in `one_of` while missing
+    # from `parameters`. An agent reading the entry would see it offered and undescribed.
+    for param in sorted(alternatives - set(params)):
+        params[param] = {"required": False}
 
     entry: dict[str, Any] = {
         "description": prose.get("description", ""),
@@ -289,12 +308,21 @@ def _entry(
     return entry
 
 
-def _tile_alternatives(body: str) -> list[list[list[str]]]:
-    """The alternations a shared tile helper imposes on whichever action calls it."""
+def _tile_alternatives(params: dict[str, dict[str, Any]]) -> list[list[list[str]]]:
+    """The alternations the dispatcher's tile resolution imposes on this action.
+
+    Read off the parameter shape rather than the handler body, because ``_Dispatch``
+    resolves these for every action before the switch. An action taking x and y accepts
+    a tile whether or not its handler ever mentions one.
+
+    Coordinate pairs only. ``x1, y1, x2, y2`` rectangles are untouched: the dispatcher
+    resolves no single tile for a rectangle, and inventing one would advertise a call
+    the game would refuse.
+    """
     groups: list[list[list[str]]] = []
-    for call, alternatives in _TILE_HELPER_ALTERNATIVES.items():
-        if call in body:
-            groups.extend(alternatives)
+    for pair, single in _DISPATCH_TILE_RESOLUTIONS.items():
+        if all(axis in params for axis in pair):
+            groups.append([[single], list(pair)])
     return groups
 
 
@@ -405,8 +433,32 @@ def problems(manifest: dict[str, Any], written: dict[str, Any]) -> list[str]:
         found.extend(_binding_problems(key, binding, actions))
 
     found.extend(_orphan_problems())
+    found.extend(_unadvertised_tile_problems(actions))
 
     return found
+
+
+def _unadvertised_tile_problems(actions: dict[str, Any]) -> list[str]:
+    """Report an action taking a coordinate pair without offering the tile that resolves it.
+
+    The blind spot this closes cost real behaviour rather than just documentation.
+    ``_Dispatch`` resolves tile into x and y for every action, but the alternation used to
+    be derived from whether a handler called a tile helper. An action reading p.x directly
+    got none, and ``interpreter/validator.py`` drives its required-parameter check off this
+    manifest and sits on the submit path, so nttd answered build_dock(tile=N) with
+    "missing required params: x, y" for a call the game would have accepted.
+
+    Derived from the parameter shape now, so this should never fire. It exists because the
+    previous rule also looked correct.
+    """
+    return [
+        f"'{name}' takes {', '.join(pair)} but does not advertise '{single}', "
+        f"which the dispatcher resolves into it"
+        for name, entry in sorted(actions.items())
+        for pair, single in _DISPATCH_TILE_RESOLUTIONS.items()
+        if all(axis in entry["parameters"] for axis in pair)
+        and single not in entry["parameters"]
+    ]
 
 
 def _orphan_problems() -> list[str]:

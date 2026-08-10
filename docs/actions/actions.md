@@ -28,9 +28,12 @@ Every action on one line, across all three pages: [index.md](index.md).
 
 Build an airport with its north corner at the given tile. The whole footprint must be clear and level, and larger types only become available from the year they are introduced.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `airport_type` (integer, default 0) Which airport layout to build. Availability depends on the year and the map.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 `airport_type` accepts (GSAirport): `AT_COMMUTER` = 5, `AT_HELIDEPOT` = 6, `AT_HELIPORT` = 2, `AT_HELISTATION` = 8, `AT_INTERCON` = 7, `AT_INTERNATIONAL` = 4, `AT_LARGE` = 1, `AT_METROPOLITAN` = 3, `AT_SMALL` = 0
 
@@ -49,23 +52,32 @@ Bridge the gap between two tiles. The ends must be in line and at the same heigh
 
 Build a dock on a coastal tile, giving ships somewhere to load. The tile must slope into water.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `build_tunnel`
 
 Bore a tunnel into the hillside at the given tile. OpenTTD picks the far end itself, following the slope until the land rises again, so the exit is reported back rather than chosen.
 
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `transport_type` (string, default "rail") What runs through the tunnel: rail or road. Anything else is treated as rail.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `demolish_tile`
 
 Clear whatever is on the tile. Works on your own structures and on trees and rocks, and costs money.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `open_close_airport`
 
@@ -77,8 +89,11 @@ Toggle an airport between accepting and refusing arrivals. Aircraft already inbo
 
 Remove an airport, given any tile of it.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ## company
 
@@ -86,8 +101,11 @@ Remove an airport, given any tile of it.
 
 Place the company headquarters, which occupies four tiles with its north corner at the given tile. Building it again moves it, at the cost of the old one.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `rename_company`
 
@@ -146,9 +164,12 @@ Flatten the rectangle between two corners to a single height. Cost rises steeply
 
 Lower the named corners of a tile by one step.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `slope` (integer, required) Which corners of the tile to move, as a bitmask of the four compass corners.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 `slope` accepts (GSTile): `SLOPE_E` = 4, `SLOPE_ELEVATED` = 15, `SLOPE_ENW` = 13, `SLOPE_EW` = 5, `SLOPE_FLAT` = 0, `SLOPE_N` = 8, `SLOPE_NE` = 12, `SLOPE_NS` = 10, `SLOPE_NW` = 9, `SLOPE_NWS` = 11, `SLOPE_S` = 2, `SLOPE_SE` = 6, `SLOPE_SEN` = 14, `SLOPE_STEEP` = 16, `SLOPE_STEEP_E` = 30, `SLOPE_STEEP_N` = 29, `SLOPE_STEEP_S` = 23, `SLOPE_STEEP_W` = 27, `SLOPE_SW` = 3, `SLOPE_W` = 1, `SLOPE_WSE` = 7
 
@@ -156,25 +177,34 @@ Lower the named corners of a tile by one step.
 
 Plant a tree on a tile. Trees raise the town's opinion of you and offset the rating lost to construction.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `plant_tree_rectangle`
 
 Plant trees across a rectangle given as a corner and a size. Note this takes width and height, not a second corner.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `height` (integer, required) Extent along y, in tiles.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `width` (integer, required) Extent along x, in tiles.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `raise_tile`
 
 Raise the named corners of a tile by one step.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `slope` (integer, required) Which corners of the tile to move, as a bitmask of the four compass corners.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 `slope` accepts (GSTile): `SLOPE_E` = 4, `SLOPE_ELEVATED` = 15, `SLOPE_ENW` = 13, `SLOPE_EW` = 5, `SLOPE_FLAT` = 0, `SLOPE_N` = 8, `SLOPE_NE` = 12, `SLOPE_NS` = 10, `SLOPE_NW` = 9, `SLOPE_NWS` = 11, `SLOPE_S` = 2, `SLOPE_SE` = 6, `SLOPE_SEN` = 14, `SLOPE_STEEP` = 16, `SLOPE_STEEP_E` = 30, `SLOPE_STEEP_N` = 29, `SLOPE_STEEP_S` = 23, `SLOPE_STEEP_W` = 27, `SLOPE_SW` = 3, `SLOPE_W` = 1, `SLOPE_WSE` = 7
 
@@ -184,22 +214,31 @@ Raise the named corners of a tile by one step.
 
 Place a buoy on a water tile. Ships route through buoys, which is how a sea lane is steered around a headland.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `build_canal`
 
 Turn a flat land tile into canal. The tile must be at sea level or bounded by water or lock.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `build_lock`
 
 Build a lock so ships can change height. It must sit on the slope between two water levels.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `build_path`
 
@@ -214,37 +253,52 @@ Lay a route you have already chosen, tile by tile. This is how you build a line 
 
 Build a ship depot on water. It occupies two tiles, the second chosen by direction.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `direction` (integer, default 0) Which neighbouring tile the vehicle enters from: 0 is +x, 1 is +y, 2 is -x, 3 is -y. Any other value means the tile itself.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `remove_buoy`
 
 Remove a buoy. It fails while a ship still has an order pointing at it.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `remove_canal`
 
 Turn a canal tile back into land.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `remove_lock`
 
 Remove a lock.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `remove_water_depot`
 
 Remove a ship depot.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ## order
 
@@ -392,18 +446,24 @@ Report what an action would cost without doing it. The action runs in test mode,
 
 Build a rail depot at a tile, entered from the neighbour picked by direction. Trains are built and serviced here.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `direction` (integer, default 0) Which neighbouring tile the vehicle enters from: 0 is +x, 1 is +y, 2 is -x, 3 is -y. Any other value means the tile itself.
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `build_rail_signal`
 
 Place a signal on a track tile. Signals divide a line into blocks, which is what allows more than one train to use it safely.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `signal_type` (integer, default 0) Which kind of signal to place.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 `signal_type` accepts (GSRail): `SIGNALTYPE_COMBO` = 3, `SIGNALTYPE_COMBO_TWOWAY` = 11, `SIGNALTYPE_ENTRY` = 1, `SIGNALTYPE_ENTRY_TWOWAY` = 9, `SIGNALTYPE_EXIT` = 2, `SIGNALTYPE_EXIT_TWOWAY` = 10, `SIGNALTYPE_NONE` = 255, `SIGNALTYPE_NORMAL` = 0, `SIGNALTYPE_NORMAL_TWOWAY` = 8, `SIGNALTYPE_PBS` = 4, `SIGNALTYPE_PBS_ONEWAY` = 5, `SIGNALTYPE_TWOWAY` = 8
 
@@ -411,21 +471,27 @@ Place a signal on a track tile. Signals divide a line into blocks, which is what
 
 Build a rail station with its north corner at the given tile. The whole footprint must be clear and level.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `direction` (integer, default 0) Which way the platforms run: 0 lays them north-east to south-west, 1 north-west to south-east.
 - `num_platforms` (integer, default 2) How many parallel platforms to build.
 - `platform_length` (integer, default 5) How many tiles long each platform is. A train longer than its platform will not load fully.
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `build_rail_track`
 
 Lay one track piece on one tile, in a chosen orientation. This is the inverse of remove_rail_track and the one shape build_path cannot express, because a path implies its orientations from the tiles either side. Reach for it where there is no path to imply anything: a siding, a junction stub, a passing loop. To lay a line, use build_path, which works the orientations out for you.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `track` (integer, default GSRail.RAILTRACK_NE_SW) Which of the six track pieces on the tile to act on.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 `track` accepts (GSRail): `RAILTRACK_NE_SE` = 32, `RAILTRACK_NE_SW` = 1, `RAILTRACK_NW_NE` = 4, `RAILTRACK_NW_SE` = 2, `RAILTRACK_NW_SW` = 16, `RAILTRACK_SW_SE` = 8
 
@@ -433,8 +499,11 @@ Lay one track piece on one tile, in a chosen orientation. This is the inverse of
 
 Build a waypoint on a track tile. Trains can be ordered through one without stopping, which is how a route is forced along a particular line.
 
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `connect_rail`
 
@@ -476,12 +545,21 @@ Supply one of: `tile` or `x` and `y`.
 
 Remove track along a line between two tiles.
 
-- `from_x` (integer, required) X coordinate of the starting tile.
-- `from_y` (integer, required) Y coordinate of the starting tile.
-- `to_x` (integer, required) X coordinate of the finishing tile.
-- `to_y` (integer, required) Y coordinate of the finishing tile.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+Supply one of: `tile` or `x` and `y`.
+
+Supply one of: `tile_from` or `from_x` and `from_y`.
+
+Supply one of: `tile_to` or `to_x` and `to_y`.
+
+- `from_x` (integer, optional) X coordinate of the starting tile.
+- `from_y` (integer, optional) Y coordinate of the starting tile.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `tile_from` (integer, optional) Tile index to start from. An alternative to from_x and from_y.
+- `tile_to` (integer, optional) Tile index to finish at. An alternative to to_x and to_y.
+- `to_x` (integer, optional) X coordinate of the finishing tile.
+- `to_y` (integer, optional) Y coordinate of the finishing tile.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `remove_rail_station`
 
@@ -639,9 +717,12 @@ Supply one of: `tile` or `x` and `y`.
 
 Place a named sign on a tile. Signs are annotation only and affect nothing in the game.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `name` (string, required) A name to give.
-- `x` (integer, required) X coordinate on the map, counting from 0.
-- `y` (integer, required) Y coordinate on the map, counting from 0.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 ### `remove_sign`
 
@@ -668,6 +749,8 @@ Build a locomotive in a depot and optionally couple wagons to it. Wagons that ca
 
 Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 
+Supply one of: `depot_tile` or `depot_x` and `depot_y`.
+
 - `cargo_id` (integer, optional) Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming.
 - `depot_tile` (integer, optional) Tile index of the depot the vehicle is built in.
 - `depot_x` (integer, optional) X coordinate of the depot the vehicle is built in.
@@ -679,6 +762,8 @@ Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 ### `buy_vehicle`
 
 Build a vehicle of any type in a depot. It starts stopped, so it needs orders and a start before it does anything.
+
+Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 
 Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 

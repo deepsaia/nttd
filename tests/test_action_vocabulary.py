@@ -169,6 +169,12 @@ def test_newly_exposed_actions_have_parameter_validation() -> None:
 
     Catching a missing parameter locally costs nothing; letting it through spends
     a round trip to the game to learn the same thing.
+
+    Validation is either a required parameter or an alternation, and for a tile action
+    it is now the second: the dispatcher resolves ``tile`` into ``x, y``, so neither
+    axis is required on its own and "supply a tile, one way or the other" is expressed
+    as ``one_of``. Asserting on required parameters alone would call that unvalidated
+    when it is simply validated differently.
     """
     from nttd.config import action_manifest
 
@@ -180,9 +186,10 @@ def test_newly_exposed_actions_have_parameter_validation() -> None:
         "set_order_compare_value", "set_stop_location",
         "estimate_cost",
     ):
-        assert action_manifest.required_parameters(action), (
-            f"{action} has no parameter validation"
-        )
+        assert (
+            action_manifest.required_parameters(action)
+            or action_manifest.alternatives(action)
+        ), f"{action} has neither a required parameter nor an alternation"
 
 
 def test_declared_params_match_the_gamescript_handlers() -> None:
@@ -192,8 +199,17 @@ def test_declared_params_match_the_gamescript_handlers() -> None:
     raise_tile, level_tiles and build_one_way_road each succeed when given exactly
     these. Keeping them as literals is what makes this a real check rather than the
     manifest agreeing with itself.
+
+    Asserted through the validator rather than against `required_parameters`, because
+    requiredness is no longer the whole story. The dispatcher resolves `tile` into
+    `x, y`, so on a tile action neither axis is required alone and the obligation lives
+    in `one_of` instead. Supplying exactly these names must still validate cleanly,
+    which is the property that was really being checked and is a stronger claim than
+    comparing one list.
     """
     from nttd.config import action_manifest
+    from nttd.interpreter.action_schema import AgentAction
+    from nttd.interpreter.validator import validate_actions
 
     expected = {
         "raise_tile": ["slope", "x", "y"],
@@ -202,7 +218,11 @@ def test_declared_params_match_the_gamescript_handlers() -> None:
         "set_stop_location": ["order_pos", "stop_location", "vehicle_id"],
     }
     for action, params in expected.items():
-        assert action_manifest.required_parameters(action) == params, action
+        accepted = set(action_manifest.accepted_parameters(action))
+        assert set(params) <= accepted, f"{action} no longer accepts {sorted(set(params) - accepted)}"
+
+        supplied = AgentAction(action_type=action, parameters=dict.fromkeys(params, 1))
+        assert not validate_actions([supplied]), f"{action} refused its own verified shape"
 
 
 def test_missing_params_are_reported_with_the_action_name() -> None:

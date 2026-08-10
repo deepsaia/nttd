@@ -97,17 +97,33 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_bridge": {
       "description": "Bridge the gap between two tiles. The ends must be in line and at the same height, with the span clear between them.",
@@ -155,17 +171,33 @@
       "category": "marine",
       "gamescript_function": "CmdBuildBuoy",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_canal": {
       "description": "Turn a flat land tile into canal. The tile must be at sea level or bounded by water or lock.",
@@ -173,17 +205,33 @@
       "category": "marine",
       "gamescript_function": "CmdBuildCanal",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_company_hq": {
       "description": "Place the company headquarters, which occupies four tiles with its north corner at the given tile. Building it again moves it, at the cost of the old one.",
@@ -191,17 +239,33 @@
       "category": "company",
       "gamescript_function": "CmdBuildCompanyHQ",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_dock": {
       "description": "Build a dock on a coastal tile, giving ships somewhere to load. The tile must slope into water.",
@@ -209,17 +273,33 @@
       "category": "air_and_other",
       "gamescript_function": "CmdBuildDock",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_lock": {
       "description": "Build a lock so ships can change height. It must sit on the slope between two water levels.",
@@ -227,17 +307,33 @@
       "category": "marine",
       "gamescript_function": "CmdBuildLock",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_one_way_road": {
       "description": "Build road between two tiles that may be driven in one direction only, running from the first tile to the second.",
@@ -344,17 +440,33 @@
           "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_rail_signal": {
       "description": "Place a signal on a track tile. Signals divide a line into blocks, which is what allows more than one train to use it safely.",
@@ -385,17 +497,33 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_rail_station": {
       "description": "Build a rail station with its north corner at the given tile. The whole footprint must be clear and level.",
@@ -427,17 +555,33 @@
           "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_rail_track": {
       "description": "Lay one track piece on one tile, in a chosen orientation. This is the inverse of remove_rail_track and the one shape build_path cannot express, because a path implies its orientations from the tiles either side. Reach for it where there is no path to imply anything: a siding, a junction stub, a passing loop. To lay a line, use build_path, which works the orientations out for you.",
@@ -449,6 +593,11 @@
           "required": false,
           "default": 0,
           "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
+          "type": "integer"
+        },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
           "type": "integer"
         },
         "track": {
@@ -471,16 +620,27 @@
           }
         },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_rail_waypoint": {
       "description": "Build a waypoint on a track tile. Trains can be ordered through one without stopping, which is how a route is forced along a particular line.",
@@ -488,17 +648,33 @@
       "category": "rail",
       "gamescript_function": "CmdBuildRailWaypoint",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_road_depot": {
       "description": "Build a road depot at a tile, entered from the neighbour picked by direction. Road vehicles are built and serviced here.",
@@ -621,17 +797,33 @@
           "description": "A name to give.",
           "type": "string"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_train": {
       "description": "Build a locomotive in a depot and optionally couple wagons to it. Wagons that cannot be attached are sold again rather than left loose, and the reply reports how many were attached.",
@@ -685,6 +877,15 @@
             "depot_x",
             "depot_y"
           ]
+        ],
+        [
+          [
+            "depot_tile"
+          ],
+          [
+            "depot_x",
+            "depot_y"
+          ]
         ]
       ]
     },
@@ -694,6 +895,11 @@
       "category": "air_and_other",
       "gamescript_function": "CmdBuildTunnel",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "transport_type": {
           "required": false,
           "default": "rail",
@@ -701,16 +907,27 @@
           "type": "string"
         },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "build_water_depot": {
       "description": "Build a ship depot on water. It occupies two tiles, the second chosen by direction.",
@@ -724,17 +941,33 @@
           "description": "Which neighbouring tile the vehicle enters from: 0 is +x, 1 is +y, 2 is -x, 3 is -y. Any other value means the tile itself.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "buy_vehicle": {
       "description": "Build a vehicle of any type in a depot. It starts stopped, so it needs orders and a start before it does anything.",
@@ -764,6 +997,15 @@
         }
       },
       "one_of": [
+        [
+          [
+            "depot_tile"
+          ],
+          [
+            "depot_x",
+            "depot_y"
+          ]
+        ],
         [
           [
             "depot_tile"
@@ -1225,17 +1467,33 @@
       "category": "air_and_other",
       "gamescript_function": "CmdDemolishTile",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "estimate_cost": {
       "description": "Report what an action would cost without doing it. The action runs in test mode, so nothing is built and no money moves. A failure here is a genuine refusal and worth reading before committing.",
@@ -1602,7 +1860,18 @@
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "found_town": {
       "description": "Found a new town at a tile. Operator-tier: it changes the map the scenario is scored on.",
@@ -1656,17 +1925,33 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "get_airport_types": {
       "description": "List the airport types this game has, with their sizes and whether they are available yet.",
@@ -1949,17 +2234,33 @@
       "category": "query",
       "gamescript_function": "CmdGetTileInfo",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "get_town_info": {
       "description": "Report one town in detail: population, houses, what it accepts and how fast it is growing.",
@@ -2179,17 +2480,33 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "move_order": {
       "description": "Move an order to a different position in the list.",
@@ -2351,17 +2668,33 @@
       "category": "landscape",
       "gamescript_function": "CmdPlantTree",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "plant_tree_rectangle": {
       "description": "Plant trees across a rectangle given as a corner and a size. Note this takes width and height, not a second corner.",
@@ -2374,22 +2707,38 @@
           "description": "Extent along y, in tiles.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "width": {
           "required": true,
           "description": "Extent along x, in tiles.",
           "type": "integer"
         },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "raise_tile": {
       "description": "Raise the named corners of a tile by one step.",
@@ -2428,17 +2777,33 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "refit_vehicle": {
       "description": "Convert a vehicle to carry a different cargo. It must be stopped in a depot, and not every vehicle can carry everything.",
@@ -2479,17 +2844,33 @@
       "category": "air_and_other",
       "gamescript_function": "CmdRemoveAirport",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "remove_buoy": {
       "description": "Remove a buoy. It fails while a ship still has an order pointing at it.",
@@ -2497,17 +2878,33 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveBuoy",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "remove_canal": {
       "description": "Turn a canal tile back into land.",
@@ -2515,17 +2912,33 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveCanal",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "remove_lock": {
       "description": "Remove a lock.",
@@ -2533,17 +2946,33 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveLock",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "remove_order": {
       "description": "Remove one order from a vehicle's list.",
@@ -2585,36 +3014,80 @@
       "gamescript_function": "CmdRemoveRail",
       "parameters": {
         "from_x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate of the starting tile.",
           "type": "integer"
         },
         "from_y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate of the starting tile.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
+        "tile_from": {
+          "required": false,
+          "description": "Tile index to start from. An alternative to from_x and from_y.",
+          "type": "integer"
+        },
+        "tile_to": {
+          "required": false,
+          "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
         "to_x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate of the finishing tile.",
           "type": "integer"
         },
         "to_y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate of the finishing tile.",
           "type": "integer"
         },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ],
+        [
+          [
+            "tile_from"
+          ],
+          [
+            "from_x",
+            "from_y"
+          ]
+        ],
+        [
+          [
+            "tile_to"
+          ],
+          [
+            "to_x",
+            "to_y"
+          ]
+        ]
+      ]
     },
     "remove_rail_station": {
       "description": "Remove the part of a rail station inside a rectangle.",
@@ -2950,17 +3423,33 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveWaterDepot",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
-      }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ]
     },
     "rename_company": {
       "description": "Rename your company.",

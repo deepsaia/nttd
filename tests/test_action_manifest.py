@@ -106,10 +106,16 @@ class TestItMatchesTheGameScript:
 
         CmdPlantTreeRectangle requires x, y, width and height and refuses anything
         else, while interpreter/validator.py declared x1, y1, x2, y2.
+
+        `tile` joins them because the dispatcher resolves it into x and y before any
+        handler runs, so plant_tree_rectangle(tile=N, width=3, height=3) is a real call.
+        The point of this test is the corner-plus-size shape and the absence of the old
+        rectangle names, not the exact size of the set.
         """
         params = set(actions["plant_tree_rectangle"]["parameters"])
-        assert params == {"x", "y", "width", "height"}
+        assert {"x", "y", "width", "height"} <= params
         assert not params & {"x1", "y1", "x2", "y2"}
+        assert params <= {"x", "y", "width", "height", "tile"}
 
     def test_it_agrees_with_the_hand_written_list_everywhere_else(
         self, actions: dict[str, Any],
