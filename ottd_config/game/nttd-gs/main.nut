@@ -810,7 +810,16 @@ class NttdGS extends GSController {
         max_loan = GSCompany.GetMaxLoanAmount(),
         hq_x = GSMap.IsValidTile(hq) ? GSMap.GetTileX(hq) : -1,
         hq_y = GSMap.IsValidTile(hq) ? GSMap.GetTileY(hq) : -1,
-        performance_rating = GSCompany.GetQuarterlyPerformanceRating(cid, 0),
+        // Quarter 1, the last COMPLETED quarter, not quarter 0.
+        //
+        // Quarter 0 is the quarter in progress, and OpenTTD does not rate one until it
+        // ends, so it answers -1 forever. Measured live: at 1960-04-01, one quarter into
+        // a run, q0 gave -1 while q1 gave 30. Every snapshot nttd had ever written
+        // recorded -1, and every result row scored 0.
+        //
+        // company_value stays on quarter 0 deliberately. It is not a rating and the
+        // current quarter answers it correctly: the same probe returned 1 for q0.
+        performance_rating = GSCompany.GetQuarterlyPerformanceRating(cid, 1),
         company_value = GSCompany.GetQuarterlyCompanyValue(cid, 0),
         q0_income = GSCompany.GetQuarterlyIncome(cid, 0),
         q0_expenses = GSCompany.GetQuarterlyExpenses(cid, 0),

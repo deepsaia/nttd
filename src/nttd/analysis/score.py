@@ -9,6 +9,12 @@ not affect rank.
 Scores carry a ``score_version``. Changing how a score is computed must bump it,
 so a leaderboard can tell which entries are comparable instead of silently mixing
 definitions.
+
+**v2 is the first version that produces a score at all.** v1 read OpenTTD's rating for
+quarter 0, the quarter in progress, which is never rated: it answered -1 for the life of
+every run. Every result row nttd ever wrote scored 0 and carried rating_available=False,
+across a dozen sessions and years of game time. v1 rows are not worth migrating because
+none of them holds a score, so the board accepts v2 only.
 """
 
 from __future__ import annotations
@@ -18,10 +24,18 @@ from dataclasses import dataclass
 from nttd.schemas.company import Company
 
 # Bump on any change to how primary/tiebreak are derived.
-SCORE_VERSION = "v1"
+SCORE_VERSION = "v2"
 
-# OpenTTD reports -1 until it has a full quarter of history to rate.
+# OpenTTD answers -1 for a quarter it cannot rate. The GameScript now asks for quarter 1,
+# the last completed one, so this is reached when a run ends before its first quarter
+# closes rather than, as it used to be, always.
 _RATING_UNAVAILABLE = -1
+
+# Before the first quarter closes, quarter 1 answers 0 rather than -1, and a genuinely
+# terrible company also rates 0. The two are indistinguishable from the rating alone, so
+# a run shorter than a quarter cannot be scored honestly. Every benchmark scenario runs
+# for years, so this bounds a mistake rather than a real entry.
+_DAYS_IN_QUARTER = 92
 
 
 @dataclass(frozen=True)

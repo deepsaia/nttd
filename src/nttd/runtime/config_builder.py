@@ -14,10 +14,27 @@ from nttd.constants import IDLE_AI_NAME
 
 logger = logging.getLogger(__name__)
 
-_AI_PLAYERS_SECTION = re.compile(
-    r"^\[ai_players\]$(.*?)(?=^\[|\Z)", re.M | re.S,
-)
-_AI_ENTRY = re.compile(r'^\s*"([^"]+)"\s*=', re.M)
+def _ai_players(content: str) -> list[str]:
+    """The AI named in each ``[ai_players]`` slot.
+
+    Walked line by line rather than matched with a pattern. The file is an INI with one
+    quoted name per line, which reads the same either way, and a pattern that has to
+    stop at the next section header is the part that goes wrong: `[game_scripts]`
+    follows `[ai_players]` in the real config.
+    """
+    names: list[str] = []
+    inside = False
+    for raw in content.splitlines():
+        line = raw.strip()
+        if line.startswith("["):
+            inside = line == "[ai_players]"
+            continue
+        if not inside or not line.startswith('"'):
+            continue
+        closing = line.find('"', 1)
+        if closing > 1:
+            names.append(line[1:closing])
+    return names
 
 
 def _assert_only_the_idle_ai(content: str, source: Path) -> None:
@@ -32,11 +49,7 @@ def _assert_only_the_idle_ai(content: str, source: Path) -> None:
     Raises:
         ValueError: a slot names an AI that is not the idle one.
     """
-    section = _AI_PLAYERS_SECTION.search(content)
-    if section is None:
-        return
-    named = _AI_ENTRY.findall(section.group(1))
-    intruders = sorted({name for name in named if name != IDLE_AI_NAME})
+    intruders = sorted(set(_ai_players(content)) - {IDLE_AI_NAME})
     if intruders:
         raise ValueError(
             f"{source} selects {', '.join(repr(n) for n in intruders)} as an AI player. "
