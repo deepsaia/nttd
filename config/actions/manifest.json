@@ -296,7 +296,7 @@
       }
     },
     "build_path": {
-      "description": "Lay a route that was already worked out, step by step. This exists for a pathfinder that plans elsewhere and hands the whole route over, rather than for placing track directly. Steps that only pass over existing infrastructure are skipped. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed.",
+      "description": "Lay a route you have already chosen, tile by tile. This is how you build a line of your own design: give the tiles and nttd works out how each piece must sit, including the three-tile context rail needs, so nothing has to reason about track orientation. Bridges and tunnels are steps like any other. Steps that only pass over infrastructure already there are skipped rather than paid for. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed. Use connect_rail or connect_road instead when you would rather nttd chose the route.",
       "tier": "participant",
       "category": "marine",
       "gamescript_function": "CmdBuildPath",
@@ -426,6 +426,49 @@
           "default": 0,
           "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
           "type": "integer"
+        },
+        "x": {
+          "required": true,
+          "description": "X coordinate on the map, counting from 0.",
+          "type": "integer"
+        },
+        "y": {
+          "required": true,
+          "description": "Y coordinate on the map, counting from 0.",
+          "type": "integer"
+        }
+      }
+    },
+    "build_rail_track": {
+      "description": "Lay one track piece on one tile, in a chosen orientation. This is the inverse of remove_rail_track and the one shape build_path cannot express, because a path implies its orientations from the tiles either side. Reach for it where there is no path to imply anything: a siding, a junction stub, a passing loop. To lay a line, use build_path, which works the orientations out for you.",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdBuildRailTrack",
+      "parameters": {
+        "rail_type": {
+          "required": false,
+          "default": 0,
+          "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
+          "type": "integer"
+        },
+        "track": {
+          "required": false,
+          "default": {
+            "expression": "GSRail.RAILTRACK_NE_SW"
+          },
+          "description": "Which of the six track pieces on the tile to act on.",
+          "type": "integer",
+          "enum": {
+            "class": "GSRail",
+            "values": {
+              "RAILTRACK_NE_SE": 32,
+              "RAILTRACK_NE_SW": 1,
+              "RAILTRACK_NW_NE": 4,
+              "RAILTRACK_NW_SE": 2,
+              "RAILTRACK_NW_SW": 16,
+              "RAILTRACK_SW_SE": 8
+            }
+          }
         },
         "x": {
           "required": true,

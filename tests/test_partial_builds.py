@@ -108,9 +108,16 @@ class TestNoCompoundBuilderIsMissed:
         assert "wagons_failed" in body
 
 
+# CmdBuildRoadLine was the fourth name here until build_rail_track was wired. It was
+# deleted rather than fixed a second time: a straight run of road is build_path with a
+# generated list, and it was the handler no case ever dispatched, so the rule it was
+# being held to could not be reached from outside the Squirrel anyway. The general test
+# below, TestNoCompoundBuilderIsMissed, is what keeps its replacement honest.
+
+
 class TestABrokenRouteIsNotASuccess:
     @pytest.mark.parametrize(
-        "function", ["CmdConnectRoad", "CmdConnectRail", "CmdBuildPath", "CmdBuildRoadLine"],
+        "function", ["CmdConnectRoad", "CmdConnectRail", "CmdBuildPath"],
     )
     def test_success_depends_on_whether_anything_failed(
         self, gamescript: str, function: str,
@@ -120,7 +127,7 @@ class TestABrokenRouteIsNotASuccess:
         assert "return { success = true, result" not in body
 
     @pytest.mark.parametrize(
-        "function", ["CmdConnectRoad", "CmdConnectRail", "CmdBuildPath", "CmdBuildRoadLine"],
+        "function", ["CmdConnectRoad", "CmdConnectRail", "CmdBuildPath"],
     )
     def test_a_partial_route_says_how_much_is_missing(
         self, gamescript: str, function: str,
@@ -135,7 +142,7 @@ class TestABrokenRouteIsNotASuccess:
             assert part in body
 
     @pytest.mark.parametrize(
-        "function", ["CmdConnectRoad", "CmdConnectRail", "CmdBuildPath", "CmdBuildRoadLine"],
+        "function", ["CmdConnectRoad", "CmdConnectRail", "CmdBuildPath"],
     )
     def test_the_partial_result_still_comes_back(
         self, gamescript: str, function: str,

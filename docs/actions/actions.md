@@ -3,7 +3,7 @@
 Change the world. These cost money, take effect in the game, and are recorded against your company.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 76 of 129 actions.
+Part of the [action reference](../action_reference.md). 77 of 130 actions.
 
 ## Contents
 
@@ -14,7 +14,7 @@ Part of the [action reference](../action_reference.md). 76 of 129 actions.
 - **marine**: `build_buoy`, `build_canal`, `build_lock`, `build_path`, `build_water_depot`, `remove_buoy`, `remove_canal`, `remove_lock`, `remove_water_depot`
 - **order**: `add_order`, `copy_orders`, `insert_order`, `move_order`, `remove_order`, `set_order_compare_function`, `set_order_compare_value`, `set_order_condition`, `set_order_flags`, `set_stop_location`, `share_orders`, `skip_to_order`
 - **planning**: `estimate_cost`
-- **rail**: `build_rail_depot`, `build_rail_signal`, `build_rail_station`, `build_rail_waypoint`, `connect_rail`, `convert_rail`, `remove_rail`, `remove_rail_station`, `remove_rail_track`, `remove_signal`
+- **rail**: `build_rail_depot`, `build_rail_signal`, `build_rail_station`, `build_rail_track`, `build_rail_waypoint`, `connect_rail`, `convert_rail`, `remove_rail`, `remove_rail_station`, `remove_rail_track`, `remove_signal`
 - **road**: `build_one_way_road`, `build_one_way_road_full`, `build_road_depot`, `build_road_stop`, `connect_road`, `convert_road_type`, `remove_road`, `remove_road_depot`, `remove_road_stop`
 - **sign**: `build_sign`, `remove_sign`
 - **town**: `perform_town_action`
@@ -203,7 +203,7 @@ Build a lock so ships can change height. It must sit on the slope between two wa
 
 ### `build_path`
 
-Lay a route that was already worked out, step by step. This exists for a pathfinder that plans elsewhere and hands the whole route over, rather than for placing track directly. Steps that only pass over existing infrastructure are skipped. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed.
+Lay a route you have already chosen, tile by tile. This is how you build a line of your own design: give the tiles and nttd works out how each piece must sit, including the three-tile context rail needs, so nothing has to reason about track orientation. Bridges and tunnels are steps like any other. Steps that only pass over infrastructure already there are skipped rather than paid for. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed. Use connect_rail or connect_road instead when you would rather nttd chose the route.
 
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
 - `road_type` (integer, default 0) Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.
@@ -417,6 +417,17 @@ Build a rail station with its north corner at the given tile. The whole footprin
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
 - `x` (integer, required) X coordinate on the map, counting from 0.
 - `y` (integer, required) Y coordinate on the map, counting from 0.
+
+### `build_rail_track`
+
+Lay one track piece on one tile, in a chosen orientation. This is the inverse of remove_rail_track and the one shape build_path cannot express, because a path implies its orientations from the tiles either side. Reach for it where there is no path to imply anything: a siding, a junction stub, a passing loop. To lay a line, use build_path, which works the orientations out for you.
+
+- `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
+- `track` (integer, default GSRail.RAILTRACK_NE_SW) Which of the six track pieces on the tile to act on.
+- `x` (integer, required) X coordinate on the map, counting from 0.
+- `y` (integer, required) Y coordinate on the map, counting from 0.
+
+`track` accepts (GSRail): `RAILTRACK_NE_SE` = 32, `RAILTRACK_NE_SW` = 1, `RAILTRACK_NW_NE` = 4, `RAILTRACK_NW_SE` = 2, `RAILTRACK_NW_SW` = 16, `RAILTRACK_SW_SE` = 8
 
 ### `build_rail_waypoint`
 
