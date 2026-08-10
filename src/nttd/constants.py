@@ -27,6 +27,24 @@ Extra *non-contestant* companies are unaffected. ``num_ai_companies`` still crea
 slots; they do not compete for cargo or town ratings.
 """
 
+IDLE_AI_NAME = "nttd Idle"
+"""The only AI nttd will run, and it does nothing at all.
+
+**There are no AI opponents in nttd, by design.** ``ottd_config/ai/nttd-idle`` sleeps
+forever; it exists to hold a company slot open, not to play. Every slot in the shipped
+``openttd.cfg`` names it, and ``config_builder`` refuses to write a config that names
+anything else.
+
+A benchmark measures building a transport business in an empty market. Adding a real
+competitor from OpenTTD's content service would make it measure something else, and
+worse, something that varies: two runs on one seed would face different pressure
+depending on which AI was installed and how it happened to play, and no result row
+records either. nttd would be comparing runs that were never the same problem.
+
+nttd is self-hosted, so this is not a defence against a contestant. It is a guarantee
+that a world generated from a seed is the world anybody else generates from it.
+"""
+
 # ---------------------------------------------------------------------------
 # Participant tier: actions a human player can take through the GUI
 # ---------------------------------------------------------------------------

@@ -420,6 +420,12 @@ Things a reader might expect and will not find:
 - **No LLM timeout or history cap.** Both are unenforceable against a loop running in
   the contestant's own process, and stating an unenforceable suggestion as a limit
   misleads whoever reads the result.
+- **No AI opponents, and there will not be any.** The only AI shipped sleeps forever,
+  and every slot in the config names it; `config_builder` refuses a config that names
+  another. A run measures building a transport business in an empty market. A real
+  competitor would measure something else, and something that varies: two runs on one
+  seed would face different pressure depending on which AI was installed and how it
+  happened to play, with nothing recording either.
 - **No `pettingzoo` dependency and no `ParallelEnv`.** A `NttdParallelEnv` drove several
   companies from one process, for self-play and population training. It went with
   multi-company sessions: one contestant means one env, and RL and ES spawn a session

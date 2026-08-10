@@ -10,7 +10,41 @@ import re
 import shutil
 from pathlib import Path
 
+from nttd.constants import IDLE_AI_NAME
+
 logger = logging.getLogger(__name__)
+
+_AI_PLAYERS_SECTION = re.compile(
+    r"^\[ai_players\]$(.*?)(?=^\[|\Z)", re.M | re.S,
+)
+_AI_ENTRY = re.compile(r'^\s*"([^"]+)"\s*=', re.M)
+
+
+def _assert_only_the_idle_ai(content: str, source: Path) -> None:
+    """Refuse a config that would run anything but the do-nothing AI.
+
+    There are no AI opponents in nttd. Every ``[ai_players]`` slot in the shipped
+    config names the idle AI, so this cannot fire unless that file was edited or an AI
+    was installed and selected. It is checked rather than assumed because the failure is
+    silent otherwise: a run against a real competitor looks like an ordinary run, and
+    nothing in the result says the world had somebody else building in it.
+
+    Raises:
+        ValueError: a slot names an AI that is not the idle one.
+    """
+    section = _AI_PLAYERS_SECTION.search(content)
+    if section is None:
+        return
+    named = _AI_ENTRY.findall(section.group(1))
+    intruders = sorted({name for name in named if name != IDLE_AI_NAME})
+    if intruders:
+        raise ValueError(
+            f"{source} selects {', '.join(repr(n) for n in intruders)} as an AI player. "
+            f"nttd runs no AI opponents: every slot must name {IDLE_AI_NAME!r}, which "
+            f"holds a company open and does nothing. A real competitor would change what "
+            f"the benchmark measures, and two runs on one seed would face different "
+            f"pressure with nothing recording it."
+        )
 
 
 def _patch_ini_value(content: str, key: str, value: str) -> str:
@@ -147,6 +181,7 @@ def build_session_config(
     src_cfg = base_config_dir / "openttd.cfg"
     dst_cfg = session_dir / "openttd.cfg"
     cfg_content = src_cfg.read_text()
+    _assert_only_the_idle_ai(cfg_content, src_cfg)
     cfg_content = _patch_ini_value(cfg_content, "server_port", str(game_port))
     cfg_content = _patch_ini_value(cfg_content, "server_admin_port", str(admin_port))
 
