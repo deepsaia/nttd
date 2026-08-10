@@ -3,6 +3,22 @@
 Snapshots are buffered in memory and flushed to numbered fragment files.
 On finalize(), fragments are merged into a single snapshots.parquet.
 
+**``snapshot_json`` is the source. The typed columns are an index into it, never a
+second record of it.** Every ``num_*`` and ``c0_*`` value is extracted from the same
+snapshot on the way past, so where they disagree the JSON is right and the column is a
+bug. Nothing may write one without the other, and nothing downstream may treat a typed
+column as evidence the JSON does not already carry.
+
+They are kept because a dashboard that filters or plots a series should not parse a
+large JSON string per row to do it. Measured across three real sessions, ``c0_*`` plus
+``num_*`` cost 5.4 to 6.4 percent of the file while ``snapshot_json`` is 59 to 75
+percent, so the projection is cheap: removing it would save little and push JSON parsing
+into every reader.
+
+They are deliberately partial, and that is the reason they cannot become the record.
+They cover company 0 only, and no expenses, so anything about another company or about
+spend has to read the JSON regardless. ``analysis.business_metrics`` does exactly that.
+
 Derived from the OpenTTD multiplayer/agent study, §13 (local research notes, not in the repo).
 """
 
@@ -28,13 +44,16 @@ _SCHEMA = pa.schema([
     ("game_date", pa.int32()),
     ("tick", pa.int32()),
     ("captured_at", pa.timestamp("us")),
+    # The record. Everything below is extracted from this on the way past.
     ("snapshot_json", pa.large_string()),
-    # Top-level counts extracted for fast dashboard queries
+    # --- Projection of snapshot_json, for querying without parsing it -------------
+    # Top-level counts
     ("num_companies", pa.int16()),
     ("num_towns", pa.int16()),
     ("num_vehicles", pa.int16()),
     ("num_stations", pa.int16()),
-    # Company 0 finance (primary dashboard target)
+    # Company 0 finance. Company 0 only, and no expenses: a projection wide enough for
+    # a dashboard, deliberately not wide enough to be mistaken for the record.
     ("c0_balance", pa.int64()),
     ("c0_loan", pa.int64()),
     ("c0_income", pa.int64()),

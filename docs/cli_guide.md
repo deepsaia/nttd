@@ -520,6 +520,16 @@ Under `NTTD_SESSIONS_DIR` (default `logs/sessions`), per session:
 | `result.parquet` | one row per scored company: the leaderboard artifact |
 | `actions.parquet` | every action, refusals included, with status and game date |
 | `snapshots.parquet` | full game state time-series |
+
+`snapshots.parquet` holds each snapshot whole, as `snapshot_json`, and beside it a few
+typed columns extracted from that same snapshot: four `num_*` counts and fourteen `c0_*`
+figures for company 0. **The JSON is the record; the columns are an index into it.** They
+exist so a dashboard can filter or plot a series without parsing a large JSON string per
+row, and they cost 5 to 6 percent of the file to do it.
+
+They are deliberately partial, covering company 0 only and no expenses, so anything wider
+reads the JSON. That is why `nttd result --business` recomputes its metrics from
+`snapshot_json` rather than from the columns.
 | `events.parquet` | lifecycle and game events |
 | `tiles.parquet` | terrain scan |
 | `nttd_scenario.conf` | the resolved scenario, for provenance |
