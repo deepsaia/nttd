@@ -68,7 +68,7 @@ runner. What differs is the *runner*.
 
 ```bash
 uv run nttd server                                             # terminal 1
-uv run nttd benchmark --config config/benchmark/t2_example.conf # terminal 2
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf # terminal 2
 ```
 
 `benchmark` creates the session, generates the world, prints the participant token,
@@ -78,7 +78,7 @@ attach yours to the printed session id while it waits.
 If you would rather drive the lifecycle yourself:
 
 ```bash
-uv run nttd session create --config config/benchmark/t2_example.conf
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s ses_... --agent-companies 1
 uv run nttd session attach ses_...     # prints the token and the routes
 # ... your runner plays ...
@@ -89,7 +89,7 @@ uv run nttd result -s ses_...
 Validate a scenario before committing to a long run:
 
 ```bash
-uv run nttd scenario validate config/benchmark/t2_example.conf
+uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd scenario profile            # the rules a scored scenario must satisfy
 ```
 
@@ -228,7 +228,7 @@ curl -X POST $P/step -H "X-Participant-Token: $TOKEN" \
 
 `/step` returns only after the world has advanced and been re-observed, so you never
 have to guess when your actions took effect. Use
-`config/benchmark/t2_stepped_example.conf`, which bounds the run in **steps** rather
+`config/benchmark/t2_256_flat_1001_stepped.conf`, which bounds the run in **steps** rather
 than wall-minutes: wall time in stepped mode measures your hardware, not your play.
 
 ---
@@ -305,8 +305,8 @@ setting changes it, so wall-minutes *are* the economy horizon:
 | T3 | 60 min | ~5 game years | economic performance becomes measurable |
 | T4 | 120 min | ~10 game years | longer-running businesses |
 
-Shipped examples: `t2_example.conf` (256×256 flat), `t3_example.conf` (512×512
-hilly), and `t2_stepped_example.conf` (the same world as T2, bounded
+Shipped examples: `t2_256_flat_1001_realtime.conf` (256×256 flat), `t3_512_hilly_2001_realtime.conf` (512×512
+hilly), and `t2_256_flat_1001_stepped.conf` (the same world as T2, bounded
 in steps).
 
 ---

@@ -31,8 +31,8 @@ def session_create(
     stores everything in the DB, and returns the session ID.
 
     Examples:
-      nttd session create --config config/benchmark/t2_example.conf
-      nttd session create --config config/benchmark/t2_example.conf --name "my_run"
+      nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
+      nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf --name "my_run"
     """
     import requests
 

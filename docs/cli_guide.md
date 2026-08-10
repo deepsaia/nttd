@@ -62,7 +62,7 @@ depends on. Takes a few minutes. Run it after upgrading OpenTTD.
 
 ```bash
 uv run nttd server                                               # terminal 1
-uv run nttd benchmark --config config/benchmark/t2_example.conf   # terminal 2
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf   # terminal 2
 ```
 
 `benchmark` prints the session id and participant token, then waits. Attach your runner
@@ -91,9 +91,9 @@ session data is written; it defaults to `logs/sessions`.
 Stands up a task and waits for it to end.
 
 ```bash
-uv run nttd benchmark --config config/benchmark/t2_example.conf
-uv run nttd benchmark --config config/benchmark/t2_example.conf --seed 2002
-uv run nttd benchmark --config config/benchmark/t2_example.conf -o results/
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf --seed 2002
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf -o results/
 ```
 
 | Option | |
@@ -118,7 +118,7 @@ because which world to play is your choice while whether it is scored is not.
 For driving the lifecycle yourself.
 
 ```bash
-uv run nttd session create --config config/benchmark/t2_example.conf
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s ses_... --agent-companies 1
 uv run nttd session attach ses_...
 uv run nttd session list
@@ -149,7 +149,7 @@ how you recover it.
 ### `nttd scenario`
 
 ```bash
-uv run nttd scenario validate config/benchmark/t2_example.conf
+uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd scenario validate my_variant.conf
 uv run nttd scenario profile
 ```

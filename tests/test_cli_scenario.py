@@ -29,7 +29,7 @@ _REPO = Path(__file__).parent.parent
 
 def test_a_shipped_example_validates() -> None:
     result = runner.invoke(
-        app, ["scenario", "validate", str(_REPO / "config/benchmark/t2_example.conf")],
+        app, ["scenario", "validate", str(_REPO / "config/benchmark/t2_256_flat_1001_realtime.conf")],
     )
     assert result.exit_code == 0
     assert "Valid" in result.stdout
@@ -236,6 +236,6 @@ def test_the_stepped_example_poses_the_same_world_as_the_realtime_one() -> None:
             if key.startswith(("game_creation.", "difficulty."))
         }
 
-    assert world("config/benchmark/t2_example.conf") == world(
-        "config/benchmark/t2_stepped_example.conf",
+    assert world("config/benchmark/t2_256_flat_1001_realtime.conf") == world(
+        "config/benchmark/t2_256_flat_1001_stepped.conf",
     )

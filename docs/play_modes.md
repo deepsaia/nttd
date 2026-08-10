@@ -296,9 +296,9 @@ counts; the flag says a reader should look at what was attempted.
 uv run nttd server                                                # terminal 1
 
 uv run nttd scenario profile                                      # the rules in force
-uv run nttd scenario validate config/benchmark/t2_example.conf     # check before running
+uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf     # check before running
 
-uv run nttd session create --config config/benchmark/t2_example.conf
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s ses_... --agent-companies 1
 uv run nttd session attach ses_...                                # token and routes
 # ... your runner plays ...
@@ -310,6 +310,6 @@ Shipped examples, all scored on their own merits rather than because they say so
 
 | File | World | Mode |
 |---|---|---|
-| `t2_example.conf` | 256×256 flat | real time, 30 min |
-| `t3_example.conf` | 512×512 hilly | real time, 60 min |
-| `t2_stepped_example.conf` | 256×256 flat | stepped, bounded in steps |
+| `t2_256_flat_1001_realtime.conf` | 256×256 flat | real time, 30 min |
+| `t3_512_hilly_2001_realtime.conf` | 512×512 hilly | real time, 60 min |
+| `t2_256_flat_1001_stepped.conf` | 256×256 flat | stepped, bounded in steps |

@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture
 def default_config() -> ScenarioConfig:
-    """Load the shipped default, which is config/benchmark/t2_example.conf."""
+    """Load the shipped default, which is config/benchmark/t2_256_flat_1001_realtime.conf."""
     return load()
 
 

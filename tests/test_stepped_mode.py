@@ -278,7 +278,7 @@ def test_the_step_size_reaches_the_runtime() -> None:
     settings = scenario_to_settings(
         load(
             __import__("pathlib").Path(__file__).parent.parent
-            / "config/benchmark/t2_stepped_example.conf",
+            / "config/benchmark/t2_256_flat_1001_stepped.conf",
         ),
         strict=True,
     )

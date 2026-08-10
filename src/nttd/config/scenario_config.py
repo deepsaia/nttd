@@ -39,7 +39,7 @@ _MAP_DEFAULTS: dict[str, Any] = {
 }
 
 _DEFAULT_CONFIG_PATH = (
-    Path(__file__).parent.parent.parent.parent / "config" / "benchmark" / "t2_example.conf"
+    Path(__file__).parent.parent.parent.parent / "config" / "benchmark" / "t2_256_flat_1001_realtime.conf"
 )
 
 # ---------------------------------------------------------------------------

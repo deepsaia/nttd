@@ -263,7 +263,7 @@ def test_absent_dimensions_record_as_absent_not_guessed(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Every company in an nttd session is created by the "nttd Idle" AI, which sleeps
 # forever so a slot exists for a contestant to act through. num_ai_companies makes
-# more of the same rather than opponents. Verified: a t3_example session configured
+# more of the same rather than opponents. Verified: a t3_512_hilly_2001_realtime session configured
 # for two "AI opponents" wrote three scored rows, the contestant plus two "Unnamed"
 # companies at score 0 with no actions, so a board would read three entries for one
 # run.
