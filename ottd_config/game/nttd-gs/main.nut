@@ -650,16 +650,39 @@ class NttdGS extends GSController {
   }
 
   function CmdGetMapTerrain(p) {
-    // Returns terrain data row-by-row for the entire map.
+    // Terrain across a band of the map, row by row.
     // Each result item: { y, tiles: [[height, slope, flags], ...] }
     // flags bitmask: 1=water, 2=coast, 4=buildable
-    // Params: from_y (default 0), to_y (default max_y) for partial scans.
+    //
+    // BOUNDED, at every map size. It used to default to the whole map, which is not a
+    // reasonable thing to ask for or to answer: 256x256 measured 524 KB and 7.2s, which
+    // is around 389,000 tokens, and no agent can hold that. At 512x512 the reply
+    // exceeded gs_query's timeout and returned a bare failure; 1024x1024 is worse again.
+    //
+    // The cap is on TILES rather than on map size, so the same rule holds everywhere and
+    // no size needs forbidding. An agent that wants more asks again for the next band,
+    // which is also the shape that lets it stop once it has found what it needed.
+    //
+    // Terrain is rarely the right question anyway. Where something fits is answered by
+    // the find_* family, which dry-runs the real build inside the game.
     local max_x = GSMap.GetMapSizeX() - 2;
     local max_y = GSMap.GetMapSizeY() - 2;
+    local max_tiles = ("max_tiles" in p) ? p.max_tiles : 4000;
+    if (max_tiles > 20000) max_tiles = 20000;
     local from_y = ("from_y" in p) ? p.from_y : 1;
     local to_y = ("to_y" in p) ? p.to_y : max_y;
     if (from_y < 1) from_y = 1;
     if (to_y > max_y) to_y = max_y;
+
+    // Rows are full width, so the band is trimmed to whole rows that fit the budget.
+    local per_row = max_x;
+    local allowed_rows = (per_row > 0) ? (max_tiles / per_row) : 1;
+    if (allowed_rows < 1) allowed_rows = 1;
+    local truncated = false;
+    if (to_y - from_y + 1 > allowed_rows) {
+      to_y = from_y + allowed_rows - 1;
+      truncated = true;
+    }
 
     local rows = [];
     for (local y = from_y; y <= to_y; y++) {
@@ -674,7 +697,17 @@ class NttdGS extends GSController {
       }
       rows.append({ y = y, tiles = row_tiles });
     }
-    return { success = true, result = rows };
+    // The caller is told when the band was cut short, and where to resume. Returning a
+    // short answer that looks complete is the failure this whole handler was rewritten
+    // to avoid.
+    return { success = true, result = {
+      rows = rows,
+      from_y = from_y,
+      to_y = to_y,
+      truncated = truncated,
+      next_from_y = truncated ? to_y + 1 : null,
+      tiles_returned = rows.len() * per_row,
+    }};
   }
 
   function CmdGetTowns() {
@@ -2859,12 +2892,21 @@ class NttdGS extends GSController {
       return { success = false, error = "Need steps array with at least 2 entries" };
 
     local transport = ("transport_type" in p) ? p.transport_type : "road";
+    // Named rather than "anything that is not rail is road". That default silently
+    // reinterpreted transport_type="water" as a road build, and since a water path
+    // carries canal steps this handler had no case for, every one was skipped: the
+    // reply was success = true with built = 0. A caller had no way to tell a laid
+    // route from nothing at all.
+    if (transport != "rail" && transport != "road" && transport != "water") {
+      return { success = false, error = "transport_type must be rail, road or water, not '" + transport + "'" };
+    }
     local is_rail = (transport == "rail");
+    local is_water = (transport == "water");
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;
     local road_type = ("road_type" in p) ? p.road_type : 0;
 
     if (is_rail) GSRail.SetCurrentRailType(rail_type);
-    else GSRoad.SetCurrentRoadType(road_type);
+    else if (!is_water) GSRoad.SetCurrentRoadType(road_type);
 
     local steps = p.steps;
     local built = 0;
@@ -2880,6 +2922,21 @@ class NttdGS extends GSController {
       // Skip start/end markers and plain movement on existing infra
       if (action == "start" || action == "end" || action == "move") {
         skipped++;
+        continue;
+      }
+
+      // Water is laid per tile: a canal where there is no water, a lock where the
+      // ground steps. Most useful ship routes need neither, because open water between
+      // two coastal towns is already navigable, and those arrive as "move" steps above.
+      if (action == "build_canal" || action == "build_lock") {
+        local wt = GSMap.GetTileIndex(sx, sy);
+        local ok = (action == "build_canal") ? GSMarine.BuildCanal(wt) : GSMarine.BuildLock(wt);
+        if (ok) { built++; }
+        else {
+          local werr = GSError.GetLastErrorString();
+          if (werr == "ERR_ALREADY_BUILT") { existing++; }
+          else { failed.append({ x = sx, y = sy, action = action, error = werr, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
+        }
         continue;
       }
 
@@ -2946,7 +3003,15 @@ class NttdGS extends GSController {
         continue;
       }
 
-      skipped++;
+      // An action this handler does not know is a FAILURE, not something to pass over.
+      // Skipping it quietly is how transport_type="water" came to report success while
+      // building nothing: the steps were all canals, none matched a case, and every one
+      // fell through to here.
+      failed.append({
+        x = sx, y = sy, action = action,
+        error = "build_path does not know the step action '" + action + "'",
+        error_code = null, error_category = "",
+      });
     }
 
     local complete = (failed.len() == 0);

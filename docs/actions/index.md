@@ -40,7 +40,7 @@ Full detail in [observations.md](observations.md).
 - `get_industry_info(industry_id)` Report one industry in detail: what it produces and accepts, recent production, and how much is waiting.
 - `get_infrastructure_costs()` Report how much track, road and station you own and what it costs to maintain each month.
 - `get_map_size()` Report the map dimensions in tiles.
-- `get_map_terrain([from_y, to_y])` Report the terrain across a rectangle: height, slope, and whether each tile is water.
+- `get_map_terrain([from_y, max_tiles, to_y])` Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable.
 - `get_orders(vehicle_id)` List a vehicle's orders, with their destinations and flags.
 - `get_rail_types()` List the rail technologies this game has and which are available yet.
 - `get_road_types()` List the road technologies this game has, tram tracks included, and which are available yet.

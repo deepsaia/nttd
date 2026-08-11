@@ -211,9 +211,10 @@ Takes no parameters.
 
 ### `get_map_terrain`
 
-Report the terrain across a rectangle: height, slope, and whether each tile is water. Reading the whole map at once is large, so ask for the part you need.
+Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume, so a band that did not fit is never mistaken for the whole answer. Reading a whole map is not a reasonable request: 256x256 is over half a megabyte. Where something will actually fit is better asked of the find_ family, which dry-runs the real build inside the game.
 
 - `from_y` (integer, default 1) Y coordinate of the starting tile.
+- `max_tiles` (integer, default 4000) How many tiles to report at most. Guards against asking for more than a reply can carry.
 - `to_y` (integer, default max_y) Y coordinate of the finishing tile.
 
 ### `get_orders`
@@ -262,7 +263,7 @@ Takes no parameters.
 
 Report height, slope and buildability across a rectangle. max_tiles bounds the reply.
 
-- `max_tiles` (integer, default 400) How many tiles to report at most. Guards against asking for an area larger than the reply can carry.
+- `max_tiles` (integer, default 400) How many tiles to report at most. Guards against asking for more than a reply can carry.
 - `x1` (integer, required) X coordinate of the first corner.
 - `x2` (integer, required) X coordinate of the opposite corner.
 - `y1` (integer, required) Y coordinate of the first corner.
