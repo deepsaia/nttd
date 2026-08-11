@@ -12,9 +12,12 @@ expression as ``analysis.business_metrics``, deliberately. An agent judging itse
 different yardstick than its scorer optimises the wrong thing, which is a subtle way for
 a benchmark to be unfair.
 
-Live only. The ``analysis`` package computes richer versions of several of these, but it
-reads finalised parquet from a session directory and ``snapshots.parquet`` does not exist
-until a run ends, so none of it can answer a question during play.
+In the loop, rather than after it. The ``analysis`` package computes richer versions of
+several of these and does work on a running session, because nttd writes a snapshot
+fragment per step and the read path falls back to fragments until they are merged. What it
+cannot be is part of a decision: it re-reads a session's whole history from disk to build
+a report, which is the right shape for ``nttd analyze`` and ``nttd monitor`` and the wrong
+one for a question asked between two steps.
 """
 
 from __future__ import annotations
