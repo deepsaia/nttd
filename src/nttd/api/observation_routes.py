@@ -79,6 +79,10 @@ async def get_situation(session_id: str, company_id: int = 0) -> dict[str, Any]:
     detail, and why it matters, and every one is actionable: an unfinished route, a
     station nothing calls at, cargo piling up faster than it clears, a vehicle with no
     orders, a vehicle old enough that losing money means the route rather than settling.
+
+    ``stations`` and ``vehicles`` carry tiles as well as counts, which is what makes this
+    answerable: "what have I built and where". Without it a run can own two stations and
+    have no way to find them, and one did, for 26 of its 28 steps.
     """
     runtime = deps.get_runtime(session_id)
     world = runtime.world
@@ -87,6 +91,7 @@ async def get_situation(session_id: str, company_id: int = 0) -> dict[str, Any]:
         stations=[s for s in world.stations.values() if s.company_id == company_id],
         vehicles=[v for v in world.vehicles.values() if v.company_id == company_id],
         routes=[r for r in world._derive_routes() if r.company_id == company_id],
+        map_width=world.game.map_width,
     ).report()
 
 

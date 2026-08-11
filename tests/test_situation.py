@@ -24,7 +24,83 @@ def _situation(**kw) -> Situation:
         stations=kw.get("stations", []),
         vehicles=kw.get("vehicles", []),
         routes=kw.get("routes", []),
+        map_width=kw.get("map_width", 256),
     )
+
+
+class TestWhereThingsAre:
+    """Coordinates, which is what turns a count into something actionable.
+
+    A rail run built two stations at step 0 and then spent 26 of its remaining 27 steps
+    hunting for them, submitting nothing at all, because the report named them and would
+    not say where they were.
+    """
+
+    def test_a_station_reports_its_tile_and_its_coordinates(self) -> None:
+        station = Station(id=1, name="Mennbury", company_id=0, x=67, y=58)
+        report = _situation(stations=[station], map_width=128).report()
+        found = report["stations"][0]
+        assert found["name"] == "Mennbury"
+        assert (found["x"], found["y"]) == (67, 58)
+        # tile = y * map_width + x, which is what a build action takes.
+        assert found["tile"] == 58 * 128 + 67 == 7491
+
+    def test_the_tile_follows_the_map_width(self) -> None:
+        """The same coordinates are a different tile on a different map."""
+        station = Station(id=1, company_id=0, x=10, y=20)
+        assert _situation(stations=[station], map_width=256).report()["stations"][0]["tile"] == 5130
+        assert _situation(stations=[station], map_width=512).report()["stations"][0]["tile"] == 10250
+
+    def test_an_unknown_map_width_gives_no_tile_rather_than_a_wrong_one(self) -> None:
+        """A tile computed against the wrong width points somewhere real and wrong."""
+        station = Station(id=1, company_id=0, x=10, y=20)
+        found = _situation(stations=[station], map_width=0).report()["stations"][0]
+        assert found["tile"] is None
+        assert (found["x"], found["y"]) == (10, 20)
+
+    def test_a_station_says_which_transports_call_at_it(self) -> None:
+        station = Station(id=1, company_id=0, has_bus=True, has_dock=True)
+        assert _situation(stations=[station]).report()["stations"][0]["serves"] == ["bus", "dock"]
+
+    def test_a_vehicle_reports_where_it_is(self) -> None:
+        vehicle = Vehicle(id=4, company_id=0, type="rail", x=30, y=40, order_count=2)
+        found = _situation(vehicles=[vehicle], map_width=128).report()["vehicles"][0]
+        assert found["vehicle_id"] == 4
+        assert found["tile"] == 40 * 128 + 30
+        assert found["orders"] == 2
+
+    def test_a_route_carries_the_tiles_of_its_own_stations(self) -> None:
+        """The question every unfinished route poses, answered without a second lookup."""
+        stations = [
+            Station(id=1, company_id=0, x=10, y=20),
+            Station(id=2, company_id=0, x=30, y=40),
+        ]
+        route = Route(route_id="r1", company_id=0, vehicle_type="rail", station_ids=[1, 2])
+        health = _situation(stations=stations, routes=[route], map_width=128).report()["routes"][0]
+        assert health["station_tiles"] == [20 * 128 + 10, 40 * 128 + 30]
+
+    def test_an_unfinished_route_names_the_tiles_in_its_problem(self) -> None:
+        stations = [
+            Station(id=1, company_id=0, x=10, y=20),
+            Station(id=2, company_id=0, x=30, y=40),
+        ]
+        route = Route(route_id="r1", company_id=0, vehicle_type="rail", station_ids=[1, 2])
+        problems = _situation(stations=stations, routes=[route], map_width=128).report()["problems"]
+        unfinished = next(p for p in problems if "unfinished" in p["problem"])
+        assert "2570" in unfinished["detail"]
+
+    def test_a_route_referencing_a_station_that_is_gone_does_not_raise(self) -> None:
+        route = Route(route_id="r1", company_id=0, vehicle_type="rail", station_ids=[1, 99])
+        station = Station(id=1, company_id=0, x=1, y=1)
+        health = _situation(stations=[station], routes=[route]).report()["routes"][0]
+        assert len(health["station_tiles"]) == 1
+
+    def test_an_unserved_station_says_where_it_is(self) -> None:
+        """So the fix is reachable from the problem, without a further query."""
+        station = Station(id=1, name="Wrenninghead", company_id=0, x=89, y=46)
+        problems = _situation(stations=[station], map_width=128).report()["problems"]
+        unserved = next(p for p in problems if "serves no route" in p["problem"])
+        assert str(46 * 128 + 89) in unserved["detail"]
 
 
 class TestMoney:

@@ -39,6 +39,25 @@ _SETTLING_DAYS = 400
 _PILING_UP = 100
 
 
+def _serves(station: Station) -> list[str]:
+    """Which transports call at a station.
+
+    A list rather than one label: a station can take a bus stop and a dock, and telling an
+    agent only the first would have it rebuild what it already owns.
+    """
+    kinds = []
+    for flag, label in (
+        (station.has_rail, "rail"),
+        (station.has_bus, "bus"),
+        (station.has_truck, "truck"),
+        (station.has_dock, "dock"),
+        (station.has_airport, "airport"),
+    ):
+        if flag:
+            kinds.append(label)
+    return kinds
+
+
 class Situation:
     """One company's position, as facts an agent can act on."""
 
@@ -48,17 +67,21 @@ class Situation:
         stations: list[Station],
         vehicles: list[Vehicle],
         routes: list[Route],
+        map_width: int = 0,
     ) -> None:
         self._company = company
         self._stations = stations
         self._vehicles = vehicles
         self._routes = routes
+        self._map_width = map_width
 
     def report(self) -> dict[str, Any]:
-        """The whole position: money, what is built, what earns, and what is wrong."""
+        """The whole position: money, what is built and where, what earns, what is wrong."""
         return {
             "money": self._money(),
             "built": self._built(),
+            "stations": [self._station_detail(s) for s in self._stations],
+            "vehicles": [self._vehicle_detail(v) for v in self._vehicles],
             "earning": self._earning(),
             "routes": [self._route_health(r) for r in self._routes],
             "problems": self._problems(),
@@ -90,6 +113,57 @@ class Situation:
             "vehicles_by_type": by_type,
             "routes": len(self._routes),
         }
+
+    def _station_detail(self, station: Station) -> dict[str, Any]:
+        """One station, including where it is.
+
+        The coordinates are the point of this. Counts alone told an agent it owned two
+        stations and gave it no way to find them, and a station it cannot locate is a
+        station it cannot connect: a rail run built two at its first step and then spent 26
+        of its remaining 27 steps hunting for them, submitting nothing. Its own words were
+        "the situation only tells me they exist by name but not coordinates".
+
+        Both forms are given because both are used. Actions take ``tile``, and the finders
+        and anything reasoning about distance work in x and y.
+        """
+        return {
+            "station_id": station.id,
+            "name": station.name,
+            "tile": self._tile(station.x, station.y),
+            "x": station.x,
+            "y": station.y,
+            "serves": _serves(station),
+            "cargo_waiting": [
+                {"cargo": c.cargo_label, "waiting": c.waiting}
+                for c in station.cargo_waiting
+                if c.waiting
+            ],
+        }
+
+    def _vehicle_detail(self, vehicle: Vehicle) -> dict[str, Any]:
+        """One vehicle, including where it currently is."""
+        return {
+            "vehicle_id": vehicle.id,
+            "name": vehicle.name,
+            "type": vehicle.type,
+            "tile": self._tile(vehicle.x, vehicle.y),
+            "x": vehicle.x,
+            "y": vehicle.y,
+            "orders": vehicle.order_count,
+            "profit_this_year": vehicle.profit_this_year,
+            "age_days": vehicle.age,
+        }
+
+    def _tile(self, x: int, y: int) -> int | None:
+        """The tile index for a coordinate pair, which is what actions take.
+
+        None rather than a wrong number when the map width is unknown. A tile index
+        computed against the wrong width points somewhere real and somewhere else, which
+        is worse than admitting the answer is unavailable.
+        """
+        if not self._map_width:
+            return None
+        return y * self._map_width + x
 
     def _earning(self) -> dict[str, Any]:
         c = self._company
@@ -124,11 +198,24 @@ class Situation:
             "route_id": route.route_id,
             "vehicle_type": route.vehicle_type,
             "stations": route.station_ids,
+            # The tiles of this route's own stations, so connecting them does not need a
+            # lookup against the station list first. This is the question every unfinished
+            # route poses, and the answer was previously nowhere.
+            "station_tiles": self._tiles_of(route.station_ids),
+            "depot_tile": route.depot_tile or None,
             "vehicles": route.vehicle_count,
             "profit_this_year": route.total_profit_this_year,
             "working": not missing,
             "missing": missing,
         }
+
+    def _tiles_of(self, station_ids: list[int]) -> list[int | None]:
+        by_id = {station.id: station for station in self._stations}
+        return [
+            self._tile(by_id[sid].x, by_id[sid].y)
+            for sid in station_ids
+            if sid in by_id
+        ]
 
     def _problems(self) -> list[dict[str, str]]:
         """What is wrong, in the order worth fixing.
@@ -141,9 +228,13 @@ class Situation:
         for route in self._routes:
             health = self._route_health(route)
             if not health["working"]:
+                tiles = ", ".join(str(t) for t in health["station_tiles"] if t)
                 found.append({
                     "problem": f"route {route.route_id} is unfinished",
-                    "detail": f"it still needs {', '.join(health['missing'])}",
+                    "detail": (
+                        f"it still needs {', '.join(health['missing'])}"
+                        + (f"; its stations are at tiles {tiles}" if tiles else "")
+                    ),
                     "why_it_matters": (
                         "an unfinished route earns nothing while having already cost "
                         "what it cost, so finishing it beats starting another"
@@ -155,7 +246,10 @@ class Situation:
             if station.id not in served:
                 found.append({
                     "problem": f"station {station.name or station.id} serves no route",
-                    "detail": "it has no vehicles calling at it",
+                    "detail": (
+                        f"it has no vehicles calling at it, and it is at tile "
+                        f"{self._tile(station.x, station.y)} ({station.x}, {station.y})"
+                    ),
                     "why_it_matters": "infrastructure without vehicles earns nothing",
                 })
             piled = [c for c in station.cargo_waiting if c.waiting >= _PILING_UP]
