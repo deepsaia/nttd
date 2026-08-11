@@ -63,18 +63,20 @@ def world_panel(
     static: dict[str, Any],
     frames: list[dict[str, Any]],
     title: str,
+    terrain: dict[str, Any] | None = None,
 ) -> str:
-    """The map panel: static world, the latest company state, and a step scrubber."""
+    """The map panel: terrain, the static world, the company, and a step scrubber."""
     width = static.get("width") or 256
     height = static.get("height") or 256
     if not frames:
-        return panel(title, '<div class="ph">no snapshots yet</div>', span="two")
+        return panel(title, '<div class="ph">no snapshots yet</div>', span="one")
 
     latest = frames[-1]
     body = [
         f'<svg viewBox="0 0 {width} {height}" class="wmap" role="img" '
         f'preserveAspectRatio="xMidYMid meet">',
         f'<rect x="0" y="0" width="{width}" height="{height}" class="wbg"/>',
+        _terrain(terrain),
         _industries(static.get("industries") or []),
         _towns(static.get("towns") or []),
         # Rendered server side so the panel is correct with scripting off; the scrubber
@@ -94,7 +96,22 @@ def world_panel(
     )
     body.append(_scrubber(frames))
     body.append(f'<div class="wdata" data-frames="{esc(payload)}"></div>')
-    return panel(title, "".join(body), cid="wmap", span="two")
+    return panel(title, "".join(body), cid="wmap", span="one")
+
+
+def _terrain(terrain: dict[str, Any] | None) -> str:
+    """The height and water raster, drawn as one image under everything else.
+
+    Served from its own route rather than inlined as a data URI: the browser then caches
+    it across the page's ten second refresh, and the terrain does not change.
+    """
+    if not terrain:
+        return ""
+    return (
+        f'<image href="{esc(terrain["url"])}" x="{terrain["x"]}" y="{terrain["y"]}" '
+        f'width="{terrain["width"]}" height="{terrain["height"]}" '
+        f'preserveAspectRatio="none" class="wterrain"/>'
+    )
 
 
 def legend_row() -> str:
@@ -127,8 +144,10 @@ def _industries(industries: list[dict[str, Any]]) -> str:
         x, y = industry.get("x"), industry.get("y")
         if x is None or y is None:
             continue
-        # Raw producers are what a route starts from, so they are the filled ones.
-        opacity = "0.85" if industry.get("raw") else "0.4"
+        # Raw producers are what a route starts from, so they are the filled ones. Both
+        # are opaque enough to read against terrain, which is the whole point of drawing
+        # them over it.
+        opacity = "1" if industry.get("raw") else "0.6"
         out.append(
             f'<rect x="{x - 1}" y="{y - 1}" width="2.4" height="2.4" '
             f'fill="{_INDUSTRY}" opacity="{opacity}">'
@@ -149,7 +168,7 @@ def _towns(towns: list[dict[str, Any]]) -> str:
             continue
         out.append(
             f'<circle cx="{x}" cy="{y}" r="{_town_radius(town, biggest):.2f}" '
-            f'fill="{_TOWN}" opacity="0.55">'
+            f'fill="{_TOWN}" opacity="0.9">'
             f"<title>{esc(town.get('name'))}: {esc(town.get('population'))} people</title>"
             f"</circle>"
         )

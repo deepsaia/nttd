@@ -68,6 +68,15 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
    empty box the height of the whole world view. */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;
  align-items:start;}
+/* One row: charts on the left, and a right-hand column holding the map with the verdicts
+   under it. The column is a fixed width so the map stays a readable square rather than
+   stretching with the window, and it drops under the charts on a narrow screen. */
+.split{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;
+ align-items:start;margin-bottom:12px;}
+.rail{display:flex;flex-direction:column;gap:12px;}
+@media (max-width:1080px){ .split{grid-template-columns:minmax(0,1fr);} }
+/* The two logs, read against each other. */
+.grid.pair{grid-template-columns:repeat(auto-fit,minmax(420px,1fr));}
 .plot{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;}
 .plot.two{grid-column:span 2;}
 .plot.full{grid-column:1/-1;}
@@ -95,21 +104,25 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .mixbar .seg.good{background:var(--good);}
 .mixbar .seg.bad{background:var(--bad);}
 .mixtot{flex:0 0 auto;font-size:11px;color:var(--muted);min-width:44px;text-align:right;}
-/* health: one row per rule that tripped, coloured by how bad it is */
-.health{display:flex;flex-direction:column;gap:8px;}
-.hrow{display:flex;gap:9px;align-items:flex-start;padding:7px 9px;border-radius:8px;
- background:var(--panel2);border-left:3px solid var(--muted);}
+/* health: one line per rule that tripped. The reasoning is the row's tooltip, so four
+   faults stay four lines instead of a paragraph each. */
+.health{display:flex;flex-direction:column;gap:5px;}
+.hrow{display:flex;gap:8px;align-items:baseline;padding:5px 8px;border-radius:7px;
+ background:var(--panel2);border-left:3px solid var(--muted);cursor:help;}
 .hrow.bad{border-left-color:var(--bad);}
 .hrow.warn{border-left-color:var(--warn);}
-.hrow .hbody{min-width:0;}
-.hrule{font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;}
+.hrule{font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;
+ white-space:nowrap;flex:0 0 auto;}
 .hrow.bad .hrule{color:var(--bad);}
 .hrow.warn .hrule{color:var(--warn);}
-.hdetail{font-size:12px;margin-top:1px;}
-.hwhy{font-size:11px;color:var(--muted);margin-top:2px;}
+.hdetail{font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap;}
 /* the top down map */
-.wmap{width:100%;height:auto;max-height:60vh;display:block;border-radius:8px;}
+.wmap{width:100%;height:auto;display:block;border-radius:8px;}
 .wmap .wbg{fill:var(--panel2);}
+/* crisp-edges so a 256 pixel terrain raster scaled up stays a tile grid rather than a
+   blur; the map is data, not a photograph. */
+.wmap .wterrain{image-rendering:pixelated;image-rendering:crisp-edges;}
 .wscrub{display:flex;align-items:center;gap:10px;margin-top:6px;}
 .wslider{flex:1 1 auto;accent-color:var(--accent);cursor:pointer;}
 .wstep{font-size:11px;color:var(--muted);white-space:nowrap;min-width:64px;text-align:right;}

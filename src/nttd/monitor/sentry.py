@@ -33,6 +33,10 @@ class Sentry:
         self._base_url = base_url.rstrip("/")
         self._armed = armed
         self._stopped: set[str] = set()
+        # Reported faults, so a sweep every minute does not repeat the same one forever.
+        # Unarmed, there is nothing to make it stop recurring, and the console filled with
+        # the same three lines until they buried everything else.
+        self._reported: set[tuple[str, str]] = set()
 
     def sweep(self) -> list[dict[str, Any]]:
         """Check every live session once. Returns what it acted on."""
@@ -46,10 +50,14 @@ class Sentry:
             if not worst:
                 continue
             verdict = worst[0]
-            logger.error(
-                "Session %s tripped %s: %s (%s)",
-                session_id, verdict["rule"], verdict["detail"], verdict["why_it_matters"],
-            )
+            seen = (session_id, verdict["rule"])
+            if seen not in self._reported:
+                self._reported.add(seen)
+                logger.error(
+                    "Session %s tripped %s: %s (%s)",
+                    session_id, verdict["rule"], verdict["detail"],
+                    verdict["why_it_matters"],
+                )
             if self._armed and self._stop(session_id):
                 self._stopped.add(session_id)
                 acted.append({"session_id": session_id, "rule": verdict["rule"]})

@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 # since anything happened, which is the only way to tell a stalled run from a slow one.
 _TRACKED = ("snapshots", "actions", "events")
 
+# Silent for an hour with fragments still on disk: whatever was writing is gone. Well past
+# any real step, and past a long pause at a breakpoint, so nothing healthy reaches it.
+ABANDONED_SECONDS = 3600
+
 
 class SessionRegistry:
     """Every session in a sessions directory, newest first."""
@@ -68,6 +72,7 @@ class SessionRegistry:
         """One session's metadata and verdicts, without parsing its whole history."""
         feed = self.feed(session_id)
         meta = feed.meta()
+        self._settle_state(meta)
         health = self.health(feed, meta)
         return {
             "meta": meta,
@@ -77,6 +82,31 @@ class SessionRegistry:
 
     def feed(self, session_id: str) -> SessionFeed:
         return SessionFeed(load_session(session_id, sessions_dir=self._root))
+
+    def state_of(self, meta: dict[str, Any]) -> str:
+        """Whether a session is running, abandoned, or finished.
+
+        Unmerged fragments alone cannot answer this. A session killed uncleanly leaves its
+        fragments behind for good, so it reads as running for as long as the directory
+        exists. Sessions from five days earlier were still being reported live, and the
+        stall rule then shouted about each of them on every sweep.
+
+        Time since the last write settles it. Silent for longer than a step, but not long:
+        stalled, and worth acting on. Silent for an hour: whatever wrote it is gone.
+        """
+        if not meta.get("has_fragments"):
+            return "finished"
+        age = self.age_seconds(meta["session_id"])
+        if age is not None and age >= ABANDONED_SECONDS:
+            return "abandoned"
+        return "running"
+
+    def _settle_state(self, meta: dict[str, Any]) -> None:
+        """Replace the feed's optimistic ``live`` with the settled state."""
+        state = self.state_of(meta)
+        meta["state"] = state
+        meta["live"] = state == "running"
+        meta["age_seconds"] = self.age_seconds(meta["session_id"])
 
     def health(self, feed: SessionFeed, meta: dict[str, Any]) -> Health:
         return Health(

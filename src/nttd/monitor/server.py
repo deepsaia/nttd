@@ -19,10 +19,12 @@ import logging
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 from nttd.monitor.registry import SessionRegistry
 from nttd.monitor.request_handler import MonitorHandler
 from nttd.monitor.sentry import Sentry
+from nttd.monitor.terrain_png import TerrainPng
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,38 @@ class MonitorServer(ThreadingHTTPServer):
         super().__init__(address, MonitorHandler)
         self.registry = registry
         self.session_limit = session_limit
+        self._terrain: dict[str, tuple[int, Any]] = {}
+        self._terrain_lock = threading.Lock()
+
+    def terrain(self, session_id: str) -> tuple[bytes, int, int, int, int] | None:
+        """The session's terrain raster, encoded once and kept.
+
+        Cached because the page asks for it twice per view, once to place it and once to
+        fetch it, and refreshes itself every ten seconds. The key includes the tile count
+        so a terrain delta written mid-session invalidates it rather than serving a stale
+        picture forever.
+
+        Threaded server, so the cache is locked. Two tabs opening the same session at once
+        is the ordinary case, not a rare one.
+        """
+        try:
+            tiles = self.registry.feed(session_id).tiles()
+        except Exception:
+            logger.debug("Could not read tiles for %s", session_id, exc_info=True)
+            return None
+        count = 0 if tiles is None or tiles.is_empty() else len(tiles)
+        if not count:
+            return None
+
+        with self._terrain_lock:
+            cached = self._terrain.get(session_id)
+            if cached is not None and cached[0] == count:
+                return cached[1]
+
+        rendered = TerrainPng(tiles).encode()
+        with self._terrain_lock:
+            self._terrain[session_id] = (count, rendered)
+        return rendered
 
 
 def serve(

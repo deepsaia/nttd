@@ -81,18 +81,37 @@ def session_page(
     feed: SessionFeed,
     meta: dict[str, Any],
     verdicts: list[dict[str, str]],
+    terrain: dict[str, Any] | None = None,
 ) -> str:
-    """One session: headline figures, health, the map, the charts, and the logs."""
+    """One session: headline figures, then charts beside the map, then the logs.
+
+    Three bands rather than one grid.
+
+    The first band is one row: the charts on the left, and at the right edge the map with
+    the verdicts directly under it. Those two answer the same question, what this run looks
+    like and what is wrong with it, so they stay together in one column and in one glance
+    rather than a scroll.
+
+    The two logs sit last, side by side, because they are read against each other: an
+    action and the event it caused.
+    """
     steps = feed.steps()
     body = [_sidebar(entries, meta["session_id"]), '<div class="main">']
     body.append(_session_header(meta))
     body.append(_session_cards(meta, verdicts))
     body.append(_meta_strip(meta))
+
+    body.append('<div class="split">')
     body.append('<div class="grid">')
-    body.append(_health_panel(verdicts))
-    body.append(world_panel(feed.static_world(), feed.dynamic_world(), "World"))
     body.extend(_charts(steps))
     body.append(mix_bars("mix", feed.action_mix(), "Actions attempted, and how they went"))
+    body.append("</div>")
+    body.append('<div class="rail">')
+    body.append(world_panel(feed.static_world(), feed.dynamic_world(), "World", terrain))
+    body.append(_health_panel(verdicts))
+    body.append("</div></div>")
+
+    body.append('<div class="grid pair">')
     body.append(_action_table(feed))
     body.append(_event_table(feed))
     body.append("</div></div>")
@@ -141,7 +160,7 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
     for entry in entries:
         meta, health = entry["meta"], entry["health"]
         rows.append([
-            ("running" if meta["live"] else meta["status"] or "ended"),
+            _state_label(meta),
             meta["name"],
             meta["scenario"] or "-",
             meta["seed"] or "-",
@@ -211,20 +230,21 @@ def _meta_strip(meta: dict[str, Any]) -> str:
 
 
 def _health_panel(verdicts: list[dict[str, str]]) -> str:
+    """The verdicts, kept to one line each.
+
+    The reasoning is on the row's tooltip rather than on the page. It is the part worth
+    having and the part worth reading once: printed in full it turned a list of four
+    faults into a wall of prose beside the map, and a wall is not read at all.
+    """
     if not verdicts:
-        return panel(
-            "Health",
-            '<div class="ph">Nothing has tripped. The run is building, buying and '
-            "spending in a shape that can score.</div>",
-        )
+        return panel("Health", '<div class="ph">Nothing has tripped.</div>')
     rows = ['<div class="health">']
     for verdict in verdicts:
         rows.append(
-            f'<div class="hrow {esc(verdict["level"])}"><div class="hbody">'
-            f'<div class="hrule">{esc(verdict["rule"])}</div>'
-            f'<div class="hdetail">{esc(verdict["detail"])}</div>'
-            f'<div class="hwhy">{esc(verdict["why_it_matters"])}</div>'
-            f"</div></div>"
+            f'<div class="hrow {esc(verdict["level"])}" '
+            f'title="{esc(verdict["why_it_matters"])}">'
+            f'<span class="hrule">{esc(verdict["rule"])}</span>'
+            f'<span class="hdetail">{esc(verdict["detail"])}</span></div>'
         )
     rows.append("</div>")
     return panel("Health", "".join(rows))
@@ -290,7 +310,7 @@ def _action_table(feed: SessionFeed) -> str:
     ]
     return table(
         ["game date", "action", "status", "error"], rows,
-        "Actions, newest first", "nothing submitted yet",
+        "Actions, newest first", "nothing submitted yet", span="one",
     )
 
 
@@ -302,8 +322,23 @@ def _event_table(feed: SessionFeed) -> str:
     ]
     return table(
         ["game date", "event", "detail"], rows,
-        "Game events, newest first", "no events recorded",
+        "Game events, newest first", "no events recorded", span="one",
     )
+
+
+def _state_label(meta: dict[str, Any]) -> str:
+    """Running, abandoned, or however it ended.
+
+    Abandoned is its own word on purpose. A session whose fragments were never merged
+    looked identical to one still playing, which is how sessions from days earlier kept
+    being reported as live.
+    """
+    state = meta.get("state")
+    if state == "running":
+        return "running"
+    if state == "abandoned":
+        return "abandoned"
+    return meta.get("status") or "ended"
 
 
 def _session_link(session_id: str) -> str:

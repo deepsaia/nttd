@@ -53,10 +53,19 @@ class SessionFeed:
         company = self._company(last)
         return {
             "session_id": data.session_id,
-            "name": data.name or data.session_id,
+            # The company's own generated name, which is what identifies a run: the
+            # session's name is the scenario slot it filled, and four concurrent runs of
+            # one scenario all carry the same one.
+            "name": company.get("name") or data.name or data.session_id,
+            "session_name": data.name or data.session_id,
             "scenario": data.config_name,
             "model": data.model,
             "status": data.status,
+            # Unmerged fragments mean "running OR stopped uncleanly", which is not the
+            # same as live. Whether it is actually live depends on how long ago it last
+            # wrote, and only the registry knows that, so it decides. Reporting this as
+            # "live" made sessions abandoned days ago trip the stall rule forever.
+            "has_fragments": data.is_in_progress,
             "live": data.is_in_progress,
             "end_reason": data.end_reason,
             "minutes": round(data.duration_minutes, 1),
@@ -157,6 +166,14 @@ class SessionFeed:
                 ],
             })
         return frames
+
+    def tiles(self) -> Any:
+        """The recorded terrain grid, for the map's base image.
+
+        Empty for any session whose scan failed or predates it being captured, which the
+        map handles by drawing the objects on a bare canvas.
+        """
+        return self._data.tiles
 
     def actions(self) -> list[dict[str, Any]]:
         """Every action submitted, newest first, with why it was refused."""
