@@ -23,6 +23,7 @@ from nttd.schemas.station import Station
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Vehicle
 from nttd.state.route_planner import RoutePlanner
+from nttd.state.situation import Situation
 
 router = APIRouter(prefix="/sessions/{session_id}/state", tags=["observation"])
 
@@ -64,6 +65,29 @@ async def get_stations(session_id: str) -> list[Station]:
 async def get_vehicles(session_id: str) -> list[Vehicle]:
     runtime = deps.get_runtime(session_id)
     return list(runtime.world.vehicles.values())
+
+
+@router.get("/situation")
+async def get_situation(session_id: str, company_id: int = 0) -> dict[str, Any]:
+    """Where the company stands: money, what is built, what earns, and what is wrong.
+
+    Arithmetic, not description. An agent that derives these from a raw observation
+    spends a model call on counting and can get it wrong, which is a way for a good
+    decision-maker to look bad at a benchmark meant to measure judgement.
+
+    ``problems`` is the part worth reading first. Each entry says what is wrong, the
+    detail, and why it matters, and every one is actionable: an unfinished route, a
+    station nothing calls at, cargo piling up faster than it clears, a vehicle with no
+    orders, a vehicle old enough that losing money means the route rather than settling.
+    """
+    runtime = deps.get_runtime(session_id)
+    world = runtime.world
+    return Situation(
+        company=world.companies.get(company_id),
+        stations=[s for s in world.stations.values() if s.company_id == company_id],
+        vehicles=[v for v in world.vehicles.values() if v.company_id == company_id],
+        routes=[r for r in world._derive_routes() if r.company_id == company_id],
+    ).report()
 
 
 @router.get("/routes")
