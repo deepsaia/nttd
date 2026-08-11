@@ -1,0 +1,99 @@
+"""The monitor server: localhost bound, standard library only.
+
+    nttd monitor
+
+Deliberately not part of the API server. The monitor reads session directories from disk
+and needs nothing from the running game, so it works on an ended session, on a session
+whose server has already exited, and on a copy of a session directory from another
+machine. Bolting it onto the API would have tied a reading tool to a running process for
+no gain, and would have put a browser facing page inside the surface contestants
+authenticate against.
+
+Bound to the loopback address by default. This page carries a whole run's telemetry and
+has no authentication, so it is not something to expose without meaning to.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+from nttd.monitor.registry import SessionRegistry
+from nttd.monitor.request_handler import MonitorHandler
+from nttd.monitor.sentry import Sentry
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_PORT = 4281
+DEFAULT_HOST = "127.0.0.1"
+
+# How often the sentry re-reads every live session. Frequent enough that a stall is
+# caught within a step or two of the threshold, rare enough to stay invisible next to the
+# game itself.
+SWEEP_SECONDS = 60
+
+
+class MonitorServer(ThreadingHTTPServer):
+    """A server carrying the configuration its handlers read."""
+
+    daemon_threads = True
+
+    def __init__(
+        self,
+        address: tuple[str, int],
+        registry: SessionRegistry,
+        session_limit: int,
+    ) -> None:
+        super().__init__(address, MonitorHandler)
+        self.registry = registry
+        self.session_limit = session_limit
+
+
+def serve(
+    sessions_dir: Path | None = None,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    session_limit: int = 40,
+    base_url: str = "http://127.0.0.1:8000",
+    stop_on_anomaly: bool = False,
+) -> None:
+    """Serve the monitor until interrupted."""
+    registry = SessionRegistry(sessions_dir)
+    server = MonitorServer((host, port), registry, session_limit)
+
+    sentry = Sentry(registry, base_url=base_url, armed=stop_on_anomaly)
+    stopping = threading.Event()
+    watcher = threading.Thread(
+        target=_sweep_forever, args=(sentry, stopping), daemon=True,
+    )
+    watcher.start()
+
+    logger.info("Monitor reading sessions from %s", registry.root)
+    logger.info("Monitor serving http://%s:%d", host, port)
+    if stop_on_anomaly:
+        logger.warning(
+            "Armed: a live session tripping a bad rule will be stopped through %s",
+            base_url,
+        )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("Monitor stopped")
+    finally:
+        stopping.set()
+        server.server_close()
+
+
+def _sweep_forever(sentry: Sentry, stopping: threading.Event) -> None:
+    """Run the sentry until the server shuts down.
+
+    Every sweep is wrapped: this thread outliving a transient read error matters more
+    than any single sweep succeeding, and a dead watcher thread is silent.
+    """
+    while not stopping.wait(SWEEP_SECONDS):
+        try:
+            sentry.sweep()
+        except Exception:
+            logger.debug("Sentry sweep failed", exc_info=True)
