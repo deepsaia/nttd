@@ -2,6 +2,8 @@
 
 Change the world. These cost money, take effect in the game, and are recorded against your company.
 
+**These are submitted as actions**, through `POST /actions/submit` in real-time play or in a step's batch. Anything on the [observations page](observations.md) is a query instead, asked a different way.
+
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
 Part of the [action reference](../action_reference.md). 77 of 130 actions.
 

@@ -2,6 +2,10 @@
 
 Read the world. These cost nothing, change nothing, and can be repeated freely.
 
+**These are queries, and they are not submitted as actions.** Ask one with `POST /state/gs/query`, body `{"action": "get_stations", "params": {}}`. Submitting one as an action is refused, because a query endpoint that also executed actions would be a way around the action allowlist, and that hole was real: `set_max_loan` once raised a scored company's credit ceiling from 300,000 to 9,000,000 through it.
+
+The distinction is worth reading once rather than discovering. An agent that submitted `get_hangars` as an action spent two of its five actions on it, never found its hangar, and could then not buy the aircraft it was for.
+
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
 Part of the [action reference](../action_reference.md). 44 of 130 actions.
 

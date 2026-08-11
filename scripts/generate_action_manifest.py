@@ -59,14 +59,26 @@ _TIER_SECTIONS = [
         "read_only",
         "observations",
         "Observations",
-        "Read the world. These cost nothing, change nothing, and can be repeated freely.",
+        "Read the world. These cost nothing, change nothing, and can be repeated freely.\n\n"
+        "**These are queries, and they are not submitted as actions.** Ask one with "
+        "`POST /state/gs/query`, body `{\"action\": \"get_stations\", \"params\": {}}`. "
+        "Submitting one as an action is refused, because a query endpoint that also "
+        "executed actions would be a way around the action allowlist, and that hole was "
+        "real: `set_max_loan` once raised a scored company's credit ceiling from 300,000 "
+        "to 9,000,000 through it.\n\n"
+        "The distinction is worth reading once rather than discovering. An agent that "
+        "submitted `get_hangars` as an action spent two of its five actions on it, never "
+        "found its hangar, and could then not buy the aircraft it was for.",
     ),
     (
         "participant",
         "actions",
         "Actions",
         "Change the world. These cost money, take effect in the game, and are recorded "
-        "against your company.",
+        "against your company.\n\n"
+        "**These are submitted as actions**, through `POST /actions/submit` in real-time "
+        "play or in a step's batch. Anything on the "
+        "[observations page](observations.md) is a query instead, asked a different way.",
     ),
 ]
 
@@ -552,7 +564,8 @@ def _markdown(manifest: dict[str, Any]) -> str:
         "| Reference | Count | What it is |",
         "| --- | --- | --- |",
         f"| [Observations](actions/observations.md) | {counts['read_only']} "
-        "| Read the world. Changes nothing. |",
+        "| Read the world. Changes nothing. Asked with `POST /state/gs/query`, never "
+        "submitted as an action. |",
         f"| [Actions](actions/actions.md) | {counts['participant']} "
         "| Change the world. This is play. |",
         "",

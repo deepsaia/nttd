@@ -19,7 +19,7 @@ reading the detail pages below.
 
 | Reference | Count | What it is |
 | --- | --- | --- |
-| [Observations](actions/observations.md) | 44 | Read the world. Changes nothing. |
+| [Observations](actions/observations.md) | 44 | Read the world. Changes nothing. Asked with `POST /state/gs/query`, never submitted as an action. |
 | [Actions](actions/actions.md) | 77 | Change the world. This is play. |
 
 One caveat worth stating plainly: `get_cargo_flows` is filed as an observation
