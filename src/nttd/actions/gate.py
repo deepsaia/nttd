@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
+from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS, READ_ONLY_GS_ACTIONS
 from nttd.schemas.action_result import ActionStatus
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,17 @@ _OPERATOR_TIER_REASON = (
     "available for play. See the operator tier for scenario authoring."
 )
 
+# A read-only command reaches the GameScript through the query endpoint and is deliberately
+# not an action, so the allowlist cannot be routed around. Saying only "unknown" was a lie
+# about something that exists, dispatches, and works: an air run spent two of its five
+# actions submitting get_hangars, never found its hangar, and its one buy_vehicle then
+# failed for want of one. The name of the door is the whole content of the fix.
+_READ_ONLY_REASON = (
+    "{action} is a read-only query, not an action. It exists, but it is answered by "
+    "POST /state/gs/query with {{\"action\": \"{action}\", \"params\": {{...}}}}, and "
+    "queries are never submitted as actions. Nothing was changed and nothing was spent."
+)
+
 
 def admit(action_type: str, company_id: int) -> Admission:
     """Decide whether one submission may execute.
@@ -72,6 +83,13 @@ def admit(action_type: str, company_id: int) -> Admission:
             allowed=False,
             status=ActionStatus.REJECTED,
             error=_OPERATOR_TIER_REASON.format(action=action_type),
+        )
+
+    if action_type in READ_ONLY_GS_ACTIONS:
+        return Admission(
+            allowed=False,
+            status=ActionStatus.REJECTED,
+            error=_READ_ONLY_REASON.format(action=action_type),
         )
 
     if action_type not in KNOWN_ACTIONS:
