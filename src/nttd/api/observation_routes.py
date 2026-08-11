@@ -22,6 +22,7 @@ from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.station import Station
 from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Vehicle
+from nttd.state.route_planner import RoutePlanner
 
 router = APIRouter(prefix="/sessions/{session_id}/state", tags=["observation"])
 
@@ -63,6 +64,45 @@ async def get_stations(session_id: str) -> list[Station]:
 async def get_vehicles(session_id: str) -> list[Vehicle]:
     runtime = deps.get_runtime(session_id)
     return list(runtime.world.vehicles.values())
+
+
+@router.get("/routes")
+async def get_route_candidates(
+    session_id: str,
+    agent_type: str = "general",
+    compact: bool = False,
+    company_id: int = 0,
+) -> dict[str, Any]:
+    """Which routes are worth building, ranked.
+
+    Producer-to-consumer cargo pairs with distance and monthly production, town pairs
+    scored by demand, which modes could serve each, and which you already serve.
+
+    This existed and was unreachable. ``RoutePlanner.for_agent`` has a docstring saying
+    it is for "the live agent observation pipeline", and its only importers were two
+    offline report generators, so the one component built to tell an agent which routes
+    pay was used exclusively to draw charts after the fact.
+
+    Args:
+        agent_type: Filter to what one mode can serve: road, rail, air, water, or
+            general for everything.
+        compact: Shorter field names and fewer items, for a smaller prompt.
+        company_id: Whose existing routes count as already served.
+
+    A route offered for water carries ``water_confirmed``. False means the water has not
+    been checked rather than that it is absent: ask ``find_dock_spots``, which dry-runs
+    the build inside the game.
+    """
+    runtime = deps.get_runtime(session_id)
+    planner = RoutePlanner(
+        industries=list(runtime.world.industries.values()),
+        towns=list(runtime.world.towns.values()),
+        stations=list(runtime.world.stations.values()),
+        # The same source the snapshot uses. WorldState holds no route dictionary:
+        # a route is reconciled from vehicle orders, so it is derived rather than stored.
+        routes=runtime.world._derive_routes(),
+    )
+    return planner.for_agent(company_id, agent_type=agent_type, compact=compact)
 
 
 @router.get("/compact", response_model=CompactSnapshot)

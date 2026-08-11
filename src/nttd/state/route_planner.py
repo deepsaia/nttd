@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 ROAD_MAX_DISTANCE = 80
 AIR_MIN_DISTANCE = 100
 
+# Ships are slow, so a long water route is hundreds of game-days at no revenue before
+# the first delivery. Beyond this a route is not worth suggesting even where the water
+# exists.
+WATER_MAX_DISTANCE = 60
+
 # Maps agent_type -> set of transport mode strings that agent operates
 AGENT_MODE_FILTER: dict[str, set[str]] = {
     "road": {"road"},
@@ -37,23 +42,35 @@ def manhattan(x1: int, y1: int, x2: int, y2: int) -> int:
 
 def classify_transport_modes(
     distance: int,
-    has_water_src: bool,
-    has_water_dst: bool,
+    docks_at_src: bool,
+    docks_at_dst: bool,
     cargo: str,
 ) -> list[str]:
-    """Determine suitable transport modes for a route.
+    """Which transport modes could serve this route.
 
     Args:
         distance: Manhattan distance in tiles.
-        has_water_src: Whether source endpoint has water access.
-        has_water_dst: Whether destination endpoint has water access.
-        cargo: Cargo label (e.g. "COAL", "PASS").
+        docks_at_src: A dock already stands near the source.
+        docks_at_dst: A dock already stands near the destination.
+        cargo: Cargo label, for example ``COAL`` or ``PASS``.
+
+    Water used to be offered only when a dock already stood near BOTH endpoints, which
+    is circular: docks are built from stations, so on turn one no route was ever
+    suggested for water and a water agent was told there was nothing to do. It was also
+    the wrong question. Whether a ship can serve a pair is a fact about the terrain, and
+    the arguments named it ``has_water_src`` while measuring existing infrastructure.
+
+    This planner has no terrain, so it does not pretend to answer it. Water is offered
+    wherever a ship route would be short enough to be worth it, and ``find_dock_spots``
+    settles whether the water is really there: it dry-runs the build inside the game,
+    which is the only answer that counts. Existing docks still appear, as
+    ``water_confirmed``, because a pair that already has them needs no checking.
     """
     modes: list[str] = []
     if distance <= ROAD_MAX_DISTANCE:
         modes.append("road")
     modes.append("rail")
-    if has_water_src and has_water_dst:
+    if distance <= WATER_MAX_DISTANCE or (docks_at_src and docks_at_dst):
         modes.append("water")
     if distance >= AIR_MIN_DISTANCE and cargo in ("PASS", "MAIL", "VALU"):
         modes.append("air")
@@ -163,6 +180,9 @@ class RoutePlanner:
                         "transport_modes": classify_transport_modes(
                             dist, water_src, water_dst, cargo_label,
                         ),
+                        # Whether a ship route is already proven at both ends. False
+                        # means "ask find_dock_spots", not "impossible".
+                        "water_confirmed": water_src and water_dst,
                     })
 
         result.sort(key=lambda r: r["distance"])
