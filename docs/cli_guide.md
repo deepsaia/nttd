@@ -418,6 +418,48 @@ uv run nttd analyze -s ses_... --compare ses_other --open
 Generates reports from the session's Parquet files. See
 [session_analyzer.md](session_analyzer.md).
 
+Works on a session that is still running: nttd writes a snapshot fragment per step, and
+the read path uses fragments until they are merged.
+
+---
+
+### `nttd monitor`
+
+```bash
+uv run nttd monitor                        # then open http://127.0.0.1:4281
+uv run nttd monitor --limit 10 --port 4300
+uv run nttd monitor --stop-on-anomaly
+```
+
+A dashboard per session, in a browser, while the session runs. One page listing every
+session and one page per session with its charts, a top-down map with a step scrubber, its
+action log, the game's events, and a health panel.
+
+Reads session directories from disk, so it needs nothing running: it works on a live
+session, on a finished one, and on a session directory copied from another machine. Bound
+to localhost, because the page carries a whole run's telemetry and has no authentication.
+
+**Health** names what has gone wrong and why it matters, rather than leaving it to be
+noticed. Every rule was written against a run that failed silently:
+
+| rule | trips when |
+|---|---|
+| `stalled` | a live session has written nothing for 7 minutes |
+| `not acting` | fewer than one action every four steps |
+| `nothing built` | 10 steps gone and no stations |
+| `no vehicles` | 14 steps gone, stations built, nothing bought |
+| `stations not served` | two or more stations with nothing calling at them |
+| `refusal loop` | one action refused 5 times |
+| `overdrawn` | the balance has gone below zero |
+
+`--stop-on-anomaly` stops a live session that trips a `bad` rule, through the same
+operator endpoint as `nttd session stop`. Off by default: a false positive on a two hour
+tier is expensive, so arming it is deliberate. It never touches the contestant's own
+process, which nttd does not own.
+
+The map is not the game's rendering. It plots what the snapshot already carries, since
+every town, industry, station and vehicle in it has an `x` and a `y`.
+
 ---
 
 ## Scenario configuration
