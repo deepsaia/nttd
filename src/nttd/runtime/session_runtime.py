@@ -32,6 +32,13 @@ _CONNECT_POLL_INTERVAL = 0.5  # seconds between connection attempts
 _CONNECT_MAX_WAIT = 15.0  # max seconds to wait for server to start
 _SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for graceful shutdown
 
+# Tiles per band when scanning the map at session start. The handler's own ceiling is
+# 20,000, and asking for it means the fewest round trips: a 256 square map is four bands
+# rather than seventeen at the handler's default. This is nttd reading its own game over a
+# local socket with no agent waiting, which is the one caller for which a big band is the
+# right trade.
+_TILE_SCAN_BAND = 20000
+
 
 class SessionRuntime:
     """Bundles all per-session objects and the OpenTTD server process."""
@@ -278,19 +285,60 @@ class SessionRuntime:
         return applied
 
     async def _capture_tiles(self) -> None:
-        """Capture full tile terrain data in the background."""
+        """Capture the full tile grid in the background, one band at a time.
+
+        ``get_map_terrain`` is bounded, because a single unbounded reply for a 256 square
+        map measured 524 KB and 7.2 seconds and a larger map simply timed out. It answers
+        a band of whole rows, says whether it cut the band short, and says which row to
+        resume from.
+
+        This has to page, and for a while it did not. When the handler was bounded its
+        reply changed from a list of rows to a table carrying those rows, the check here
+        still asked whether the reply was a list, and so every session recorded no terrain
+        at all. Nothing failed loudly: the warning went to a log nobody was reading, and
+        the missing file only showed up much later as an empty terrain report and a
+        monitor map with nothing under it.
+
+        Deltas are appended after terrain changes, so the scan is written in one piece at
+        the end rather than a band at a time, which would leave a partial grid on disk
+        looking like a complete one.
+        """
+        rows: list[dict[str, Any]] = []
+        from_y = 1
         try:
-            result = await self.admin_client.send_gamescript(
-                "get_map_terrain", {}, timeout=60.0,
-            )
-            if result.get("success") and isinstance(result.get("result"), list):
-                count = self.tile_writer.write_full_scan(result["result"])
-                logger.info("Tile capture complete for session %s: %d tiles", self.session_id, count)
-            else:
-                logger.warning(
-                    "Tile capture failed for session %s: %s",
-                    self.session_id, result.get("error", "unknown"),
+            while True:
+                reply = await self.admin_client.send_gamescript(
+                    "get_map_terrain",
+                    {"from_y": from_y, "max_tiles": _TILE_SCAN_BAND},
+                    timeout=60.0,
                 )
+                band = reply.get("result")
+                if not reply.get("success") or not isinstance(band, dict):
+                    logger.warning(
+                        "Tile capture failed for session %s at row %d: %s",
+                        self.session_id, from_y, reply.get("error", "unknown"),
+                    )
+                    return
+                rows.extend(band.get("rows") or [])
+                if not band.get("truncated"):
+                    break
+                next_from_y = band.get("next_from_y")
+                if not isinstance(next_from_y, int) or next_from_y <= from_y:
+                    # Without this the loop would ask for the same band forever. A
+                    # handler that says it truncated but cannot say where to resume is a
+                    # bug there, not a reason to spin here.
+                    logger.warning(
+                        "Tile capture for session %s stopped at row %d: no usable "
+                        "next_from_y", self.session_id, from_y,
+                    )
+                    break
+                from_y = next_from_y
+
+            count = self.tile_writer.write_full_scan(rows)
+            logger.info(
+                "Tile capture complete for session %s: %d tiles over %d rows",
+                self.session_id, count, len(rows),
+            )
         except Exception:
             logger.exception("Tile capture error for session %s", self.session_id)
 
