@@ -60,7 +60,23 @@ That is the whole required surface. Everything below is detail.
 ## Observing
 
 `GET /state/full` returns the **complete entitled game state**: towns, industries,
-subsidies, the map, and all of your own company's entities. Not rival internals.
+subsidies, and all of your own company's entities, each as a point on the map. Not rival
+internals.
+
+**It contains no terrain.** Measured on a 256x256 world, a full observation is about
+13 KB and holds not one tile of ground. That is not a gap: an agent does not need a
+picture of the map, and could not hold one anyway. Where something will actually fit is
+answered by the `find_*` family, which dry-runs the real build inside the game, so a tile
+one returns is a tile the game has already agreed to.
+
+If you do want ground, `get_map_terrain` reports a band of it and is bounded by
+`max_tiles` at every map size, telling you when it cut the band short and where to
+resume. Reading a whole map is not a reasonable request: 256x256 is over half a megabyte,
+roughly 389,000 tokens.
+
+`GET /state/routes` answers the question most agents actually have: which producer and
+consumer pairs are unserved, which town pairs have demand, how far apart they are, and
+which transport modes could serve each. Filter it with `agent_type` to one mode.
 
 It is deliberately not filtered for you. Deciding what matters is part of the task, so
 nttd hands over everything and leaves filtering to your code: that is where it belongs
