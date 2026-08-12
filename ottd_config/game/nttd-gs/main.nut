@@ -314,25 +314,90 @@ class NttdGS extends GSController {
   // Response sending: automatic chunking for large arrays
   // ---------------------------------------------------------------------------
 
-  function _SendResponse(id, result) {
-    if ("success" in result && result.success &&
-        "result" in result && result.result != null &&
-        typeof result.result == "array" && result.result.len() > this.CHUNK_SIZE) {
+  // Roughly how many characters of JSON fit in one admin packet. The real limit is
+  // about 1400 bytes; this leaves room for the envelope and for the estimate being an
+  // estimate rather than a serialisation.
+  BUDGET = 1000;
 
-      local arr = result.result;
-      local total = ((arr.len() - 1) / this.CHUNK_SIZE) + 1;
-
-      for (local ci = 0; ci < total; ci++) {
-        local start = ci * this.CHUNK_SIZE;
-        local end = start + this.CHUNK_SIZE;
-        if (end > arr.len()) end = arr.len();
-
-        local chunk = [];
-        for (local i = start; i < end; i++) chunk.append(arr[i]);
-
-        GSAdmin.Send({ id = id, success = true, result = chunk, _chunk = ci, _total = total });
+  // An approximate serialised size, walking the structure. Squirrel has no json encoder,
+  // and the whole point is to decide BEFORE encoding, so this counts characters the way
+  // an encoder would spend them. Depth is bounded because a cyclic structure would
+  // otherwise hang the game.
+  function _ApproxSize(value, depth) {
+    if (depth > 6) return 8;
+    local kind = typeof value;
+    if (kind == "array") {
+      local total = 2;
+      foreach (item in value) total += this._ApproxSize(item, depth + 1) + 1;
+      return total;
+    }
+    if (kind == "table") {
+      local total = 2;
+      foreach (key, item in value) {
+        total += key.len() + 3 + this._ApproxSize(item, depth + 1) + 1;
       }
-      return;
+      return total;
+    }
+    if (kind == "string") return value.len() + 2;
+    if (kind == "bool") return 5;
+    if (kind == "null") return 4;
+    return 8;   // a number, generously
+  }
+
+  // The array a reply is mostly made of, if it has one, and how big it is. A handler may
+  // return the array directly as `result`, or a table carrying it under one key alongside
+  // some scalars, which is what get_map_terrain does with `rows` and find_station_spot
+  // with `spots`.
+  //
+  // The size comes back with the key so the caller does not walk the same structure
+  // twice. This runs on every reply, including the largest one in the system, and
+  // measuring it is not free.
+  function _Bulk(result) {
+    if (typeof result == "array") {
+      return { key = null, arr = result, size = this._ApproxSize(result, 0) };
+    }
+    if (typeof result != "table") return { key = null, arr = null, size = 0 };
+    local best = null;
+    local best_arr = null;
+    local best_size = 0;
+    foreach (key, value in result) {
+      if (typeof value != "array") continue;
+      local size = this._ApproxSize(value, 0);
+      if (size > best_size) { best = key; best_arr = value; best_size = size; }
+    }
+    return { key = best, arr = best_arr, size = best_size };
+  }
+
+  function _SendResponse(id, result) {
+    // Chunk on SIZE, not on shape.
+    //
+    // This used to chunk only when `result.result` was an array. Every handler that
+    // returns a table instead, with the bulk of the reply nested inside it, therefore
+    // sent the whole thing in one packet. get_map_terrain is the worst case: a single
+    // row of a 256 wide map is about 2000 characters, so no band size was ever safe. The
+    // oversized packet desynced the admin stream, and once that happened every later
+    // reply was lost or delivered to the wrong caller, which is what made action results
+    // intermittently wrong. Measured at 247,869 unparseable packets in one session.
+    if ("success" in result && result.success &&
+        "result" in result && result.result != null) {
+
+      local payload = result.result;
+      local bulk = this._Bulk(payload);
+
+      if (bulk.arr != null && bulk.size > this.BUDGET) {
+        // Everything except the bulk array travels with the first chunk, so a table
+        // reply keeps its metadata. get_map_terrain's truncated and next_from_y are the
+        // reason: an answer that lost them would look complete when it was not.
+        local meta = null;
+        if (bulk.key != null) {
+          meta = {};
+          foreach (key, value in payload) {
+            if (key != bulk.key) meta.rawset(key, value);
+          }
+        }
+        this._SendChunked(id, bulk.arr, bulk.key, meta);
+        return;
+      }
     }
 
     local resp = { id = id };
@@ -342,6 +407,47 @@ class NttdGS extends GSController {
     if ("error_category" in result) resp.rawset("error_category", result.error_category);
     if ("result" in result && result.result != null) resp.rawset("result", result.result);
     GSAdmin.Send(resp);
+  }
+
+  // Split one array across as many packets as its size needs.
+  //
+  // By size rather than by a fixed count, because elements differ by orders of
+  // magnitude: a station spot is a few hundred characters and a terrain row is a few
+  // thousand. A fixed count of ten was safe for the first and never for the second.
+  //
+  // An element larger than the budget on its own still goes alone in its packet. That is
+  // the best this layer can do; a handler returning such an element has to divide it
+  // itself, which is what get_map_terrain's max_tiles is for.
+  function _SendChunked(id, arr, bulk_key, meta) {
+    local groups = [];
+    local current = [];
+    local current_size = 0;
+    foreach (item in arr) {
+      local size = this._ApproxSize(item, 0) + 1;
+      if (current.len() > 0 && current_size + size > this.BUDGET) {
+        groups.append(current);
+        current = [];
+        current_size = 0;
+      }
+      current.append(item);
+      current_size += size;
+    }
+    if (current.len() > 0) groups.append(current);
+    if (groups.len() == 0) groups.append([]);
+
+    for (local ci = 0; ci < groups.len(); ci++) {
+      local packet = {
+        id = id, success = true, result = groups[ci],
+        _chunk = ci, _total = groups.len(),
+      };
+      // The shape is announced once. The reader rebuilds the table from it, and a reply
+      // whose result was a plain array carries neither key, so it merges as before.
+      if (ci == 0 && bulk_key != null) {
+        packet.rawset("_key", bulk_key);
+        if (meta != null) packet.rawset("_meta", meta);
+      }
+      GSAdmin.Send(packet);
+    }
   }
 
   // ---------------------------------------------------------------------------

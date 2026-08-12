@@ -254,6 +254,21 @@ class AdminClient:
             self._gs_events.pop(correlation_id, None)
             self._gs_totals.pop(correlation_id, None)
 
+        return self._merge_chunks(correlation_id)
+
+    def _merge_chunks(self, correlation_id: str) -> dict[str, Any]:
+        """Rebuild one reply from the packets it arrived in.
+
+        A large reply is split by the GameScript to stay under the roughly 1400 byte
+        admin packet limit. Two shapes come back. A reply that was a plain array merges
+        into a list, which is what nearly every handler returns. A reply whose bulk was
+        nested inside a table announces the key it was split on, and carries the table's
+        other fields, so the table can be put back together.
+
+        Carrying that metadata is not a nicety: a terrain band that lost its ``truncated``
+        and ``next_from_y`` would look complete when it was not, and the caller would stop
+        paging halfway through the map.
+        """
         chunks = self._gs_responses.pop(correlation_id, [])
         if not chunks:
             return {"id": correlation_id, "success": False, "error": "empty"}
@@ -270,7 +285,14 @@ class AdminClient:
             else:
                 merged_result.append(result)
 
-        return {"id": correlation_id, "success": chunks[0].get("success", True), "result": merged_result}
+        success = chunks[0].get("success", True)
+        bulk_key = chunks[0].get("_key")
+        if bulk_key:
+            rebuilt = dict(chunks[0].get("_meta") or {})
+            rebuilt[bulk_key] = merged_result
+            return {"id": correlation_id, "success": success, "result": rebuilt}
+
+        return {"id": correlation_id, "success": success, "result": merged_result}
 
     def _handle_client_command(self, packet: CmdLoggingPacket) -> None:
         """Turn a logged client command into a dict the recorder can write.
