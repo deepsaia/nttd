@@ -47,6 +47,12 @@ _ACTIONS_SCHEMA = pa.schema([
     ("action_type", pa.string()),
     ("status", pa.string()),
     ("error", pa.string()),
+    # The stable name and number behind the message. The message now carries a worked out
+    # reason that names tiles and rail types, which is what an agent needs and what makes
+    # it useless as a grouping key: every refusal reads as unique. Reports group on the
+    # name and show the message.
+    ("error_name", pa.string()),
+    ("error_code", pa.int32()),
     ("parameters_json", pa.string()),
     ("submitted_at", pa.timestamp("us")),
     # How the action reached the game. "api" is a submission through nttd; "client"
@@ -292,6 +298,8 @@ class SessionRecorder:
             "action_type": envelope.action_type,
             "status": str(result.status),
             "error": result.error or "",
+            "error_name": result.error_name or "",
+            "error_code": result.error_code if result.error_code is not None else 0,
             "parameters_json": json.dumps(envelope.parameters, default=str),
             "submitted_at": submitted_at or datetime.now(timezone.utc),
             "source": SOURCE_API,
@@ -320,6 +328,8 @@ class SessionRecorder:
             "action_type": str(command.get("command", "unknown")),
             "status": ActionStatus.SUCCESS.value,
             "error": "",
+            "error_name": "",
+            "error_code": 0,
             "parameters_json": "",
             "submitted_at": datetime.now(timezone.utc),
             "source": SOURCE_CLIENT,

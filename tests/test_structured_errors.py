@@ -105,8 +105,12 @@ class TestTheGameScriptSendsThem:
 
     def test_refusals_go_through_one_helper(self, gamescript: str) -> None:
         """96 sites returned the bare string. Left as they were, each would have needed
-        remembering separately."""
-        assert "function _Refused()" in gamescript
+        remembering separately.
+
+        The helper takes an optional hint now, so that a handler which knows its tile can
+        have the refusal explained. The default keeps every existing call site working.
+        """
+        assert "function _Refused(hint = null)" in gamescript
         assert "return { success = false, error = GSError.GetLastErrorString() };" not in gamescript
 
     def test_the_helper_reads_all_three(self, gamescript: str) -> None:

@@ -405,6 +405,10 @@ class NttdGS extends GSController {
     if ("error" in result && result.error != null) resp.rawset("error", result.error);
     if ("error_code" in result) resp.rawset("error_code", result.error_code);
     if ("error_category" in result) resp.rawset("error_category", result.error_category);
+    // The worked out explanation, when the game's own error was ERR_UNKNOWN. This list
+    // is a whitelist, so a field not named here is silently dropped, which is how the
+    // first attempt at this shipped a reason nobody ever saw.
+    if ("reason" in result && result.reason != null) resp.rawset("reason", result.reason);
     if ("result" in result && result.result != null) resp.rawset("result", result.result);
     GSAdmin.Send(resp);
   }
@@ -2210,11 +2214,110 @@ class NttdGS extends GSController {
   //
   // Only OpenTTD refusals carry a code and a category. nttd's own precondition failures
   // deliberately do not, so the absence of a code is what identifies them.
-  function _Refused() {
-    return { success = false,
-             error = GSError.GetLastErrorString(),
-             error_code = GSError.GetLastError(),
-             error_category = GSError.GetErrorCategory() };
+  // Why a build was refused, when the game itself will not say.
+  //
+  // OpenTTD maps a failure to a ScriptError only when the underlying CommandCost carries
+  // a string it knows; anything else arrives as ERR_UNKNOWN, code 1, category none. That
+  // is most refusals in practice, and "unknown" is the one answer an agent cannot act on.
+  // Measured cost of that: a run spent two of its five actions re-submitting a build onto
+  // its own station, because the refusal did not say the tiles were taken.
+  //
+  // So when the game declines to explain, look at the world and explain it here. The
+  // checks are the same calls get_tile_area already makes, and they run only on the
+  // failure path, so a successful build pays nothing for them.
+  //
+  // `hint` is optional and every existing caller passes nothing, which keeps the 94 call
+  // sites working while the handlers that know their tile can say so.
+  function _Refused(hint = null) {
+    local out = { success = false,
+                  error = GSError.GetLastErrorString(),
+                  error_code = GSError.GetLastError(),
+                  error_category = GSError.GetErrorCategory() };
+    if (hint != null) {
+      local why = this._Diagnose(hint);
+      if (why != null) out.rawset("reason", why);
+    }
+    return out;
+  }
+
+  // The first precondition that is actually violated, named in words an agent can use.
+  // Order matters: the most specific and most commonly hit come first, because only the
+  // first is reported.
+  function _Diagnose(hint) {
+    if ("tile" in hint && GSMap.IsValidTile(hint.tile)) {
+      local tile = hint.tile;
+      if (GSStation.GetStationID(tile) != GSStation.STATION_INVALID) {
+        return "a station already occupies this tile, so there is nothing to build here";
+      }
+      if (GSBridge.IsBridgeTile(tile)) return "a bridge already crosses this tile";
+      if (GSTunnel.IsTunnelTile(tile)) return "a tunnel already runs under this tile";
+      if ("wants" in hint && hint.wants == "land" && GSTile.IsWaterTile(tile)) {
+        return "this tile is water, and what was asked for needs land";
+      }
+      if ("wants" in hint && hint.wants == "water" && !GSTile.IsWaterTile(tile)) {
+        return "this tile is not water, and what was asked for needs water";
+      }
+      if (GSRail.IsRailTile(tile)) return "this tile already carries rail";
+      if (GSRoad.IsRoadTile(tile)) return "this tile already carries road";
+      if (!GSTile.IsBuildable(tile)) {
+        local owner = GSTile.GetOwner(tile);
+        local me = this._Who(hint);
+        if (owner != GSCompany.COMPANY_INVALID && me != GSCompany.COMPANY_INVALID
+            && owner != me) {
+          return "this tile is not buildable and belongs to someone else";
+        }
+        return "this tile is not buildable, so it must be cleared or levelled first";
+      }
+    }
+
+    // Rail type is invisible to an agent otherwise: get_rail_types cannot name the types,
+    // so a mismatch between an engine and the track it was bought for is unlearnable from
+    // anything except this message.
+    if ("engine" in hint && GSEngine.IsValidEngine(hint.engine)) {
+      local engine = hint.engine;
+      if (!GSEngine.IsBuildable(engine)) {
+        return "this engine cannot be bought in the current year";
+      }
+      // Rail type, without requiring the depot tile to look like plain track: a depot is
+      // its own tile kind, so IsRailTile is false there and the check never fired.
+      if (GSEngine.GetVehicleType(engine) == GSVehicle.VT_RAIL
+          && "depot" in hint && GSMap.IsValidTile(hint.depot)) {
+        local want = GSEngine.GetRailType(engine);
+        local have = GSRail.GetRailType(hint.depot);
+        if (want != have) {
+          return "this engine needs rail type " + want + " and that depot is rail type "
+               + have + ", so build the depot and its track with rail_type " + want
+               + ", or pick an engine for rail type " + have;
+        }
+      }
+      local balance = this._Balance(hint);
+      local price = GSEngine.GetPrice(engine);
+      if (balance != null && price > balance) {
+        return "this costs " + price + " and the balance is only " + balance;
+      }
+    }
+
+    if ("cost" in hint) {
+      local balance = this._Balance(hint);
+      if (balance != null && hint.cost > balance) {
+        return "this costs " + hint.cost + " and the balance is only " + balance;
+      }
+    }
+    return null;
+  }
+
+  // Which company is acting. A GameScript owns no company of its own: handlers act
+  // through GSCompanyMode(p.company_id), so the id travels in the hint rather than being
+  // guessed from COMPANY_SELF, which resolves only while that mode object is alive.
+  function _Who(hint) {
+    if ("company" in hint) return GSCompany.ResolveCompanyID(hint.company);
+    return GSCompany.ResolveCompanyID(GSCompany.COMPANY_SELF);
+  }
+
+  function _Balance(hint) {
+    local who = this._Who(hint);
+    if (who == GSCompany.COMPANY_INVALID) return null;
+    return GSCompany.GetBankBalance(who);
   }
 
   // Walk the finished route and ask the game whether it actually joins up.
@@ -2381,7 +2484,7 @@ class NttdGS extends GSController {
       local sid = GSStation.GetStationID(tile);
       return { success = true, result = { tile = [p.x, p.y], platforms = platforms, length = length, station_id = sid } };
     }
-    return this._Refused();
+    return this._Refused({ tile = tile, wants = "land", company = p.company_id });
   }
 
   function CmdBuildRailDepot(p) {
@@ -2392,7 +2495,7 @@ class NttdGS extends GSController {
     local tile = GSMap.GetTileIndex(p.x, p.y);
     local front = this._GetAdjacentTile(tile, dir);
     if (!GSRail.BuildRailDepot(tile, front)) {
-      return this._Refused();
+      return this._Refused({ tile = tile, wants = "land", company = p.company_id });
     }
     // Auto-connect: build rail on the front tile linking existing track to depot.
     // Find an adjacent rail tile next to the front tile (excluding the depot tile)
@@ -2958,7 +3061,7 @@ class NttdGS extends GSController {
       local sid = GSStation.GetStationID(tile);
       return { success = true, result = { tile = [p.x, p.y], station_id = sid } };
     }
-    return this._Refused();
+    return this._Refused({ tile = tile, company = p.company_id });
   }
 
   function CmdBuildBridge(p) {
@@ -3318,7 +3421,7 @@ class NttdGS extends GSController {
     if (GSVehicle.IsValidVehicle(vid)) {
       return { success = true, result = { vehicle_id = vid, name = GSVehicle.GetName(vid) } };
     }
-    return this._Refused();
+    return this._Refused({ engine = p.engine_id, depot = depot_tile, company = p.company_id });
   }
 
   function CmdBuildTrain(p) {

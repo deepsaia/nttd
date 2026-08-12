@@ -41,7 +41,7 @@ def result_from_reply(action_id: str, reply: dict[str, Any]) -> ActionResult:
             if payload.get("status") == "partial"
             else ActionStatus.FAILED
         ),
-        error=reply.get("error", "GS returned failure"),
+        error=_explain(reply),
         # Present only when OpenTTD refused. nttd's own precondition failures carry no
         # code, and that absence is how the two are told apart.
         error_code=code,
@@ -51,3 +51,25 @@ def result_from_reply(action_id: str, reply: dict[str, Any]) -> ActionResult:
         # with the failure rather than being dropped.
         changed_entities=payload,
     )
+
+
+def _explain(reply: dict[str, Any]) -> str:
+    """The refusal, in words an agent can act on.
+
+    OpenTTD maps a failure to a named ScriptError only when the underlying CommandCost
+    carries a string it recognises. Everything else arrives as ERR_UNKNOWN, which is most
+    refusals in practice and is the one answer nothing can be done with. A run once spent
+    two of its five actions re-submitting a build onto its own station, because the
+    refusal did not say the tiles were taken.
+
+    So the GameScript inspects the world on the failure path and sends a ``reason`` when
+    it can work one out. It leads, because it is the part worth reading; the game's own
+    wording follows so nothing is lost and an operator can still match it to OpenTTD.
+    """
+    error = reply.get("error")
+    reason = reply.get("reason")
+    if not reason:
+        return error or "GS returned failure"
+    if not error or error == reason:
+        return str(reason)
+    return f"{reason} (the game reported: {error})"

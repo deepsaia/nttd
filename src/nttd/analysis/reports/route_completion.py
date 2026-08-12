@@ -89,14 +89,27 @@ def _compute_agent_funnel(
             milestones[stage_name] = None
 
     # Top errors for this agent
+    # Grouped by the stable error NAME, with one example message kept for reading.
+    #
+    # Grouping on the message stopped working when refusals started explaining
+    # themselves: "this engine needs rail type 1 and that depot is rail type 0" names a
+    # specific depot, so every refusal became unique and every count became 1. The name
+    # is what repeats; the message is what tells you what to do about it.
     agent_errors: list[dict[str, Any]] = []
-    if "error" in failed.columns:
-        err_counts: dict[str, int] = {}
-        for err in failed["error"].drop_nulls():
-            err_short = str(err)[:100]
-            err_counts[err_short] = err_counts.get(err_short, 0) + 1
-        for err, count in sorted(err_counts.items(), key=lambda x: -x[1])[:5]:
-            agent_errors.append({"error": err, "count": count})
+    group_column = "error_name" if "error_name" in failed.columns else "error"
+    if group_column in failed.columns:
+        counts: dict[str, int] = {}
+        examples: dict[str, str] = {}
+        for row in failed.iter_rows(named=True):
+            key = str(row.get(group_column) or "") or str(row.get("error") or "")
+            if not key:
+                continue
+            counts[key] = counts.get(key, 0) + 1
+            examples.setdefault(key, str(row.get("error") or "")[:160])
+        for key, count in sorted(counts.items(), key=lambda item: -item[1])[:5]:
+            agent_errors.append({
+                "error": key, "count": count, "example": examples.get(key, ""),
+            })
 
     # Chronological action sequence (last 30 actions)
     recent = agent_actions.sort("game_date").tail(30)
