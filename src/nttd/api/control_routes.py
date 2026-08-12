@@ -29,6 +29,7 @@ from nttd.api.participant_auth import (
 from nttd.api.scored_guard import require_unscored
 from nttd.runtime.step_errors import (
     NotRegisteredForStepping,
+    ScenarioIsNotStepped,
     StepAlreadyInFlight,
 )
 from nttd.schemas.game import GameState, RuntimeMode
@@ -184,12 +185,29 @@ async def reset_stepped(
     and the caller would have a running clock it did not know it had started.
     """
     runtime = deps.get_runtime(session_id)
+    _require_stepped_scenario(runtime)
     token = extract_token(x_participant_token, authorization)
     company_id = resolve_company_id(runtime, token, None)
     runtime.step_gate.register(company_id)
 
     snapshot = await runtime.orchestrator.enter_stepped()
     return StepResult(snapshot=snapshot, step=0, days_advanced=0)
+
+
+def _require_stepped_scenario(runtime: Any) -> None:
+    """Refuse stepping unless the scenario declared it.
+
+    This used to be unguarded, so a scenario declaring async_realtime could be converted
+    into a stepped one by calling reset: the world paused and the contestant took over the
+    clock. Verified against a live real-time session before the guard existed.
+
+    Checked against the mode the SCENARIO declared, not against the world's current mode.
+    The world's mode is what a conversion would already have changed, so reading it would
+    let the second call through on the strength of the first.
+    """
+    declared = str(getattr(runtime, "runtime_mode", "") or "")
+    if declared and declared != RuntimeMode.STEPPED:
+        raise HTTPException(status_code=409, detail=str(ScenarioIsNotStepped(declared)))
 
 
 async def _advance_world(
@@ -222,6 +240,11 @@ async def take_step(
     Every action passes the same admission check a REST submission does.
     """
     runtime = deps.get_runtime(session_id)
+    # Before the registration check, so a real-time scenario is told it does not step at
+    # all rather than being told to enter stepped mode. The old order sent a contestant
+    # the 409 from NotRegisteredForStepping, which recommends POST /step/reset, and
+    # following that advice converted the scenario.
+    _require_stepped_scenario(runtime)
 
     # The company comes from the token, never from the body. Applied to each action
     # so a batch cannot smuggle a rival's company_id past the scope check.
