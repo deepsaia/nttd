@@ -219,6 +219,7 @@ Report terrain across a band of the map: height, slope, and whether each tile is
 
 - `from_y` (integer, default 1) Y coordinate of the starting tile.
 - `max_tiles` (integer, default 4000) How many tiles to report at most. Guards against asking for more than a reply can carry.
+- `occupancy` (boolean, default false) Also report what is built on each tile: the rail, road, station, tree, bridge and tunnel bits in flags, plus the tile owner. Off by default because it costs seven extra reads per tile, and a large band of them slows the game enough that other commands time out.
 - `to_y` (integer, default max_y) Y coordinate of the finishing tile.
 
 ### `get_orders`

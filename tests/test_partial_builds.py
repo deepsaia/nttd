@@ -286,8 +286,12 @@ class TestTerrainReadsAreBounded:
     """
 
     def _handler(self, gamescript: str) -> str:
+        # To the next function, not a fixed number of characters. A 2600 character window
+        # silently stopped covering the end of the handler as soon as a comment was added,
+        # so a test that reads the whole body is the one that keeps meaning what it says.
         start = gamescript.index("function CmdGetMapTerrain(p)")
-        return gamescript[start:start + 2600]
+        end = gamescript.index("function ", start + 1)
+        return gamescript[start:end]
 
     def test_it_caps_the_tiles_returned(self, gamescript: str) -> None:
         body = self._handler(gamescript)

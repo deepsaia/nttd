@@ -18,6 +18,7 @@ from nttd.analysis.score import score_company
 from nttd.schemas.company import Company
 from nttd.schemas.verification import CheckOutcome
 from nttd.store.map_digest import map_digest
+from nttd.store.terrain_scan import scan_terrain
 from nttd.store.tile_writer import TileWriter
 from nttd.verify.headless_openttd import HeadlessOpenTTD
 
@@ -143,14 +144,20 @@ async def world_regenerated(
             detail="the bundle declares no map digest, so there is nothing to compare",
         )
 
-    reply = await server.query("get_map_terrain", timeout=_TERRAIN_TIMEOUT_SECONDS)
-    if not reply.get("success"):
+    # Through the same scan the session capture uses, so the two cannot read the map
+    # differently. They did: this asked for one unbounded band and read the reply as a
+    # list, long after the handler was bounded and started answering with a table. It got
+    # a table, hashed nothing, and reported that every submission regenerated to an empty
+    # world.
+    async def ask(action: str, params: dict[str, Any]) -> dict[str, Any]:
+        return await server.query(action, params, timeout=_TERRAIN_TIMEOUT_SECONDS)
+
+    rows = await scan_terrain(ask)
+    if rows is None:
         return CheckOutcome(
             name=WORLD_REGENERATED, passed=False,
-            detail=f"the regenerated world did not answer get_map_terrain: {reply.get('error')}",
+            detail="the regenerated world did not answer get_map_terrain",
         )
-
-    rows = reply.get("result") or []
     writer = TileWriter("verify", data_dir=str(scratch_dir))
     written = writer.write_full_scan(rows)
     if not written:

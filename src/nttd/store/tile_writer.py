@@ -16,6 +16,18 @@ from nttd.store import session_paths
 
 logger = logging.getLogger(__name__)
 
+# The bit layout get_map_terrain packs each tile into. Named here because this file is
+# the only place that unpacks it, and a bare & 8 in the middle of a loop is unreadable.
+_FLAG_WATER = 1
+_FLAG_COAST = 2
+_FLAG_BUILDABLE = 4
+_FLAG_RAIL = 8
+_FLAG_ROAD = 16
+_FLAG_STATION = 32
+_FLAG_TREE = 64
+_FLAG_BRIDGE = 128
+_FLAG_TUNNEL = 256
+
 _SCHEMA = pa.schema([
     ("session_id", pa.string()),
     ("captured_at", pa.timestamp("us")),
@@ -23,7 +35,27 @@ _SCHEMA = pa.schema([
     ("y", pa.int16()),
     ("height", pa.int8()),
     ("slope", pa.int8()),
-    ("flags", pa.int8()),
+    # Kept as a bitmask because prepare_terrain_grid reads it directly, masking bit 0 for
+    # water to build its height grid. The same three facts are also in the named columns
+    # below; this one exists so the terrain map and the video keep working unchanged.
+    # int16, not int8: the mask runs to 256 now that bridges and tunnels are in it, and
+    # int8 tops out at 127.
+    ("flags", pa.int16()),
+    # What is ON the tile, and whose it is.
+    #
+    # The scan used to record height, slope and those three flags, which is enough to ask
+    # whether ground is flat and dry and not enough to ask whether anything can be built
+    # on it. A map without ownership or occupancy cannot answer "is this my track", "is
+    # this tile taken" or "can I build here", which is most of what a route needs to know.
+    ("owner", pa.int16()),
+    ("has_rail", pa.bool_()),
+    ("has_road", pa.bool_()),
+    ("is_station", pa.bool_()),
+    ("has_tree", pa.bool_()),
+    # A crossing used to read as owned, unbuildable, and nothing else, which is
+    # uninterpretable exactly where the interesting structure is.
+    ("has_bridge", pa.bool_()),
+    ("has_tunnel", pa.bool_()),
 ])
 
 
@@ -36,11 +68,11 @@ class TileWriter:
         self._file_path = root.resolve() / session_id / "tiles.parquet"
 
     def write_full_scan(self, rows_data: list[dict[str, Any]]) -> int:
-        """Write the initial full tile scan from GS get_map_terrain response.
+        """Write the initial full tile scan from a ``get_map_terrain`` reply.
 
         Args:
-            rows_data: List of {y, tiles: [[height, slope, flags], ...]} dicts
-                as returned by the GS command.
+            rows_data: ``{y, tiles: [[height, slope, flags, owner], ...]}`` per row. The
+                owner is optional so a reply from an older GameScript still loads.
 
         Returns:
             Number of tiles written.
@@ -49,16 +81,28 @@ class TileWriter:
         records: list[dict[str, Any]] = []
 
         for row in rows_data:
-            y = row["y"]
-            for x, tile_data in enumerate(row["tiles"], start=1):
+            y = row.get("y")
+            if y is None:
+                continue
+            for x, tile in enumerate(row.get("tiles") or [], start=1):
+                flags = int(tile[2]) if len(tile) > 2 else 0
                 records.append({
                     "session_id": self.session_id,
                     "captured_at": now,
                     "x": x,
-                    "y": y,
-                    "height": tile_data[0],
-                    "slope": tile_data[1],
-                    "flags": tile_data[2],
+                    "y": int(y),
+                    "height": int(tile[0]),
+                    "slope": int(tile[1]),
+                    "flags": flags,
+                    "owner": int(tile[3]) if len(tile) > 3 else -1,
+                    # Unpacked into columns as well as kept as the mask, because a query
+                    # reading this back should not have to know the bit layout.
+                    "has_rail": bool(flags & _FLAG_RAIL),
+                    "has_road": bool(flags & _FLAG_ROAD),
+                    "is_station": bool(flags & _FLAG_STATION),
+                    "has_tree": bool(flags & _FLAG_TREE),
+                    "has_bridge": bool(flags & _FLAG_BRIDGE),
+                    "has_tunnel": bool(flags & _FLAG_TUNNEL),
                 })
 
         if not records:
@@ -85,11 +129,21 @@ class TileWriter:
             {
                 "session_id": self.session_id,
                 "captured_at": now,
-                "x": t["x"],
-                "y": t["y"],
-                "height": t["height"],
-                "slope": t["slope"],
-                "flags": t["flags"],
+                "x": int(t["x"]),
+                "y": int(t["y"]),
+                "height": int(t.get("height") or 0),
+                "slope": int(t.get("slope") or 0),
+                # A delta may arrive in either shape: a precomputed bitmask from an older
+                # caller, or the named booleans get_tile_area returns. Concatenating onto
+                # the scan needs identical columns either way.
+                "flags": int(t["flags"]) if "flags" in t else _flags(t),
+                "owner": int(t.get("owner", -1)),
+                "has_rail": bool(t.get("has_rail")),
+                "has_road": bool(t.get("has_road")),
+                "is_station": bool(t.get("is_station")),
+                "has_tree": bool(t.get("has_tree")),
+                "has_bridge": bool(t.get("has_bridge")),
+                "has_tunnel": bool(t.get("has_tunnel")),
             }
             for t in tiles
         ]
@@ -107,3 +161,20 @@ class TileWriter:
     @property
     def file_path(self) -> Path:
         return self._file_path
+
+
+def _flags(tile: dict[str, Any]) -> int:
+    """The terrain bitmask, from the named booleans.
+
+    Kept alongside the booleans because prepare_terrain_grid masks bit 0 out of this
+    column to decide which tiles are water, and the terrain map and the video both go
+    through it.
+    """
+    flags = 0
+    if tile.get("water"):
+        flags |= _FLAG_WATER
+    if tile.get("coast"):
+        flags |= _FLAG_COAST
+    if tile.get("buildable"):
+        flags |= _FLAG_BUILDABLE
+    return flags

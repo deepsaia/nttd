@@ -23,6 +23,7 @@ from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
 from nttd.state.world import WorldState
 from nttd.store.recorder import SessionRecorder
+from nttd.store.terrain_scan import scan_terrain
 from nttd.store.tile_writer import TileWriter
 from nttd.utils.name_generator import generate_company_name
 
@@ -31,13 +32,6 @@ logger = logging.getLogger(__name__)
 _CONNECT_POLL_INTERVAL = 0.5  # seconds between connection attempts
 _CONNECT_MAX_WAIT = 15.0  # max seconds to wait for server to start
 _SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for graceful shutdown
-
-# Tiles per band when scanning the map at session start. The handler's own ceiling is
-# 20,000, and asking for it means the fewest round trips: a 256 square map is four bands
-# rather than seventeen at the handler's default. This is nttd reading its own game over a
-# local socket with no agent waiting, which is the one caller for which a big band is the
-# right trade.
-_TILE_SCAN_BAND = 20000
 
 
 class SessionRuntime:
@@ -221,9 +215,6 @@ class SessionRuntime:
             self.session_id, len(self.world.towns), len(self.world.companies),
         )
 
-        # Capture tile terrain in the background (non-blocking)
-        asyncio.create_task(self._capture_tiles(), name=f"tiles_{self.session_id}")
-
         # Verify companies were auto-created
         if total > 0:
             rcon = await self.admin_client.send_rcon("companies")
@@ -284,56 +275,49 @@ class SessionRuntime:
             )
         return applied
 
+    def start_tile_capture(self) -> None:
+        """Begin the map scan in the background.
+
+        Started by the caller rather than during connect, so it cannot race the company
+        rename: both go to the GameScript, which serves one command at a time, and the
+        scan is the far longer of the two.
+        """
+        asyncio.create_task(self._capture_tiles(), name=f"tiles_{self.session_id}")
+
     async def _capture_tiles(self) -> None:
         """Capture the full tile grid in the background, one band at a time.
 
-        ``get_map_terrain`` is bounded, because a single unbounded reply for a 256 square
-        map measured 524 KB and 7.2 seconds and a larger map simply timed out. It answers
-        a band of whole rows, says whether it cut the band short, and says which row to
-        resume from.
+        ``get_map_terrain`` answers a band of whole rows, says whether it cut the band
+        short, and says which row to resume from, so this pages until it is done.
 
-        This has to page, and for a while it did not. When the handler was bounded its
-        reply changed from a list of rows to a table carrying those rows, the check here
-        still asked whether the reply was a list, and so every session recorded no terrain
-        at all. Nothing failed loudly: the warning went to a log nobody was reading, and
-        the missing file only showed up much later as an empty terrain report and a
-        monitor map with nothing under it.
+        It carries occupancy and ownership as well as shape: the flags bitmask gained
+        rail, road, station, tree, bridge and tunnel, and each tile gained its owner. That
+        is what makes a stored map able to answer whether a tile is taken and whose the
+        track on it is, which is most of what deciding a route needs.
 
-        Deltas are appended after terrain changes, so the scan is written in one piece at
-        the end rather than a band at a time, which would leave a partial grid on disk
-        looking like a complete one.
+        Reading it through ``get_tile_area`` instead was tried and is much worse. It
+        returns the same facts as named fields, so one tile costs about 150 characters
+        against this encoding's 12. A full scan through it swamped the admin protocol with
+        thousands of packets and starved the game long enough that renaming the company
+        timed out.
+
+        Bounded per band either way. One unbounded reply for a 256 square map measured
+        524 KB and 7.2 seconds, and a larger map simply timed out.
+
+        Both of this routine's previous failures were silent, which is why it is written
+        defensively now. First the reply shape changed from a list to a table and the
+        check here still asked for a list, so every session recorded nothing. Then the
+        replies themselves were too large to survive the admin protocol, which corrupted
+        the connection for the rest of the session.
+
+        Written in one piece at the end rather than a band at a time, so a scan that fails
+        halfway leaves no file rather than a partial grid that looks complete.
         """
-        rows: list[dict[str, Any]] = []
-        from_y = 1
         try:
-            while True:
-                reply = await self.admin_client.send_gamescript(
-                    "get_map_terrain",
-                    {"from_y": from_y, "max_tiles": _TILE_SCAN_BAND},
-                    timeout=60.0,
-                )
-                band = reply.get("result")
-                if not reply.get("success") or not isinstance(band, dict):
-                    logger.warning(
-                        "Tile capture failed for session %s at row %d: %s",
-                        self.session_id, from_y, reply.get("error", "unknown"),
-                    )
-                    return
-                rows.extend(band.get("rows") or [])
-                if not band.get("truncated"):
-                    break
-                next_from_y = band.get("next_from_y")
-                if not isinstance(next_from_y, int) or next_from_y <= from_y:
-                    # Without this the loop would ask for the same band forever. A
-                    # handler that says it truncated but cannot say where to resume is a
-                    # bug there, not a reason to spin here.
-                    logger.warning(
-                        "Tile capture for session %s stopped at row %d: no usable "
-                        "next_from_y", self.session_id, from_y,
-                    )
-                    break
-                from_y = next_from_y
-
+            rows = await scan_terrain(self._ask_gamescript)
+            if rows is None:
+                logger.warning("Tile capture failed for session %s", self.session_id)
+                return
             count = self.tile_writer.write_full_scan(rows)
             logger.info(
                 "Tile capture complete for session %s: %d tiles over %d rows",
@@ -341,6 +325,9 @@ class SessionRuntime:
             )
         except Exception:
             logger.exception("Tile capture error for session %s", self.session_id)
+
+    async def _ask_gamescript(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        return await self.admin_client.send_gamescript(action, params, timeout=60.0)
 
     def start_orchestrator(self, mode: str = "async_realtime") -> None:
         """Start the orchestrator loop for snapshot capture and end-condition checks."""

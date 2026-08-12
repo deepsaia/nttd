@@ -459,6 +459,10 @@
     "y2": {
       "type": "integer",
       "description": "Y coordinate of the opposite corner."
+    },
+    "occupancy": {
+      "type": "boolean",
+      "description": "Also report what is built on each tile: the rail, road, station, tree, bridge and tunnel bits in flags, plus the tile owner. Off by default because it costs seven extra reads per tile, and a large band of them slows the game enough that other commands time out."
     }
   },
   "enum_bindings": {

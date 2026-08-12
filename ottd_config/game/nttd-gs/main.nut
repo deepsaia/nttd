@@ -761,8 +761,16 @@ class NttdGS extends GSController {
 
   function CmdGetMapTerrain(p) {
     // Terrain across a band of the map, row by row.
-    // Each result item: { y, tiles: [[height, slope, flags], ...] }
-    // flags bitmask: 1=water, 2=coast, 4=buildable
+    // Each result item: { y, tiles: [[height, slope, flags, owner], ...] }
+    // flags bitmask: 1=water, 2=coast, 4=buildable, and with occupancy=true also
+    //                8=rail, 16=road, 32=station, 64=tree, 128=bridge, 256=tunnel
+    //
+    // Occupancy and ownership travel in this compact encoding rather than as named
+    // fields. Terrain alone says whether ground is flat and dry; it cannot say whether a
+    // tile is taken, whose the track on it is, or where a line already runs, which is
+    // most of what deciding a route needs. get_tile_area answers all of that but names
+    // every field, so one tile costs about 150 characters against this encoding's 12. A
+    // full scan read that way swamped the admin protocol and starved the game.
     //
     // BOUNDED, at every map size. It used to default to the whole map, which is not a
     // reasonable thing to ask for or to answer: 256x256 measured 524 KB and 7.2s, which
@@ -777,6 +785,15 @@ class NttdGS extends GSController {
     // the find_* family, which dry-runs the real build inside the game.
     local max_x = GSMap.GetMapSizeX() - 2;
     local max_y = GSMap.GetMapSizeY() - 2;
+    // Occupancy costs seven extra API calls per tile, and Squirrel is slow enough that a
+    // large band of them blocks the script long enough for other commands to time out.
+    // Measured: a 20,000 tile band with occupancy on starved the game so thoroughly that
+    // renaming the company timed out at session start.
+    //
+    // Off by default, which is also what the startup scan wants: nothing is built yet, so
+    // every one of those checks would return empty at a cost of a quarter of a million
+    // calls. Ask for it when reading a region that has been developed.
+    local occupancy = ("occupancy" in p) ? p.occupancy : false;
     local max_tiles = ("max_tiles" in p) ? p.max_tiles : 4000;
     if (max_tiles > 20000) max_tiles = 20000;
     local from_y = ("from_y" in p) ? p.from_y : 1;
@@ -803,7 +820,17 @@ class NttdGS extends GSController {
         if (GSTile.IsWaterTile(tile)) flags = flags | 1;
         if (GSTile.IsCoastTile(tile)) flags = flags | 2;
         if (GSTile.IsBuildable(tile))  flags = flags | 4;
-        row_tiles.append([GSTile.GetMaxHeight(tile), GSTile.GetSlope(tile), flags]);
+        local owner = -1;
+        if (occupancy) {
+          if (GSRail.IsRailTile(tile)) flags = flags | 8;
+          if (GSRoad.IsRoadTile(tile)) flags = flags | 16;
+          if (GSStation.GetStationID(tile) != GSStation.STATION_INVALID) flags = flags | 32;
+          if (GSTile.HasTreeOnTile(tile)) flags = flags | 64;
+          if (GSBridge.IsBridgeTile(tile)) flags = flags | 128;
+          if (GSTunnel.IsTunnelTile(tile)) flags = flags | 256;
+          owner = GSTile.GetOwner(tile);
+        }
+        row_tiles.append([GSTile.GetMaxHeight(tile), GSTile.GetSlope(tile), flags, owner]);
       }
       rows.append({ y = y, tiles = row_tiles });
     }

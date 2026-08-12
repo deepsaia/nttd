@@ -271,6 +271,14 @@ class SessionManager:
                 runtime.participants.issue(company_id)
             runtime.participants.write(session_dir)
             await runtime.name_companies(agent_companies, names=company_names)
+            # Only now start the map scan, and never before naming.
+            #
+            # Both talk to the GameScript, which serves one command at a time, and the
+            # scan is by far the longer: a 256 square map is about 40 seconds of Squirrel.
+            # Started first, it starved the rename, which timed out and left the company
+            # called Unnamed. That is not cosmetic: the leaderboard identifies a run by
+            # its company name, and so does the monitor.
+            runtime.start_tile_capture()
 
         # Configure orchestrator from runtime settings
         orch = runtime.orchestrator

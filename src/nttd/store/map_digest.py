@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 # *by whom* the scan was taken is excluded on purpose.
 TERRAIN_COLUMNS = ("x", "y", "height", "slope", "flags")
 
+# Only the bits of `flags` that describe the GENERATED world.
+#
+# The digest exists to prove which world was played, so it must depend on the seed and on
+# nothing else. The flags column also carries what is BUILT on a tile: rail, road, station,
+# tree, bridge, tunnel, and a buildable bit that goes false as soon as anything is put
+# there. Hashing those would make a world's identity depend on how the company played it.
+# The same map would then digest differently before and after a station went up, and the
+# verifier, which regenerates an EMPTY world from the seed, would report every developed
+# run as a different world.
+#
+# Water and coast are terrain, so they are hashed. Height and slope are terrain outright.
+_TERRAIN_BITS = 1 | 2
+
 _DIGEST_LENGTH = 16
 
 
@@ -48,6 +61,8 @@ def map_digest(tiles_path: Path | str) -> str | None:
         return None
 
     columns = [table.column(name).to_pylist() for name in TERRAIN_COLUMNS]
+    flags_at = TERRAIN_COLUMNS.index("flags")
+    columns[flags_at] = [int(value or 0) & _TERRAIN_BITS for value in columns[flags_at]]
     rows = sorted(zip(*columns, strict=True))
 
     digest = hashlib.sha256()

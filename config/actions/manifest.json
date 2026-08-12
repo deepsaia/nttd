@@ -2129,6 +2129,12 @@
           "description": "How many tiles to report at most. Guards against asking for more than a reply can carry.",
           "type": "integer"
         },
+        "occupancy": {
+          "required": false,
+          "default": false,
+          "description": "Also report what is built on each tile: the rail, road, station, tree, bridge and tunnel bits in flags, plus the tile owner. Off by default because it costs seven extra reads per tile, and a large band of them slows the game enough that other commands time out.",
+          "type": "boolean"
+        },
         "to_y": {
           "required": false,
           "default": {
