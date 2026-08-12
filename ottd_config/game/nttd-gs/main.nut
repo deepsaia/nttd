@@ -1185,7 +1185,15 @@ class NttdGS extends GSController {
       state = GSVehicle.GetState(vid),
       in_depot = GSVehicle.IsStoppedInDepot(vid),
       is_articulated = GSVehicle.IsArticulated(vid),
-      has_shared_orders = GSOrder.HasSharedOrders(vid),
+      // Through the shared orders LIST, not GSOrder.HasSharedOrders, which does not
+      // exist on GSOrder in OpenTTD 15.3. Calling it raised "the index
+      // 'HasSharedOrders' does not exist" and took the WHOLE reply with it, so
+      // get_vehicle_info returned nothing for any vehicle at all. That is what made a
+      // perfectly valid wagon id look invalid and sent me hunting a bug in buy_vehicle.
+      //
+      // A vehicle sharing orders appears in its own shared list alongside at least one
+      // other, so a count above one is the answer.
+      has_shared_orders = GSVehicleList_SharedOrders(vid).Count() > 1,
       length = GSVehicle.GetLength(vid),
       cargo = cargo_loads,
       orders = orders
