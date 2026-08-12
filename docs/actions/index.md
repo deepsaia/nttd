@@ -49,7 +49,7 @@ Full detail in [observations.md](observations.md).
 - `get_station_info(station_id)` Report one station in detail: what is waiting, what it accepts, and its cargo ratings.
 - `get_stations()` List your stations, with what is waiting at each and how it is rated.
 - `get_subsidies()` List the subsidies on offer and those already awarded.
-- `get_tile_area(x1, x2, y1, y2, [max_tiles])` Report height, slope and buildability across a rectangle.
+- `get_tile_area(x1, x2, y1, y2, [max_tiles])` Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it.
 - `get_tile_info(tile|x,y)` Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to.
 - `get_town_info(town_id)` Report one town in detail: population, houses, what it accepts and how fast it is growing.
 - `get_town_rating(town_id)` Report how a town regards your company.

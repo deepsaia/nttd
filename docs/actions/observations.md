@@ -2,7 +2,7 @@
 
 Read the world. These cost nothing, change nothing, and can be repeated freely.
 
-**These are queries, and they are not submitted as actions.** Ask one with `POST /state/gs/query`, body `{"action": "get_stations", "params": {}}`. Submitting one as an action is refused, because a query endpoint that also executed actions would be a way around the action allowlist, and that hole was real: `set_max_loan` once raised a scored company's credit ceiling from 300,000 to 9,000,000 through it.
+**These are queries, and they are not submitted as actions.** Ask one with `POST /state/gs/query?action=get_stations`, with the parameters as the whole body: `{"industry_id": 7}`, or `{}` for a query that takes none. The action name is a QUERY STRING parameter, not a body field, and putting it in the body returns 422. Submitting one as an action is refused, because a query endpoint that also executed actions would be a way around the action allowlist, and that hole was real: `set_max_loan` once raised a scored company's credit ceiling from 300,000 to 9,000,000 through it.
 
 The distinction is worth reading once rather than discovering. An agent that submitted `get_hangars` as an action spent two of its five actions on it, never found its hangar, and could then not buy the aircraft it was for.
 
@@ -274,7 +274,7 @@ Takes no parameters.
 
 ### `get_tile_area`
 
-Report height, slope and buildability across a rectangle. max_tiles bounds the reply.
+Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it. This is the right tool for almost any question about a piece of ground, including whether your own track is already there. Bounds are INCLUSIVE, so a single tile is x1 equal to x2. max_tiles bounds the reply and the request is REFUSED, not truncated, if the area exceeds it; the default is 400.
 
 - `max_tiles` (integer, default 400) How many tiles to report at most. Guards against asking for more than a reply can carry.
 - `x1` (integer, required) X coordinate of the first corner.

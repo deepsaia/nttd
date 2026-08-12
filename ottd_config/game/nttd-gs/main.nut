@@ -763,6 +763,13 @@ class NttdGS extends GSController {
       is_road = GSRoad.IsRoadTile(tile),
       is_rail = GSRail.IsRailTile(tile),
       is_station = GSStation.GetStationID(tile) != GSStation.STATION_INVALID,
+      // A crossing used to read as owned, unbuildable, and nothing else, which is
+      // uninterpretable exactly where the interesting structure is. The far end comes with
+      // it, because that is what a route needs in order to go over or around one.
+      is_bridge = GSBridge.IsBridgeTile(tile),
+      is_tunnel = GSTunnel.IsTunnelTile(tile),
+      other_end = GSBridge.IsBridgeTile(tile) ? GSBridge.GetOtherBridgeEnd(tile)
+                : (GSTunnel.IsTunnelTile(tile) ? GSTunnel.GetOtherTunnelEnd(tile) : null),
       owner = GSTile.GetOwner(tile)
     }};
   }
@@ -1290,9 +1297,29 @@ class NttdGS extends GSController {
   }
 
   function CmdGetRailTypes() {
+    // Only the types this game actually has, named, with whether they can be built now.
+    //
+    // GSRailTypeList walks all 64 slots of the rail type table, and a slot no baseset
+    // defines has no name, so this returned 64 entries every one of which was called
+    // "(undefined string)". Every build action takes a rail_type and its description says
+    // to ask here, so asking taught an agent nothing and picking one was guesswork. Getting
+    // it wrong then failed with a bare ERR_UNKNOWN, since nothing said the engine and the
+    // track disagreed.
+    //
+    // available is the field that matters most: what can be built moves with the year, and
+    // an engine bought for a type the track is not is the mistake this prevents. The ids
+    // are the same numbers get_engines reports as rail_type, so the two can be matched.
     local types = [];
     foreach (id, _ in GSRailTypeList()) {
-      types.append({ id = id, name = GSRail.GetName(id) });
+      local name = GSRail.GetName(id);
+      // A slot with no defined name is not a rail type, it is an empty row in the table.
+      if (name == null || name == "(undefined string)") continue;
+      types.append({
+        id = id,
+        name = name,
+        available = GSRail.IsRailTypeAvailable(id),
+        build_cost_per_tile = GSRail.GetBuildCost(id, GSRail.BT_TRACK),
+      });
     }
     return { success = true, result = types };
   }
@@ -4493,15 +4520,22 @@ class NttdGS extends GSController {
     if (!("x1" in p) || !("y1" in p) || !("x2" in p) || !("y2" in p))
       return { success = false, error = "params.x1, y1, x2, y2 required" };
 
+    // INCLUSIVE bounds. They were exclusive, while the parameters are described as two
+    // corners, so a request for a single tile returned an empty list and a three by three
+    // area returned four tiles. Every caller reading a rectangle silently missed its last
+    // row and column, and an empty answer looks like a tile that does not exist rather
+    // than like a bounds convention.
     local x1 = p.x1, y1 = p.y1, x2 = p.x2, y2 = p.y2;
+    if (x2 < x1) { local t = x1; x1 = x2; x2 = t; }
+    if (y2 < y1) { local t = y1; y1 = y2; y2 = t; }
     local max_tiles = ("max_tiles" in p) ? p.max_tiles : 400;
 
-    if ((x2 - x1) * (y2 - y1) > max_tiles)
+    if ((x2 - x1 + 1) * (y2 - y1 + 1) > max_tiles)
       return { success = false, error = "Area too large (max " + max_tiles + " tiles)" };
 
     local tiles = [];
-    for (local x = x1; x < x2; x++) {
-      for (local y = y1; y < y2; y++) {
+    for (local x = x1; x <= x2; x++) {
+      for (local y = y1; y <= y2; y++) {
         local tile = GSMap.GetTileIndex(x, y);
         if (!GSMap.IsValidTile(tile)) continue;
 
@@ -4517,6 +4551,8 @@ class NttdGS extends GSController {
           owner = GSTile.GetOwner(tile),
           is_station = GSStation.GetStationID(tile) != GSStation.STATION_INVALID,
           has_tree = GSTile.HasTreeOnTile(tile),
+          is_bridge = GSBridge.IsBridgeTile(tile),
+          is_tunnel = GSTunnel.IsTunnelTile(tile),
         });
       }
     }

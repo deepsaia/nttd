@@ -406,7 +406,7 @@
     },
     "track": {
       "type": "integer",
-      "description": "Which of the six track pieces on the tile to act on."
+      "description": "Which of the six track pieces on the tile to act on, as a GSRail RAILTRACK value. These are bit flags, not an index: 0 is not a piece and is refused. A straight north-east to south-west piece is 1, north-west to south-east is 2, and the four diagonals are 4, 8, 16 and 32."
     },
     "transport_type": {
       "type": "string",
@@ -537,6 +537,10 @@
     "set_stop_location.stop_location": {
       "class": "GSOrder",
       "prefix": "STOPLOCATION_"
+    },
+    "*.track": {
+      "class": "GSRail",
+      "prefix": "RAILTRACK_"
     }
   },
   "actions": {
@@ -812,7 +816,7 @@
       "description": "List the subsidies on offer and those already awarded."
     },
     "get_tile_area": {
-      "description": "Report height, slope and buildability across a rectangle. max_tiles bounds the reply."
+      "description": "Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it. This is the right tool for almost any question about a piece of ground, including whether your own track is already there. Bounds are INCLUSIVE, so a single tile is x1 equal to x2. max_tiles bounds the reply and the request is REFUSED, not truncated, if the area exceeds it; the default is 400."
     },
     "get_tile_info": {
       "description": "Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to."

@@ -61,7 +61,10 @@ _TIER_SECTIONS = [
         "Observations",
         "Read the world. These cost nothing, change nothing, and can be repeated freely.\n\n"
         "**These are queries, and they are not submitted as actions.** Ask one with "
-        "`POST /state/gs/query`, body `{\"action\": \"get_stations\", \"params\": {}}`. "
+        "`POST /state/gs/query?action=get_stations`, with the parameters as the whole "
+        "body: `{\"industry_id\": 7}`, or `{}` for a query that takes none. The action "
+        "name is a QUERY STRING parameter, not a body field, and putting it in the body "
+        "returns 422. "
         "Submitting one as an action is refused, because a query endpoint that also "
         "executed actions would be a way around the action allowlist, and that hole was "
         "real: `set_max_loan` once raised a scored company's credit ceiling from 300,000 "

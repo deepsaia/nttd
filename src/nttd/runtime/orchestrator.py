@@ -341,9 +341,10 @@ class Orchestrator:
     ) -> list[dict[str, Any]]:
         """Read an inclusive rectangle, in bands that fit one reply.
 
-        get_tile_area's bounds are EXCLUSIVE, so each call asks for one past the end. That
-        is not obvious from the parameter names and a request for a single tile returns
-        nothing at all, which is worth stating rather than rediscovering.
+        get_tile_area's bounds are inclusive, matching what its parameter names suggest.
+        They were exclusive, so this asked for one past the end to compensate; that was
+        corrected in the handler and here together, since a half-fixed convention is worse
+        than either.
         """
         width = x2 - x1 + 1
         if width <= 0:
@@ -355,7 +356,7 @@ class Orchestrator:
             band_end = min(band_start + rows_per_band - 1, y2)
             reply = await self.client.send_gamescript(
                 "get_tile_area",
-                {"x1": x1, "y1": band_start, "x2": x2 + 1, "y2": band_end + 1,
+                {"x1": x1, "y1": band_start, "x2": x2, "y2": band_end,
                  "max_tiles": self._REFRESH_BAND},
                 timeout=20.0,
             )

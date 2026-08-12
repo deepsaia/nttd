@@ -491,7 +491,7 @@ Supply one of: `tile` or `x` and `y`.
 
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
-- `track` (integer, default GSRail.RAILTRACK_NE_SW) Which of the six track pieces on the tile to act on.
+- `track` (integer, default GSRail.RAILTRACK_NE_SW) Which of the six track pieces on the tile to act on, as a GSRail RAILTRACK value. These are bit flags, not an index: 0 is not a piece and is refused. A straight north-east to south-west piece is 1, north-west to south-east is 2, and the four diagonals are 4, 8, 16 and 32.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
@@ -585,7 +585,7 @@ Remove one track piece from a tile. A tile can carry several, so the piece is na
 Supply one of: `tile` or `x` and `y`.
 
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
-- `track` (integer, default GSRail.RAILTRACK_NE_SW) Which of the six track pieces on the tile to act on.
+- `track` (integer, default GSRail.RAILTRACK_NE_SW) Which of the six track pieces on the tile to act on, as a GSRail RAILTRACK value. These are bit flags, not an index: 0 is not a piece and is refused. A straight north-east to south-west piece is 1, north-west to south-east is 2, and the four diagonals are 4, 8, 16 and 32.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
