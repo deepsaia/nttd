@@ -499,23 +499,27 @@ class Orchestrator:
         start_date = await self._authoritative_game_date()
         target_date = start_date + advance_days
 
-        # Only PATHFINDING actions need the game running.
+        # Actions run with the game RUNNING, not paused.
         #
-        # Not single-tile builds: at construction.command_pause_level = 3 a paused
-        # build_road_stop returns success in 0.1s. It is the A* inside the GameScript,
-        # which yields every 500 iterations through _YieldAndProcessEvents
-        # (main.nut:1920, :2468), whose first statement is Sleep(1) -- and Sleep counts
-        # GAME TICKS, of which a paused game delivers none. So connect_road and
-        # connect_rail hang while paused, at any pause level, once the search is long
-        # enough to reach that yield.
+        # The obvious reading is that only the pathfinding actions need this: their A*
+        # yields every 500 iterations through _YieldAndProcessEvents (main.nut:1920,
+        # :2468), whose first statement is Sleep(1), and Sleep counts GAME TICKS, of
+        # which a paused game delivers none. TICK_DEPENDENT_ACTIONS names those two.
         #
-        # Length decides whether a given call reaches the yield, and that is not knowable
-        # before running it, so those two are always flushed with the world moving. What
-        # changed is that everything else no longer is: this used to unpause for every
-        # batch, which meant a step of ordinary builds spent real game-days executing and
-        # a slow one could outrun its own interval.
+        # Flushing everything else while paused was tried, on 2026-08-12, and it wedges
+        # the session. Measured: every GameScript command issued during the paused flush
+        # timed out (get_stations, get_vehicles, get_infrastructure_costs), and the admin
+        # stream then filled with unparseable packets as the unanswered replies arrived
+        # late and out of order. The GameScript does not process commands on a paused
+        # game at all, so it is not only the yielding ones that need ticks.
         #
-        # Only two actions are affected, out of 77. These are the workhorse
+        # Read-only queries between steps are a different case and do work while paused,
+        # which is what made the wrong conclusion tempting. Those go through a separate
+        # path and are answered from cached world state rather than by the script.
+        #
+        # So the flush stays here, between the unpause and the advance. The real fix is
+        # to stop needing the GameScript for pathfinding at all, which is issue #58: plan
+        # in Python against tiles, then issue ordinary builds. These are the workhorse
         # actions; a design that could not issue them would not be a
         # design.
         #
@@ -523,19 +527,10 @@ class Orchestrator:
         # level 1 a paused build times out AND wedges the GameScript, while having
         # actually executed -- so nttd would record a failure for an action that
         # mutated the world.
-        # Only a batch that actually needs ticks runs against a moving world. The two
-        # actions that do are named in TICK_DEPENDENT_ACTIONS, derived from the dispatch
-        # table rather than guessed. Every other action executes against a still world,
-        # so its cost in game-days is exactly zero and the advance below is exact.
-        needs_ticks = _needs_game_ticks(batch)
+        await self._unpause()
         action_results: list[ActionResult] = []
-        if needs_ticks:
-            await self._unpause()
+        if batch:
             action_results = await self._execute_actions(batch)
-        else:
-            if batch:
-                action_results = await self._execute_actions(batch)
-            await self._unpause()
         await self._wait_until_game_date(target_date)
         await self._pause()
 

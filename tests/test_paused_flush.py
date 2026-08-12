@@ -1,12 +1,13 @@
-"""Which batches have to run against a moving world, and which do not.
+"""Which GameScript actions search for a route, and so cannot finish without ticks.
 
-A step used to unpause for every batch. That made an ordinary batch of builds spend real
-game-days executing, and, in the words of the step's own comment, let a slow batch outrun
-its own interval. Only two of the 77 participant actions actually need the game running,
-so the rest can now execute against a still world and cost exactly nothing.
+A flush that ran while the game was paused was tried on 2026-08-12 and wedged the session:
+every GameScript command issued during it timed out, and the admin stream then filled with
+unparseable packets as the unanswered replies arrived late. The GameScript does not process
+commands on a paused game at all, so the step still flushes with the world moving.
 
-The set is derived from the GameScript dispatch table rather than maintained by hand, so
-the test that matters most here is the one that checks it against main.nut.
+What survives is the knowledge of which actions search, because that is what issue #58 has
+to replace with the Python planner. It is derived from the dispatch table rather than
+maintained by hand, so the test that matters is the one checking it against main.nut.
 """
 
 from __future__ import annotations
@@ -62,8 +63,8 @@ def _dispatched_names(handlers: set[str]) -> set[str]:
 def test_the_set_matches_what_the_gamescript_actually_yields_in() -> None:
     """The one test worth having: the list cannot drift from the game.
 
-    If a new handler starts yielding, or connect_rail stops, this fails rather than
-    letting a step silently deadlock or silently waste game-days.
+    If a new handler starts searching, or connect_rail stops, this fails rather than
+    leaving issue #58 with a stale idea of what it has to replace.
     """
     assert _dispatched_names(_yielding_handlers()) == set(TICK_DEPENDENT_ACTIONS)
 
@@ -79,7 +80,7 @@ def test_an_empty_batch_needs_nothing() -> None:
     assert _needs_game_ticks(None) is False
 
 
-def test_a_batch_of_ordinary_builds_runs_against_a_still_world() -> None:
+def test_a_batch_of_ordinary_builds_contains_no_search() -> None:
     batch = [
         {"action": "build_rail_station", "params": {"tile": 1}},
         {"action": "build_rail_depot", "params": {"tile": 2}},
@@ -90,7 +91,7 @@ def test_a_batch_of_ordinary_builds_runs_against_a_still_world() -> None:
 
 def test_one_pathfinding_action_anywhere_in_the_batch_is_enough() -> None:
     """Length decides whether a search reaches its yield, and that is not knowable
-    beforehand, so the whole batch runs with the world moving."""
+    beforehand, so any batch carrying one is treated as carrying a search."""
     batch = [
         {"action": "build_rail_station", "params": {}},
         {"action": "connect_rail", "params": {}},
