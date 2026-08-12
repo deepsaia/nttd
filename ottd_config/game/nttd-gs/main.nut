@@ -15,6 +15,13 @@
 
 class NttdGS extends GSController {
   CHUNK_SIZE = 10;
+
+  // Days in transit assumed when a caller does not say. Payment falls off with time, so
+  // comparing corridors needs one number held constant across them, and an agent choosing
+  // a route does not yet own a vehicle to measure with. Twenty days is roughly a
+  // mid-length haul by early road vehicle, which is the pessimistic end and therefore the
+  // safer default for a decision about whether a route is worth building.
+  _DEFAULT_TRANSIT_DAYS = 20;
   _pathfind_queue = null;
   _event_names = null;
 
@@ -548,6 +555,7 @@ class NttdGS extends GSController {
         case "get_vehicle_info":  return this.CmdGetVehicleInfo(p);
         case "get_engines":       return this.CmdGetEngines(p);
         case "get_cargo_types":   return this.CmdGetCargoTypes();
+        case "get_cargo_income":  return this.CmdGetCargoIncome(p);
         case "get_rail_types":    return this.CmdGetRailTypes();
         case "get_road_types":    return this.CmdGetRoadTypes();
         case "get_groups":        return this.CmdGetGroups(p);
@@ -1240,6 +1248,45 @@ class NttdGS extends GSController {
       });
     }
     return { success = true, result = cargos };
+  }
+
+  function CmdGetCargoIncome(p) {
+    // What the game itself pays for carrying cargo.
+    //
+    // Nothing else in the read-only surface answers this, so route choice, which is the
+    // central judgement the benchmark means to measure, could only be made on production
+    // volume. That ranks a short high volume low value run above a long lower volume high
+    // value one for no good reason, and gives no way to tell an investment from a mistake
+    // until several game months later.
+    //
+    // GSCargo.GetCargoIncome is the game's own function, so this reports what will
+    // actually be paid rather than a model of it that could drift.
+    if (!("cargo_id" in p) || !("distance" in p))
+      return { success = false, error = "params.cargo_id and params.distance required" };
+    local cargo_id = p.cargo_id;
+    if (!GSCargo.IsValidCargo(cargo_id))
+      return { success = false, error = "Invalid cargo ID: " + cargo_id };
+
+    local distance = p.distance;
+    if (distance < 1) distance = 1;
+
+    // Payment falls off with time in transit, so the answer needs one. Defaulted rather
+    // than required: a caller comparing corridors wants them compared on the same
+    // assumption, and an agent has no way to know a transit time before it owns a vehicle.
+    local days = ("days_in_transit" in p) ? p.days_in_transit : this._DEFAULT_TRANSIT_DAYS;
+    if (days < 1) days = 1;
+
+    local per_unit = GSCargo.GetCargoIncome(cargo_id, distance, days);
+    return { success = true, result = {
+      cargo_id = cargo_id,
+      label = GSCargo.GetCargoLabel(cargo_id),
+      distance = distance,
+      days_in_transit = days,
+      income_per_unit = per_unit,
+      // Named so a caller does not have to know that the game charges per unit: an amount
+      // it can multiply is the shape the question is actually asked in.
+      income_per_100_units = per_unit * 100,
+    }};
   }
 
   function CmdGetRailTypes() {

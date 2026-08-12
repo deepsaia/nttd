@@ -25,6 +25,7 @@ Full detail in [observations.md](observations.md).
 - `get_airport_types()` List the airport types this game has, with their sizes and whether they are available yet.
 - `get_bridge_types()` List the bridge designs available, with their speed limits, maximum spans and costs.
 - `get_cargo_flows([keep_monitoring])` Report how much cargo your company has picked up and delivered per town and industry since the monitors were last read.
+- `get_cargo_income(cargo_id, distance, [days_in_transit])` Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days.
 - `get_cargo_types()` List the cargoes this game has, with their labels and ids.
 - `get_clients()` List the clients connected to the server.
 - `get_companies()` List the companies in the game, with their names, values and performance ratings.

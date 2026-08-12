@@ -1,5 +1,6 @@
 """Session-scoped observation routes: state queries, compact snapshots, GS queries."""
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -24,6 +25,8 @@ from nttd.schemas.town import Town
 from nttd.schemas.vehicle import Vehicle
 from nttd.state.route_planner import RoutePlanner
 from nttd.state.situation import Situation
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions/{session_id}/state", tags=["observation"])
 
@@ -131,7 +134,73 @@ async def get_route_candidates(
         # a route is reconciled from vehicle orders, so it is derived rather than stored.
         routes=runtime.world._derive_routes(),
     )
-    return planner.for_agent(company_id, agent_type=agent_type, compact=compact)
+    offered = planner.for_agent(company_id, agent_type=agent_type, compact=compact)
+    await _price_the_cargo_routes(runtime, offered)
+    return offered
+
+
+# Cargo route keys, long form and compact, so pricing works for both output shapes.
+_CARGO_KEYS = ("top_unserved_cargo", "cargo")
+
+
+async def _price_the_cargo_routes(runtime: Any, offered: dict[str, Any]) -> None:
+    """Attach what each cargo route would pay, from the game's own figures.
+
+    Ranking corridors without this can only compare production volume, which puts a short
+    high volume low value run above a long lower volume high value one for no good reason.
+    Measured at distance 32: steel pays 22 a unit, grain 18, livestock 16. No agent could
+    see that before, because nothing in the read-only surface carried a payment rate.
+
+    Priced here rather than in RoutePlanner because the figure comes from the GameScript
+    and the planner is plain arithmetic over world state, with no way to ask. One query per
+    distinct cargo and distance, so a page of candidates costs a handful of local calls.
+
+    Silent on failure. A route list without prices is the list as it was before, which is
+    worth serving; a 500 because the game was busy is not.
+    """
+    routes = [r for key in _CARGO_KEYS for r in (offered.get(key) or [])]
+    if not routes:
+        return
+    try:
+        labels = await _cargo_ids(runtime)
+        priced: dict[tuple[int, int], int] = {}
+        for route in routes:
+            cargo_id = labels.get(str(route.get("cargo") or route.get("c") or ""))
+            distance = route.get("distance") or route.get("d")
+            if cargo_id is None or not isinstance(distance, int):
+                continue
+            key = (cargo_id, distance)
+            if key not in priced:
+                reply = await runtime.admin_client.send_gamescript(
+                    "get_cargo_income",
+                    {"cargo_id": cargo_id, "distance": distance},
+                    timeout=10.0,
+                )
+                result = reply.get("result") or {}
+                per_unit = result.get("income_per_unit")
+                if not isinstance(per_unit, int):
+                    continue
+                priced[key] = per_unit
+            per_unit = priced[key]
+            monthly = route.get("monthly_production") or route.get("p") or 0
+            route["income_per_unit"] = per_unit
+            # What the corridor is worth if everything produced is carried. An upper bound,
+            # and the number a build decision is actually weighed against.
+            route["estimated_monthly_income"] = per_unit * int(monthly)
+    except Exception:
+        logger.debug("Could not price the route candidates", exc_info=True)
+
+
+async def _cargo_ids(runtime: Any) -> dict[str, int]:
+    """Cargo label to id, which is what the planner reports and the pricer needs."""
+    reply = await runtime.admin_client.send_gamescript("get_cargo_types", {}, timeout=10.0)
+    out: dict[str, int] = {}
+    for entry in reply.get("result") or []:
+        label = entry.get("label")
+        cargo_id = entry.get("id")
+        if isinstance(label, str) and isinstance(cargo_id, int):
+            out[label] = cargo_id
+    return out
 
 
 @router.get("/compact", response_model=CompactSnapshot)

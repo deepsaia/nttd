@@ -7,11 +7,11 @@ Read the world. These cost nothing, change nothing, and can be repeated freely.
 The distinction is worth reading once rather than discovering. An agent that submitted `get_hangars` as an action spent two of its five actions on it, never found its hangar, and could then not buy the aircraft it was for.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 44 of 130 actions.
+Part of the [action reference](../action_reference.md). 45 of 131 actions.
 
 ## Contents
 
-- **query**: `find_airport_spots`, `find_bus_stop_spots`, `find_depot_spots`, `find_dock_spots`, `find_flat_spots`, `find_rail_depot_spot`, `find_station_spot`, `find_water_depot_spots`, `get_airport_types`, `get_bridge_types`, `get_cargo_flows`, `get_cargo_types`, `get_clients`, `get_companies`, `get_company_finance`, `get_date`, `get_engine_details`, `get_engines`, `get_expense_breakdown`, `get_game_settings`, `get_groups`, `get_hangars`, `get_industries`, `get_industry_info`, `get_infrastructure_costs`, `get_map_size`, `get_map_terrain`, `get_orders`, `get_rail_types`, `get_road_types`, `get_signs`, `get_station_info`, `get_stations`, `get_subsidies`, `get_tile_area`, `get_tile_info`, `get_town_info`, `get_town_rating`, `get_towns`, `get_vehicle_info`, `get_vehicles`, `get_waypoints`, `ping`, `scan_town_area`
+- **query**: `find_airport_spots`, `find_bus_stop_spots`, `find_depot_spots`, `find_dock_spots`, `find_flat_spots`, `find_rail_depot_spot`, `find_station_spot`, `find_water_depot_spots`, `get_airport_types`, `get_bridge_types`, `get_cargo_flows`, `get_cargo_income`, `get_cargo_types`, `get_clients`, `get_companies`, `get_company_finance`, `get_date`, `get_engine_details`, `get_engines`, `get_expense_breakdown`, `get_game_settings`, `get_groups`, `get_hangars`, `get_industries`, `get_industry_info`, `get_infrastructure_costs`, `get_map_size`, `get_map_terrain`, `get_orders`, `get_rail_types`, `get_road_types`, `get_signs`, `get_station_info`, `get_stations`, `get_subsidies`, `get_tile_area`, `get_tile_info`, `get_town_info`, `get_town_rating`, `get_towns`, `get_vehicle_info`, `get_vehicles`, `get_waypoints`, `ping`, `scan_town_area`
 
 Every action on one line, across all three pages: [index.md](index.md).
 
@@ -122,6 +122,14 @@ Takes no parameters.
 Report how much cargo your company has picked up and delivered per town and industry since the monitors were last read. Reading resets the counters unless keep_monitoring is set, so two reads in a row report different things.
 
 - `keep_monitoring` (boolean, default true) Leave the cargo monitors armed. Reading a monitor resets it, so a report covers only what moved since the last read.
+
+### `get_cargo_income`
+
+Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days. Payment falls off with time in transit, so a slower route earns less for the same haul. This is the game's own figure, not a model of it.
+
+- `cargo_id` (integer, required) Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming.
+- `days_in_transit` (integer, default this._DEFAULT_TRANSIT_DAYS) How many days the cargo spends travelling. Defaults to 20, a mid length haul, so that corridors compared without it are compared on the same assumption.
+- `distance` (integer, required) How far the cargo travels, in tiles. Manhattan distance between the two stations is what the game measures, which /state/routes already reports for every candidate.
 
 ### `get_cargo_types`
 

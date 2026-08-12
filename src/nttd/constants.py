@@ -174,6 +174,7 @@ READ_ONLY_GS_ACTIONS: frozenset[str] = frozenset({
     "find_airport_spots", "find_bus_stop_spots", "find_depot_spots", "find_dock_spots",
     "find_flat_spots", "find_rail_depot_spot", "find_station_spot", "find_water_depot_spots",
     "get_airport_types", "get_bridge_types", "get_cargo_flows", "get_cargo_types",
+    "get_cargo_income",
     "get_clients", "get_companies", "get_company_finance", "get_date",
     "get_engine_details", "get_engines", "get_expense_breakdown", "get_game_settings",
     "get_groups", "get_hangars", "get_industries", "get_industry_info",

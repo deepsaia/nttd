@@ -1981,6 +1981,32 @@
         }
       }
     },
+    "get_cargo_income": {
+      "description": "Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days. Payment falls off with time in transit, so a slower route earns less for the same haul. This is the game's own figure, not a model of it.",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetCargoIncome",
+      "parameters": {
+        "cargo_id": {
+          "required": true,
+          "description": "Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming.",
+          "type": "integer"
+        },
+        "days_in_transit": {
+          "required": false,
+          "default": {
+            "expression": "this._DEFAULT_TRANSIT_DAYS"
+          },
+          "description": "How many days the cargo spends travelling. Defaults to 20, a mid length haul, so that corridors compared without it are compared on the same assumption.",
+          "type": "integer"
+        },
+        "distance": {
+          "required": true,
+          "description": "How far the cargo travels, in tiles. Manhattan distance between the two stations is what the game measures, which /state/routes already reports for every candidate.",
+          "type": "integer"
+        }
+      }
+    },
     "get_cargo_types": {
       "description": "List the cargoes this game has, with their labels and ids.",
       "tier": "read_only",

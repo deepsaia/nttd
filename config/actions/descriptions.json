@@ -463,6 +463,14 @@
     "occupancy": {
       "type": "boolean",
       "description": "Also report what is built on each tile: the rail, road, station, tree, bridge and tunnel bits in flags, plus the tile owner. Off by default because it costs seven extra reads per tile, and a large band of them slows the game enough that other commands time out."
+    },
+    "days_in_transit": {
+      "type": "integer",
+      "description": "How many days the cargo spends travelling. Defaults to 20, a mid length haul, so that corridors compared without it are compared on the same assumption."
+    },
+    "distance": {
+      "type": "integer",
+      "description": "How far the cargo travels, in tiles. Manhattan distance between the two stations is what the game measures, which /state/routes already reports for every candidate."
     }
   },
   "enum_bindings": {
@@ -1015,6 +1023,10 @@
     },
     "stop_vehicle": {
       "description": "Stop a vehicle where it is. Stopping outside a depot blocks the line behind it, and only a vehicle stopped in a depot can be sold or refitted."
+    },
+    "get_cargo_income": {
+      "description": "Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days. Payment falls off with time in transit, so a slower route earns less for the same haul. This is the game's own figure, not a model of it.",
+      "category": "query"
     }
   }
 }
