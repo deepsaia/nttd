@@ -16,6 +16,7 @@ from nttd.actions.gs_reply import result_from_reply
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
+from nttd.constants import TICK_DEPENDENT_ACTIONS
 from nttd.runtime.company_lock import CompanyLockManager
 from nttd.runtime.end_conditions import EndConditionChecker
 from nttd.schemas.action_envelope import ActionEnvelope, ActionMode
@@ -498,32 +499,43 @@ class Orchestrator:
         start_date = await self._authoritative_game_date()
         target_date = start_date + advance_days
 
-        # Actions run with the game RUNNING, not paused.
+        # Only PATHFINDING actions need the game running.
         #
-        # Not because single-tile builds need it: at construction.command_pause_level
-        # = 3 a paused build_road_stop returns success in 0.1s. It is the PATHFINDING
-        # actions. The A* loop yields every 500 iterations through
-        # _YieldAndProcessEvents (main.nut:1912, :2414), whose first statement is
-        # Sleep(1) -- and Sleep counts GAME TICKS, of which a paused game delivers
-        # none. So connect_road and connect_rail hang while paused, at any pause
-        # level, once the search is long enough to reach that yield.
+        # Not single-tile builds: at construction.command_pause_level = 3 a paused
+        # build_road_stop returns success in 0.1s. It is the A* inside the GameScript,
+        # which yields every 500 iterations through _YieldAndProcessEvents
+        # (main.nut:1920, :2468), whose first statement is Sleep(1) -- and Sleep counts
+        # GAME TICKS, of which a paused game delivers none. So connect_road and
+        # connect_rail hang while paused, at any pause level, once the search is long
+        # enough to reach that yield.
         #
-        # Length is what decides it, which is why this cannot be worked around by
-        # inspecting the action: a SHORT connection never yields and succeeds while
-        # paused in 0.0s, while a cross-map one times out. Whether a given
-        # connect_road deadlocks is not knowable before running it, so the flush
-        # simply always sits between the unpause and the advance. These are the
-        # workhorse actions; a design that could not issue them would not be a
+        # Length decides whether a given call reaches the yield, and that is not knowable
+        # before running it, so those two are always flushed with the world moving. What
+        # changed is that everything else no longer is: this used to unpause for every
+        # batch, which meant a step of ordinary builds spent real game-days executing and
+        # a slow one could outrun its own interval.
+        #
+        # Only two actions are affected, out of 77. These are the workhorse
+        # actions; a design that could not issue them would not be a
         # design.
         #
         # This also keeps the flush safe if the pause level is ever lowered: at
         # level 1 a paused build times out AND wedges the GameScript, while having
         # actually executed -- so nttd would record a failure for an action that
         # mutated the world.
-        await self._unpause()
+        # Only a batch that actually needs ticks runs against a moving world. The two
+        # actions that do are named in TICK_DEPENDENT_ACTIONS, derived from the dispatch
+        # table rather than guessed. Every other action executes against a still world,
+        # so its cost in game-days is exactly zero and the advance below is exact.
+        needs_ticks = _needs_game_ticks(batch)
         action_results: list[ActionResult] = []
-        if batch:
+        if needs_ticks:
+            await self._unpause()
             action_results = await self._execute_actions(batch)
+        else:
+            if batch:
+                action_results = await self._execute_actions(batch)
+            await self._unpause()
         await self._wait_until_game_date(target_date)
         await self._pause()
 
@@ -828,3 +840,17 @@ class Orchestrator:
             "Game may be running slower than expected or paused externally.",
             days, timeout_s, start_date, self.world.game.game_date, target_date,
         )
+
+
+def _needs_game_ticks(batch: list[dict[str, Any]] | None) -> bool:
+    """Whether this batch contains an action that cannot execute while paused.
+
+    A module-level function rather than a method because it is a property of the batch
+    and nothing else, and because it is the one piece of this worth testing on its own.
+    """
+    if not batch:
+        return False
+    return any(
+        (entry.get("action") or entry.get("action_type")) in TICK_DEPENDENT_ACTIONS
+        for entry in batch
+    )

@@ -188,3 +188,27 @@ READ_ONLY_GS_ACTIONS: frozenset[str] = frozenset({
 # a route around the action allowlist.
 assert not (READ_ONLY_GS_ACTIONS & KNOWN_ACTIONS)
 assert not (READ_ONLY_GS_ACTIONS & OPERATOR_ACTIONS)
+
+
+# ---------------------------------------------------------------------------
+# Actions that cannot execute while the game is paused
+# ---------------------------------------------------------------------------
+
+# These two search for a route inside the GameScript, and their A* yields every 500
+# iterations through _YieldAndProcessEvents (main.nut:1920 and :2468), whose first
+# statement is Sleep(1). Sleep counts GAME TICKS, and a paused game delivers none, so a
+# long search hangs at any pause level. Everything else is safe paused: at
+# construction.command_pause_level = 3 a paused build returns success in about 0.1s.
+#
+# Derived by reading the dispatch table rather than guessed: _FindRoadPath and
+# _FindRailPath are the only functions that yield, and CmdConnectRoad and CmdConnectRail
+# are their only callers. A test cross-checks that against the GameScript.
+#
+# The step flush consults this so that a batch without either can run against a still
+# world, which is what makes a stepped run's advance exact rather than merely intended.
+TICK_DEPENDENT_ACTIONS: frozenset[str] = frozenset({
+    "connect_rail",
+    "connect_road",
+})
+
+assert TICK_DEPENDENT_ACTIONS <= KNOWN_ACTIONS
