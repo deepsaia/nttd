@@ -98,6 +98,116 @@ async def get_situation(session_id: str, company_id: int = 0) -> dict[str, Any]:
     ).report()
 
 
+@router.get("/path")
+async def check_path(
+    session_id: str,
+    from_x: int,
+    from_y: int,
+    to_x: int,
+    to_y: int,
+    transport_type: str = "rail",
+    include_path: bool = False,
+    max_iterations: int = 50_000,
+    company_id: int = 0,
+) -> dict[str, Any]:
+    """Whether two points can be joined, before paying to find out.
+
+    Every other build decision has a dry run behind it. The find_* family exists precisely
+    so an agent need not guess whether a station fits, and it answers by dry running the
+    real build inside the game. Connection was the one expensive, failure prone step with
+    no equivalent, and it is the step that decides whether a route ever earns anything. One
+    hand-played attempt cost 6729 for a line that then reported partial.
+
+    The asymmetry was also unfair. nttd has known the answer all along: this pathfinder is
+    the same one behind the operator-tier /pathfind route, kept on the operator side, so a
+    contestant was being measured partly on guessing something the platform could tell it.
+
+    Read only, and it changes nothing. It runs in Python over cached tiles, so it needs no
+    game ticks and works while the world is paused between steps.
+
+    Args:
+        transport_type: rail, road or water.
+        include_path: Return the tile by tile route as well. Off by default: a long path is
+            hundreds of tiles, and the question here is usually whether to commit, not how.
+            When on, the steps are in the shape build_path takes.
+
+    What comes back deliberately does NOT include a money figure. The pathfinder's cost is
+    its own search cost, in units of its terrain penalties, and reporting that as currency
+    would be a number that looks authoritative and is not. Length, bridges and tunnels are
+    what predict the bill; ask ``estimate_cost`` for money.
+    """
+    from nttd.pathfinding import service as pf_service  # noqa: PLC0415
+
+    runtime = deps.get_runtime(session_id)
+    width = runtime.world.game.map_width
+    height = runtime.world.game.map_height
+    if width <= 0 or height <= 0:
+        raise HTTPException(status_code=503, detail="Map dimensions not available yet")
+    if pf_service.get_cache(session_id) is None:
+        pf_service.init_cache(session_id, width, height)
+
+    found = await pf_service.pathfind(
+        session_id=session_id,
+        from_x=from_x, from_y=from_y, to_x=to_x, to_y=to_y,
+        transport_type=transport_type,
+        gs_client=runtime.admin_client,
+        company_id=company_id,
+        max_iterations=max_iterations,
+    )
+    if found.get("error"):
+        raise HTTPException(status_code=400, detail=str(found["error"]))
+
+    path = found.get("path") or []
+    answer: dict[str, Any] = {
+        "connected": bool(found.get("found")),
+        "transport_type": transport_type,
+        "from": [from_x, from_y],
+        "to": [to_x, to_y],
+        "tiles": found.get("total_tiles", 0),
+        "bridges": found.get("bridges", 0),
+        "tunnels": found.get("tunnels", 0),
+        # What the route would take to build, counted by kind of work.
+        #
+        # Without this the answer misleads. A water route across dry land reports connected,
+        # because the planner is willing to dig canals the whole way, and an agent reads
+        # that as "a ship can sail here". Saying build_canal 30 times is the difference
+        # between a route and a civil engineering project.
+        "work": _work(path),
+        "searched_tiles": found.get("tiles_explored", 0),
+        "search_ms": found.get("estimated_time_ms", 0),
+    }
+    if not answer["connected"]:
+        # Why it gave up, in the two ways it can. Hitting the iteration ceiling is a
+        # different problem from there being no route, and an agent that cannot tell them
+        # apart abandons a corridor that only needed a longer search.
+        answer["reason"] = (
+            "the search hit its iteration limit, so raise max_iterations before "
+            "concluding there is no route"
+            if found.get("iterations", 0) >= max_iterations
+            else "no route exists for this transport type between these points"
+        )
+    if include_path:
+        answer["path"] = path
+    return answer
+
+
+def _work(path: list[dict[str, Any]]) -> dict[str, int]:
+    """How many tiles of the route need each kind of construction.
+
+    The planner marks every step with what it would take: move over what is already there,
+    or build a canal, a bridge, a tunnel. Counting them turns "connected" into something an
+    agent can weigh, since a line that is mostly existing track is a different proposition
+    from one that is mostly digging.
+    """
+    counts: dict[str, int] = {}
+    for step in path:
+        action = str(step.get("action") or "move")
+        if action in ("start", "end"):
+            continue
+        counts[action] = counts.get(action, 0) + 1
+    return counts
+
+
 @router.get("/routes")
 async def get_route_candidates(
     session_id: str,

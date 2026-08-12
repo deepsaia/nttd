@@ -423,6 +423,33 @@ the read path uses fragments until they are merged.
 
 ---
 
+### Asking before building
+
+Two read-only additions worth knowing about, both free and both usable while a stepped
+world is paused.
+
+`GET /state/path` says whether two points can be joined, before any money is spent:
+
+```
+GET /state/path?from_x=76&from_y=184&to_x=73&to_y=155&transport_type=rail
+  -> {"connected": true, "tiles": 34, "bridges": 1, "tunnels": 0,
+      "work": {"build_rail": 31, "build_bridge": 1}}
+```
+
+`work` is the part to read. The same corridor asked for water answers `connected: true`
+with `{"build_canal": 26, "move": 7}`, because the planner will dig the whole way. Connected
+alone would read as a shipping lane.
+
+It reports no money figure on purpose: the pathfinder's cost is its own search cost in
+terrain penalties, and printing that as currency would look authoritative and be wrong. Ask
+`estimate_cost` for money.
+
+`get_cargo_income` says what carrying a cargo pays, which is what makes a route ranking mean
+anything. At distance 32, steel pays 22 a unit against livestock's 16, and `/state/routes`
+now carries `income_per_unit` and `estimated_monthly_income` on every cargo candidate.
+
+---
+
 ### `nttd monitor`
 
 ```bash
