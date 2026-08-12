@@ -137,6 +137,10 @@ async def submit_action(
             envelope.action_id, result.status, result.error,
             changed_entities=result.changed_entities,
         )
+        # Same call the stepped flush makes, so the stored map is kept current whichever
+        # way an action arrived. Real time has no step boundary to hang this on, which is
+        # why it belongs at the action rather than at the step.
+        await runtime.orchestrator.refresh_changed_tiles(envelope, result)
     except Exception as exc:
         logger.exception("Action execution failed: %s", envelope.action_type)
         runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, str(exc))

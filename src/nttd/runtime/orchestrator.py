@@ -24,6 +24,7 @@ from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.game import RuntimeMode
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.step_result import StepResult
+from nttd.state.tile_footprint import affected_area
 from nttd.state.world import WorldState
 from nttd.utils.name_generator import generate_timestamp
 
@@ -84,6 +85,9 @@ class Orchestrator:
 
         # Optional action tracker (set from app.py)
         self.action_tracker: ActionTracker | None = None
+        # Where tile deltas go, set by SessionRuntime. Optional so an orchestrator can be
+        # built without a session directory, which the tests do.
+        self.tile_writer: Any = None
         self._secs_per_game_day: float = _SECS_PER_GAME_DAY
 
         # End-condition checker (defaults to disabled; set via load_scenario())
@@ -286,6 +290,86 @@ class Orchestrator:
         """
         return self._end_checker.start_clock(self.world.game.game_date)
 
+    # How many tiles one refresh may ask for at a time. get_tile_area REFUSES an area
+    # larger than its max_tiles rather than truncating it, so the rectangle is read in row
+    # bands that each fit.
+    _REFRESH_BAND = 400
+
+    async def refresh_changed_tiles(
+        self, envelope: ActionEnvelope, outcome: ActionResult,
+    ) -> None:
+        """Bring the stored map back in step with the world after one action.
+
+        nttd is the only way a contestant changes anything, so it always knows which tiles
+        might have moved: the ones the action named, plus the ones a compound build
+        reported laying or failing on. Those are re-read and appended as a delta.
+
+        Called from both action paths rather than from one, because a rule kept in two
+        places is how the action mapping, the terrain scan and the verifier's world check
+        each came to be wrong in this codebase.
+
+        Never fatal. A stale map is a worse map, not a broken run, so a failure here is
+        logged and the action still stands.
+        """
+        if self.tile_writer is None:
+            return
+        if outcome.status is ActionStatus.REJECTED:
+            # Refused before reaching the game, so nothing moved.
+            return
+
+        area = affected_area(
+            envelope.action_type,
+            envelope.parameters or {},
+            outcome.changed_entities,
+            self.world.game.map_width or 256,
+            self.world.game.map_height or 256,
+        )
+        if area is None:
+            return
+
+        try:
+            tiles = await self._read_tile_area(*area)
+            if tiles:
+                self.tile_writer.write_delta(tiles)
+        except Exception:
+            logger.debug(
+                "Could not refresh tiles after %s", envelope.action_type, exc_info=True,
+            )
+
+    async def _read_tile_area(
+        self, x1: int, y1: int, x2: int, y2: int,
+    ) -> list[dict[str, Any]]:
+        """Read an inclusive rectangle, in bands that fit one reply.
+
+        get_tile_area's bounds are EXCLUSIVE, so each call asks for one past the end. That
+        is not obvious from the parameter names and a request for a single tile returns
+        nothing at all, which is worth stating rather than rediscovering.
+        """
+        width = x2 - x1 + 1
+        if width <= 0:
+            return []
+        rows_per_band = max(1, self._REFRESH_BAND // width)
+        tiles: list[dict[str, Any]] = []
+        band_start = y1
+        while band_start <= y2:
+            band_end = min(band_start + rows_per_band - 1, y2)
+            reply = await self.client.send_gamescript(
+                "get_tile_area",
+                {"x1": x1, "y1": band_start, "x2": x2 + 1, "y2": band_end + 1,
+                 "max_tiles": self._REFRESH_BAND},
+                timeout=20.0,
+            )
+            band = reply.get("result")
+            if not reply.get("success") or not isinstance(band, list):
+                logger.debug(
+                    "Tile refresh band %d-%d failed: %s",
+                    band_start, band_end, reply.get("error"),
+                )
+                return tiles
+            tiles.extend(band)
+            band_start = band_end + 1
+        return tiles
+
     def _record_action(
         self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",
         changed: dict[str, Any] | None = None,
@@ -413,6 +497,7 @@ class Orchestrator:
                         envelope, outcome.status, outcome.error,
                         changed=outcome.changed_entities,
                     )
+                    await self.refresh_changed_tiles(envelope, outcome)
                     outcome.action_type = gs_action
                     outcomes.append(outcome)
                     if outcome.status == ActionStatus.SUCCESS:

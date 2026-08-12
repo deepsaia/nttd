@@ -99,6 +99,8 @@ class SessionRuntime:
         # because a self-hosting contestant holds every credential anyway.
         self.scored_lock = ScoredLock()
         self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
+        # The orchestrator appends tile deltas after an action, from both action paths.
+        self.orchestrator.tile_writer = self.tile_writer
         # Per-company contestant detail for the result record. The contestant runs
         # its own loop, so nttd tallies action counts from its own action log and
         # records model and spend only as declared. See participant_report.
