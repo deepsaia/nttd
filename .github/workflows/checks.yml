@@ -29,10 +29,15 @@ jobs:
         # happens on 3.14; 3.13 is the floor the package claims and nothing else checks it.
         python: ["3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
+        with:
+          # Tags, and enough history to reach the latest one. The version now comes from the
+          # git tag, and checkout's default depth of 1 fetches no tags at all, which would
+          # build every artifact as a dev version off an unknown base.
+          fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.0.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
@@ -64,10 +69,15 @@ jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
+        with:
+          # Tags, and enough history to reach the latest one. The version now comes from the
+          # git tag, and checkout's default depth of 1 fetches no tags at all, which would
+          # build every artifact as a dev version off an unknown base.
+          fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.0.0
         with:
           enable-cache: true
 

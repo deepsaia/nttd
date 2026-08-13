@@ -52,7 +52,7 @@ dependencies = [
 nttd = "nttd.cli.app:main"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.4,<1.0"]
 build-backend = "hatchling.build"
 
 # The version IS the release tag, read from git rather than written here.
@@ -62,6 +62,12 @@ build-backend = "hatchling.build"
 # the bug: two places holding one fact, and a release is exactly when they diverge.
 [tool.hatch.version]
 source = "vcs"
+
+# A build with no git history, from an unpacked sdist for instance, has no tag to read. 0.0.0
+# rather than an error, and deliberately not a plausible number: the publish workflow compares
+# the built version against the release tag, so a 0.0.0 slipping into a release fails there
+# rather than reaching PyPI.
+fallback-version = "0.0.0"
 
 # No tag pattern set: the default already accepts a bare version like 0.0.2 as well as v0.0.2,
 # and the option for narrowing it is tag_regex rather than tag_pattern, which this backend

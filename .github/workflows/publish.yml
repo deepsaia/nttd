@@ -1,17 +1,17 @@
 # Publish to PyPI when a GitHub release is published.
 #
-# Gated on the same packaging check CI runs, because the failure this guards against is
-# silent: a wheel with no GameScript, no openttd.cfg and no action manifest installs cleanly
-# and then cannot start a session. Measured on a build from main before the force-include
-# rules existed: 179 files, none of them data.
+# The version comes from the release tag, derived at build time by hatch-vcs, so there is one
+# source of truth and no number to keep in step by hand. That was the 0.0.2 failure: pyproject
+# said 0.1.0, the release said 0.0.2, and publish refused rather than uploading the wrong one.
 #
-# Trusted publishing rather than a stored token. There is no secret to leak or rotate, the
-# permission is scoped to this repository and this workflow, and PyPI records which workflow
-# uploaded each file. Requires the project to be configured as a trusted publisher on PyPI
-# once, naming this repository, publish.yml, and the environment below. PyPI binds a
-# trusted publisher to the workflow FILENAME, so renaming this file means updating that
-# configuration too, or the upload is rejected.
+# Trusted publishing rather than a stored token. Nothing to leak or rotate, the permission is
+# scoped to this repository and this workflow FILENAME, and PyPI records which workflow uploaded
+# each file. Configure nttd as a trusted publisher on PyPI once, naming this repository,
+# publish.yml, and the pypi environment below. Renaming this file means updating that too.
 name: publish
+
+permissions:
+  contents: read
 
 on:
   release:
@@ -20,47 +20,53 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # A fork or a mirror should never publish under our name.
+    if: github.repository == 'deepsaia/nttd'
     environment: pypi
     permissions:
-      # For trusted publishing. Nothing else needs writing.
-      id-token: write
+      id-token: write   # Mandatory for trusted publishing.
+      contents: read    # For checkout.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
+        with:
+          # Tags, so hatch-vcs can derive the version. On a release the checked-out ref IS the
+          # tag, so depth 1 would usually do; full history costs a few seconds and removes the
+          # question, and getting this wrong publishes a dev version rather than failing.
+          fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.0.0
         with:
           enable-cache: true
 
       - name: Install
         run: uv sync --frozen
 
-      # The tests run again here rather than trusting that CI passed on the commit. A release
-      # can be cut from any ref, including one whose checks never ran.
-      - name: Lint
-        run: uv run ruff check src/ tests/ scripts/
-
+      # A release can be cut from any ref, including one whose checks never ran. Twelve seconds
+      # to know, against publishing a version that can be yanked but never replaced.
       - name: Test
         run: uv run pytest -q
 
       - name: Build sdist and wheel
         run: uv build --out-dir dist
 
+      # The check that catches what lint and tests structurally cannot: a wheel with no
+      # GameScript, no openttd.cfg and no action manifest installs cleanly and then cannot
+      # start a session. Measured before the packaging fix: 179 files, none of them data.
       - name: The wheel carries the data nttd needs to run
         run: uv run python scripts/check_wheel_contents.py dist/*.whl
 
-      # The tag is the release name; the version is in pyproject. A mismatch means the wrong
-      # thing is about to be published under the right name, which is not recoverable on PyPI:
-      # a version can be yanked but never replaced.
-      - name: The release tag matches the packaged version
+      # Guards the DERIVATION, not a hand-written number. Without tags, or off the tagged
+      # commit, hatch-vcs yields something like 0.0.3.dev0+g02e282f3, and a fallback version
+      # would quietly publish 0.0.0. Either would take a name nobody asked for.
+      - name: The built artifact is versioned as the release tag
         run: |
-          packaged=$(uv run python -c "
-          import tomllib
-          print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])
-          ")
+          built=$(ls dist/*.whl | head -1 | sed -E 's|.*/nttd-(.+)-py3-none-any.whl|\1|')
           tag="${GITHUB_REF_NAME#v}"
-          echo "tag=$tag packaged=$packaged"
-          test "$tag" = "$packaged"
+          echo "tag=$tag built=$built"
+          test "$tag" = "$built"
 
+      # The canonical action rather than `uv publish`: it speaks trusted publishing natively and
+      # is what PyPI's own documentation points at.
       - name: Publish
-        run: uv publish dist/*
+        uses: pypa/gh-action-pypi-publish@v1.14.2
