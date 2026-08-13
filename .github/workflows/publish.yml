@@ -8,8 +8,10 @@
 # Trusted publishing rather than a stored token. There is no secret to leak or rotate, the
 # permission is scoped to this repository and this workflow, and PyPI records which workflow
 # uploaded each file. Requires the project to be configured as a trusted publisher on PyPI
-# once, naming this repository, this workflow file and the environment below.
-name: release
+# once, naming this repository, publish.yml, and the environment below. PyPI binds a
+# trusted publisher to the workflow FILENAME, so renaming this file means updating that
+# configuration too, or the upload is rejected.
+name: publish
 
 on:
   release:
