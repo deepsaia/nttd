@@ -43,6 +43,22 @@ _STAGGER_INTERVAL = 5                  # refresh towns/industries every N cycles
 # This rate is FIXED. OpenTTD 15.3 has no game_speed setting, and
 # economy.minutes_per_calendar_year only moves the separate CALENDAR clock
 # (vehicle/house introduction dates), not the economy.
+# World changes nobody asked for, which the stored tilemap has to hear about.
+#
+# nttd sees every contestant action and re-reads what it touched, so that half is covered.
+# These three are the game acting on its own, and until now they went unnoticed: an industry
+# that opened stood on tiles the map still called empty.
+#
+# Town GROWTH is not here because OpenTTD raises no event for it. Houses and roads appearing
+# as a town expands are left to heal on contact, which costs an agent one refused build per
+# stale tile, and that refusal now says why.
+_WORLD_CHANGE_EVENTS = frozenset({"industry_open", "industry_close", "town_founded"})
+
+# Slack around the tile an event names. An industry footprint reaches 4 tiles from its
+# location and a founded town starts small, so this covers both with room for the access road
+# each brings with it.
+_WORLD_CHANGE_PAD = 6
+
 _SECS_PER_GAME_DAY = 1.97
 _TIMEOUT_MULTIPLIER = 3.0
 
@@ -111,10 +127,15 @@ class Orchestrator:
         self._step_count: int = 0
 
     def _on_game_event(self, data: dict[str, Any]) -> None:
-        """Handle unsolicited GS game events and record them."""
+        """Handle unsolicited GS game events: refresh what moved, then record it."""
+        event_type = str(data.get("event_type", "unknown"))
+        # Before the recorder check, deliberately. A session without a recorder still has a
+        # stored tilemap that everything else plans over, and tying map freshness to whether
+        # the run is being recorded would make the map correct only in scored sessions.
+        if event_type in _WORLD_CHANGE_EVENTS:
+            self._schedule_world_refresh(event_type, data)
         if not self.recorder:
             return
-        event_type = str(data.get("event_type", "unknown"))
         company_id = data.get("company_id", data.get("old_company_id"))
         detail_parts: list[str] = []
         for key, val in data.items():
@@ -129,6 +150,52 @@ class Orchestrator:
             detail=detail,
         )
         logger.info("GS game event: %s %s", event_type, detail)
+
+    def _schedule_world_refresh(self, event_type: str, data: dict[str, Any]) -> None:
+        """Queue a re-read of the neighbourhood an autonomous change just named.
+
+        The tilemap is kept current for everything the CONTESTANT does, because nttd sees
+        every action and re-reads what it touched, even on failure. The world also changes on
+        its own, and that was uncovered: an industry that opened stood on tiles the stored map
+        still called empty, and a route planned over them was planned over a fiction.
+
+        Fire and forget, from a synchronous callback on the admin client's own loop, because
+        an event is not a request and nothing is waiting on the answer.
+        """
+        x, y = data.get("x"), data.get("y")
+        if not isinstance(x, int) or not isinstance(y, int):
+            # The subject had already gone when the event fired, so there is no location to
+            # read around. Better to skip than to refresh a rectangle around tile 0.
+            logger.debug("%s carried no coordinates, so no tiles were refreshed", event_type)
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._refresh_around(event_type, x, y))
+
+    async def _refresh_around(self, event_type: str, x: int, y: int) -> None:
+        """Re-read one neighbourhood and append it as a delta."""
+        if self.tile_writer is None:
+            return
+        width = self.world.game.map_width or 256
+        height = self.world.game.map_height or 256
+        area = (
+            max(1, x - _WORLD_CHANGE_PAD),
+            max(1, y - _WORLD_CHANGE_PAD),
+            min(width - 2, x + _WORLD_CHANGE_PAD),
+            min(height - 2, y + _WORLD_CHANGE_PAD),
+        )
+        try:
+            tiles = await self._read_tile_area(*area)
+            if tiles:
+                self.tile_writer.write_delta(tiles)
+                logger.info(
+                    "Refreshed %d tiles around (%d,%d) after %s",
+                    len(tiles), x, y, event_type,
+                )
+        except Exception:
+            logger.debug("Could not refresh tiles after %s", event_type, exc_info=True)
 
     @property
     def mode(self) -> RuntimeMode:

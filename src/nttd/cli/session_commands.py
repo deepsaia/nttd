@@ -44,7 +44,14 @@ def session_create(
 
     from nttd.utils.name_generator import generate_session_name
 
-    cfg = load_scenario(config)
+    # A bad path is a typo, not a crash. Reported as one line rather than a traceback,
+    # while still refusing: the defaults behind a mistyped path are a random seed and a
+    # different runtime mode, so quietly using them is worse than stopping.
+    try:
+        cfg = load_scenario(config)
+    except (FileNotFoundError, ValueError) as bad_config:
+        console.print(f"[red]{bad_config}[/]")
+        raise typer.Exit(code=1) from None
     settings = scenario_to_settings(cfg)
     session_name = name or (cfg.name if cfg.name != "default" else generate_session_name())
 

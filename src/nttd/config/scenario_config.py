@@ -749,12 +749,32 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
 # ---------------------------------------------------------------------------
 
 def load(config_path: Path | str | None = None) -> ScenarioConfig:
-    """Load scenario config from a HOCON file. Falls back to defaults on any error."""
-    path = Path(config_path) if config_path else _DEFAULT_CONFIG_PATH
+    """Load scenario config from a HOCON file.
 
-    if not path.exists():
-        logger.info("Scenario config not found at %s -- using defaults", path)
-        return ScenarioConfig()
+    Defaults when NO path is given, which is the ordinary way to start a free-play session.
+    Raises when a path IS given and cannot be read, because the two cases want opposite
+    treatment and were being handled the same way.
+
+    Falling back silently on a named path is the worst outcome available. A mistyped path
+    produced a session that announced itself as created from that file and was in fact a
+    60 minute async_realtime run on a RANDOM seed: unscored, unreproducible, and
+    indistinguishable at a glance from the benchmark that was asked for. Measured with
+    --config /tmp/definitely_not_here.conf, which reported "Seed: random (not
+    reproducible)" under the path it had just failed to open.
+    """
+    if config_path is None:
+        path = _DEFAULT_CONFIG_PATH
+        if not path.exists():
+            logger.info("No scenario config at %s -- using defaults", path)
+            return ScenarioConfig()
+    else:
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"scenario config not found: {path}. A named config that cannot be read is "
+                f"refused rather than replaced with defaults, because the defaults are a "
+                f"random seed and a different runtime mode."
+            )
 
     try:
         from pyhocon import ConfigFactory  # type: ignore[import-untyped]
@@ -763,7 +783,11 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
     except ImportError:
         logger.warning("pyhocon not installed -- using default scenario config")
         return ScenarioConfig()
-    except Exception:
+    except Exception as failure:
+        if config_path is not None:
+            raise ValueError(
+                f"scenario config at {path} could not be parsed: {failure}"
+            ) from failure
         logger.exception("Failed to parse scenario config at %s -- using defaults", path)
         return ScenarioConfig()
 
