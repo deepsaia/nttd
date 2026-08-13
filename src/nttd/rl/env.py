@@ -229,8 +229,25 @@ class NttdEnv:
         loan = float(company.get("loan", 0) or 0)
         max_loan = max(float(company.get("max_loan", 0) or 0), 1.0)
         income = float(company.get("income", 0) or 0)
-        expenses = float(company.get("expenses", 0) or 0)
         value = float(company.get("value", 0) or 0)
+
+        # q0_expenses, not "expenses". There is no "expenses" key in a snapshot and there never
+        # was: the GameScript emits q0_expenses from GSCompany.GetQuarterlyExpenses, the Company
+        # schema has no plain expenses field, and nothing fills one. So this read returned 0
+        # forever and two of the ten observation dimensions were dead, silently, because
+        # `.get(name, 0) or 0` cannot tell a missing key from a genuine zero.
+        #
+        # AND EXPENSES ARE NEGATIVE. GetQuarterlyExpenses reports them as negative money,
+        # confirmed across 1,626 recorded samples with no positive case, which is why profit is
+        # income PLUS expenses. The old line subtracted them, so had the key ever existed the
+        # margin would have been inverted: costs would have read as earnings.
+        expenses = float(company.get("q0_expenses", 0) or 0)
+
+        # Both from quarter 0, so the ratio compares one period with itself. `income` above is
+        # quarter 1, the last COMPLETED quarter, and mixing the two would divide this quarter's
+        # costs by last quarter's earnings.
+        quarter_income = float(company.get("q0_income", 0) or 0)
+        margin = (quarter_income + expenses) / max(abs(quarter_income), 1.0)
         game_date = int(game.get("game_date", 0) or 0)
 
         own_vehicles = sum(1 for v in vehicles if v.get("company_id") == self.company_id)
@@ -240,9 +257,12 @@ class NttdEnv:
             money / 1_000_000.0,
             loan / max_loan,
             income / 100_000.0,
-            expenses / 100_000.0,
+            # Negated to a magnitude, so the dimension rises as spending rises. The Box spans
+            # -10 to 10 and would accept the raw negative; this is for legibility, so that
+            # reading the vector does not require remembering OpenTTD's sign convention.
+            -expenses / 100_000.0,
             value / 1_000_000.0,
-            (income - expenses) / max(abs(income), 1.0),
+            margin,
             own_vehicles / 100.0,
             own_stations / 50.0,
             len(towns) / 100.0,
