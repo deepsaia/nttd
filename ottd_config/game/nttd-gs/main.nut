@@ -1600,16 +1600,31 @@ class NttdGS extends GSController {
         if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
         local adj = this._GetAdjacentRailTrack(x, y);
         if (adj.len() == 0) continue;
-        // Dry-run: test if BuildRailDepot would actually succeed here
-        {
+
+        // The front tile is what the depot opens onto, and it has to be track a train can
+        // actually run along. A rail station platform is not that. It is a line with an
+        // axis, and a depot set against its flank opens onto a tile no train can enter
+        // from that side, so the depot builds, reports connected false, and can never
+        // release a vehicle.
+        //
+        // Every adjacent track is now tried rather than only the first, which was merely
+        // whichever direction the scan reached first. A tile with one unusable neighbour
+        // and one good one was being thrown away on the strength of the wrong one.
+        local chosen = null;
+        foreach (candidate in adj) {
+          local front = this._GetAdjacentTile(tile, candidate.dir);
+          if (GSRail.IsRailStationTile(front)) continue;
           local company_mode = GSCompanyMode(company_id);
           local test_mode = GSTestMode();
           GSRail.SetCurrentRailType(rail_type);
-          if (!GSRail.BuildRailDepot(tile, this._GetAdjacentTile(tile, adj[0].dir))) continue;
+          if (!GSRail.BuildRailDepot(tile, front)) continue;
+          chosen = candidate;
+          break;
         }
+        if (chosen == null) continue;
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
-          adjacent_track_x = adj[0].nx, adjacent_track_y = adj[0].ny,
-          depot_direction = adj[0].dir });
+          adjacent_track_x = chosen.nx, adjacent_track_y = chosen.ny,
+          depot_direction = chosen.dir });
       }
     }
     this._SortByDistance(spots);
@@ -2966,6 +2981,28 @@ class NttdGS extends GSController {
         local turn = (exit_dir - entry_dir + 4) % 4;
         local turn_cost = 0;
         if (turn == 1 || turn == 3) turn_cost = C_CURVE_45;
+
+        // A curve cannot be built on a slope. The game refuses it outright with
+        // ERR_LAND_SLOPED_WRONG, so a path that turns on a sloped tile is not merely
+        // expensive, it is unbuildable, and charging C_SLOPE for it was pricing something
+        // that was never on sale.
+        //
+        // The turn happens on CUR_TILE: the train arrives travelling entry_dir and leaves
+        // travelling exit_dir. Straight track over a slope is fine, which is why the cost
+        // penalty below still stands for the non turning case.
+        //
+        // Measured. A 37 tile corridor over ground with no water and no height obstacles
+        // failed on exactly one segment, at (19,40), slope 2, where the path entered from
+        // (19,39) and left to (20,40). Both neighbours were flat, so turning one tile
+        // earlier cost nothing. Recovering from it by hand took 5 actions across 4 steps
+        // of the 31 a T1 run has, because the rail already laid by the failed attempt is
+        // what blocks the terraforming that would fix it.
+        //
+        // Not applied at the seed: the start is pushed with all four directions, so
+        // entry_dir there is an artificial approach rather than a real one, and the real
+        // one comes from the station platform via the hint.
+        if (turn != 0 && came_from[cur_key] != -1 &&
+            GSTile.GetSlope(cur_tile) != GSTile.SLOPE_FLAT) continue;
         // turn == 2 is U-turn, already blocked
 
         // Check if tile is passable.
