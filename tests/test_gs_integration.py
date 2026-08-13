@@ -71,24 +71,26 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
         yield provided
         return
 
-    # Create a new session
-    resp = client.post("/admin/sessions/new", json={"name": "gs_integration_test"})
+    # Created from a scenario config, which is how a benchmark run delivers a seed.
+    #
+    # The settings were previously poked in directly and named NO seed, so OpenTTD generated a
+    # different 128x128 world every run and the placement tests passed or failed on the luck of
+    # the map: one observed run had five failures rooted in "could not build dock A", because
+    # that world had no suitable coastal tile.
+    #
+    # Note that pinning it in a settings payload would not have worked either. Only the -G
+    # command-line flag pins generation on OpenTTD 15.3; game_creation.generation_seed in a
+    # config does nothing. scenario_to_settings emits the internal _map_seed key that
+    # SessionRuntime passes as -G, so going through a config is both the fix and the path a
+    # real run uses.
+    resp = client.post("/admin/sessions/new", json={
+        "name": "gs_integration_test",
+        "settings": {},
+        "config_path": str(_FIXTURE_SCENARIO),
+    })
     assert resp.status_code == 200, f"Failed to create session: {resp.text}"
     sid = resp.json()["session_id"]
-    log.info("Created test session: %s", sid)
-
-    # Small 128x128 map, year 1960 (all vehicle types), custom 4 towns, high sea for coast
-    client.post(f"/admin/sessions/{sid}/settings", json={
-        "settings": {
-            "game_creation.map_x": "7",
-            "game_creation.map_y": "7",
-            "game_creation.starting_year": "1960",
-            "game_creation.terrain_type": "1",
-            "difficulty.number_towns": "4",
-            "game_creation.custom_town_number": "4",
-            "difficulty.quantity_sea_lakes": "3",
-        },
-    })
+    log.info("Created test session %s from %s", sid, _FIXTURE_SCENARIO.name)
 
     # Start the session (spawns OpenTTD)
     resp = client.post(f"/admin/sessions/{sid}/start", json={
@@ -108,6 +110,9 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
                 f"/sessions/{sid}/state/gs/query",
                 params={"action": "ping"},
                 json={},
+                # With the token, like every other query here. Without it the readiness probe
+                # 401s forever and the whole module errors out on a game that was fine.
+                headers=_participant_headers(sid),
             )
             if resp.status_code == 200:
                 gs_ready = True
@@ -116,7 +121,13 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
             pass
         time.sleep(_GS_READY_POLL)
 
-    assert gs_ready, f"GS did not become ready within {_GS_READY_TIMEOUT}s"
+    if not gs_ready:
+        # Stop the session before failing. This assert used to fire with the OpenTTD process
+        # still running and no teardown to reach, so a failed setup leaked a game each time:
+        # three were found alive after a handful of runs. With a random world, setup failed
+        # often, so the leak compounded exactly when the suite was least reliable.
+        _stop_session(client, sid, reason="gs_test_setup_failed")
+        pytest.fail(f"GS did not become ready within {_GS_READY_TIMEOUT}s")
     log.info("GS ready for session %s", sid)
 
     # Note: there is no way to speed the game up. This fixture used to POST
@@ -134,12 +145,21 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
         log.info("Keeping test session %s alive (--keep-session)", sid)
         return
 
-    log.info("Stopping test session %s", sid)
+    _stop_session(client, sid, reason="gs_test_complete")
+
+
+def _stop_session(client: httpx.Client, sid: str, reason: str) -> None:
+    """Stop and archive a session, from teardown or from a failed setup.
+
+    One place, because the failed-setup path had none: an OpenTTD process outlives a pytest
+    run that never reached teardown, holding its ports until someone notices.
+    """
+    log.info("Stopping test session %s (%s)", sid, reason)
     try:
-        client.post(f"/admin/sessions/{sid}/stop", params={"end_reason": "gs_test_complete"})
+        client.post(f"/admin/sessions/{sid}/stop", params={"end_reason": reason})
         log.info("Session %s stopped and archived", sid)
     except Exception:
-        log.warning("Failed to stop session %s during teardown", sid, exc_info=True)
+        log.warning("Failed to stop session %s", sid, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -147,12 +167,43 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
 # ---------------------------------------------------------------------------
 
 
+# The world this suite is written against, pinned by seed. See the file's own header.
+_FIXTURE_SCENARIO = (
+    pathlib.Path(__file__).resolve().parent / "data" / "gs_integration.conf"
+)
+
+
+def _participant_headers(session_id: str) -> dict[str, str]:
+    """The token the session issued, read from where the session wrote it.
+
+    A session started with contestant companies enforces its token, and the suite's client
+    carries none, so every query came back 401 before this. participants.json is the
+    documented place to find it: the auth refusal itself says tokens are written to the
+    session directory.
+    """
+    issued = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "logs" / "sessions" / session_id / "participants.json"
+    )
+    if not issued.exists():
+        return {}
+    tokens = json.loads(issued.read_text())
+    first = tokens.get("0") or next(iter(tokens.values()), None)
+    return {"X-Participant-Token": first} if first else {}
+
+
 def gs_query(client: httpx.Client, session_id: str, action: str, params: dict | None = None) -> list | dict:
-    """Execute a GS query and return the result."""
+    """Execute a GS query and return the result.
+
+    Carries the participant token. The query path scopes the company from it rather than
+    taking it from the caller, so a session that issues tokens answers 401 without one, and
+    every query in this suite did.
+    """
     resp = client.post(
         f"/sessions/{session_id}/state/gs/query",
         params={"action": action},
         json=params or {},
+        headers=_participant_headers(session_id),
     )
     resp.raise_for_status()
     data = resp.json()
@@ -170,6 +221,7 @@ def interpret(
         f"/sessions/{session_id}/actions/interpret",
         json=actions,
         params={"company_id": company_id},
+        headers=_participant_headers(session_id),
     )
     resp.raise_for_status()
     return resp.json()
@@ -981,6 +1033,59 @@ class TestWaterRoutePipeline:
 
 
 # ---------------------------------------------------------------------------
+# The world itself
+# ---------------------------------------------------------------------------
+
+# What seed 1001 generates under tests/data/gs_integration.conf, read from a running game.
+# Four towns, and both placement families have somewhere to build: 3 dock spots and 3 bus stop
+# spots. Those two are exactly what a random world used to withhold.
+_EXPECTED_TOWNS = 4
+
+
+@pytest.mark.gs_test
+def test_the_world_is_the_one_these_tests_were_written_for(
+    client: httpx.Client, session_id: str,
+) -> None:
+    """A pinned seed is only half the fix. This is the half that fails LOUDLY.
+
+    If the seed to world mapping ever shifts, under a different OpenTTD build or a changed
+    generation setting, the placement tests would start failing one at a time on missing
+    coastline and missing road, which reads as a broken feature rather than a changed map.
+    Measured before the seed was pinned: five failures, rooted in "could not build dock A" and
+    build_road_stop returning no station_id.
+
+    Skipped when --session-id points at somebody else's session, which is a deliberate escape
+    hatch for debugging against a world of your own.
+    """
+    if client.get(f"/admin/sessions/{session_id}").json().get("meta", {}).get(
+        "config_path", "",
+    ).endswith("gs_integration.conf") is False:
+        pytest.skip("session was not created from the fixture scenario")
+
+    size = gs_query(client, session_id, "get_map_size")
+    assert size["size_x"] == 128 and size["size_y"] == 128, size
+
+    towns = gs_query(client, session_id, "get_towns")
+    assert len(towns) == _EXPECTED_TOWNS, (
+        f"expected {_EXPECTED_TOWNS} towns from seed 1001, got {len(towns)}. "
+        f"This is not the world these tests were written for."
+    )
+
+    # The two things a random world used to withhold, which is what made this suite flaky.
+    coastal = [
+        t for t in towns
+        if gs_query(client, session_id, "find_dock_spots", {"town_id": t["id"]})
+    ]
+    assert coastal, "no town has a dock spot: this world has no usable coastline"
+
+    roadside = [
+        t for t in towns
+        if gs_query(client, session_id, "find_bus_stop_spots", {"town_id": t["id"]})
+    ]
+    assert roadside, "no town has a bus stop spot: this world has no road-adjacent tile"
+
+
+# ---------------------------------------------------------------------------
 # Every read-only query, called for real
 # ---------------------------------------------------------------------------
 
@@ -1018,24 +1123,6 @@ _QUERY_ARGUMENTS: dict[str, dict] = {
 _SQUIRREL_MEMBER_ERROR = "does not exist"
 
 
-
-def _participant_headers(session_id: str) -> dict[str, str]:
-    """The token the session issued, read from where the session wrote it.
-
-    A session started with contestant companies enforces its token, and the suite's client
-    carries none, so every query came back 401 before this. participants.json is the
-    documented place to find it: the auth refusal itself says tokens are written to the
-    session directory.
-    """
-    issued = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "logs" / "sessions" / session_id / "participants.json"
-    )
-    if not issued.exists():
-        return {}
-    tokens = json.loads(issued.read_text())
-    first = tokens.get("0") or next(iter(tokens.values()), None)
-    return {"X-Participant-Token": first} if first else {}
 
 @pytest.mark.gs_test
 @pytest.mark.parametrize("action", sorted(READ_ONLY_GS_ACTIONS))
