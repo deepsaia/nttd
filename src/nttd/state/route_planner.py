@@ -280,10 +280,16 @@ class RoutePlanner:
                 existing = [r for r in existing if r["vehicle_type"] == vtype]
 
         unserved_cargo = [r for r in cargo if not r["served"]]
-        unserved_towns = sorted(
-            (r for r in towns if not r["served"]),
-            key=lambda r: r["distance"],
-        )
+        # Ranked by demand, which is what town_routes already sorted them by.
+        #
+        # This used to re-sort by distance and then take the first five, which threw the
+        # ranking away and could drop the best pair on the map off the list entirely.
+        # Measured on seed 1001: the head of the list was Punbourne and Sanington, 361 and
+        # 328 people at distance 20, demand 5920, while Mennbury and Harnwell Ridge, 1682
+        # and 1136 people at distance 30, demand 63691, sat fourth. Ten times the demand,
+        # ranked below, for being ten tiles further away. Distance is already inside the
+        # demand score as its divisor, so sorting on it again double counts it.
+        unserved_towns = [r for r in towns if not r["served"]]
 
         if compact:
             return self._compact_output(
