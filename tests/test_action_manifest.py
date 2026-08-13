@@ -324,9 +324,14 @@ class TestTheManifestAndTheGameScriptAgreeBothWays:
 
         Parameters supplied by a shared tile helper are exempt, because the helper reads
         them and the handler never names them.
+
+        The exempt set is taken from the generator's own table rather than repeated here.
+        Listed by hand it went stale the moment a handler started resolving a third tile:
+        remove_rail takes a prev, current, next triple, and its from_tile and to_tile were
+        reported as invented parameters when the generator had just been taught them.
         """
-        from_helper = {"tile", "x", "y", "tile_from", "tile_to",
-                       "from_x", "from_y", "to_x", "to_y"}
+        helpers = _load_generator()._TILE_HELPERS
+        from_helper = {name for names in helpers.values() for name in names}
         invented: list[str] = []
         for action, body in _handler_bodies().items():
             read = _parameters_the_handler_reads(body)
