@@ -20,17 +20,31 @@ def _function_body(name: str) -> str:
     return rest if end == -1 else rest[:end]
 
 
-def test_the_pathfinder_will_not_turn_on_a_slope() -> None:
-    """A curve on a slope is refused by the game with ERR_LAND_SLOPED_WRONG, so a path
-    that plans one is unbuildable rather than merely expensive.
+def test_the_pathfinder_avoids_turning_on_a_slope() -> None:
+    """The game refuses many curves on slopes with ERR_LAND_SLOPED_WRONG, so a flat corner
+    is worth a long detour.
 
     Measured: a 37 tile corridor over ground with no water and no height obstacles failed
     on exactly one segment, at (19,40), where the path entered from (19,39) and left to
-    (20,40) across a single raised corner.
+    (20,40) across a single raised corner, while both neighbours were flat.
     """
     body = _function_body("_FindRailPath")
     assert "turn != 0" in body
     assert "GSTile.GetSlope(cur_tile) != GSTile.SLOPE_FLAT" in body
+    assert "C_SLOPED_CURVE" in body
+
+
+def test_a_sloped_corner_is_priced_and_not_forbidden() -> None:
+    """Which curves a slope refuses depends on the slope and the piece, so a blanket ban
+    is wrong, and it was also ruinous: it pruned enough of the search that A* exhausted
+    50000 iterations and reported no path on corridors that had always connected.
+
+    The penalty has to outweigh a long detour and stay finite.
+    """
+    body = _function_body("_FindRailPath")
+    slope_rule = body[body.index("turn != 0") :][:400]
+    assert "continue" not in slope_rule, "a sloped corner must cost, not disqualify"
+    assert "turn_cost += C_SLOPED_CURVE" in slope_rule
 
 
 def test_the_slope_rule_does_not_apply_to_the_seeded_start() -> None:

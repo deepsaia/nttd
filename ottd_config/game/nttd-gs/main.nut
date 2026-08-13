@@ -418,6 +418,9 @@ class NttdGS extends GSController {
     if ("error" in result && result.error != null) resp.rawset("error", result.error);
     if ("error_code" in result) resp.rawset("error_code", result.error_code);
     if ("error_category" in result) resp.rawset("error_category", result.error_category);
+    if ("error_name" in result && result.error_name != null) {
+      resp.rawset("error_name", result.error_name);
+    }
     // The worked out explanation, when the game's own error was ERR_UNKNOWN. This list
     // is a whitelist, so a field not named here is silently dropped, which is how the
     // first attempt at this shipped a reason nobody ever saw.
@@ -469,6 +472,9 @@ class NttdGS extends GSController {
           if ("error" in source && source.error != null) packet.rawset("error", source.error);
           if ("error_code" in source) packet.rawset("error_code", source.error_code);
           if ("error_category" in source) packet.rawset("error_category", source.error_category);
+          if ("error_name" in source && source.error_name != null) {
+            packet.rawset("error_name", source.error_name);
+          }
           if ("reason" in source && source.reason != null) packet.rawset("reason", source.reason);
         }
         if (bulk_key != null) {
@@ -2644,6 +2650,19 @@ class NttdGS extends GSController {
     return "connection incomplete";
   }
 
+  // The kind of failure, as a stable token, alongside the sentence that describes it.
+  //
+  // A compound build sends no error_code, so error_name is empty on every connect ever
+  // recorded, and the analysis reports fall back to grouping on the whole message. That
+  // message names counts and a tile, so "1 of 37 ... at (19,40)" and "2 of 37 ... at
+  // (21,44)" are different groups, each counted once, and the top-errors cap then evicts
+  // the refusals that genuinely repeat. Grouping wants a label, not prose.
+  function _PartialName(failed, gaps) {
+    if (failed.len() > 0) return "SEGMENTS_FAILED";
+    if (gaps != null && gaps.len() > 0) return "ROUTE_DISCONTINUOUS";
+    return "CONNECTION_INCOMPLETE";
+  }
+
   function _BuildRoadPath(path) {
     local built = 0;
     local existing = 0;
@@ -2730,6 +2749,7 @@ class NttdGS extends GSController {
     local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
       error = complete ? null : this._PartialError(build.failed, pf.path.len(), gaps),
+      error_name = complete ? null : this._PartialName(build.failed, gaps),
       result = {
       status = complete ? "complete" : "partial",
       path_length = pf.path.len(),
@@ -2941,6 +2961,9 @@ class NttdGS extends GSController {
     local C_SLOPE = 200;
     local C_CURVE_45 = 100;
     local C_CURVE_90 = 600;
+    // A corner on sloped ground: often refused by the game, so worth a long detour to
+    // avoid, but never worth failing to find a route over.
+    local C_SLOPED_CURVE = 2000;
     local C_CROSSING = 300;
     local C_BRIDGE = 150;
     local C_TUNNEL = 120;
@@ -3018,27 +3041,29 @@ class NttdGS extends GSController {
         local turn_cost = 0;
         if (turn == 1 || turn == 3) turn_cost = C_CURVE_45;
 
-        // A curve cannot be built on a slope. The game refuses it outright with
-        // ERR_LAND_SLOPED_WRONG, so a path that turns on a sloped tile is not merely
-        // expensive, it is unbuildable, and charging C_SLOPE for it was pricing something
-        // that was never on sale.
+        // Turning on a slope is expensive, NOT forbidden.
         //
-        // The turn happens on CUR_TILE: the train arrives travelling entry_dir and leaves
-        // travelling exit_dir. Straight track over a slope is fine, which is why the cost
-        // penalty below still stands for the non turning case.
+        // The game refuses SOME curves on SOME slopes with ERR_LAND_SLOPED_WRONG, and
+        // which ones depends on the particular slope and the particular track piece.
+        // Rejecting every turn on every non flat tile, which is what this did first, is
+        // both wrong and ruinous: it prunes so much of the search that A* exhausts its
+        // 50000 iterations on hilly ground and reports no path at all, on corridors that
+        // had always connected.
         //
-        // Measured. A 37 tile corridor over ground with no water and no height obstacles
-        // failed on exactly one segment, at (19,40), slope 2, where the path entered from
-        // (19,39) and left to (20,40). Both neighbours were flat, so turning one tile
-        // earlier cost nothing. Recovering from it by hand took 5 actions across 4 steps
-        // of the 31 a T1 run has, because the rail already laid by the failed attempt is
-        // what blocks the terraforming that would fix it.
+        // So it is priced instead. A flat corner is preferred wherever one exists, which
+        // is what the case that prompted this needed: a 37 tile corridor failed on one
+        // segment at (19,40), slope 2, entered from (19,39) and left to (20,40), while
+        // both neighbours were flat and turning a tile earlier cost nothing. Where no flat
+        // corner exists the path is still found, and a segment the game then refuses is
+        // reported honestly as a failed segment, which is the outcome an agent can act on.
         //
         // Not applied at the seed: the start is pushed with all four directions, so
         // entry_dir there is an artificial approach rather than a real one, and the real
         // one comes from the station platform via the hint.
         if (turn != 0 && came_from[cur_key] != -1 &&
-            GSTile.GetSlope(cur_tile) != GSTile.SLOPE_FLAT) continue;
+            GSTile.GetSlope(cur_tile) != GSTile.SLOPE_FLAT) {
+          turn_cost += C_SLOPED_CURVE;
+        }
         // turn == 2 is U-turn, already blocked
 
         // Check if tile is passable.
@@ -3324,6 +3349,7 @@ class NttdGS extends GSController {
     local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
       error = complete ? null : this._PartialError(build.failed, pf.path.len(), gaps),
+      error_name = complete ? null : this._PartialName(build.failed, gaps),
       result = {
       status = complete ? "complete" : "partial",
       path_length = pf.path.len(),
