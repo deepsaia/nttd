@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def map_digest(tiles_path: Path | str) -> str | None:
     try:
         import pyarrow.parquet as pq
 
-        table = pq.read_table(path, columns=list(TERRAIN_COLUMNS))
+        table = pq.read_table(path, columns=[*TERRAIN_COLUMNS, "captured_at"])
     except Exception:
         logger.exception("Could not read a tile scan from %s", path)
         return None
@@ -63,9 +64,39 @@ def map_digest(tiles_path: Path | str) -> str | None:
     columns = [table.column(name).to_pylist() for name in TERRAIN_COLUMNS]
     flags_at = TERRAIN_COLUMNS.index("flags")
     columns[flags_at] = [int(value or 0) & _TERRAIN_BITS for value in columns[flags_at]]
-    rows = sorted(zip(*columns, strict=True))
+    rows = _one_row_per_tile(columns, table.column("captured_at").to_pylist())
 
     digest = hashlib.sha256()
     for row in rows:
         digest.update((",".join(str(value) for value in row) + "\n").encode())
     return digest.hexdigest()[:_DIGEST_LENGTH]
+
+
+def _one_row_per_tile(
+    columns: list[list[Any]], captured_at: list[Any],
+) -> list[tuple[Any, ...]]:
+    """The world as generated: the EARLIEST row recorded for each tile, sorted.
+
+    A tile scan is not one row per tile. The opening full scan is written once, and every
+    action then appends the tiles it may have touched as a delta, so a played session
+    carries the same coordinate several times. Measured across the recorded sessions: 10 of
+    23 have duplicates, up to 9289 extra rows on a 64516 tile map.
+
+    The digest exists to answer one question, which world was played, and the verifier
+    answers it by regenerating from the seed and digesting a scan with each tile exactly
+    once. Hashing every row could therefore never agree, and every developed session failed
+    ``world_regenerated`` on a world that was in fact identical.
+
+    Earliest rather than latest, deliberately. Terraforming changes a tile's height and
+    slope, so the last row records what the contestant made of the ground while only the
+    first records what the seed produced. Keeping the latest would swap one mismatch for
+    another on exactly the sessions that levelled anything.
+    """
+    earliest: dict[tuple[Any, Any], tuple[Any, tuple[Any, ...]]] = {}
+    for index, stamp in enumerate(captured_at):
+        row = tuple(column[index] for column in columns)
+        key = (row[0], row[1])
+        seen = earliest.get(key)
+        if seen is None or stamp < seen[0]:
+            earliest[key] = (stamp, row)
+    return sorted(row for _, row in earliest.values())
