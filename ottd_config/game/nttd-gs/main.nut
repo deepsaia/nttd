@@ -2438,6 +2438,16 @@ class NttdGS extends GSController {
   //
   // Reported rather than enforced: a break here is worth knowing about even when every
   // build succeeded, and refusing on it would discard work that is already paid for.
+  // Whether a tile already lets a train pass from prev to next.
+  //
+  // Two ways it can. The track joining those neighbours is already laid, which is what
+  // AreTilesConnected answers. Or the tile is part of a station, which trains run through
+  // by definition and on which no track can be laid at all.
+  function _AlreadyCarriesRail(prev_tile, cur_tile, next_tile) {
+    if (GSStation.GetStationID(cur_tile) != GSStation.STATION_INVALID) return true;
+    return GSRail.AreTilesConnected(prev_tile, cur_tile, next_tile);
+  }
+
   function _RouteGaps(path, is_rail) {
     local gaps = [];
     for (local i = 1; i < path.len(); i++) {
@@ -2445,9 +2455,15 @@ class NttdGS extends GSController {
       local b = path[i].tile;
       // Bridges and tunnels span more than one tile, so adjacency does not apply.
       if (GSMap.DistanceManhattan(a, b) != 1) continue;
-      local joined = is_rail
+      // A station tile is passable and carries no layable track, so AreTilesConnected
+      // says no about it and means nothing by it. Reported as a gap, it sent an agent to
+      // repair the two ends of its own route, which is where the call was aimed.
+      local through_station = is_rail && (
+        GSStation.GetStationID(a) != GSStation.STATION_INVALID ||
+        GSStation.GetStationID(b) != GSStation.STATION_INVALID);
+      local joined = through_station || (is_rail
         ? GSRail.AreTilesConnected(i > 1 ? path[i - 2].tile : a, a, b)
-        : GSRoad.AreRoadTilesConnected(a, b);
+        : GSRoad.AreRoadTilesConnected(a, b));
       if (!joined) gaps.append({ x = path[i].x, y = path[i].y });
     }
     return gaps;
@@ -3008,8 +3024,21 @@ class NttdGS extends GSController {
         built++;
       } else {
         local err = GSError.GetLastErrorString();
-        if (err == "ERR_ALREADY_BUILT") { existing++; }
-        else { failed.append({ x = cur.x, y = cur.y, action = "rail", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() }); }
+        // A tile that already carries what this segment wanted is not a failure.
+        //
+        // Only an exact repeat of the same piece answers ERR_ALREADY_BUILT. A station
+        // platform refuses with ERR_AREA_NOT_CLEAR, and a tile whose track already joins
+        // its neighbours refuses with ERR_PRECONDITION_FAILED, so both were counted as
+        // failed segments. The line was reported as partial when it was finished, and the
+        // status is the only signal an agent has about whether it owns a working route.
+        // Measured on one corridor: 7 of 36 segments reported failed, and every one of
+        // them already carried usable track, four being the station platforms the call was
+        // aimed at.
+        if (err == "ERR_ALREADY_BUILT" || this._AlreadyCarriesRail(prev_tile, cur_tile, next_tile)) {
+          existing++;
+        } else {
+          failed.append({ x = cur.x, y = cur.y, action = "rail", error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() });
+        }
       }
     }
     return { built = built, existing = existing, failed = failed };
