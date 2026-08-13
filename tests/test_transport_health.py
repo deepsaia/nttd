@@ -144,5 +144,50 @@ def test_a_lost_reply_is_distinguished_from_a_slow_one(
     assert json.loads(sent[0].json_str)["action"] == "get_date"
 
 
+def test_a_timeout_does_not_strand_the_partial_reply() -> None:
+    """The chunks that did arrive are dropped, and the dict they sat in does not grow.
+
+    _merge_chunks is what normally pops _gs_responses, and it only runs on success, so a
+    timeout used to leave the partial reply there for the life of the session. Measured at
+    50 KB stranded for one timing-out get_map_terrain, and a policy that retries such a scan
+    stranded that again every attempt.
+
+    Note the fix cannot live in the `finally` beside the other two pops, which is the obvious
+    place: `finally` runs before `return self._merge_chunks(...)`, so popping there would throw
+    away the chunks of every successful reply. This asserts the success path still works, for
+    exactly that reason.
+    """
+    client = _client()
+
+    async def _send_partial(packet: Any) -> None:
+        correlation_id = next(iter(client._gs_responses))
+        client._gs_responses[correlation_id].append({"partial": "x" * 1000})
+
+    client._send = _send_partial
+    reply = asyncio.run(client.send_gamescript("get_map_terrain", timeout=0.01))
+
+    assert reply["success"] is False
+    assert client._gs_responses == {}, "the partial reply was left behind"
+    assert client._gs_events == {}
+    assert client._gs_totals == {}
+
+
+def test_a_successful_reply_still_reaches_the_caller() -> None:
+    """The guard on the fix above: popping in the wrong place would empty this."""
+    client = _client()
+
+    async def _send_and_answer(packet: Any) -> None:
+        correlation_id = next(iter(client._gs_responses))
+        client._gs_responses[correlation_id].append({"success": True, "result": [1, 2, 3]})
+        client._gs_events[correlation_id].set()
+
+    client._send = _send_and_answer
+    reply = asyncio.run(client.send_gamescript("get_towns", timeout=1.0))
+
+    assert reply["success"] is True
+    assert reply["result"] == [1, 2, 3]
+    assert client._gs_responses == {}
+
+
 async def _noop() -> None:
     return None
