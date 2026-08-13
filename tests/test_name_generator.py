@@ -45,4 +45,8 @@ def test_company_name_has_no_whitespace_or_quotes() -> None:
 def test_session_name_still_carries_a_timestamp() -> None:
     """Guards against the company generator disturbing the session format."""
     name = generate_session_name()
-    assert re.match(r"^[a-z]+-[a-z]+-[a-z]+-\d{2}[a-z]{3}\d{4}-\d{6}[a-z]+$", name), name
+    # Two words then the stamp, which is the documented format and what the function has
+    # always produced: <adj>-<noun>-13aug2026-125834ist. The pattern asked for three words
+    # and so could never match: measured at 0 of 20 generated names. It was asserting the
+    # company format, which does have a third part, against the session generator.
+    assert re.match(r"^[a-z]+-[a-z]+-\d{2}[a-z]{3}\d{4}-\d{6}[a-z]+$", name), name

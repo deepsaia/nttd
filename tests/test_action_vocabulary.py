@@ -32,7 +32,10 @@ _GAMESCRIPT = Path(__file__).resolve().parents[1] / "ottd_config" / "game" / "nt
 
 # Read-only commands have their own observation surface, so they are not expected
 # in the action vocabulary.
-_READ_ONLY_PREFIXES = ("get_", "find_", "scan_", "ping")
+# A command that only reads. Prefixes rather than a list, because the point is to catch a
+# NEW mutating command that nobody tiered, and a prefix rule keeps working as they arrive.
+# trace_route is named for what it answers rather than for reading, so it is spelled out.
+_READ_ONLY_PREFIXES = ("get_", "find_", "scan_", "ping", "trace_")
 
 
 def _gamescript_commands() -> set[str]:
