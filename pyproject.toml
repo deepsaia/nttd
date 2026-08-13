@@ -1,6 +1,6 @@
 [project]
 name = "nttd"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Agent-agnostic API server wrapping OpenTTD as an AI simulation environment"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -52,8 +52,20 @@ dependencies = [
 nttd = "nttd.cli.app:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# The version IS the release tag, read from git rather than written here.
+#
+# It was duplicated: pyproject said 0.1.0 while the 0.0.2 release was cut, so publish refused
+# at its own version gate and nothing was uploaded. The gate was right and the duplication was
+# the bug: two places holding one fact, and a release is exactly when they diverge.
+[tool.hatch.version]
+source = "vcs"
+
+# No tag pattern set: the default already accepts a bare version like 0.0.2 as well as v0.0.2,
+# and the option for narrowing it is tag_regex rather than tag_pattern, which this backend
+# rejects outright.
 
 [tool.hatch.build.targets.wheel]
 # Only the engine. The reference runners live in deepsaia/nttd-examples: they are
