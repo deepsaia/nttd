@@ -109,12 +109,20 @@ def resolve_session_path(value: str) -> tuple[str, Path]:
 
     Like :func:`resolve_session`, but also returns the resolved directory
     path for commands that operate on the filesystem (e.g. ``nttd analyze``).
+
+    An explicit path is still taken as given. Someone naming a directory on their own machine
+    has said where they mean, and is not the caller session id validation exists for.
     """
     p = Path(value)
     if "/" in value or p.is_dir():
         resolved = p.resolve()
         return resolved.name, resolved
-    return value, session_paths.session_dir(value)
+    try:
+        return value, session_paths.session_dir(value)
+    except session_paths.InvalidSessionIdError as exc:
+        console.print(f"[red]Not a session ID:[/] {exc}")
+        console.print("[dim]Pass an ID like ses_20260813_160834_afc142c3, or a path to one[/]")
+        raise typer.Exit(1)
 
 
 def complete_session(incomplete: str) -> list[str]:

@@ -40,7 +40,10 @@ def read_table(
     and nothing in the server does.
     """
     root = Path(sessions_dir) if sessions_dir is not None else session_paths.sessions_dir()
-    session_dir = root / session_id
+    # Checked for the same reason as analysis.loader, and not by calling session_dir for the
+    # same reason: the root is overridable here. This is the read path behind the analysis
+    # routes, so the id can arrive from a URL.
+    session_dir = root / session_paths.validate_session_id(session_id)
 
     merged = session_dir / f"{name}.parquet"
     if merged.exists():

@@ -125,7 +125,10 @@ def load_frame(
 def load_session(session_id: str, sessions_dir: Path | str | None = None) -> SessionData:
     """Load all data for a session from its directory."""
     root = Path(sessions_dir) if sessions_dir is not None else session_paths.sessions_dir()
-    session_dir = root / session_id
+    # The same join session_paths.session_dir makes, and it needs the same check. It cannot
+    # call that function because the caller may override the root: nttd monitor passes its
+    # own, and reaches this with a session id straight off a URL.
+    session_dir = root / session_paths.validate_session_id(session_id)
     if not session_dir.exists():
         raise FileNotFoundError(f"Session directory not found: {session_dir}")
 
