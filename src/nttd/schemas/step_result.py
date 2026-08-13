@@ -13,10 +13,14 @@ rather than to the server, which only knows whether an end condition fired.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from nttd.schemas.action_result import ActionResult
 from nttd.schemas.snapshot import StateSnapshot
+
+# The only keys an action entry in a step batch may carry. Everything an action needs
+# goes inside `params`, which is what the MCP step tool and the REST route both send.
+_ACTION_KEYS = frozenset({"action", "params"})
 
 
 class StepResult(BaseModel):
@@ -70,3 +74,28 @@ class StepRequest(BaseModel):
 
     actions: list[dict] = Field(default_factory=list)
     days: int | None = None
+
+    @field_validator("actions")
+    @classmethod
+    def _reject_misplaced_parameters(cls, actions: list[dict]) -> list[dict]:
+        """Refuse an action whose parameters were not put in ``params``.
+
+        An action is ``{"action": ..., "params": {...}}``. Written flat, as
+        ``{"action": ..., "x": 8, "y": 31}``, every field beyond ``action`` used to be
+        dropped in silence: ``params`` came out empty and the GameScript then failed on
+        the first field it tried to read, answering "the index 'x' does not exist". That
+        names neither the real mistake nor where the fields should have gone, and it is
+        indistinguishable from genuinely omitting a required argument.
+
+        Dropping a caller's entire parameter set without a word is the worst of the
+        available outcomes, so this refuses instead, naming the strays.
+        """
+        for index, entry in enumerate(actions):
+            stray = sorted(set(entry) - _ACTION_KEYS)
+            if stray:
+                raise ValueError(
+                    f"action {index} ({entry.get('action') or 'unnamed'}) has "
+                    f"{', '.join(stray)} at the top level. Action parameters belong in "
+                    f"`params`: {{\"action\": ..., \"params\": {{...}}}}"
+                )
+        return actions
