@@ -114,7 +114,7 @@ Full detail in [actions.md](actions.md).
 - `remove_canal(tile|x,y)` Turn a canal tile back into land.
 - `remove_lock(tile|x,y)` Remove a lock.
 - `remove_order(vehicle_id, order_index|order_position)` Remove one order from a vehicle's list.
-- `remove_rail(tile|x,y, tile_from|from_x,from_y, tile_to|to_x,to_y)` Remove track along a line between two tiles.
+- `remove_rail(tile|x,y, tile_from|from_x,from_y, tile_to|to_x,to_y, [from_tile, to_tile])` Remove the single piece of track at one tile, naming the two tiles it joins.
 - `remove_rail_station(tile|x,y, [keep_rail, x1, x2, y1, y2])` Remove the part of a rail station inside a rectangle.
 - `remove_rail_track(tile|x,y, [track])` Remove one track piece from a tile.
 - `remove_road(tile_from|from_x,from_y, tile_to|to_x,to_y, [road_type])` Remove road along a line between two tiles.

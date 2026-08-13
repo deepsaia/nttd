@@ -545,7 +545,7 @@ Supply one of: `tile` or `x` and `y`.
 
 ### `remove_rail`
 
-Remove track along a line between two tiles.
+Remove the single piece of track at one tile, naming the two tiles it joins. Takes the same prev, current, next triple that building rail takes: from_x and from_y for where the track comes from, x and y for the piece being removed, and to_x and to_y for where it leads. All three are required. It does not remove a whole line.
 
 Supply one of: `tile` or `x` and `y`.
 
@@ -553,11 +553,13 @@ Supply one of: `tile_from` or `from_x` and `from_y`.
 
 Supply one of: `tile_to` or `to_x` and `to_y`.
 
+- `from_tile` (integer, optional) Tile index to start from. An alternative to from_x and from_y.
 - `from_x` (integer, optional) X coordinate of the starting tile.
 - `from_y` (integer, optional) Y coordinate of the starting tile.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `tile_from` (integer, optional) Tile index to start from. An alternative to from_x and from_y.
 - `tile_to` (integer, optional) Tile index to finish at. An alternative to to_x and to_y.
+- `to_tile` (integer, optional) Tile index to finish at. An alternative to to_x and to_y.
 - `to_x` (integer, optional) X coordinate of the finishing tile.
 - `to_y` (integer, optional) Y coordinate of the finishing tile.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
