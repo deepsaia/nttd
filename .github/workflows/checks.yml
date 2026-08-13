@@ -57,3 +57,46 @@ jobs:
         run: |
           uv run python scripts/generate_action_manifest.py
           git diff --exit-code -- config/actions/manifest.json docs/
+
+  # A wheel is the only place the packaging bug shows. The suite above runs against the source
+  # tree, where the data sits at the relative paths the loaders expect, so it passed happily
+  # while `pip install nttd` produced a package that could not start a session.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build sdist and wheel
+        run: uv build --out-dir dist
+
+      - name: The wheel carries the data nttd needs to run
+        run: uv run python scripts/check_wheel_contents.py dist/*.whl
+
+      # Installed, in a clean environment, from a directory that is not the repository. Run
+      # from /tmp deliberately: the old default for the GameScript was the relative string
+      # "ottd_config", which resolved only when the server was started from the checkout.
+      - name: Smoke test the installed package
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          cd /tmp
+          /tmp/smoke/bin/python -c "
+          import json
+          from nttd import resources
+          from nttd.config.action_manifest import MANIFEST_PATH
+          from nttd.config.scenario_config import load
+
+          gamescript = resources.gamescript_dir() / 'game' / 'nttd-gs' / 'main.nut'
+          assert gamescript.exists(), gamescript
+          assert (resources.gamescript_dir() / 'openttd.cfg').exists()
+          actions = json.loads(MANIFEST_PATH.read_text())['actions']
+          assert len(actions) > 100, len(actions)
+          assert load().name
+          print(f'installed nttd resolved its data: {len(actions)} actions')
+          "
+          /tmp/smoke/bin/nttd --help > /dev/null

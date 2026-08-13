@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
+
+from nttd import resources
 
 logger = logging.getLogger(__name__)
 
-ENUMS_PATH = Path(__file__).resolve().parents[3] / "config" / "actions" / "enums.json"
+ENUMS_PATH = resources.action_config("enums.json")
 
 _CATEGORY_PREFIX = "ERR_CAT_"
 

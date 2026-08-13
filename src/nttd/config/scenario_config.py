@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from nttd import resources
 from nttd.config.benchmark_profile import (
     DIMENSION_PREFIX,
     LOCKED_SETTINGS,
@@ -38,9 +39,7 @@ _MAP_DEFAULTS: dict[str, Any] = {
     "terrain_type": "flat",
 }
 
-_DEFAULT_CONFIG_PATH = (
-    Path(__file__).parent.parent.parent.parent / "config" / "benchmark" / "t2_256_flat_1001_realtime.conf"
-)
+_DEFAULT_CONFIG_PATH = resources.scenario_config("t2_256_flat_1001_realtime.conf")
 
 # ---------------------------------------------------------------------------
 # Value maps: human-readable config strings -> OpenTTD INI integer values

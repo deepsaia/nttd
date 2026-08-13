@@ -1,0 +1,64 @@
+# Publish to PyPI when a GitHub release is published.
+#
+# Gated on the same packaging check CI runs, because the failure this guards against is
+# silent: a wheel with no GameScript, no openttd.cfg and no action manifest installs cleanly
+# and then cannot start a session. Measured on a build from main before the force-include
+# rules existed: 179 files, none of them data.
+#
+# Trusted publishing rather than a stored token. There is no secret to leak or rotate, the
+# permission is scoped to this repository and this workflow, and PyPI records which workflow
+# uploaded each file. Requires the project to be configured as a trusted publisher on PyPI
+# once, naming this repository, this workflow file and the environment below.
+name: release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # For trusted publishing. Nothing else needs writing.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      # The tests run again here rather than trusting that CI passed on the commit. A release
+      # can be cut from any ref, including one whose checks never ran.
+      - name: Lint
+        run: uv run ruff check src/ tests/ scripts/
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Build sdist and wheel
+        run: uv build --out-dir dist
+
+      - name: The wheel carries the data nttd needs to run
+        run: uv run python scripts/check_wheel_contents.py dist/*.whl
+
+      # The tag is the release name; the version is in pyproject. A mismatch means the wrong
+      # thing is about to be published under the right name, which is not recoverable on PyPI:
+      # a version can be yanked but never replaced.
+      - name: The release tag matches the packaged version
+        run: |
+          packaged=$(uv run python -c "
+          import tomllib
+          print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])
+          ")
+          tag="${GITHUB_REF_NAME#v}"
+          echo "tag=$tag packaged=$packaged"
+          test "$tag" = "$packaged"
+
+      - name: Publish
+        run: uv publish dist/*

@@ -7,6 +7,7 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI
 
 import nttd.api.dependencies as deps
+from nttd import resources
 from nttd.api.action_routes import operator_router as action_operator_router
 from nttd.api.action_routes import participant_router as action_participant_router
 from nttd.api.action_routes import router as action_router
@@ -33,7 +34,10 @@ OPENTTD_BINARY = os.environ.get(
     "NTTD_OPENTTD_BINARY",
     "/Applications/OpenTTD.app/Contents/MacOS/openttd",
 )
-BASE_CONFIG_DIR = Path(os.environ.get("NTTD_BASE_CONFIG", "ottd_config"))
+# Resolved from the package rather than the working directory. The default was the
+# relative string "ottd_config", so it found the GameScript only when the server was
+# started from the repository root, and an installed nttd never found it at all.
+BASE_CONFIG_DIR = Path(os.environ.get("NTTD_BASE_CONFIG") or resources.gamescript_dir())
 SESSIONS_DIR = session_paths.sessions_dir()
 PORT_RANGE_START = int(os.environ.get("NTTD_PORT_RANGE_START", "4000"))
 

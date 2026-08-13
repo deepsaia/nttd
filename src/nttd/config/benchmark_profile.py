@@ -47,9 +47,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from nttd import resources
+
 logger = logging.getLogger(__name__)
 
-PROFILE_PATH = Path(__file__).resolve().parents[3] / "config" / "benchmark" / "profile.conf"
+PROFILE_PATH = resources.scenario_config("profile.conf")
 
 # Fallback values, used only when profile.conf cannot be read. Kept in step with the
 # shipped file by a test, so the two cannot drift unnoticed.
