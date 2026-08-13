@@ -201,19 +201,34 @@ class NttdGS extends GSController {
           payload.rawset("subsidy_id", e.GetSubsidyID());
           break;
         }
+        // Coordinates travel with these three, because the stored tilemap has to re-read
+        // the neighbourhood they name and the id alone does not say where that is.
+        //
+        // Captured HERE rather than looked up later. A closing industry is the reason: by
+        // the time a subscriber acts on the event the industry may no longer resolve, and
+        // the tiles it vacated are exactly the ones whose record is now wrong.
         case GSEvent.ET_INDUSTRY_OPEN: {
           local e = GSEventIndustryOpen.Convert(event);
-          payload.rawset("industry_id", e.GetIndustryID());
+          local iid = e.GetIndustryID();
+          payload.rawset("industry_id", iid);
+          this._AddLocation(payload, GSIndustry.IsValidIndustry(iid)
+            ? GSIndustry.GetLocation(iid) : -1);
           break;
         }
         case GSEvent.ET_INDUSTRY_CLOSE: {
           local e = GSEventIndustryClose.Convert(event);
-          payload.rawset("industry_id", e.GetIndustryID());
+          local iid = e.GetIndustryID();
+          payload.rawset("industry_id", iid);
+          this._AddLocation(payload, GSIndustry.IsValidIndustry(iid)
+            ? GSIndustry.GetLocation(iid) : -1);
           break;
         }
         case GSEvent.ET_TOWN_FOUNDED: {
           local e = GSEventTownFounded.Convert(event);
-          payload.rawset("town_id", e.GetTownID());
+          local tid = e.GetTownID();
+          payload.rawset("town_id", tid);
+          this._AddLocation(payload, GSTown.IsValidTown(tid)
+            ? GSTown.GetLocation(tid) : -1);
           break;
         }
         case GSEvent.ET_COMPANY_NEW: {
@@ -2821,6 +2836,17 @@ class NttdGS extends GSController {
   // `station_gone` is the field that matters: a caller that asked for one tile of a longer
   // platform gets success and a station that is still standing, and nothing else in the
   // reply distinguishes that from a demolition.
+  // Put x and y on an event payload, when the thing it names still has a location.
+  //
+  // Silent when it does not: an event whose subject has already gone carries the id alone,
+  // and a subscriber that finds no coordinates knows to skip the refresh rather than read a
+  // rectangle around tile 0.
+  function _AddLocation(payload, tile) {
+    if (tile == null || tile < 0 || !GSMap.IsValidTile(tile)) return;
+    payload.rawset("x", GSMap.GetTileX(tile));
+    payload.rawset("y", GSMap.GetTileY(tile));
+  }
+
   function _StationRemains(tile, tiles_asked) {
     local sid = GSStation.GetStationID(tile);
     local gone = (sid == GSStation.STATION_INVALID) || !GSStation.IsValidStation(sid);
