@@ -1780,7 +1780,16 @@
         "shape": "object",
         "fields": [
           "action",
-          "estimated_cost"
+          "depot_x",
+          "depot_y",
+          "dest_tile",
+          "estimated_cost",
+          "from_x",
+          "from_y",
+          "to_x",
+          "to_y",
+          "x",
+          "y"
         ]
       }
     },
@@ -2186,6 +2195,7 @@
             "cargo_acceptance",
             "distance",
             "max_height",
+            "reachable_directions",
             "tile",
             "valid_directions",
             "x",
@@ -2716,10 +2726,12 @@
         "shape": "object",
         "fields": [
           "accepted",
+          "accepts_cargo",
           "id",
           "is_processing",
           "is_raw",
           "name",
+          "produces_cargo",
           "production",
           "type_id",
           "type_name",
@@ -2940,8 +2952,10 @@
             "waiting"
           ],
           "entry_tiles": [
+            "enterable",
             "has_rail",
             "tile",
+            "usable",
             "x",
             "y"
           ]
@@ -3114,6 +3128,7 @@
       "returns": {
         "shape": "object",
         "fields": [
+          "accepts_cargo",
           "exclusive_rights_company",
           "exclusive_rights_duration",
           "fund_buildings_duration",
@@ -3124,6 +3139,7 @@
           "is_city",
           "name",
           "population",
+          "produces_cargo",
           "road_layout",
           "x",
           "y"
@@ -4209,7 +4225,13 @@
         ]
       ],
       "returns": {
-        "shape": "object"
+        "shape": "object",
+        "fields": [
+          "name",
+          "station_gone",
+          "station_id",
+          "tiles_requested"
+        ]
       }
     },
     "remove_rail_track": {

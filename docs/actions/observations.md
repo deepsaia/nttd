@@ -106,7 +106,7 @@ Find somewhere to put a station serving a given industry or town.
 
 Returns `cargo_labels`, `spots`, `target_name`, `target_x`, `target_y`.
 
-Each `spots` carries `cargo_acceptance`, `distance`, `max_height`, `tile`, `valid_directions`, `x`, `y`.
+Each `spots` carries `cargo_acceptance`, `distance`, `max_height`, `reachable_directions`, `tile`, `valid_directions`, `x`, `y`.
 
 ### `find_water_depot_spots`
 
@@ -261,7 +261,7 @@ Report one industry in detail: what it produces and accepts, recent production, 
 
 - `industry_id` (integer, required) Which industry.
 
-Returns `accepted`, `id`, `is_processing`, `is_raw`, `name`, `production`, `type_id`, `type_name`, `x`, `y`.
+Returns `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `produces_cargo`, `production`, `type_id`, `type_name`, `x`, `y`.
 
 Each `accepted` carries `cargo_id`, `cargo_label`, `stockpile`.
 
@@ -337,7 +337,7 @@ Report one station in detail: what is waiting, what it accepts, and its cargo ra
 Returns `cargo_waiting`, `entry_tiles`, `has_airport`, `has_bus`, `has_dock`, `has_rail`, `has_truck`, `id`, `name`, `platform_axis`, `x`, `y`.
 
 Each `cargo_waiting` carries `cargo_id`, `cargo_label`, `rating`, `waiting`.
-Each `entry_tiles` carries `has_rail`, `tile`, `x`, `y`.
+Each `entry_tiles` carries `enterable`, `has_rail`, `tile`, `usable`, `x`, `y`.
 
 ### `get_stations`
 
@@ -385,7 +385,7 @@ Report one town in detail: population, houses, what it accepts and how fast it i
 
 - `town_id` (integer, required) Which town.
 
-Returns `exclusive_rights_company`, `exclusive_rights_duration`, `fund_buildings_duration`, `growth_rate`, `has_statue`, `houses`, `id`, `is_city`, `name`, `population`, `road_layout`, `x`, `y`.
+Returns `accepts_cargo`, `exclusive_rights_company`, `exclusive_rights_duration`, `fund_buildings_duration`, `growth_rate`, `has_statue`, `houses`, `id`, `is_city`, `name`, `population`, `produces_cargo`, `road_layout`, `x`, `y`.
 
 ### `get_town_rating`
 

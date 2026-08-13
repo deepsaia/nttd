@@ -524,7 +524,7 @@ Report what an action would cost without doing it. The action runs in test mode,
 - `action` (string, required) Name of the action to price, exactly as it would be submitted.
 - `params` (object, required) The parameters of the action being estimated, exactly as they would be submitted.
 
-Returns `action`, `estimated_cost`.
+Returns `action`, `depot_x`, `depot_y`, `dest_tile`, `estimated_cost`, `from_x`, `from_y`, `to_x`, `to_y`, `x`, `y`.
 
 ## rail
 
@@ -680,7 +680,7 @@ Supply one of: `tile` or `x` and `y`.
 - `y1` (integer, optional) Y coordinate of the first corner.
 - `y2` (integer, optional) Y coordinate of the opposite corner.
 
-Returns no data beyond success.
+Returns `name`, `station_gone`, `station_id`, `tiles_requested`.
 
 ### `remove_rail_track`
 
