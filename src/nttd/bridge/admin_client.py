@@ -285,14 +285,26 @@ class AdminClient:
             else:
                 merged_result.append(result)
 
-        success = chunks[0].get("success", True)
+        # The verdict and its explanation travel on chunk 0, and both have to survive the
+        # merge. A failing reply can now be chunked -- connect_rail puts the whole route in
+        # `result.path` whether it worked or not -- so rebuilding it without the error
+        # would turn every large partial build into a reported success.
+        merged: dict[str, Any] = {
+            "id": correlation_id,
+            "success": chunks[0].get("success", True),
+        }
+        for field in ("error", "error_code", "error_category", "reason"):
+            if field in chunks[0]:
+                merged[field] = chunks[0][field]
+
         bulk_key = chunks[0].get("_key")
         if bulk_key:
             rebuilt = dict(chunks[0].get("_meta") or {})
             rebuilt[bulk_key] = merged_result
-            return {"id": correlation_id, "success": success, "result": rebuilt}
-
-        return {"id": correlation_id, "success": success, "result": merged_result}
+            merged["result"] = rebuilt
+        else:
+            merged["result"] = merged_result
+        return merged
 
     def _handle_client_command(self, packet: CmdLoggingPacket) -> None:
         """Turn a logged client command into a dict the recorder can write.

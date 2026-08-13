@@ -106,3 +106,34 @@ def test_no_chunks_at_all_is_reported_rather_than_returning_nothing() -> None:
     merged = AdminClient._merge_chunks(client, "gs_1")
     assert merged["success"] is False
     assert merged["error"] == "empty"
+
+
+def test_a_failed_reply_survives_being_chunked() -> None:
+    """A partial connection is large AND unsuccessful, and both facts have to arrive.
+
+    Chunking used to be gated on success, so the biggest replies in the system were the
+    ones exempt from the size rule: connect_rail puts the whole route in `result.path` on
+    the failure branch too. A 36 tile partial already measures about 1514 by the
+    GameScript's own estimator, against a 1000 budget and a real limit near 1400.
+
+    Once that gate came off, the merge became the risk: it hardcoded success from chunk 0
+    and dropped `error` entirely, which would have reported every large partial build as a
+    clean success.
+    """
+    merged = _merge([
+        {
+            "_chunk": 0, "_total": 2, "_key": "path",
+            "_meta": {"status": "partial", "built": 30, "gaps": []},
+            "success": False,
+            "error": "1 of 37 segments failed, first at (19,40): ERR_LAND_SLOPED_WRONG",
+            "error_code": 264,
+            "result": [{"x": 1, "y": 1}],
+        },
+        {"_chunk": 1, "_total": 2, "success": True, "result": [{"x": 2, "y": 1}]},
+    ])
+
+    assert merged["success"] is False
+    assert "ERR_LAND_SLOPED_WRONG" in merged["error"]
+    assert merged["error_code"] == 264
+    assert merged["result"]["status"] == "partial"
+    assert merged["result"]["path"] == [{"x": 1, "y": 1}, {"x": 2, "y": 1}]

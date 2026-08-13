@@ -385,8 +385,14 @@ class NttdGS extends GSController {
     // oversized packet desynced the admin stream, and once that happened every later
     // reply was lost or delivered to the wrong caller, which is what made action results
     // intermittently wrong. Measured at 247,869 unparseable packets in one session.
-    if ("success" in result && result.success &&
-        "result" in result && result.result != null) {
+    // Size, and ONLY size. This used to be gated on success as well, which quietly
+    // exempted the largest replies in the system from the rule they most needed.
+    // connect_rail and connect_road put the whole route in `result.path` on the failure
+    // branch too, so a partial build sent every tile it walked in one packet: a 36 tile
+    // partial measures about 1514 by _ApproxSize, already past the 1000 budget, and past
+    // the real ~1400 limit from roughly 55 tiles. The consequence is the one recorded
+    // above, a desynced stream where every later reply is lost or misdelivered.
+    if ("result" in result && result.result != null) {
 
       local payload = result.result;
       local bulk = this._Bulk(payload);
@@ -402,7 +408,7 @@ class NttdGS extends GSController {
             if (key != bulk.key) meta.rawset(key, value);
           }
         }
-        this._SendChunked(id, bulk.arr, bulk.key, meta);
+        this._SendChunked(id, bulk.arr, bulk.key, meta, result);
         return;
       }
     }
@@ -429,7 +435,7 @@ class NttdGS extends GSController {
   // An element larger than the budget on its own still goes alone in its packet. That is
   // the best this layer can do; a handler returning such an element has to divide it
   // itself, which is what get_map_terrain's max_tiles is for.
-  function _SendChunked(id, arr, bulk_key, meta) {
+  function _SendChunked(id, arr, bulk_key, meta, source = null) {
     local groups = [];
     local current = [];
     local current_size = 0;
@@ -453,9 +459,22 @@ class NttdGS extends GSController {
       };
       // The shape is announced once. The reader rebuilds the table from it, and a reply
       // whose result was a plain array carries neither key, so it merges as before.
-      if (ci == 0 && bulk_key != null) {
-        packet.rawset("_key", bulk_key);
-        if (meta != null) packet.rawset("_meta", meta);
+      //
+      // The verdict rides with it. Now that a FAILED reply can be chunked, hardcoding
+      // success = true here would turn every large partial into a reported success, which
+      // is the opposite of the point.
+      if (ci == 0) {
+        if (source != null) {
+          if ("success" in source) packet.rawset("success", source.success);
+          if ("error" in source && source.error != null) packet.rawset("error", source.error);
+          if ("error_code" in source) packet.rawset("error_code", source.error_code);
+          if ("error_category" in source) packet.rawset("error_category", source.error_category);
+          if ("reason" in source && source.reason != null) packet.rawset("reason", source.reason);
+        }
+        if (bulk_key != null) {
+          packet.rawset("_key", bulk_key);
+          if (meta != null) packet.rawset("_meta", meta);
+        }
       }
       GSAdmin.Send(packet);
     }
