@@ -2455,15 +2455,22 @@ class NttdGS extends GSController {
       local b = path[i].tile;
       // Bridges and tunnels span more than one tile, so adjacency does not apply.
       if (GSMap.DistanceManhattan(a, b) != 1) continue;
-      // A station tile is passable and carries no layable track, so AreTilesConnected
-      // says no about it and means nothing by it. Reported as a gap, it sent an agent to
-      // repair the two ends of its own route, which is where the call was aimed.
-      local through_station = is_rail && (
-        GSStation.GetStationID(a) != GSStation.STATION_INVALID ||
-        GSStation.GetStationID(b) != GSStation.STATION_INVALID);
-      local joined = through_station || (is_rail
+      // A station tile gets NO special treatment here, deliberately.
+      //
+      // Treating one as automatically joined was tried and is wrong. AreTilesConnected
+      // asks whether a train can pass from one tile to the next, and about a station it
+      // answers that correctly: a platform is enterable along its own axis and not across
+      // it. Overriding it hides the most expensive failure in the game.
+      //
+      // Measured. A station whose platform ran along x at (76,184) to (78,184) was joined
+      // by track at (78,183), perpendicular, touching the side of the end tile, with both
+      // real entry tiles empty. connect_rail reported one failed segment out of 36, the
+      // route registry created a route, and the train ran for 105 days, lost 260, and
+      // never reached the other station. With the override, the gap check called that
+      // connected too.
+      local joined = is_rail
         ? GSRail.AreTilesConnected(i > 1 ? path[i - 2].tile : a, a, b)
-        : GSRoad.AreRoadTilesConnected(a, b));
+        : GSRoad.AreRoadTilesConnected(a, b);
       if (!joined) gaps.append({ x = path[i].x, y = path[i].y });
     }
     return gaps;
