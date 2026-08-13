@@ -39,6 +39,8 @@ Supply one of: `tile` or `x` and `y`.
 
 `airport_type` accepts (GSAirport): `AT_COMMUTER` = 5, `AT_HELIDEPOT` = 6, `AT_HELIPORT` = 2, `AT_HELISTATION` = 8, `AT_INTERCON` = 7, `AT_INTERNATIONAL` = 4, `AT_LARGE` = 1, `AT_METROPOLITAN` = 3, `AT_SMALL` = 0
 
+Returns `station_id`, `tile`, `type`.
+
 ### `build_bridge`
 
 Bridge the gap between two tiles. The ends must be in line and at the same height, with the span clear between them.
@@ -50,6 +52,8 @@ Bridge the gap between two tiles. The ends must be in line and at the same heigh
 - `start_y` (integer, required) Y coordinate of the near end.
 - `transport_type` (string, default "road") What crosses the bridge: rail, water, or road. Anything else is treated as road.
 
+Returns `end_pos`, `start`.
+
 ### `build_dock`
 
 Build a dock on a coastal tile, giving ships somewhere to load. The tile must slope into water.
@@ -59,6 +63,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `station_id`, `tile`.
 
 ### `build_tunnel`
 
@@ -71,6 +77,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `entrance`, `exit_pos`.
+
 ### `demolish_tile`
 
 Clear whatever is on the tile. Works on your own structures and on trees and rocks, and costs money.
@@ -81,11 +89,15 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `tile`.
+
 ### `open_close_airport`
 
 Toggle an airport between accepting and refusing arrivals. Aircraft already inbound still land.
 
 - `station_id` (integer, required) Which station.
+
+Returns `station_id`.
 
 ### `remove_airport`
 
@@ -96,6 +108,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `tile`.
 
 ## company
 
@@ -109,17 +123,23 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `tile`.
+
 ### `rename_company`
 
 Rename your company.
 
 - `name` (string, required) A name to give.
 
+Returns `name`.
+
 ### `set_loan`
 
 Set the loan to an exact amount rather than adjusting it. Raising it pays out immediately, lowering it repays from the bank balance, and the amount is rounded to the game's loan interval.
 
 - `amount` (integer, required) An amount of money, in the game's currency units.
+
+Returns `balance`, `loan`.
 
 ## group
 
@@ -130,11 +150,15 @@ Create a group to organise vehicles of one type. Groups carry their own profit f
 - `parent_group_id` (integer, default GSGroup.GROUP_INVALID) Group to nest the new group inside. Omit for a top-level group.
 - `vehicle_type` (string, default "train") One of train, road, ship or aircraft. An unrecognised value silently becomes train.
 
+Returns `group_id`.
+
 ### `delete_group`
 
 Delete a group. The vehicles in it are not sold, they return to being ungrouped.
 
 - `group_id` (integer, required) Which vehicle group.
+
+Returns no data beyond success.
 
 ### `move_to_group`
 
@@ -143,6 +167,8 @@ Move a vehicle into a group.
 - `group_id` (integer, required) Which vehicle group.
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns no data beyond success.
+
 ### `set_auto_replace`
 
 Have vehicles in a group replaced with a newer model when they next visit a depot. Set the new engine equal to the old one to cancel.
@@ -150,6 +176,8 @@ Have vehicles in a group replaced with a newer model when they next visit a depo
 - `engine_id_new` (integer, required) The engine model to replace with.
 - `engine_id_old` (integer, required) The engine model to replace.
 - `group_id` (integer, required) Which vehicle group.
+
+Returns no data beyond success.
 
 ## landscape
 
@@ -161,6 +189,8 @@ Flatten the rectangle between two corners to a single height. Cost rises steeply
 - `x2` (integer, required) X coordinate of the opposite corner.
 - `y1` (integer, required) Y coordinate of the first corner.
 - `y2` (integer, required) Y coordinate of the opposite corner.
+
+Returns `x1`, `x2`, `y1`, `y2`.
 
 ### `lower_tile`
 
@@ -175,6 +205,8 @@ Supply one of: `tile` or `x` and `y`.
 
 `slope` accepts (GSTile): `SLOPE_E` = 4, `SLOPE_ELEVATED` = 15, `SLOPE_ENW` = 13, `SLOPE_EW` = 5, `SLOPE_FLAT` = 0, `SLOPE_N` = 8, `SLOPE_NE` = 12, `SLOPE_NS` = 10, `SLOPE_NW` = 9, `SLOPE_NWS` = 11, `SLOPE_S` = 2, `SLOPE_SE` = 6, `SLOPE_SEN` = 14, `SLOPE_STEEP` = 16, `SLOPE_STEEP_E` = 30, `SLOPE_STEEP_N` = 29, `SLOPE_STEEP_S` = 23, `SLOPE_STEEP_W` = 27, `SLOPE_SW` = 3, `SLOPE_W` = 1, `SLOPE_WSE` = 7
 
+Returns `x`, `y`.
+
 ### `plant_tree`
 
 Plant a tree on a tile. Trees raise the town's opinion of you and offset the rating lost to construction.
@@ -184,6 +216,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `x`, `y`.
 
 ### `plant_tree_rectangle`
 
@@ -196,6 +230,8 @@ Supply one of: `tile` or `x` and `y`.
 - `width` (integer, required) Extent along x, in tiles.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `height`, `width`, `x`, `y`.
 
 ### `raise_tile`
 
@@ -210,6 +246,8 @@ Supply one of: `tile` or `x` and `y`.
 
 `slope` accepts (GSTile): `SLOPE_E` = 4, `SLOPE_ELEVATED` = 15, `SLOPE_ENW` = 13, `SLOPE_EW` = 5, `SLOPE_FLAT` = 0, `SLOPE_N` = 8, `SLOPE_NE` = 12, `SLOPE_NS` = 10, `SLOPE_NW` = 9, `SLOPE_NWS` = 11, `SLOPE_S` = 2, `SLOPE_SE` = 6, `SLOPE_SEN` = 14, `SLOPE_STEEP` = 16, `SLOPE_STEEP_E` = 30, `SLOPE_STEEP_N` = 29, `SLOPE_STEEP_S` = 23, `SLOPE_STEEP_W` = 27, `SLOPE_SW` = 3, `SLOPE_W` = 1, `SLOPE_WSE` = 7
 
+Returns `x`, `y`.
+
 ## marine
 
 ### `build_buoy`
@@ -222,6 +260,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `tile`.
+
 ### `build_canal`
 
 Turn a flat land tile into canal. The tile must be at sea level or bounded by water or lock.
@@ -231,6 +271,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `tile`.
 
 ### `build_lock`
 
@@ -242,6 +284,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `tile`.
+
 ### `build_path`
 
 Lay a route you have already chosen, tile by tile. This is how you build a line of your own design: give the tiles and nttd works out how each piece must sit, including the three-tile context rail needs, so nothing has to reason about track orientation. Bridges and tunnels are steps like any other. Steps that only pass over infrastructure already there are skipped rather than paid for. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed. Use connect_rail or connect_road instead when you would rather nttd chose the route.
@@ -250,6 +294,10 @@ Lay a route you have already chosen, tile by tile. This is how you build a line 
 - `road_type` (integer, default 0) Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.
 - `steps` (array, required) The path to lay, as objects carrying x, y and an action. At least two are needed.
 - `transport_type` (string, default "road") What the path carries: rail or road. Anything else is treated as road.
+
+Returns `built`, `errors`, `existing`, `failed`, `skipped`, `status`, `total_steps`.
+
+Each `failed` carries `action`, `error`, `error_category`, `error_code`, `x`, `y`.
 
 ### `build_water_depot`
 
@@ -262,6 +310,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `tile`.
+
 ### `remove_buoy`
 
 Remove a buoy. It fails while a ship still has an order pointing at it.
@@ -271,6 +321,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns no data beyond success.
 
 ### `remove_canal`
 
@@ -282,6 +334,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns no data beyond success.
+
 ### `remove_lock`
 
 Remove a lock.
@@ -292,6 +346,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns no data beyond success.
+
 ### `remove_water_depot`
 
 Remove a ship depot.
@@ -301,6 +357,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns no data beyond success.
 
 ## order
 
@@ -318,12 +376,16 @@ Supply one of: `station_id` or `dest_tile` or `destination`.
 
 `order_flags` accepts (GSOrder): `OF_DEPOT_FLAGS` = 268, `OF_FULL_LOAD` = 64, `OF_FULL_LOAD_ANY` = 96, `OF_GOTO_NEAREST_DEPOT` = 256, `OF_LOAD_FLAGS` = 224, `OF_NONE` = 0, `OF_NON_STOP_DESTINATION` = 2, `OF_NON_STOP_FLAGS` = 3, `OF_NON_STOP_INTERMEDIATE` = 1, `OF_NO_LOAD` = 128, `OF_NO_UNLOAD` = 16, `OF_SERVICE_IF_NEEDED` = 4, `OF_STOP_IN_DEPOT` = 8, `OF_TRANSFER` = 8, `OF_UNLOAD` = 4, `OF_UNLOAD_FLAGS` = 28
 
+Returns `order_count`.
+
 ### `copy_orders`
 
 Replace a vehicle's orders with a copy of another's. The two lists are independent afterwards, unlike share_orders.
 
 - `main_vehicle_id` (integer, required) The vehicle whose orders are the source.
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns `order_count`.
 
 ### `insert_order`
 
@@ -343,6 +405,8 @@ Supply one of: `order_index` or `order_position`.
 
 `order_flags` accepts (GSOrder): `OF_DEPOT_FLAGS` = 268, `OF_FULL_LOAD` = 64, `OF_FULL_LOAD_ANY` = 96, `OF_GOTO_NEAREST_DEPOT` = 256, `OF_LOAD_FLAGS` = 224, `OF_NONE` = 0, `OF_NON_STOP_DESTINATION` = 2, `OF_NON_STOP_FLAGS` = 3, `OF_NON_STOP_INTERMEDIATE` = 1, `OF_NO_LOAD` = 128, `OF_NO_UNLOAD` = 16, `OF_SERVICE_IF_NEEDED` = 4, `OF_STOP_IN_DEPOT` = 8, `OF_TRANSFER` = 8, `OF_UNLOAD` = 4, `OF_UNLOAD_FLAGS` = 28
 
+Returns `order_count`.
+
 ### `move_order`
 
 Move an order to a different position in the list.
@@ -357,6 +421,8 @@ Supply one of: `to_index` or `to_position`.
 - `to_position` (integer, optional) Position in the order list to move to, counting from 0.
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns no data beyond success.
+
 ### `remove_order`
 
 Remove one order from a vehicle's list.
@@ -366,6 +432,8 @@ Supply one of: `order_index` or `order_position`.
 - `order_index` (integer, optional) Position in the order list, counting from 0.
 - `order_position` (integer, optional) Position in the order list, counting from 0.
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns `order_count`.
 
 ### `set_order_compare_function`
 
@@ -377,6 +445,8 @@ Set how a conditional order compares the value it tests.
 
 `compare_function` accepts (GSOrder): `CF_EQUALS` = 0, `CF_IS_FALSE` = 7, `CF_IS_TRUE` = 6, `CF_LESS_EQUALS` = 3, `CF_LESS_THAN` = 2, `CF_MORE_EQUALS` = 5, `CF_MORE_THAN` = 4, `CF_NOT_EQUALS` = 1
 
+Returns `order_pos`, `vehicle_id`.
+
 ### `set_order_compare_value`
 
 Set the value a conditional order compares against.
@@ -384,6 +454,8 @@ Set the value a conditional order compares against.
 - `order_pos` (integer, required) Position in the order list, counting from 0.
 - `value` (integer, required) The value to set.
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns `order_pos`, `vehicle_id`.
 
 ### `set_order_condition`
 
@@ -394,6 +466,8 @@ Turn an order into a conditional one and choose what it tests. Paired with a com
 - `vehicle_id` (integer, required) Which vehicle.
 
 `condition` accepts (GSOrder): `OC_AGE` = 3, `OC_LOAD_PERCENTAGE` = 0, `OC_MAX_RELIABILITY` = 7, `OC_MAX_SPEED` = 2, `OC_RELIABILITY` = 1, `OC_REMAINING_LIFETIME` = 6, `OC_REQUIRES_SERVICE` = 4, `OC_UNCONDITIONALLY` = 5
+
+Returns `order_pos`, `vehicle_id`.
 
 ### `set_order_flags`
 
@@ -406,6 +480,8 @@ Replace the flags on an existing order. This overwrites rather than adds, so inc
 
 `order_flags` accepts (GSOrder): `OF_DEPOT_FLAGS` = 268, `OF_FULL_LOAD` = 64, `OF_FULL_LOAD_ANY` = 96, `OF_GOTO_NEAREST_DEPOT` = 256, `OF_LOAD_FLAGS` = 224, `OF_NONE` = 0, `OF_NON_STOP_DESTINATION` = 2, `OF_NON_STOP_FLAGS` = 3, `OF_NON_STOP_INTERMEDIATE` = 1, `OF_NO_LOAD` = 128, `OF_NO_UNLOAD` = 16, `OF_SERVICE_IF_NEEDED` = 4, `OF_STOP_IN_DEPOT` = 8, `OF_TRANSFER` = 8, `OF_UNLOAD` = 4, `OF_UNLOAD_FLAGS` = 28
 
+Returns no data beyond success.
+
 ### `set_stop_location`
 
 Choose where along the platform a train comes to rest. Only affects trains shorter than the platform.
@@ -416,12 +492,16 @@ Choose where along the platform a train comes to rest. Only affects trains short
 
 `stop_location` accepts (GSOrder): `STOPLOCATION_FAR` = 2, `STOPLOCATION_MIDDLE` = 1, `STOPLOCATION_NEAR` = 0
 
+Returns `order_pos`, `vehicle_id`.
+
 ### `share_orders`
 
 Make a vehicle share another's order list. Editing either afterwards changes both, which is how a fleet is kept consistent.
 
 - `main_vehicle_id` (integer, required) The vehicle whose orders are the source.
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns no data beyond success.
 
 ### `skip_to_order`
 
@@ -433,6 +513,8 @@ Supply one of: `order_index` or `order_position`.
 - `order_position` (integer, optional) Position in the order list, counting from 0.
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns no data beyond success.
+
 ## planning
 
 ### `estimate_cost`
@@ -441,6 +523,8 @@ Report what an action would cost without doing it. The action runs in test mode,
 
 - `action` (string, required) Name of the action to price, exactly as it would be submitted.
 - `params` (object, required) The parameters of the action being estimated, exactly as they would be submitted.
+
+Returns `action`, `estimated_cost`.
 
 ## rail
 
@@ -456,6 +540,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `connected`, `tile`.
+
 ### `build_rail_signal`
 
 Place a signal on a track tile. Signals divide a line into blocks, which is what allows more than one train to use it safely.
@@ -468,6 +554,8 @@ Supply one of: `tile` or `x` and `y`.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 `signal_type` accepts (GSRail): `SIGNALTYPE_COMBO` = 3, `SIGNALTYPE_COMBO_TWOWAY` = 11, `SIGNALTYPE_ENTRY` = 1, `SIGNALTYPE_ENTRY_TWOWAY` = 9, `SIGNALTYPE_EXIT` = 2, `SIGNALTYPE_EXIT_TWOWAY` = 10, `SIGNALTYPE_NONE` = 255, `SIGNALTYPE_NORMAL` = 0, `SIGNALTYPE_NORMAL_TWOWAY` = 8, `SIGNALTYPE_PBS` = 4, `SIGNALTYPE_PBS_ONEWAY` = 5, `SIGNALTYPE_TWOWAY` = 8
+
+Returns `tile`.
 
 ### `build_rail_station`
 
@@ -483,6 +571,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `length`, `platforms`, `station_id`, `tile`.
+
 ### `build_rail_track`
 
 Lay one track piece on one tile, in a chosen orientation. This is the inverse of remove_rail_track and the one shape build_path cannot express, because a path implies its orientations from the tiles either side. Reach for it where there is no path to imply anything: a siding, a junction stub, a passing loop. To lay a line, use build_path, which works the orientations out for you.
@@ -497,6 +587,8 @@ Supply one of: `tile` or `x` and `y`.
 
 `track` accepts (GSRail): `RAILTRACK_NE_SE` = 32, `RAILTRACK_NE_SW` = 1, `RAILTRACK_NW_NE` = 4, `RAILTRACK_NW_SE` = 2, `RAILTRACK_NW_SW` = 16, `RAILTRACK_SW_SE` = 8
 
+Returns `tile`.
+
 ### `build_rail_waypoint`
 
 Build a waypoint on a track tile. Trains can be ordered through one without stopping, which is how a route is forced along a particular line.
@@ -506,6 +598,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `tile`.
 
 ### `connect_rail`
 
@@ -528,6 +622,8 @@ Supply one of: `tile_to` or `to_x` and `to_y`.
 - `to_x` (integer, optional) X coordinate of the finishing tile.
 - `to_y` (integer, optional) Y coordinate of the finishing tile.
 
+Returns `built`, `existing`, `failed`, `gaps`, `iterations`, `path`, `path_length`, `status`.
+
 ### `convert_rail`
 
 Convert existing track in a rectangle to another rail type. Trains that cannot run on the new type are stranded, so check the fleet first.
@@ -542,6 +638,8 @@ Supply one of: `tile` or `x` and `y`.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 - `y1` (integer, optional) Y coordinate of the first corner.
 - `y2` (integer, optional) Y coordinate of the opposite corner.
+
+Returns no data beyond success.
 
 ### `remove_rail`
 
@@ -565,6 +663,8 @@ Supply one of: `tile_to` or `to_x` and `to_y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns no data beyond success.
+
 ### `remove_rail_station`
 
 Remove the part of a rail station inside a rectangle.
@@ -580,6 +680,8 @@ Supply one of: `tile` or `x` and `y`.
 - `y1` (integer, optional) Y coordinate of the first corner.
 - `y2` (integer, optional) Y coordinate of the opposite corner.
 
+Returns no data beyond success.
+
 ### `remove_rail_track`
 
 Remove one track piece from a tile. A tile can carry several, so the piece is named rather than implied.
@@ -592,6 +694,8 @@ Supply one of: `tile` or `x` and `y`.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 `track` accepts (GSRail): `RAILTRACK_NE_SE` = 32, `RAILTRACK_NE_SW` = 1, `RAILTRACK_NW_NE` = 4, `RAILTRACK_NW_SE` = 2, `RAILTRACK_NW_SW` = 16, `RAILTRACK_SW_SE` = 8
+
+Returns `tile`.
 
 ### `remove_signal`
 
@@ -606,6 +710,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns no data beyond success.
+
 ## road
 
 ### `build_one_way_road`
@@ -617,6 +723,8 @@ Build road between two tiles that may be driven in one direction only, running f
 - `y1` (integer, required) Y coordinate of the first corner.
 - `y2` (integer, required) Y coordinate of the opposite corner.
 
+Returns `from`, `to`.
+
 ### `build_one_way_road_full`
 
 Build one-way road between two tiles, covering both end tiles fully rather than stopping at their edges. Use this when the road must meet what is already there.
@@ -625,6 +733,8 @@ Build one-way road between two tiles, covering both end tiles fully rather than 
 - `x2` (integer, required) X coordinate of the opposite corner.
 - `y1` (integer, required) Y coordinate of the first corner.
 - `y2` (integer, required) Y coordinate of the opposite corner.
+
+Returns `from`, `to`.
 
 ### `build_road_depot`
 
@@ -637,6 +747,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `tile`, `x`, `y`.
 
 ### `build_road_stop`
 
@@ -651,6 +763,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `station_id`, `tile`, `type`, `x`, `y`.
 
 ### `connect_road`
 
@@ -669,6 +783,8 @@ Supply one of: `tile_to` or `to_x` and `to_y`.
 - `to_x` (integer, optional) X coordinate of the finishing tile.
 - `to_y` (integer, optional) Y coordinate of the finishing tile.
 
+Returns `built`, `existing`, `failed`, `gaps`, `iterations`, `path`, `path_length`, `status`.
+
 ### `convert_road_type`
 
 Convert existing road in a rectangle to another road type.
@@ -678,6 +794,8 @@ Convert existing road in a rectangle to another road type.
 - `x2` (integer, required) X coordinate of the opposite corner.
 - `y1` (integer, required) Y coordinate of the first corner.
 - `y2` (integer, required) Y coordinate of the opposite corner.
+
+Returns `road_type`.
 
 ### `remove_road`
 
@@ -695,6 +813,8 @@ Supply one of: `tile_to` or `to_x` and `to_y`.
 - `to_x` (integer, optional) X coordinate of the finishing tile.
 - `to_y` (integer, optional) Y coordinate of the finishing tile.
 
+Returns `from_tile`, `to_tile`.
+
 ### `remove_road_depot`
 
 Remove a road depot.
@@ -705,6 +825,8 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `tile`.
+
 ### `remove_road_stop`
 
 Remove a bus or truck stop.
@@ -714,6 +836,8 @@ Supply one of: `tile` or `x` and `y`.
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `tile`.
 
 ## sign
 
@@ -728,11 +852,15 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
+Returns `name`, `sign_id`.
+
 ### `remove_sign`
 
 Remove a sign.
 
 - `sign_id` (integer, required) Which sign.
+
+Returns no data beyond success.
 
 ## town
 
@@ -744,6 +872,8 @@ Do something for a town: advertise, fund buildings, rebuild its roads, build a s
 - `town_id` (integer, required) Which town.
 
 `action` accepts (GSTown): `TOWN_ACTION_ADVERTISE_LARGE` = 2, `TOWN_ACTION_ADVERTISE_MEDIUM` = 1, `TOWN_ACTION_ADVERTISE_SMALL` = 0, `TOWN_ACTION_BRIBE` = 7, `TOWN_ACTION_BUILD_STATUE` = 4, `TOWN_ACTION_BUY_RIGHTS` = 6, `TOWN_ACTION_FUND_BUILDINGS` = 5, `TOWN_ACTION_ROAD_REBUILD` = 3
+
+Returns `action`, `town_id`.
 
 ## vehicle
 
@@ -763,6 +893,8 @@ Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 - `num_wagons` (integer, default 1) How many wagons to build and couple on.
 - `wagon_id` (integer, optional) Which wagon model to build and couple on.
 
+Returns `name`, `refitted`, `vehicle_id`, `wagons_attached`, `wagons_failed`.
+
 ### `buy_vehicle`
 
 Build a vehicle of any type in a depot. It starts stopped, so it needs orders and a start before it does anything.
@@ -776,12 +908,16 @@ Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 - `depot_y` (integer, optional) Y coordinate of the depot the vehicle is built in.
 - `engine_id` (integer, required) Which engine model to build. Numbered by the running game and gated by year, so ask get_engines.
 
+Returns `name`, `vehicle_id`.
+
 ### `clone_vehicle`
 
 Build a copy of an existing vehicle in its depot, optionally sharing the original's orders.
 
 - `share_orders` (boolean, default true) Share the original's order list rather than taking a copy. Shared orders change together afterwards.
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns `name`, `vehicle_id`.
 
 ### `move_wagon`
 
@@ -793,6 +929,8 @@ Move a wagon from one train to another. Both must be stopped in a depot.
 - `source_vehicle_id` (integer, required) The vehicle the wagon is taken from.
 - `source_wagon` (integer, required) Position of the wagon within the source vehicle, counting from 0.
 
+Returns no data beyond success.
+
 ### `refit_vehicle`
 
 Convert a vehicle to carry a different cargo. It must be stopped in a depot, and not every vehicle can carry everything.
@@ -803,6 +941,8 @@ Supply one of: `cargo_id` or `cargo_type`.
 - `cargo_type` (integer, optional) Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming.
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns no data beyond success.
+
 ### `rename_vehicle`
 
 Rename a vehicle.
@@ -810,17 +950,23 @@ Rename a vehicle.
 - `name` (string, required) A name to give.
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns `name`, `vehicle_id`.
+
 ### `reverse_vehicle`
 
 Turn a vehicle around.
 
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns no data beyond success.
+
 ### `sell_vehicle`
 
 Sell a vehicle. It must be stopped in a depot.
 
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns no data beyond success.
 
 ### `sell_wagon`
 
@@ -830,11 +976,15 @@ Sell one wagon from a train, or that wagon and everything behind it. The train m
 - `vehicle_id` (integer, required) Which vehicle.
 - `wagon` (integer, required) Position of the wagon within the vehicle, counting from 0.
 
+Returns no data beyond success.
+
 ### `send_to_depot`
 
 Order a vehicle to the nearest depot and stop there. It finishes the current leg first.
 
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns no data beyond success.
 
 ### `send_to_depot_service`
 
@@ -842,15 +992,21 @@ Order a vehicle to the nearest depot for servicing, after which it resumes its o
 
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns no data beyond success.
+
 ### `start_vehicle`
 
 Start a stopped vehicle. A newly built vehicle is stopped until this is called.
 
 - `vehicle_id` (integer, required) Which vehicle.
 
+Returns `running`.
+
 ### `stop_vehicle`
 
 Stop a vehicle where it is. Stopping outside a depot blocks the line behind it, and only a vehicle stopped in a depot can be sold or refitted.
 
 - `vehicle_id` (integer, required) Which vehicle.
+
+Returns `already_stopped`.
 

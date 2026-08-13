@@ -92,7 +92,10 @@ _DISPATCH_WITH_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cm
 _DISPATCH_NO_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cmd\w+)\(\)')
 _DISPATCH_INLINE = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+\{')
 
-_FUNCTION = re.compile(r'\n  function (Cmd\w+)\(p(?:\s*=\s*\{\})?\)\s*\{')
+# The parameter list is optional: a handler that takes nothing, such as CmdGetTowns, still
+# has a body worth reading for the shape of its reply. Matching only `(p)` left those
+# fifteen handlers with an empty body and so no documented return.
+_FUNCTION = re.compile(r'\n  function (Cmd\w+)\((?:p(?:\s*=\s*\{\})?)?\)\s*\{')
 
 # local x = ("name" in p) ? p.name : default;
 _OPTIONAL = re.compile(r'"([a-z_0-9]+)"\s+in\s+p\)?\s*\?\s*p\.[a-z_0-9]+\s*:\s*([^;,\)]+)')
@@ -157,6 +160,122 @@ def _function_bodies(source: str) -> dict[str, str]:
             index += 1
         bodies[name] = source[start:index]
     return bodies
+
+
+def _without_comments(text: str) -> str:
+    """Drop line comments, which otherwise donate stray words to the key scanner."""
+    out: list[str] = []
+    for line in text.splitlines():
+        marker = line.find("//")
+        out.append(line if marker == -1 else line[:marker])
+    return "\n".join(out)
+
+
+def _table_keys(text: str, start: int) -> list[str]:
+    """The top level keys of the Squirrel table literal whose opening brace is at start.
+
+    A small scanner rather than a pattern, because a reply nests: tables inside arrays
+    inside tables, and only the outermost level is the shape a caller sees.
+    """
+    keys: list[str] = []
+    depth, index, token, quoted = 0, start, "", False
+    while index < len(text):
+        char = text[index]
+        if quoted:
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                quoted = False
+            index += 1
+            continue
+        if char == '"':
+            quoted = True
+        elif char in "{[(":
+            depth += 1
+            token = ""
+        elif char in "}])":
+            depth -= 1
+            token = ""
+            if depth == 0:
+                break
+        elif depth == 1:
+            if char == "=" and text[index + 1 : index + 2] != "=":
+                name = token.strip()
+                if name.isidentifier():
+                    keys.append(name)
+                token = ""
+            elif char == ",":
+                token = ""
+            else:
+                token += char
+        index += 1
+    return keys
+
+
+def _returns(body: str) -> dict[str, Any] | None:
+    """What one action's reply carries, read from the handler's own return statements.
+
+    Nothing described a reply before this. All 131 actions documented their parameters and
+    not one documented what came back, so an agent had to guess a field name and read a
+    null as an absent feature. Three working replies were read as broken that way in a
+    single session: find_station_spot's orientation was looked for as `direction` when it
+    is `valid_directions`, get_company_finance's balance as `money`, and get_vehicle_info's
+    load as `cargo_load` when it is a list of {cargo_id, capacity, loaded}.
+
+    Derived from the source rather than written by hand, so it cannot drift the way the
+    prose in #108 did.
+    """
+    text = _without_comments(body)
+    fields: list[str] = []
+    shape = None
+    index = text.find("result = ")
+    while index != -1:
+        after = index + len("result = ")
+        head = text[after : after + 1]
+        if head == "{":
+            shape = shape or "object"
+            fields.extend(_table_keys(text, after))
+        else:
+            # `result = spots` and friends: a list built by append, so the element's keys
+            # are the shape a caller actually reads.
+            end = text.find(" ", after)
+            variable = text[after : end if end != -1 else after].strip().strip("};,")
+            anchor = text.find(f"{variable}.append({{") if variable.isidentifier() else -1
+            declared = text.find(f"local {variable} = {{") if variable.isidentifier() else -1
+            if anchor != -1:
+                shape = "list"
+                fields.extend(_table_keys(text, text.index("{", anchor + len(variable) + 8)))
+            elif declared != -1:
+                # Assembled into a local table first, then returned whole, which is what
+                # find_station_spot does with its result_info.
+                shape = shape or "object"
+                fields.extend(_table_keys(text, text.index("{", declared)))
+            elif head == "[":
+                shape = shape or "list"
+        index = text.find("result = ", after)
+    if shape is None:
+        return None
+    unique = sorted(set(fields))
+    if not unique:
+        return {"shape": shape}
+    out: dict[str, Any] = {"shape": shape, "fields": unique}
+
+    # A field that is itself a list of tables carries the keys an agent actually reads,
+    # and the outer name alone is no help. find_station_spot answers with `spots`, and
+    # every orientation and flatness fact this project needed lives one level down inside
+    # it, which is how a working feature came to be reported as absent.
+    nested: dict[str, list[str]] = {}
+    for field in unique:
+        anchor = text.find(f"{field}.append({{")
+        if anchor == -1:
+            continue
+        keys = _table_keys(text, text.index("{", anchor + len(field) + 8))
+        if keys:
+            nested[field] = sorted(set(keys))
+    if nested:
+        out["nested"] = nested
+    return out
 
 
 def _parameters(body: str) -> dict[str, dict[str, Any]]:
@@ -266,11 +385,15 @@ def build() -> dict[str, Any]:
         body = bodies.get(function, "")
         params = _parameters(body)
         actions[name] = _entry(
-            name, function, params, tiers, categories, written, _tile_alternatives(params)
+            name, function, params, tiers, categories, written,
+            _tile_alternatives(params), _returns(body),
         )
 
     for name, function in _DISPATCH_NO_PARAMS.findall(source):
-        actions[name] = _entry(name, function, {}, tiers, categories, written, [])
+        actions[name] = _entry(
+            name, function, {}, tiers, categories, written, [],
+            _returns(bodies.get(function, "")),
+        )
 
     for name in _DISPATCH_INLINE.findall(source):
         actions[name] = _entry(name, None, {}, tiers, categories, written, [])
@@ -291,6 +414,7 @@ def _entry(
     categories: dict[str, str],
     written: dict[str, Any],
     derived: list[list[list[str]]],
+    returns: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One manifest entry, merging the hand-written prose with the generated shape."""
     prose = (written.get("actions") or {}).get(name, {})
@@ -324,6 +448,14 @@ def _entry(
         entry["one_of"] = one_of
     for param, meta in sorted(params.items()):
         entry["parameters"][param] = _parameter(name, param, meta, prose, written)
+    if returns:
+        entry["returns"] = dict(returns)
+        described = (prose.get("returns") or {})
+        if described:
+            entry["returns"]["fields"] = {
+                field: {"description": described.get(field, "")}
+                for field in returns.get("fields", [])
+            }
     return entry
 
 
@@ -724,7 +856,7 @@ def _markdown_action(name: str, entry: dict[str, Any]) -> list[str]:
 
     if not entry["parameters"]:
         lines += ["Takes no parameters.", ""]
-        return lines
+        return lines + _markdown_returns(entry)
 
     # A list rather than a table. 93 of the 129 actions take three parameters or fewer,
     # and a table spends two lines of scaffolding before saying anything: about 2400
@@ -738,6 +870,29 @@ def _markdown_action(name: str, entry: dict[str, Any]) -> list[str]:
             continue
         values = ", ".join(f"`{n}` = {v}" for n, v in meta["enum"]["values"].items())
         lines += [f"`{param}` accepts ({meta['enum']['class']}): {values}", ""]
+    return lines + _markdown_returns(entry)
+
+
+def _markdown_returns(entry: dict[str, Any]) -> list[str]:
+    """The reply's field names, which nothing published before.
+
+    Names alone, not prose. Knowing that the field is called `valid_directions` rather than
+    `direction`, or `balance` rather than `money`, is the whole of what was missing: a
+    reader who guesses wrong sees a null and concludes the feature is absent.
+    """
+    returns = entry.get("returns")
+    if not returns:
+        return []
+    fields = returns.get("fields")
+    if not fields:
+        return ["Returns no data beyond success.", ""]
+    names = fields if isinstance(fields, list) else list(fields)
+    article = "a list of" if returns.get("shape") == "list" else ""
+    lines = [f"Returns {article} `{'`, `'.join(names)}`.".replace("Returns  ", "Returns "), ""]
+    for field, keys in (returns.get("nested") or {}).items():
+        lines.append(f"Each `{field}` carries `{'`, `'.join(keys)}`.")
+    if returns.get("nested"):
+        lines.append("")
     return lines
 
 
