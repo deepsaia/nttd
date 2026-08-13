@@ -1092,9 +1092,39 @@ class NttdGS extends GSController {
         });
       }
     }
+    // Which way the platforms run, and where a train can get in.
+    //
+    // Without this an agent cannot tell whether track it laid can actually be used. A
+    // platform is a line with an axis, and a train enters at either end; track against its
+    // side connects to nothing however adjacent it looks. Every route in this project
+    // earned nothing for exactly that reason, and nothing in the observation surface would
+    // have shown it.
+    //
+    // A rail station has TWO orientations, not four: the axis its platforms lie along.
+    // Things entered from one side, such as road stops and depots, are the four direction
+    // case, and they are not this.
+    local orientation = null;
+    local entry_tiles = [];
+    if (GSRail.IsRailStationTile(loc)) {
+      local along_x = (GSRail.GetRailStationDirection(loc) == GSRail.RAILTRACK_NE_SW);
+      orientation = along_x ? "x" : "y";
+      foreach (candidate in this._RailStationEntries(loc)) {
+        local entry = candidate.entry;
+        entry_tiles.append({
+          tile = entry, x = GSMap.GetTileX(entry), y = GSMap.GetTileY(entry),
+          has_rail = GSRail.IsRailTile(entry),
+        });
+      }
+    }
     return { success = true, result = {
       id = p.station_id, name = GSBaseStation.GetName(p.station_id),
       x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
+      // The axis the platforms lie along: "x" or "y". Null for a station with no rail.
+      platform_axis = orientation,
+      // The tiles just beyond each platform end, which is where track has to reach.
+      // has_rail on one of these is the difference between a station a train can use and
+      // one it cannot.
+      entry_tiles = entry_tiles,
       has_rail = GSStation.HasStationType(p.station_id, GSStation.STATION_TRAIN),
       has_truck = GSStation.HasStationType(p.station_id, GSStation.STATION_TRUCK_STOP),
       has_bus = GSStation.HasStationType(p.station_id, GSStation.STATION_BUS_STOP),
@@ -2448,6 +2478,74 @@ class NttdGS extends GSController {
     return GSRail.AreTilesConnected(prev_tile, cur_tile, next_tile);
   }
 
+  // Where a train can get into or out of a rail station.
+  //
+  // A platform is a LINE, not a doorway. It has an axis, given by
+  // GetRailStationDirection as a RAILTRACK value, and a train enters along that axis at
+  // either end. Track laid against the side of a platform connects to nothing, however
+  // adjacent it looks.
+  //
+  // This is the geometry that made every route in this project earn nothing. A station
+  // whose platform ran along x at (76,184) to (78,184) was joined by track at (78,183),
+  // perpendicular, and both real entry tiles were empty. connect_rail reported it built,
+  // a route was registered, and the train ran 105 days and delivered nothing.
+  //
+  // Returns the tiles just beyond each end, walking the platform to find them, so it works
+  // from ANY tile of the station rather than only its corner.
+  function _RailStationEntries(tile) {
+    if (!GSRail.IsRailStationTile(tile)) return [];
+    local sid = GSStation.GetStationID(tile);
+    local along_x = (GSRail.GetRailStationDirection(tile) == GSRail.RAILTRACK_NE_SW);
+    local dx = along_x ? 1 : 0;
+    local dy = along_x ? 0 : 1;
+    local x = GSMap.GetTileX(tile), y = GSMap.GetTileY(tile);
+
+    // Walk to each end of this platform.
+    local lo_x = x, lo_y = y;
+    while (true) {
+      local next = GSMap.GetTileIndex(lo_x - dx, lo_y - dy);
+      if (!GSMap.IsValidTile(next) || !GSRail.IsRailStationTile(next)) break;
+      if (GSStation.GetStationID(next) != sid) break;
+      lo_x -= dx; lo_y -= dy;
+    }
+    local hi_x = x, hi_y = y;
+    while (true) {
+      local next = GSMap.GetTileIndex(hi_x + dx, hi_y + dy);
+      if (!GSMap.IsValidTile(next) || !GSRail.IsRailStationTile(next)) break;
+      if (GSStation.GetStationID(next) != sid) break;
+      hi_x += dx; hi_y += dy;
+    }
+
+    // Each entry carries the platform tile it adjoins. The last piece of track is built
+    // with the platform as its `next`, and BuildRail needs that to be ADJACENT. Handing it
+    // the station's origin instead left the line one tile short of the entry: measured at
+    // (77,155), with the entry (76,155) empty, because the origin (73,155) was three tiles
+    // away and the final segment could not be built.
+    local entries = [];
+    local before = GSMap.GetTileIndex(lo_x - dx, lo_y - dy);
+    local after = GSMap.GetTileIndex(hi_x + dx, hi_y + dy);
+    if (GSMap.IsValidTile(before)) {
+      entries.append({ entry = before, platform = GSMap.GetTileIndex(lo_x, lo_y) });
+    }
+    if (GSMap.IsValidTile(after)) {
+      entries.append({ entry = after, platform = GSMap.GetTileIndex(hi_x, hi_y) });
+    }
+    return entries;
+  }
+
+  // The entry a line coming from `towards` should aim at: the nearer end.
+  function _NearestRailEntry(station_tile, towards) {
+    local entries = this._RailStationEntries(station_tile);
+    if (entries.len() == 0) return null;
+    local best = entries[0];
+    local best_d = GSMap.DistanceManhattan(best.entry, towards);
+    foreach (candidate in entries) {
+      local d = GSMap.DistanceManhattan(candidate.entry, towards);
+      if (d < best_d) { best = candidate; best_d = d; }
+    }
+    return best;
+  }
+
   function _RouteGaps(path, is_rail) {
     local gaps = [];
     for (local i = 1; i < path.len(); i++) {
@@ -3071,8 +3169,37 @@ class NttdGS extends GSController {
       to_hint = GSMap.GetTileIndex(p.to_hint_x, p.to_hint_y);
     }
 
+    // Aim at the station ENTRY, not at any tile of the station.
+    //
+    // A platform is a line with an axis, and a train gets in only at its ends. Pathfinding
+    // to a station tile lets the search arrive from whichever side is cheapest, which is
+    // usually the side, and side-adjacent track connects to nothing. That is what made
+    // every route in this project earn nothing: one line arrived at (78,183) against a
+    // platform running along x, both real entries left empty, and the train ran 105 days
+    // and delivered nothing while every layer reported a route.
+    //
+    // The endpoints move to the entry tiles; the hints stay pointing at the platform, so
+    // the last piece still joins to the station itself. A station with no valid entry, at
+    // the map edge, is left alone rather than guessed at.
+    local from_tile = pair.from.tile;
+    local to_tile = pair.to.tile;
+    // The hint is taken from the entry rather than from the caller, because it has to be
+    // the platform tile ADJOINING that entry. A caller naming any other tile of the
+    // station leaves the final segment unbuildable, and the station's origin is the wrong
+    // one whenever the line arrives at the far end.
+    local from_entry = this._NearestRailEntry(from_tile, to_tile);
+    if (from_entry != null) {
+      from_hint = from_entry.platform;
+      from_tile = from_entry.entry;
+    }
+    local to_entry = this._NearestRailEntry(to_tile, from_tile);
+    if (to_entry != null) {
+      to_hint = to_entry.platform;
+      to_tile = to_entry.entry;
+    }
+
     // Phase 1: Pathfind (runs in GSTestMode internally).
-    local pf = this._FindRailPath(pair.from.tile, pair.to.tile, max_iter);
+    local pf = this._FindRailPath(from_tile, to_tile, max_iter);
     if (!pf.success) {
       return { success = false, error = "No rail path found after " + pf.iterations + " iterations",
                result = { iterations = pf.iterations } };
