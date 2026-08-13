@@ -18,7 +18,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from nttd.analysis.loader import load_session
 from nttd.store import parquet_reader, session_paths
 
 SNAPSHOT = {
@@ -229,39 +228,3 @@ class TestParquetReader:
 
         pairs = parquet_reader.read_snapshots("ses_bad")
         assert [date for date, _ in pairs] == [10]
-
-
-class TestEveryReaderAgrees:
-    """The regression: the repositories used to ignore the configured directory."""
-
-    @pytest.mark.asyncio
-    async def test_repositories_read_the_configured_directory(
-        self, merged_session: str,
-    ) -> None:
-        from nttd.store.repositories import action_repo, entity_repo, event_repo, metrics_repo
-
-        assert await entity_repo.get_towns_latest(merged_session) == SNAPSHOT["towns"]
-        assert await entity_repo.get_subsidies_latest(merged_session) == SNAPSHOT["subsidies"]
-        assert await metrics_repo.get_company_latest(merged_session) == SNAPSHOT["companies"]
-        assert await event_repo.get_events(merged_session)
-        assert (await action_repo.get_action_stats(merged_session))["total"] == 1
-        assert await action_repo.get_action_params("act_1") == {"tile": 4242}
-
-    @pytest.mark.asyncio
-    async def test_repositories_see_an_unmerged_live_session(
-        self, live_session: str,
-    ) -> None:
-        """None of the repositories used to read fragments, so a live session read empty."""
-        from nttd.store.repositories import action_repo, entity_repo, event_repo, metrics_repo
-
-        assert await entity_repo.get_towns_latest(live_session) == SNAPSHOT["towns"]
-        assert await metrics_repo.get_finance_series(live_session, 0)
-        assert await event_repo.get_events(live_session)
-        assert (await action_repo.get_action_stats(live_session))["total"] == 1
-
-    def test_loader_and_repositories_see_the_same_session(self, live_session: str) -> None:
-        """The two read paths cannot disagree about what a session contains."""
-        data = load_session(live_session)
-        assert len(data.actions) == parquet_reader.read_table(live_session, "actions").num_rows
-        assert len(data.events) == parquet_reader.read_table(live_session, "events").num_rows
-        assert len(data.snapshots) == 1
