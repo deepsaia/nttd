@@ -33,11 +33,24 @@ def _load() -> dict[str, Any]:
     It is logged loudly because the surface it describes is then invisible.
     """
     if not MANIFEST_PATH.exists():
+        # Says which of the two situations this is, because the instruction differs and only
+        # one of them is followable. An installed nttd ships the manifest and not scripts/, so
+        # telling that user to run the generator sends them looking for a file they do not
+        # have. They do not need it either: the manifest describes the GameScript, and changing
+        # that means editing main.nut, which is a checkout by definition.
+        in_checkout = (resources.data_dir() / "scripts" / "generate_action_manifest.py").exists()
+        remedy = (
+            "regenerate it with: uv run python scripts/generate_action_manifest.py"
+            if in_checkout
+            else (
+                "this install is missing bundled data. Reinstall nttd, or point NTTD_DATA_DIR "
+                "at a checkout: regenerating requires scripts/, which the wheel does not ship"
+            )
+        )
         logger.warning(
             "No action manifest at %s. Parameter validation and the published action "
-            "surface are unavailable until it is generated: "
-            "uv run python scripts/generate_action_manifest.py",
-            MANIFEST_PATH,
+            "surface are unavailable until it is present. %s",
+            MANIFEST_PATH, remedy,
         )
         return {"actions": {}}
     try:
