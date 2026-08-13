@@ -45,7 +45,13 @@ def result_from_reply(action_id: str, reply: dict[str, Any]) -> ActionResult:
         # Present only when OpenTTD refused. nttd's own precondition failures carry no
         # code, and that absence is how the two are told apart.
         error_code=code,
-        error_name=error_codes.error_name(code),
+        # A name the reply gave outright wins over one looked up from a code. A compound
+        # build has no single OpenTTD error to carry a code, so error_name was empty on
+        # every connect ever recorded, and the analysis reports fell back to grouping on
+        # the whole message. That message names counts and a tile, so "1 of 37 at (19,40)"
+        # and "2 of 37 at (21,44)" became separate groups of one, and the top-errors cap
+        # then evicted the refusals that genuinely repeat.
+        error_name=reply.get("error_name") or error_codes.error_name(code),
         error_category=error_codes.category_name(reply.get("error_category")),
         # A failed compound build still changed the world, so what it managed comes back
         # with the failure rather than being dropped.

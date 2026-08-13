@@ -293,7 +293,7 @@ class AdminClient:
             "id": correlation_id,
             "success": chunks[0].get("success", True),
         }
-        for field in ("error", "error_code", "error_category", "reason"):
+        for field in ("error", "error_code", "error_category", "error_name", "reason"):
             if field in chunks[0]:
                 merged[field] = chunks[0][field]
 
