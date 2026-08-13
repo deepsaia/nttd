@@ -11,6 +11,7 @@ files per request is cheaper than being wrong.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,7 @@ class SessionRegistry:
         if not self._root.exists():
             return []
         dirs = [d for d in self._root.iterdir() if d.is_dir()]
-        dirs.sort(key=_activity, reverse=True)
+        dirs.sort(key=_started_at, reverse=True)
         return [d.name for d in dirs[:limit]]
 
     def entries(self, limit: int = 40) -> list[dict[str, Any]]:
@@ -124,6 +125,30 @@ class SessionRegistry:
         if not newest:
             return None
         return int(time.time() - newest)
+
+
+def _started_at(session_dir: Path) -> tuple[float, str]:
+    """When a session began, from the timestamp its id carries.
+
+    The index used to sort by newest data file, which answers "most recently active" and is
+    a different question. Touching an old session's files, or a long run still writing while
+    a newer one sits idle, put the wrong row on top. A reader looking for the run they just
+    started wants it first, and the id already says when it started.
+
+    Ids look like ses_20260813_180523_b29b4b54. Anything that does not parse sorts LAST, not
+    by file activity: a directory whose start time is unknown must not be able to claim it is
+    the newest. Falling back to activity was tried and did exactly that, because a directory
+    created just now carries a modification time later than any real session's start.
+    """
+    parts = session_dir.name.split("_")
+    if len(parts) >= 3:
+        try:
+            started = datetime.strptime(f"{parts[1]}{parts[2]}", "%Y%m%d%H%M%S")
+        except ValueError:
+            pass
+        else:
+            return (started.timestamp(), session_dir.name)
+    return (0.0, session_dir.name)
 
 
 def _activity(session_dir: Path) -> float:

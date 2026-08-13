@@ -1141,6 +1141,25 @@ class NttdGS extends GSController {
           });
         }
       }
+      // What this KIND of industry produces and takes, regardless of whether it has yet.
+      //
+      // production above is last month's figures, and it is empty on day one because
+      // GetLastMonthProduction is 0 before anything has run. So this list was the only way to
+      // pair a supplier with a consumer at the start of a game, and it was missing here while
+      // get_industry_info had it: pairing 42 industries meant 42 extra round trips, one per
+      // industry, to learn something the list could have carried.
+      local produces_types = [];
+      foreach (cargo_id, _ in GSIndustryType.GetProducedCargo(itype)) {
+        produces_types.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+        });
+      }
+      local accepts_types = [];
+      foreach (cargo_id, _ in GSIndustryType.GetAcceptedCargo(itype)) {
+        accepts_types.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+        });
+      }
       industries.append({
         id = id, name = GSIndustry.GetName(id),
         type_id = itype, type_name = GSIndustryType.GetName(itype),
@@ -1149,6 +1168,8 @@ class NttdGS extends GSController {
         is_processing = GSIndustryType.IsProcessingIndustry(itype),
         production = produced,
         accepted = accepted_list,
+        produces_cargo = produces_types,
+        accepts_cargo = accepts_types,
       });
     }
     return { success = true, result = industries };

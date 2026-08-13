@@ -2698,10 +2698,12 @@
         "shape": "list",
         "fields": [
           "accepted",
+          "accepts_cargo",
           "id",
           "is_processing",
           "is_raw",
           "name",
+          "produces_cargo",
           "production",
           "type_id",
           "type_name",

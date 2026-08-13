@@ -253,7 +253,7 @@ List the industries on the map, with their locations, types and production.
 
 Takes no parameters.
 
-Returns a list of `accepted`, `id`, `is_processing`, `is_raw`, `name`, `production`, `type_id`, `type_name`, `x`, `y`.
+Returns a list of `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `produces_cargo`, `production`, `type_id`, `type_name`, `x`, `y`.
 
 ### `get_industry_info`
 

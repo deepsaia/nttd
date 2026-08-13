@@ -7,6 +7,7 @@ still being called live and the stall rule shouted about each of them on every s
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -101,3 +102,48 @@ def test_the_listing_is_bounded_and_newest_first(tmp_path: Path) -> None:
 def test_an_empty_sessions_directory_lists_nothing(tmp_path: Path) -> None:
     assert SessionRegistry(tmp_path).session_ids() == []
     assert SessionRegistry(tmp_path / "missing").entries() == []
+
+
+def test_the_index_orders_by_when_a_session_started(tmp_path: Path) -> None:
+    """Newest run on top, from the timestamp in its id.
+
+    The index used to sort by newest data file, which answers "most recently active". A long
+    run still writing, or an old session whose files were touched, took the top row from the
+    run somebody had just started. Both are plausible: reading a session rewrites nothing,
+    but archiving or merging one does.
+    """
+    from nttd.monitor.registry import SessionRegistry
+
+    root = tmp_path / "sessions"
+    for session_id in ("ses_20260813_090000_aaaaaaaa",
+                       "ses_20260813_190000_cccccccc",
+                       "ses_20260812_120000_bbbbbbbb"):
+        (root / session_id).mkdir(parents=True)
+
+    # The oldest session is the most recently touched, which is what used to decide the order.
+    newest_file = root / "ses_20260812_120000_bbbbbbbb" / "snapshots.parquet"
+    newest_file.write_bytes(b"")
+    os.utime(newest_file, (2_000_000_000, 2_000_000_000))
+
+    assert SessionRegistry(root).session_ids() == [
+        "ses_20260813_190000_cccccccc",
+        "ses_20260813_090000_aaaaaaaa",
+        "ses_20260812_120000_bbbbbbbb",
+    ]
+
+
+def test_a_session_id_without_a_timestamp_still_sorts(tmp_path: Path) -> None:
+    """A directory from an older layout must not raise, and must sort last.
+
+    Not by file activity, which was the first attempt: a directory created a moment ago has a
+    modification time later than any real session start, so it took the top row.
+    """
+    from nttd.monitor.registry import SessionRegistry
+
+    root = tmp_path / "sessions"
+    (root / "ses_20260813_190000_cccccccc").mkdir(parents=True)
+    (root / "legacy-run").mkdir(parents=True)
+
+    order = SessionRegistry(root).session_ids()
+    assert order[0] == "ses_20260813_190000_cccccccc"
+    assert "legacy-run" in order

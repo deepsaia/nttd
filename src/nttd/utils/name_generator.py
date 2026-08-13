@@ -1,11 +1,20 @@
 """Human-readable name generators for sessions and companies.
 
-Sessions: crimson-falcon-blaze-06apr2026-160734pdt
-Companies: jade-heron-4f2a
+One shape for both, <adj>-<noun>-<date>-<time><tz>:
+
+    session   crimson-falcon-06apr2026-160734pdt
+    company   jade-heron-06apr2026-160734pdt
+
+A company name is additionally capped, because OpenTTD refuses an over-long one and a
+refused rename leaves the company called "Unnamed", which makes a leaderboard row unable to
+say who played.
 """
 import random
-import uuid
 from datetime import datetime
+
+# OpenTTD's limit for a company name. The timestamp is 19 characters of it, so the word
+# pair is chosen to fit rather than drawn freely: see generate_company_name.
+MAX_COMPANY_NAME = 31
 
 _ADJECTIVES = [
     "amber", "arc", "ash", "azure", "beefy", "blithe", "bold", "bonny", "brave", "bright", "brisk",
@@ -62,14 +71,35 @@ def generate_session_name() -> str:
 
 
 def generate_company_name() -> str:
-    """Generate a company name like 'jade-heron-4f2a'.
+    """Generate a company name like 'jade-heron-06apr2026-160734pdt'.
 
-    Format: <adj>-<noun>-<4 hex chars>. Companies default to "Unnamed" in
-    OpenTTD, which makes a leaderboard row unable to identify who played, so
-    every contestant company gets a readable name it can still override.
+    The same shape as a session name, deliberately. Companies default to "Unnamed" in
+    OpenTTD, which makes a leaderboard row unable to identify who played, so every
+    contestant company gets a readable name it can still override.
 
-    The hex suffix keeps names distinct when two companies draw the same pair.
+    It used to end in four hex characters, which made a company name and a session name
+    look like different kinds of thing and told a reader nothing about when the run
+    happened. The timestamp keeps names distinct as well as the hex did, since two
+    companies minted in the same second on the same adjective and noun is not a case that
+    arises: one session plays one scored company.
+
+    The word pair is chosen to FIT rather than freely, because OpenTTD caps a company name
+    at MAX_COMPANY_NAME characters and the timestamp alone is 19 of them. Picking freely
+    gives up to 35, which the game would refuse, and a refused rename leaves the company
+    called "Unnamed" so a leaderboard row cannot say who played. Shape is preserved: still
+    exactly <adj>-<noun>-<timestamp>, only drawn from the pairs that fit.
     """
-    adj = random.choice(_ADJECTIVES)
-    noun = random.choice(_NOUNS)
-    return f"{adj}-{noun}-{uuid.uuid4().hex[:4]}"
+    timestamp = generate_timestamp()
+    budget = MAX_COMPANY_NAME - len(timestamp) - 2  # two hyphens
+    pairs = [
+        (adj, noun)
+        for adj in _ADJECTIVES
+        for noun in _NOUNS
+        if len(adj) + len(noun) <= budget
+    ]
+    if not pairs:
+        # A timestamp long enough to leave no room at all. Truncating beats refusing,
+        # because a named company is the point.
+        return f"{_ADJECTIVES[0]}-{_NOUNS[0]}-{timestamp}"[:MAX_COMPANY_NAME]
+    adj, noun = random.choice(pairs)
+    return f"{adj}-{noun}-{timestamp}"
