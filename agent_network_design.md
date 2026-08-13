@@ -127,10 +127,30 @@ abandoning is a real option, because a partial line blocks the corridor.
 
 ### Road network
 
-Untested. Expected to be far more forgiving: bus and truck stops are single tiles, so there is no
-platform orientation problem and no curve continuity problem, which are precisely the two things
-that defeated rail. Likely the fastest mode to first revenue and therefore the right first
-network to build.
+Played, and it earned nothing. The prediction that road would be forgiving was HALF right and
+the wrong half mattered.
+
+What went right, and it is a real advantage: `check_connection` reported 25 tiles of which only
+**6 needed building**, because towns arrive with roads. Two stops plus a depot plus the road cost
+about 16,000 of the opening 100,000, and every build returned `success`.
+
+What went wrong: after 60 game days the bus had carried nothing. `q0_income` 0, expenses -522,
+vehicle profit -188, both stations `rated: False` with 17 and 7 passengers waiting. The cause,
+found with `trace_route` from the stop tile: **`tiles_reachable: 1`**. The stop was connected to
+nothing. The bus sat at the depot tile burning running costs.
+
+So the lesson generalises past rail, and it is the single most important one for every network:
+
+**A `success` from a build action is not a route. `connect_road` and `build_road_stop` both
+succeeded while leaving a stop the vehicle could not reach.** Verify with `trace_route` and
+require `tiles_reachable` greater than 1 before buying a vehicle, in EVERY mode. Rail failed
+visibly, with a partial and a discontinuity message; road failed silently, which is worse.
+
+Still unresolved on this route: why the stop is isolated when `find_bus_stop_spots` reported
+`adjacent_road_count: 1` at (179,223) and `connect_road` then reported success along that tile.
+Candidates are the bay's facing, the depot at (180,222) taking the access tile, or the connect
+having routed elsewhere. Worth resolving before the road network is designed, because it decides
+whether the tool must place the stop before or after the road.
 
 ### Air network
 

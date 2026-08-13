@@ -99,7 +99,12 @@ class MonitorHandler(BaseHTTPRequestHandler):
             try:
                 entries = [registry.entry(session_id), *entries]
             except Exception:
-                return page.error_page(f"No session {session_id} under {registry.root}")
+                # Fall back to the index rather than an error page. A stale link, a bookmark
+                # from a deleted session, or a refresh after a cleanup all landed on a dead
+                # end that offered nowhere to go; the list of what does exist is both more
+                # useful and what the reader wanted anyway.
+                logger.debug("No session %s; showing the index", session_id, exc_info=True)
+                return page.index_page(entries)
 
         feed = registry.feed(session_id)
         meta = feed.meta()
