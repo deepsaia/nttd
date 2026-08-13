@@ -14,7 +14,7 @@ import re
 from nttd.utils.name_generator import MAX_COMPANY_NAME, generate_company_name, generate_session_name
 
 # One shape for a session and a company alike: <adj>-<noun>-<date>-<time><tz>.
-_COMPANY_PATTERN = re.compile(r"^[a-z]+-[a-z]+-\d{2}[a-z]{3}\d{4}-\d{6}[a-z]+$")
+_COMPANY_PATTERN = re.compile(r"^[a-z]+-[a-z]+-\d{8}-\d{6}[a-z]+$")
 
 
 def test_company_name_matches_the_session_name_shape() -> None:
@@ -60,4 +60,20 @@ def test_session_name_still_carries_a_timestamp() -> None:
     # always produced: <adj>-<noun>-13aug2026-125834ist. The pattern asked for three words
     # and so could never match: measured at 0 of 20 generated names. It was asserting the
     # company format, which does have a third part, against the session generator.
-    assert re.match(r"^[a-z]+-[a-z]+-\d{2}[a-z]{3}\d{4}-\d{6}[a-z]+$", name), name
+    assert re.match(r"^[a-z]+-[a-z]+-\d{8}-\d{6}[a-z]+$", name), name
+
+
+def test_names_sort_chronologically_as_plain_strings() -> None:
+    """The date is yyyymmdd so a lexical sort is also a chronological one.
+
+    It used to be 13aug2026, which sorts august before february and december before january.
+    The monitor's ordering does not depend on this, since it reads the timestamp out of the
+    session id, but anything that sorts names, a directory listing or a leaderboard column,
+    now agrees with time instead of contradicting it.
+    """
+    names = [
+        f"alpha-acorn-{stamp}"
+        for stamp in ("20260101-090000ist", "20260213-090000ist",
+                      "20260813-193558ist", "20261201-000001ist")
+    ]
+    assert sorted(names) == names

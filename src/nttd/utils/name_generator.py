@@ -51,9 +51,13 @@ _NOUNS = [
 
 
 def generate_timestamp() -> str:
-    """Generate a timestamp suffix like '06apr2026-160734pdt'."""
+    """Generate a timestamp suffix like '20260813-160734pdt'.
+
+    Date first and numeric, so a plain lexical sort of names is also a chronological one.
+    It used to read 13aug2026, which sorts august before february and tells a machine nothing.
+    """
     now = datetime.now().astimezone()
-    date_str = now.strftime("%d%b%Y").lower()
+    date_str = now.strftime("%Y%m%d")
     time_str = now.strftime("%H%M%S")
     tz_name = now.strftime("%Z").lower()
     tz_str = tz_name if tz_name else "utc"
