@@ -30,7 +30,7 @@ Both transports exist because both kinds of client are real here. An agent that 
 its tools as a subprocess wants stdio. A multi-agent system with its own process model
 wants an address to connect to.
 
-## Where the 120 actions are
+## Where the 132 actions are
 
 The obvious objection to five tools is that the actions have been hidden inside one of
 them. They have not.

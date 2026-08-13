@@ -179,10 +179,10 @@ uv run nttd actions --playable --json     # what a contestant may submit, as JSO
 
 What nttd can do, and what each action takes. **Generated from the GameScript**, not
 hand-written, so it cannot describe an action the game does not implement or miss one it
-does. 129 actions, 345 parameters, all described.
+does. 132 actions, 393 parameters, all described.
 
 The listing splits on what running something does, because that is the first thing worth
-knowing: 44 observations that read the world and cost nothing, 76 actions that change it,
+knowing: 46 observations that read the world and cost nothing, 77 actions that change it,
 and 9 operator powers refused during scored play.
 
 Each entry gives every parameter with its type, whether it is required, its default, and
