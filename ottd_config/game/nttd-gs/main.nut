@@ -2753,11 +2753,16 @@ class NttdGS extends GSController {
     local platforms = ("num_platforms" in p) ? p.num_platforms : 2;
     local length = ("platform_length" in p) ? p.platform_length : 5;
     GSRail.SetCurrentRailType(rail_type);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
+    // Resolved rather than read straight off p, so a caller who passes `tile` is served
+    // as the manifest promises, and one who passes nothing is told what is missing
+    // instead of getting the Squirrel message "the index 'x' does not exist".
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    local tile = r.tile;
     local track = (dir == 1) ? GSRail.RAILTRACK_NW_SE : GSRail.RAILTRACK_NE_SW;
     if (GSRail.BuildRailStation(tile, track, platforms, length, GSStation.STATION_NEW)) {
       local sid = GSStation.GetStationID(tile);
-      return { success = true, result = { tile = [p.x, p.y], platforms = platforms, length = length, station_id = sid } };
+      return { success = true, result = { tile = [r.x, r.y], platforms = platforms, length = length, station_id = sid } };
     }
     return this._Refused({ tile = tile, wants = "land", company = p.company_id });
   }
@@ -2767,7 +2772,9 @@ class NttdGS extends GSController {
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;
     local dir = ("direction" in p) ? p.direction : 0;
     GSRail.SetCurrentRailType(rail_type);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
+    local r = this._ResolveTile(p);
+    if (r == null) return { success = false, error = "Need tile or x,y" };
+    local tile = r.tile;
     local front = this._GetAdjacentTile(tile, dir);
     if (!GSRail.BuildRailDepot(tile, front)) {
       return this._Refused({ tile = tile, wants = "land", company = p.company_id });
@@ -2785,7 +2792,7 @@ class NttdGS extends GSController {
         break;
       }
     }
-    return { success = true, result = { tile = [p.x, p.y], connected = connected } };
+    return { success = true, result = { tile = [r.x, r.y], connected = connected } };
   }
 
   function CmdBuildRailSignal(p) {
@@ -2805,10 +2812,20 @@ class NttdGS extends GSController {
 
   function CmdRemoveRail(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local from_tile = GSMap.GetTileIndex(p.from_x, p.from_y);
-    local tile = GSMap.GetTileIndex(p.x, p.y);
-    local to_tile = GSMap.GetTileIndex(p.to_x, p.to_y);
-    if (GSRail.RemoveRail(from_tile, tile, to_tile)) return { success = true, result = {} };
+    // Three tiles, not two. GSRail.RemoveRail takes the same prev/curr/next triple that
+    // BuildRail does: it removes the piece AT the middle tile that joins the other two.
+    // The manifest described it as "along a line between two tiles" and listed from_x and
+    // x as if they were alternatives, so the documented call was missing an argument and
+    // failed with the Squirrel message for whichever field was absent.
+    local from_r = this._ResolveTile(p, "from_");
+    local mid_r = this._ResolveTile(p);
+    local to_r = this._ResolveTile(p, "to_");
+    if (from_r == null || mid_r == null || to_r == null) {
+      return { success = false,
+               error = "remove_rail needs three tiles: from_x,from_y then x,y then "
+                       + "to_x,to_y. It removes the piece at x,y joining from to to." };
+    }
+    if (GSRail.RemoveRail(from_r.tile, mid_r.tile, to_r.tile)) return { success = true, result = {} };
     return this._Refused();
   }
 
