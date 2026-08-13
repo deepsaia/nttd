@@ -1,7 +1,11 @@
 """API integration tests for health, admin, and session-scoped routes.
 
 Tests the HTTP API layer using FastAPI TestClient with lifespan events.
-Routes are session-scoped (e.g., /admin/sessions/{session_id}).
+
+Every path is tier prefixed, because that is now the only surface. These used to call the
+untiered duplicates, /admin/sessions/{id}, which resolved to the same handlers: the whole API
+was mounted twice. Prefixes come from the constants below rather than being spelled out
+per call, so moving a route between tiers is one edit here instead of fourteen.
 
 Run with: uv run pytest tests/test_api.py -v
 """
@@ -18,6 +22,10 @@ _TEST_SESSIONS_DIR = "/tmp/nttd_test_sessions_api"
 os.environ["NTTD_SESSIONS_DIR"] = _TEST_SESSIONS_DIR
 
 from nttd.api.app import app  # noqa: E402 -- env must be set before import
+from nttd.api.tiers import Tier  # noqa: E402
+
+_ADMIN = f"{Tier.OPERATOR.prefix}/admin"
+_OPERATOR_SESSION = f"{Tier.OPERATOR.prefix}/sessions"
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +53,7 @@ def client() -> TestClient:
 
 
 def _create_session(client: TestClient, name: str = "test") -> str:
-    resp = client.post("/admin/sessions/new", json={"name": name})
+    resp = client.post(f"{_ADMIN}/sessions/new", json={"name": name})
     assert resp.status_code == 200
     return resp.json()["session_id"]
 
@@ -69,7 +77,7 @@ def test_health(client: TestClient) -> None:
 
 
 def test_create_session(client: TestClient) -> None:
-    resp = client.post("/admin/sessions/new", json={"name": "TestSession"})
+    resp = client.post(f"{_ADMIN}/sessions/new", json={"name": "TestSession"})
     assert resp.status_code == 200
     data = resp.json()
     assert "session_id" in data
@@ -78,7 +86,7 @@ def test_create_session(client: TestClient) -> None:
 
 def test_list_sessions(client: TestClient) -> None:
     _create_session(client, "list_test")
-    resp = client.get("/admin/sessions")
+    resp = client.get(f"{_ADMIN}/sessions")
     assert resp.status_code == 200
     data = resp.json()
     assert "sessions" in data
@@ -88,25 +96,25 @@ def test_list_sessions(client: TestClient) -> None:
 
 def test_get_session_by_id(client: TestClient) -> None:
     sid = _create_session(client, "get_test")
-    resp = client.get(f"/admin/sessions/{sid}")
+    resp = client.get(f"{_ADMIN}/sessions/{sid}")
     assert resp.status_code == 200
     data = resp.json()
     assert data["session_id"] == sid
 
 
 def test_get_session_404(client: TestClient) -> None:
-    resp = client.get("/admin/sessions/nonexistent_session_xyz")
+    resp = client.get(f"{_ADMIN}/sessions/nonexistent_session_xyz")
     assert resp.status_code == 404
 
 
 def test_session_settings(client: TestClient) -> None:
     sid = _create_session(client, "settings_test")
-    resp = client.post(f"/admin/sessions/{sid}/settings", json={
+    resp = client.post(f"{_ADMIN}/sessions/{sid}/settings", json={
         "settings": {"game_creation.map_x": "8", "game_creation.map_y": "8"},
     })
     assert resp.status_code == 200
 
-    resp = client.get(f"/admin/sessions/{sid}")
+    resp = client.get(f"{_ADMIN}/sessions/{sid}")
     assert resp.status_code == 200
     settings = resp.json().get("settings", {})
     assert settings.get("game_creation.map_x") == "8"
@@ -114,10 +122,10 @@ def test_session_settings(client: TestClient) -> None:
 
 def test_delete_session(client: TestClient) -> None:
     sid = _create_session(client, "delete_test")
-    resp = client.delete(f"/admin/sessions/{sid}")
+    resp = client.delete(f"{_ADMIN}/sessions/{sid}")
     assert resp.status_code == 200
 
-    resp = client.get(f"/admin/sessions/{sid}")
+    resp = client.get(f"{_ADMIN}/sessions/{sid}")
     assert resp.status_code == 404
 
 
@@ -129,7 +137,7 @@ def test_speed_endpoint_is_rejected(client: TestClient) -> None:
     sped up -- including the integration suite, which thought it ran at 16x.
     """
     sid = _create_session(client, "speed_test")
-    resp = client.post(f"/sessions/{sid}/speed", params={"speed": 8})
+    resp = client.post(f"{_OPERATOR_SESSION}/{sid}/speed", params={"speed": 8})
     assert resp.status_code == 501, "unsupported operation, not a bad request"
     detail = resp.json()["detail"]
     assert "no runtime game-speed" in detail
@@ -138,7 +146,7 @@ def test_speed_endpoint_is_rejected(client: TestClient) -> None:
 
 def test_speed_endpoint_rejects_regardless_of_session_state(client: TestClient) -> None:
     """501 is unconditional: the operation does not exist in OpenTTD at all."""
-    resp = client.post("/sessions/nonexistent_session_xyz/speed", params={"speed": 8})
+    resp = client.post(f"{_OPERATOR_SESSION}/nonexistent_session_xyz/speed", params={"speed": 8})
     assert resp.status_code == 501
 
 
@@ -154,20 +162,20 @@ def test_protected_settings_are_refused_at_session_creation(client: TestClient) 
         ("_fair_poll_interval", "0.5"),
         ("_task_id", "forged"),
     ):
-        resp = client.post("/admin/sessions/new", json={"name": "x", "settings": {key: value}})
+        resp = client.post(f"{_ADMIN}/sessions/new", json={"name": "x", "settings": {key: value}})
         assert resp.status_code == 400, f"{key} was accepted"
         assert key in resp.json()["detail"]
 
 
 def test_protected_settings_are_refused_on_update(client: TestClient) -> None:
     sid = _create_session(client, "protected_update")
-    resp = client.post(f"/admin/sessions/{sid}/settings", json={"settings": {"_scored": "0"}})
+    resp = client.post(f"{_ADMIN}/sessions/{sid}/settings", json={"settings": {"_scored": "0"}})
     assert resp.status_code == 400
 
 
 def test_ordinary_settings_are_still_accepted(client: TestClient) -> None:
     """The guard must not block legitimate OpenTTD settings."""
-    resp = client.post("/admin/sessions/new", json={
+    resp = client.post(f"{_ADMIN}/sessions/new", json={
         "name": "ok", "settings": {"game_creation.map_x": "8", "difficulty.terrain_type": "2"},
     })
     assert resp.status_code == 200

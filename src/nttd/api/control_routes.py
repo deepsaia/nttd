@@ -44,8 +44,6 @@ public_router = APIRouter(prefix=_SESSION_PREFIX, tags=["control"])
 participant_router = APIRouter(prefix=_SESSION_PREFIX, tags=["control"])
 operator_router = APIRouter(prefix=_SESSION_PREFIX, tags=["control"])
 
-# Aggregate view used to serve the legacy unprefixed paths.
-router = APIRouter()
 
 
 @public_router.get("/status", response_model=GameState)
@@ -399,8 +397,3 @@ async def load_scenario(session_id: str, config_path: str | None = None) -> dict
         },
     }
 
-# Legacy unprefixed paths (/sessions/{id}/...) are served by aggregating the three
-# tier routers. New callers should use the /v1/<tier> prefixes.
-router.include_router(public_router)
-router.include_router(participant_router)
-router.include_router(operator_router)

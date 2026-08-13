@@ -88,16 +88,11 @@ def test_public_tier_is_read_only() -> None:
     assert not offenders, f"mutating routes in the public tier: {offenders}"
 
 
-def test_legacy_unprefixed_paths_still_exist() -> None:
-    """Existing scenarios, examples, the console, and the CLI depend on these."""
-    legacy = {p for p in _paths() if not p.startswith("/v1")}
-    for expected in (
-        "/sessions/{session_id}/actions/submit",
-        "/sessions/{session_id}/status",
-        "/admin/sessions/new",
-        "/health",
-    ):
-        assert expected in legacy, f"legacy path {expected} disappeared"
+# The test that used to sit here asserted the untiered duplicates still existed, on the
+# grounds that "existing scenarios, examples, the console, and the CLI depend on these". None
+# of that held by the time they were removed: the console was deleted, and nttd-examples, the
+# CLI and the MCP client all build /v1 paths. The opposite is now asserted, in
+# tests/test_tiered_surface.py, which also records why the duplicates were harmful.
 
 
 def test_every_tier_is_described_in_openapi() -> None:
