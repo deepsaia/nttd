@@ -47,18 +47,42 @@ def _code_only(source: str) -> str:
 # and the observation must be taken after the advance rather than before it.
 
 
-def test_actions_execute_with_the_game_running() -> None:
-    """A GameScript DoCommand completes on a game tick, so while the game is paused
-    it never completes and every build times out after 10s.
+def test_actions_execute_before_the_world_moves() -> None:
+    """The flush runs while the game is still PAUSED, so a step costs exactly its days.
 
-    Verified against OpenTTD 15.3: the same build_road_stop timed out while paused
-    and succeeded in 0.04s unpaused. command_pause_level does not change this -- it
-    governs what a human client may issue, not whether the script's command queue
-    drains. So the flush has to sit between the unpause and the advance.
+    This test used to assert the opposite, on the belief that a paused build never
+    completes and that command_pause_level "governs what a human client may issue, not
+    whether the script's command queue drains". Both halves were wrong, and the evidence
+    for them came from a session that was actually suffering the reply desync of issue #60.
+
+    Re-measured on OpenTTD 15.3 at construction.command_pause_level = 3, paused:
+
+        build_rail_track     success  0.33s
+        build_rail_station   success  0.32s
+        build_rail_depot     success  0.36s
+        connect_rail         success  5.28s, 37 tiles built
+        get_date afterwards  answered, game_date unmoved at 737790
+
+    So the script gets ticks while the economy clock does not, and even the pathfinding
+    actions run paused. The flush therefore happens first, and the advance is exact.
     """
     source = _code_only(inspect.getsource(Orchestrator.step))
-    assert source.index("_unpause") < source.index("_execute_actions")
+    assert source.index("_execute_actions") < source.index("_unpause")
     assert source.index("_execute_actions") < source.index("_wait_until_game_date")
+
+
+def test_the_paused_flush_is_conditional_on_the_setting() -> None:
+    """At a lower pause level a build times out AND wedges the script while having actually
+    executed, so nttd would record a failure for an action that changed the world.
+
+    command_pause_level is in the shipped openttd.cfg and not in LOCKED_SETTINGS, so a
+    scenario can lower it. The step asks the running game rather than trusting the file, and
+    falls back to the old order, which is slower and correct.
+    """
+    source = _code_only(inspect.getsource(Orchestrator.step))
+    assert "_can_flush_paused" in source
+    # The fallback still exists: an unguarded paused-only flush would break a lowered level.
+    assert source.count("_execute_actions") == 2
 
 
 def test_the_step_advances_before_it_observes() -> None:
