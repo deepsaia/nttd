@@ -352,10 +352,10 @@ setting changes it, so wall-minutes *are* the economy horizon:
 
 | Tier | Real-time | Economy horizon | |
 |---|---|---|---|
-| T1 | 15 min | ~1.25 game years | build-skill tier, largely pre-revenue |
-| T2 | 30 min | ~2.5 game years | |
-| T3 | 60 min | ~5 game years | economic performance becomes measurable |
-| T4 | 120 min | ~10 game years | longer-running businesses |
+| T1 | 12 min | 1 game year | a route has time to earn, not only to stand |
+| T2 | 24 min | 2 game years | |
+| T3 | 60 min | 5 game years | economic performance becomes measurable |
+| T4 | 120 min | 10 game years | longer-running businesses |
 
 Shipped examples: `t2_256_flat_1001_realtime.conf` (256×256 flat), `t3_512_hilly_2001_realtime.conf` (512×512
 hilly), and `t2_256_flat_1001_stepped.conf` (the same world as T2, bounded

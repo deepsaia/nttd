@@ -572,7 +572,7 @@ rather than letting it look reasonable.
 ### Tiers
 
 The economy clock is fixed at 1 wall-minute per economy month, so wall-minutes *are* the
-economy horizon: T1 15 min (~1.25 yr), T2 30 min (~2.5 yr), T3 60 min (~5 yr), T4
+economy horizon: T1 12 min (1 yr), T2 24 min (2 yr), T3 60 min (5 yr), T4
 120 min (~10 yr).
 
 There is no `game_speed`. OpenTTD 15.3 has no such setting; nttd's `/speed` endpoint

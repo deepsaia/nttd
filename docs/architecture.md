@@ -255,7 +255,7 @@ OpenTTD 15.3: nttd used to expose one that silently failed while returning succe
 unless `timekeeping_units = wallclock`.
 
 Because the economy clock is fixed, tiers are defined in wall-minutes and the economy
-horizon follows: 30 minutes *is* 2.5 game years.
+horizon follows: 60 minutes *is* 5 game years, which is what makes T3 60 minutes.
 
 `starting_year = 2020` rather than a mid-century start. Verified: the year is accepted
 unclamped and every transport mode has more stock than at 1960 (train 39 → 40, road

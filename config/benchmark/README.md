@@ -4,10 +4,10 @@ Eight example scenarios: four tiers, each in both runtime modes.
 
 | tier | game span | quarters | stepped                | real time            | world              |
 |------|-----------|----------|------------------------|----------------------|--------------------|
-| T1   | 182 days  | 2        | 182 steps of 1 day     | 6 wall-minutes       | 256x256 flat 1001  |
-| T2   | 366 days  | 4        | 366 steps of 1 day     | 12 wall-minutes      | 256x256 flat 1001  |
-| T3   | 731 days  | 8        | 731 steps of 1 day     | 24 wall-minutes      | 512x512 hilly 2001 |
-| T4   | 1827 days | 20       | 1827 steps of 1 day    | 60 wall-minutes      | 512x512 hilly 2001 |
+| T1   | 366 days  | 4        | 366 steps of 1 day     | 12 wall-minutes      | 256x256 flat 1001  |
+| T2   | 731 days  | 8        | 731 steps of 1 day     | 24 wall-minutes      | 256x256 flat 1001  |
+| T3   | 1827 days | 20       | 1827 steps of 1 day    | 60 wall-minutes      | 512x512 hilly 2001 |
+| T4   | 3653 days | 40       | 3653 steps of 1 day    | 120 wall-minutes     | 512x512 hilly 2001 |
 
 ```
 uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf
@@ -32,10 +32,10 @@ earlier, and the last quarter of building is the one that changed most.
 From the profile's 2020-01-01 start:
 
 ```
-T1   182 days -> 2020-07-01    2 completed quarters
-T2   366 days -> 2021-01-01    4
-T3   731 days -> 2022-01-01    8
-T4  1827 days -> 2025-01-01   20
+T1   366 days -> 2021-01-01    4 completed quarters
+T2   731 days -> 2022-01-01    8
+T3  1827 days -> 2025-01-01   20
+T4  3653 days -> 2030-01-01   40
 ```
 
 T2 is 366 rather than 365 because 2020 is a leap year: day 365 is 2020-12-31, which is still

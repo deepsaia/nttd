@@ -183,10 +183,10 @@ economy horizon:
 
 | Tier | Real time | Economy horizon | |
 |---|---|---|---|
-| T1 | 15 min | ~1.25 game years | build-skill tier, largely pre-revenue |
-| T2 | 30 min | ~2.5 game years | |
-| T3 | 60 min | ~5 game years | economic performance becomes measurable |
-| T4 | 120 min | ~10 game years | longer-running businesses |
+| T1 | 12 min | 1 game year | a route has time to earn, not only to stand |
+| T2 | 24 min | 2 game years | |
+| T3 | 60 min | 5 game years | economic performance becomes measurable |
+| T4 | 120 min | 10 game years | longer-running businesses |
 
 ---
 
@@ -311,10 +311,10 @@ both modes, and `config/benchmark/README.md` explains the day counts:
 
 | Tier | Game span | Quarters | Stepped | Real time | World |
 |---|---|---|---|---|---|
-| T1 | 182 days | 2 | 182 steps of 1 day | 6 min | 256×256 flat 1001 |
-| T2 | 366 days | 4 | 366 steps of 1 day | 12 min | 256×256 flat 1001 |
-| T3 | 731 days | 8 | 731 steps of 1 day | 24 min | 512×512 hilly 2001 |
-| T4 | 1827 days | 20 | 1827 steps of 1 day | 60 min | 512×512 hilly 2001 |
+| T1 | 366 days | 4 | 366 steps of 1 day | 12 min | 256×256 flat 1001 |
+| T2 | 731 days | 8 | 731 steps of 1 day | 24 min | 256×256 flat 1001 |
+| T3 | 1827 days | 20 | 1827 steps of 1 day | 60 min | 512×512 hilly 2001 |
+| T4 | 3653 days | 40 | 3653 steps of 1 day | 120 min | 512×512 hilly 2001 |
 
 A tier is a span of game time, so both modes cover the same span: stepped counts steps, real
 time uses the wall clock that produces those days at the fixed economy rate. The counts end

@@ -26,7 +26,7 @@ from nttd.config.scenario_config import load
 _BENCHMARKS = Path(__file__).resolve().parents[1] / "config" / "benchmark"
 
 # The span each tier means, in game days, and the quarters that span closes.
-_TIERS = {"t1": (182, 2), "t2": (366, 4), "t3": (731, 8), "t4": (1827, 20)}
+_TIERS = {"t1": (366, 4), "t2": (731, 8), "t3": (1827, 20), "t4": (3653, 40)}
 
 # The economy clock is fixed: no speed multiplier exists in OpenTTD 15.3.
 _SECONDS_PER_GAME_DAY = 1.97
