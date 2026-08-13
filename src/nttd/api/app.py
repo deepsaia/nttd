@@ -25,6 +25,7 @@ from nttd.api.tiers import TIER_DESCRIPTIONS, Tier
 from nttd.api.ws_routes import router as ws_router
 from nttd.runtime.session_manager import SessionManager
 from nttd.store import session_paths
+from nttd.version import version
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="nttd",
     description="Agent-agnostic API server for OpenTTD AI simulation",
-    version="0.2.0",
+    # Read from installed metadata, which derives from the release tag. It was written here
+    # as "0.2.0" while pyproject said 0.1.0 and the newest release was 0.0.2: three numbers,
+    # no two agreeing, and the one an agent reads from /openapi.json was the furthest off.
+    version=version(),
     lifespan=lifespan,
     # Documenting the tiers here is the point of splitting them: an agent reading
     # /docs or the OpenAPI schema can see which surface it is meant to use.

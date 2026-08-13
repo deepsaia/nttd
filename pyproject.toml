@@ -14,6 +14,12 @@ license-files = ["LICENSE", "NOTICE"]
 # anyone changing code, mcp by the MCP surface. The cost of folding them in is a
 # heavier install; the cost of keeping them apart was a `nttd analyze` that worked and
 # a `NttdEnv` that raised ImportError on the same checkout.
+#
+# The test of that rule is "needed by something documented", which cuts both ways. seaborn
+# and matplotlib were listed here and imported by nothing at all: 49 MB installed, for no
+# feature. Removed rather than moved behind an extra, which is the distinction. plotly stays
+# because `nttd analyze` and the report renderer import it, and imageio because the video
+# report does.
 dependencies = [
     # Server and API
     "fastapi>=0.115.0",
@@ -32,11 +38,18 @@ dependencies = [
     # Record and analysis
     "pyarrow>=18.0",
     "polars>=1.39.3",
+    # Declared because analysis/plots.py imports it. It was reaching the environment only as
+    # a dependency of seaborn, so removing seaborn broke `nttd analyze` on a fresh install.
+    # An undeclared dependency that happens to be present is a working install by luck.
+    "pandas>=2.2",
     "plotly>=6.6.0",
-    "seaborn>=0.13.2",
-    "matplotlib>=3.10.8",
     "kaleido>=1.2.0",
+    # imageio[pyav] rather than plain imageio: the video report imports av directly, and the
+    # pyav extra is what guarantees it. pillow is declared for the same reason pandas is,
+    # reports/video.py imports PIL, and it was arriving only because plotly and imageio
+    # happen to depend on it.
     "imageio[pyav]>=2.37.3",
+    "pillow>=11.0",
     # RL and ES surface: nttd.rl.env and nttd.rl.multi_env
     "gymnasium>=1.0.0",
     "numpy>=2.0",
