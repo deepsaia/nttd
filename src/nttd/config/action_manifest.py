@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
+
+from nttd import resources
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_PATH = Path(__file__).resolve().parents[3] / "config" / "actions" / "manifest.json"
+MANIFEST_PATH = resources.action_config("manifest.json")
 
 
 def _load() -> dict[str, Any]:

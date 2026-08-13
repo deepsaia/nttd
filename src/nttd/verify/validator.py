@@ -25,6 +25,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from nttd import resources
 from nttd.config.scenario_config import load, scenario_to_settings
 from nttd.runtime.final_save import FINAL_SAVE_NAME, SAVE_EXTENSION
 from nttd.schemas.verification import CheckOutcome, Verdict, VerificationReport
@@ -47,11 +48,13 @@ class BundleValidator:
         self,
         bundle_dir: Path | str,
         openttd_binary: str,
-        base_config_dir: Path | str = "ottd_config",
+        base_config_dir: Path | str | None = None,
     ) -> None:
         self.bundle_dir = Path(bundle_dir)
         self._binary = openttd_binary
-        self._base_config_dir = Path(base_config_dir)
+        # None rather than the relative string "ottd_config": verification has to work
+        # from an installed nttd, and from any working directory.
+        self._base_config_dir = Path(base_config_dir or resources.gamescript_dir())
 
     async def verify(self, regenerate: bool = False) -> VerificationReport:
         """Check the bundle.

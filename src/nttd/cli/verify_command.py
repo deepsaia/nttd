@@ -80,7 +80,7 @@ def verify(
     validator = BundleValidator(
         bundle_dir=bundle_dir,
         openttd_binary=os.environ.get("NTTD_OPENTTD_BINARY", _DEFAULT_BINARY),
-        base_config_dir=Path(os.environ.get("NTTD_BASE_CONFIG", "ottd_config")),
+        base_config_dir=os.environ.get("NTTD_BASE_CONFIG") or None,
     )
     report = asyncio.run(validator.verify(regenerate=regenerate))
 
