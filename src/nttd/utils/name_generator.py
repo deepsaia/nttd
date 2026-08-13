@@ -40,19 +40,6 @@ _NOUNS = [
     "wren", "yeti", "zephyr",
 ]
 
-_VERBS = [
-    "amble", "beam", "blaze", "blink", "boing", "bolt", "bounce", "brew", "charge", "chase", "cheer",
-    "climb", "coast", "cruise", "dash", "dart", "dive", "dodge", "drift", "drive", "float", "flow",
-    "fly", "forge", "frolic", "glide", "groove", "hop", "hover", "hustle", "jive", "join", "jolt",
-    "jump", "kick", "land", "lead", "leap", "lift", "loop", "march", "mingle", "mix", "move", "nudge",
-    "paddle", "pave", "pivot", "pounce", "prance", "puff", "pull", "purr", "race", "rally", "range",
-    "rip", "rise", "roam", "roll", "rush", "sail", "scale", "scoot", "scout", "seek", "shake", "shape",
-    "ship", "skip", "slide", "soar", "spark", "spin", "splash", "spring", "sprint", "stash", "steer",
-    "stomp", "stride", "surge", "swoop", "swing", "tackle", "trade", "trail", "trek", "trot", "vault",
-    "veer", "vibe", "wade", "waltz", "weave", "whirl", "whisk", "whiz", "wiggle", "wind", "wink",
-    "wobble", "zoom", "zip", "zap", "zig",
-]
-
 
 def generate_timestamp() -> str:
     """Generate a timestamp suffix like '06apr2026-160734pdt'."""
@@ -67,12 +54,11 @@ def generate_timestamp() -> str:
 def generate_session_name() -> str:
     """Generate a human-readable session name with timestamp.
 
-    Format: <adj>-<noun>-<verb>-06apr2026-160734pdt
+    Format: <adj>-<noun>-06apr2026-160734pdt
     """
     adj = random.choice(_ADJECTIVES)
     noun = random.choice(_NOUNS)
-    verb = random.choice(_VERBS)
-    return f"{adj}-{noun}-{verb}-{generate_timestamp()}"
+    return f"{adj}-{noun}-{generate_timestamp()}"
 
 
 def generate_company_name() -> str:
