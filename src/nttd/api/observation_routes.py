@@ -583,7 +583,7 @@ async def gs_query(
             detail=(
                 f"{action} is not a read-only query. This endpoint reaches the "
                 f"GameScript directly, so it accepts observation commands only. "
-                f"Use /actions/submit for gameplay."
+                f"Use /v1/participant/sessions/{session_id}/actions/submit for gameplay."
             ),
         )
 

@@ -32,8 +32,6 @@ _ACTIONS_PREFIX = "/sessions/{session_id}/actions"
 participant_router = APIRouter(prefix=_ACTIONS_PREFIX, tags=["actions"])
 operator_router = APIRouter(prefix=_ACTIONS_PREFIX, tags=["actions"])
 
-# Aggregate view used to serve the legacy unprefixed paths.
-router = APIRouter()
 
 
 # Statuses an action does not move on from. A resend of one of these is a retry of
@@ -346,7 +344,3 @@ async def interpret_agent_actions(
 
     return results
 
-
-# Legacy unprefixed paths. New callers should use the /v1/<tier> prefixes.
-router.include_router(participant_router)
-router.include_router(operator_router)

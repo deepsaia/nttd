@@ -11,7 +11,6 @@ import nttd.api.dependencies as deps
 from nttd import resources
 from nttd.api.action_routes import operator_router as action_operator_router
 from nttd.api.action_routes import participant_router as action_participant_router
-from nttd.api.action_routes import router as action_router
 from nttd.api.actions_routes import router as actions_router
 from nttd.api.admin_routes import router as admin_router
 from nttd.api.agent_routes import router as agent_router
@@ -20,7 +19,6 @@ from nttd.api.benchmark_routes import router as benchmark_router
 from nttd.api.control_routes import operator_router as control_operator_router
 from nttd.api.control_routes import participant_router as control_participant_router
 from nttd.api.control_routes import public_router as control_public_router
-from nttd.api.control_routes import router as control_router
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.snapshot_routes import router as snapshot_router
 from nttd.api.tiers import TIER_DESCRIPTIONS, Tier
@@ -134,19 +132,20 @@ app.include_router(analysis_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC
 # answers before one exists. That is when an agent most needs it.
 app.include_router(actions_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
 
-# --- Legacy unprefixed paths ----------------------------------------------
+# The untiered mounts that used to sit here are gone. Every router above was included a
+# second time without a tier prefix, giving 73 duplicate paths and 85 operations marked
+# deprecated in the schema.
 #
-# Kept so existing scenarios, the examples, the admin console, and the CLI keep
-# working. Deprecated: new callers should use the tier prefixes above.
-
-app.include_router(control_router, deprecated=True)
-app.include_router(admin_router, deprecated=True)
-app.include_router(agent_router, deprecated=True)
-app.include_router(observation_router, deprecated=True)
-app.include_router(action_router, deprecated=True)
-app.include_router(benchmark_router, deprecated=True)
-app.include_router(snapshot_router, deprecated=True)
-app.include_router(analysis_router, deprecated=True)
+# Not an auth bypass: the same router objects were mounted twice, so the handlers and their
+# checks were identical. The harm was that the whole surface had two names, and the second one
+# kept a stale client working well enough to hide that it was stale. That is how nttd-examples
+# drifted: its old client posted to /sessions/{id}/actions/submit, which still resolved, so a
+# runner half worked instead of failing on its first request. A 404 on the first call is worth
+# more than a run that half works.
+#
+# Nothing shipped depends on them. nttd-examples and the MCP client build /v1/participant
+# paths, the CLI prints tiered URLs, the monitor's sentry posts to /v1/operator, and the
+# admin console that did use them was removed.
 
 # WebSockets are mounted once: the OpenAPI/deprecation machinery does not apply.
 app.include_router(ws_router)

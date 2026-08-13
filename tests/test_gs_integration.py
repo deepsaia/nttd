@@ -23,7 +23,12 @@ import time
 import httpx
 import pytest
 
+from nttd.api.tiers import Tier
 from nttd.constants import READ_ONLY_GS_ACTIONS
+
+# The only surface there is. The untiered duplicates these used to call are gone.
+_ADMIN = f"{Tier.OPERATOR.prefix}/admin"
+_PLAY = f"{Tier.PARTICIPANT.prefix}/sessions"
 
 log = logging.getLogger(__name__)
 
@@ -65,20 +70,20 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
     provided = request.config.getoption("--session-id")
     if provided:
         # Verify it exists
-        resp = client.get(f"/admin/sessions/{provided}")
+        resp = client.get(f"{_ADMIN}/sessions/{provided}")
         if resp.status_code != 200:
             pytest.skip(f"Session {provided} not found (status {resp.status_code})")
         yield provided
         return
 
     # Create a new session
-    resp = client.post("/admin/sessions/new", json={"name": "gs_integration_test"})
+    resp = client.post(f"{_ADMIN}/sessions/new", json={"name": "gs_integration_test"})
     assert resp.status_code == 200, f"Failed to create session: {resp.text}"
     sid = resp.json()["session_id"]
     log.info("Created test session: %s", sid)
 
     # Small 128x128 map, year 1960 (all vehicle types), custom 4 towns, high sea for coast
-    client.post(f"/admin/sessions/{sid}/settings", json={
+    client.post(f"{_ADMIN}/sessions/{sid}/settings", json={
         "settings": {
             "game_creation.map_x": "7",
             "game_creation.map_y": "7",
@@ -91,7 +96,7 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
     })
 
     # Start the session (spawns OpenTTD)
-    resp = client.post(f"/admin/sessions/{sid}/start", json={
+    resp = client.post(f"{_ADMIN}/sessions/{sid}/start", json={
         "mode": "newgame",
         "ai_opponents": 0,
         "agent_companies": 1,
@@ -105,7 +110,7 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
     while time.time() < deadline:
         try:
             resp = client.post(
-                f"/sessions/{sid}/state/gs/query",
+                f"{_PLAY}/{sid}/state/gs/query",
                 params={"action": "ping"},
                 json={},
             )
@@ -136,7 +141,7 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
 
     log.info("Stopping test session %s", sid)
     try:
-        client.post(f"/admin/sessions/{sid}/stop", params={"end_reason": "gs_test_complete"})
+        client.post(f"{_ADMIN}/sessions/{sid}/stop", params={"end_reason": "gs_test_complete"})
         log.info("Session %s stopped and archived", sid)
     except Exception:
         log.warning("Failed to stop session %s during teardown", sid, exc_info=True)
@@ -150,7 +155,7 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
 def gs_query(client: httpx.Client, session_id: str, action: str, params: dict | None = None) -> list | dict:
     """Execute a GS query and return the result."""
     resp = client.post(
-        f"/sessions/{session_id}/state/gs/query",
+        f"{_PLAY}/{session_id}/state/gs/query",
         params={"action": action},
         json=params or {},
     )
@@ -167,7 +172,7 @@ def interpret(
 ) -> list[dict]:
     """Submit actions via the interpreter and return results."""
     resp = client.post(
-        f"/sessions/{session_id}/actions/interpret",
+        f"{_PLAY}/{session_id}/actions/interpret",
         json=actions,
         params={"company_id": company_id},
     )
@@ -1058,7 +1063,7 @@ def test_every_read_only_query_reaches_its_handler(
     something that is not there.
     """
     resp = client.post(
-        f"/sessions/{session_id}/state/gs/query",
+        f"{_PLAY}/{session_id}/state/gs/query",
         params={"action": action},
         json=_QUERY_ARGUMENTS.get(action, {}),
         headers=_participant_headers(session_id),

@@ -27,8 +27,9 @@ class ScenarioIsNotStepped(PermissionError):
         super().__init__(
             f"This scenario is played in real time, not in steps: its runtime mode is "
             f"{mode!r}. The world runs on its own clock, so there is nothing to step. "
-            "Submit actions with POST /actions/submit and observe with GET /state/full "
-            "whenever you are ready."
+            "Submit actions with POST /v1/participant/sessions/{session_id}/actions/submit "
+            "and observe with GET /v1/participant/sessions/{session_id}/state/full whenever "
+            "you are ready."
         )
         self.mode = mode
 
