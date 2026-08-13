@@ -54,3 +54,29 @@ def test_the_loaders_resolve_through_the_resolver() -> None:
     assert MANIFEST_PATH == resources.action_config("manifest.json")
     assert ENUMS_PATH == resources.action_config("enums.json")
     assert PROFILE_PATH == resources.scenario_config("profile.conf")
+
+
+def test_the_version_comes_from_installed_metadata() -> None:
+    """One source of truth, and it is the git tag the release created.
+
+    pyproject used to carry a version as well, which is one fact in two places, and a release
+    is when they diverge: pyproject said 0.1.0 while the 0.0.2 release was cut, so publish
+    refused at its own gate and uploaded nothing.
+    """
+    from nttd.version import UNKNOWN, version
+
+    reported = version()
+    assert reported
+    # Either a real version from metadata, or an honest unknown. Never a guess.
+    assert reported == UNKNOWN or reported[0].isdigit(), reported
+
+
+def test_pyproject_declares_the_version_dynamic() -> None:
+    """A literal version here would be the duplication that broke the 0.0.2 release."""
+    import tomllib
+
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+
+    assert "version" in project.get("dynamic", [])
+    assert "version" not in project, "the version must come from the tag, not from pyproject"
