@@ -306,10 +306,16 @@ uv run nttd session stop -s ses_...
 uv run nttd result -s ses_...
 ```
 
-Shipped examples, all scored on their own merits rather than because they say so:
+Shipped examples, all scored on their own merits rather than because they say so. Four tiers in
+both modes, and `config/benchmark/README.md` explains the day counts:
 
-| File | World | Mode |
-|---|---|---|
-| `t2_256_flat_1001_realtime.conf` | 256×256 flat | real time, 30 min |
-| `t3_512_hilly_2001_realtime.conf` | 512×512 hilly | real time, 60 min |
-| `t2_256_flat_1001_stepped.conf` | 256×256 flat | stepped, bounded in steps |
+| Tier | Game span | Quarters | Stepped | Real time | World |
+|---|---|---|---|---|---|
+| T1 | 182 days | 2 | 182 steps of 1 day | 6 min | 256×256 flat 1001 |
+| T2 | 366 days | 4 | 366 steps of 1 day | 12 min | 256×256 flat 1001 |
+| T3 | 731 days | 8 | 731 steps of 1 day | 24 min | 512×512 hilly 2001 |
+| T4 | 1827 days | 20 | 1827 steps of 1 day | 60 min | 512×512 hilly 2001 |
+
+A tier is a span of game time, so both modes cover the same span: stepped counts steps, real
+time uses the wall clock that produces those days at the fixed economy rate. The counts end
+just past a quarter boundary, because the score is the rating of the last COMPLETED quarter.

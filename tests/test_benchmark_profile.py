@@ -434,9 +434,14 @@ def test_an_example_scenario_restates_no_locked_value() -> None:
 
 
 def test_the_example_documents_every_allowed_range() -> None:
-    """The example is the only place a contestant learns the ranges, so a range
-    added in code without a matching comment leaves them guessing."""
-    text = (_BENCHMARK_DIR / "t2_256_flat_1001_realtime.conf").read_text()
+    """A range added in code without a matching note leaves a contestant guessing.
+
+    Documented in the directory's README rather than inside one example. It used to live in
+    the comments of t2_256_flat_1001_realtime.conf, which worked while that was the only
+    example; with eight, the same prose in eight files is the drift this repository keeps
+    being bitten by.
+    """
+    text = (_BENCHMARK_DIR / "README.md").read_text()
     for key, allowed in ALLOWED_RANGES.items():
         for value in allowed:
             assert str(value) in text, f"{key} value {value} is not documented"
