@@ -17,13 +17,28 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-OPENTTD="/Applications/OpenTTD.app/Contents/MacOS/openttd"
 CONFIG_DIR="$PROJECT_DIR/ottd_config"
 CONFIG="$CONFIG_DIR/openttd.cfg"
 SECRETS="$CONFIG_DIR/secrets.cfg"
 
-if [ ! -f "$OPENTTD" ]; then
-    echo "Error: OpenTTD not found at $OPENTTD"
+# The same order nttd itself searches, in src/nttd/openttd_binary.py: an explicit
+# override, then PATH, then the macOS app bundle which adds nothing to PATH.
+OPENTTD="$NTTD_OPENTTD_BINARY"
+if [ -z "$OPENTTD" ]; then
+    for candidate in openttd openttd-dedicated; do
+        if command -v "$candidate" > /dev/null 2>&1; then
+            OPENTTD="$(command -v "$candidate")"
+            break
+        fi
+    done
+fi
+if [ -z "$OPENTTD" ] && [ -x "/Applications/OpenTTD.app/Contents/MacOS/openttd" ]; then
+    OPENTTD="/Applications/OpenTTD.app/Contents/MacOS/openttd"
+fi
+
+if [ -z "$OPENTTD" ] || [ ! -x "$OPENTTD" ]; then
+    echo "Error: no OpenTTD executable found."
+    echo "Set NTTD_OPENTTD_BINARY, or install OpenTTD so openttd is on PATH."
     exit 1
 fi
 

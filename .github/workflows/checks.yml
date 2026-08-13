@@ -1,12 +1,13 @@
 # Lint and test on Linux, on every push and pull request.
 #
 # Linux specifically. Development happens on macOS, and the one thing a macOS-only check
-# cannot catch is the platform assumption: OPENTTD_BINARY defaults to a hardcoded
-# /Applications/OpenTTD.app path, so any code that touches it works here and fails there.
-# The suite does not need OpenTTD, which is what makes this cheap to run.
+# cannot catch is the platform assumption. The binary path used to be a hardcoded
+# /Applications/OpenTTD.app string in six places, so anything touching it worked there and
+# failed here. The suite itself needs no OpenTTD, which is what makes it cheap to run.
 #
 # The gs_test suite is deliberately NOT run: it needs a live OpenTTD session and a session
-# id, and conftest skips it unless -m gs_test is passed explicitly.
+# id, and conftest skips it unless -m gs_test is passed explicitly. The session job below
+# covers the question that mattered, which is whether a game starts on Linux at all.
 name: checks
 
 on:
@@ -110,3 +111,70 @@ jobs:
           print(f'installed nttd resolved its data: {len(actions)} actions')
           "
           /tmp/smoke/bin/nttd --help > /dev/null
+
+  # Can nttd start a game on Linux? Nothing answered that before. The suite needs no OpenTTD
+  # on purpose, the package check only proves the data files ship, and the live GameScript
+  # suite has to be handed a session. So every check passed on a machine where playing was
+  # impossible, which is how nttd came to be macOS-only in practice unnoticed.
+  #
+  # This installs the pinned OpenTTD, starts the server with no NTTD_OPENTTD_BINARY set so the
+  # PATH lookup is what gets exercised, and plays the smallest possible game.
+  session:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.0
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      # apt would give openttd 13.4 on ubuntu-latest, two majors behind what nttd targets.
+      # See the script: no distribution packages 15.3.
+      - name: Install the pinned OpenTTD
+        run: sudo ./scripts/install_openttd.sh
+
+      - name: A session runs on Linux
+        run: |
+          uv run nttd server --port 8000 > /tmp/nttd-server.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1 && break
+            sleep 2
+          done
+          uv run python scripts/smoke_session.py --base-url http://127.0.0.1:8000
+
+      - name: The server log, when the game did not start
+        if: failure()
+        run: cat /tmp/nttd-server.log
+
+  # The image a contestant runs. Built here because it is the only way to know it still
+  # builds, and smoke tested from inside so a broken game is caught rather than shipped.
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Build the image
+        run: docker build -t nttd:ci .
+
+      - name: OpenTTD in the image runs, and is the version nttd targets
+        run: |
+          docker run --rm nttd:ci openttd --version | head -2
+          docker run --rm nttd:ci openttd --version | grep -q "15\.3" \
+            || { echo "the image does not contain OpenTTD 15.3"; exit 1; }
+
+      - name: A session runs in the image
+        run: |
+          docker run -d --name nttd-ci -p 8000:8000 nttd:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec nttd-ci python scripts/smoke_session.py --base-url http://127.0.0.1:8000
+
+      - name: The container log, when the game did not start
+        if: failure()
+        run: docker logs nttd-ci || true

@@ -1,0 +1,20 @@
+# Recorded sessions are the largest thing in the checkout and mean nothing inside an image:
+# the container writes its own to /data.
+logs/
+.verify_runs/
+
+.git/
+.github/
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local secrets and configuration must not be baked into a layer.
+.env
+ottd_config/secrets.cfg
+
+docs/superpowers/
+*.sav

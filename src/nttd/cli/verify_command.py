@@ -10,13 +10,12 @@ from typing import Annotated
 import typer
 from rich.table import Table
 
+from nttd import openttd_binary
 from nttd.cli.helpers import console
 from nttd.schemas.verification import Verdict, VerificationReport
 from nttd.store import session_paths
 from nttd.store.submission_bundle import BUNDLE_DIR_NAME
 from nttd.verify.validator import BundleValidator
-
-_DEFAULT_BINARY = "/Applications/OpenTTD.app/Contents/MacOS/openttd"
 
 _VERDICT_STYLE = {
     Verdict.VERIFIED: "green",
@@ -79,7 +78,7 @@ def verify(
 
     validator = BundleValidator(
         bundle_dir=bundle_dir,
-        openttd_binary=os.environ.get("NTTD_OPENTTD_BINARY", _DEFAULT_BINARY),
+        openttd_binary=openttd_binary.openttd_binary(),
         base_config_dir=os.environ.get("NTTD_BASE_CONFIG") or None,
     )
     report = asyncio.run(validator.verify(regenerate=regenerate))

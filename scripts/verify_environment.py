@@ -46,7 +46,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import shutil
 import sys
 import time
@@ -55,6 +54,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from nttd import openttd_binary  # noqa: E402
 from nttd.bridge.admin_client import AdminClient  # noqa: E402
 from nttd.runtime.config_builder import build_session_config  # noqa: E402
 
@@ -66,9 +66,7 @@ REPO_ROOT = Path(__file__).parent.parent
 BASE_CONFIG = REPO_ROOT / "ottd_config"
 SCRATCH = REPO_ROOT / ".verify_runs"
 ADMIN_PASSWORD = "nttd"
-OPENTTD_BINARY = os.environ.get(
-    "NTTD_OPENTTD_BINARY", "/Applications/OpenTTD.app/Contents/MacOS/openttd",
-)
+OPENTTD_BINARY = openttd_binary.openttd_binary()
 
 # A 64x64 map generates in a couple of seconds, which keeps the checks that only
 # read state short.

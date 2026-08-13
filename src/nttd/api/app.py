@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 import nttd.api.dependencies as deps
-from nttd import resources
+from nttd import openttd_binary, resources
 from nttd.api.action_routes import operator_router as action_operator_router
 from nttd.api.action_routes import participant_router as action_participant_router
 from nttd.api.action_routes import router as action_router
@@ -31,10 +31,7 @@ from nttd.store import session_paths
 logger = logging.getLogger(__name__)
 
 ADMIN_PASSWORD = os.environ.get("NTTD_ADMIN_PASSWORD", "nttd")
-OPENTTD_BINARY = os.environ.get(
-    "NTTD_OPENTTD_BINARY",
-    "/Applications/OpenTTD.app/Contents/MacOS/openttd",
-)
+OPENTTD_BINARY = openttd_binary.openttd_binary()
 # Resolved from the package rather than the working directory. The default was the
 # relative string "ottd_config", so it found the GameScript only when the server was
 # started from the repository root, and an installed nttd never found it at all.
@@ -65,6 +62,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "nttd started (binary=%s, base_config=%s, sessions_dir=%s, ports=%d+)",
         OPENTTD_BINARY, BASE_CONFIG_DIR, SESSIONS_DIR, PORT_RANGE_START,
     )
+    # Said at startup rather than when the first session fails to spawn. The server comes up
+    # either way, because reading recorded sessions needs no game, but starting one will not
+    # work and the operator should hear it before they try.
+    if openttd_binary.find_openttd() is None:
+        logger.warning(
+            "No OpenTTD executable found, so no session can start: %s",
+            openttd_binary.search_description(),
+        )
 
     yield
 

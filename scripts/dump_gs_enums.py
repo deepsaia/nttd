@@ -37,7 +37,6 @@ ROOT = Path(__file__).parent.parent
 OUTPUT = ROOT / "config" / "actions" / "enums.json"
 BASE_CONFIG = ROOT / "ottd_config"
 
-DEFAULT_BINARY = "/Applications/OpenTTD.app/Contents/MacOS/openttd"
 
 # Every API class an nttd action passes a constant to. Iterated wholesale rather than
 # named member by member, so a constant added upstream is picked up without an edit here.
@@ -170,7 +169,7 @@ def _openttd_version(binary: str) -> str:
 
 
 def main() -> None:
-    binary = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BINARY
+    binary = sys.argv[1] if len(sys.argv) > 1 else openttd_binary.openttd_binary()
     if not Path(binary).exists():
         print(f"No OpenTTD binary at {binary}", file=sys.stderr)
         print("Pass one: uv run python scripts/dump_gs_enums.py /path/to/openttd", file=sys.stderr)

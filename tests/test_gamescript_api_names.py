@@ -21,12 +21,13 @@ probe of every read-only query, which the live suite is the place for.
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from nttd import openttd_binary
 
 GAMESCRIPT = Path(__file__).resolve().parents[1] / "ottd_config/game/nttd-gs/main.nut"
 
@@ -59,13 +60,10 @@ def _calls() -> set[str]:
 
 @pytest.fixture(scope="module")
 def binary_symbols() -> set[str]:
-    # The same environment variable the server reads, with the same default. Resolved here
-    # rather than imported because nttd has no single place that answers this yet, which is
-    # its own open item.
-    binary = os.environ.get(
-        "NTTD_OPENTTD_BINARY", "/Applications/OpenTTD.app/Contents/MacOS/openttd",
-    )
-    if not Path(binary).exists():
+    # Resolved through the same module the server and the verifier use, so this test consults
+    # the binary nttd would actually run rather than a second guess at where one lives.
+    binary = openttd_binary.find_openttd()
+    if binary is None or not Path(binary).exists():
         pytest.skip("OpenTTD binary not found, so its API cannot be consulted")
     out = subprocess.run(
         ["strings", binary], capture_output=True, text=True, check=False,
