@@ -145,11 +145,19 @@ class TestRouteHealth:
         assert "a vehicle" in health["missing"]
 
     def test_every_missing_part_is_listed_at_once(self) -> None:
-        """So one step can fix them all, rather than discovering them one at a time."""
+        """So one step can fix them all, rather than discovering them one at a time.
+
+        Three parts, not four. A depot was dropped from the list: it is how vehicles are
+        bought and serviced, not part of a working line, and a route can run without one.
+        depot_tile was also never populated in production, so requiring it reported every
+        earning route as unfinished.
+        """
         health = _situation(routes=[
             self._route(station_ids=[1], depot_tile=0, vehicle_count=0, track_confirmed_at=0),
         ]).report()["routes"][0]
-        assert len(health["missing"]) == 4
+        assert sorted(health["missing"]) == [
+            "a connection between the stations", "a second station", "a vehicle",
+        ]
 
 
 class TestProblems:

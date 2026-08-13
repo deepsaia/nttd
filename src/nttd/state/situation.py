@@ -190,8 +190,11 @@ class Situation:
             missing.append("a second station")
         if not route.track_confirmed_at:
             missing.append("a connection between the stations")
-        if not route.depot_tile:
-            missing.append("a depot")
+        # A depot is not part of a working route. It is how vehicles are bought and
+        # serviced, and once they are running the route earns without one: a route can be
+        # built from a depot that was later sold, or share one with another line, and
+        # nothing records which depot served it. depot_tile is never populated in
+        # production at all, so this reported every earning route as missing a depot.
         if not route.vehicle_count:
             missing.append("a vehicle")
         return {
