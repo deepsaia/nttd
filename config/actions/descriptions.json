@@ -1039,6 +1039,14 @@
     "get_cargo_income": {
       "description": "Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days. Payment falls off with time in transit, so a slower route earns less for the same haul. This is the game's own figure, not a model of it.",
       "category": "query"
+    },
+    "trace_route": {
+      "description": "Whether a vehicle can travel from one tile to another over track that already exists. This is not the same question as the feasibility check in /state/path, which plans a NEW line and routes around occupied tiles, so it reports no path once a line is standing. Answered by walking the game's own connectivity, so it is the authority on whether a built route will actually carry anything. Rail and road only: a ship travels over open water.",
+      "parameters": {
+        "transport_type": {
+          "description": "rail or road. Defaults to rail."
+        }
+      }
     }
   }
 }

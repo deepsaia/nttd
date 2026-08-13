@@ -7,11 +7,11 @@ Read the world. These cost nothing, change nothing, and can be repeated freely.
 The distinction is worth reading once rather than discovering. An agent that submitted `get_hangars` as an action spent two of its five actions on it, never found its hangar, and could then not buy the aircraft it was for.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 45 of 131 actions.
+Part of the [action reference](../action_reference.md). 46 of 132 actions.
 
 ## Contents
 
-- **query**: `find_airport_spots`, `find_bus_stop_spots`, `find_depot_spots`, `find_dock_spots`, `find_flat_spots`, `find_rail_depot_spot`, `find_station_spot`, `find_water_depot_spots`, `get_airport_types`, `get_bridge_types`, `get_cargo_flows`, `get_cargo_income`, `get_cargo_types`, `get_clients`, `get_companies`, `get_company_finance`, `get_date`, `get_engine_details`, `get_engines`, `get_expense_breakdown`, `get_game_settings`, `get_groups`, `get_hangars`, `get_industries`, `get_industry_info`, `get_infrastructure_costs`, `get_map_size`, `get_map_terrain`, `get_orders`, `get_rail_types`, `get_road_types`, `get_signs`, `get_station_info`, `get_stations`, `get_subsidies`, `get_tile_area`, `get_tile_info`, `get_town_info`, `get_town_rating`, `get_towns`, `get_vehicle_info`, `get_vehicles`, `get_waypoints`, `ping`, `scan_town_area`
+- **query**: `find_airport_spots`, `find_bus_stop_spots`, `find_depot_spots`, `find_dock_spots`, `find_flat_spots`, `find_rail_depot_spot`, `find_station_spot`, `find_water_depot_spots`, `get_airport_types`, `get_bridge_types`, `get_cargo_flows`, `get_cargo_income`, `get_cargo_types`, `get_clients`, `get_companies`, `get_company_finance`, `get_date`, `get_engine_details`, `get_engines`, `get_expense_breakdown`, `get_game_settings`, `get_groups`, `get_hangars`, `get_industries`, `get_industry_info`, `get_infrastructure_costs`, `get_map_size`, `get_map_terrain`, `get_orders`, `get_rail_types`, `get_road_types`, `get_signs`, `get_station_info`, `get_stations`, `get_subsidies`, `get_tile_area`, `get_tile_info`, `get_town_info`, `get_town_rating`, `get_towns`, `get_vehicle_info`, `get_vehicles`, `get_waypoints`, `ping`, `scan_town_area`, `trace_route`
 
 Every action on one line, across all three pages: [index.md](index.md).
 
@@ -448,4 +448,23 @@ Each `buildable` carries `height`, `slope`, `x`, `y`.
 Each `buildings` carries `x`, `y`.
 Each `roads` carries `x`, `y`.
 Each `water` carries `x`, `y`.
+
+### `trace_route`
+
+Whether a vehicle can travel from one tile to another over track that already exists. This is not the same question as the feasibility check in /state/path, which plans a NEW line and routes around occupied tiles, so it reports no path once a line is standing. Answered by walking the game's own connectivity, so it is the authority on whether a built route will actually carry anything. Rail and road only: a ship travels over open water.
+
+Supply one of: `tile_from` or `from_x` and `from_y`.
+
+Supply one of: `tile_to` or `to_x` and `to_y`.
+
+- `from_x` (integer, optional) X coordinate of the starting tile.
+- `from_y` (integer, optional) Y coordinate of the starting tile.
+- `max_iterations` (integer, default 20000) How hard the pathfinder may try before giving up. Raising it costs time, not money.
+- `tile_from` (integer, optional) Tile index to start from. An alternative to from_x and from_y.
+- `tile_to` (integer, optional) Tile index to finish at. An alternative to to_x and to_y.
+- `to_x` (integer, optional) X coordinate of the finishing tile.
+- `to_y` (integer, optional) Y coordinate of the finishing tile.
+- `transport_type` (string, default "rail") rail or road. Defaults to rail.
+
+Returns `exhausted`, `from_x`, `from_y`, `line_exists`, `steps`, `tiles_reachable`, `to_x`, `to_y`, `transport_type`.
 

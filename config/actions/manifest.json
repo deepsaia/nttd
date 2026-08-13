@@ -5213,6 +5213,96 @@
           "already_stopped"
         ]
       }
+    },
+    "trace_route": {
+      "description": "Whether a vehicle can travel from one tile to another over track that already exists. This is not the same question as the feasibility check in /state/path, which plans a NEW line and routes around occupied tiles, so it reports no path once a line is standing. Answered by walking the game's own connectivity, so it is the authority on whether a built route will actually carry anything. Rail and road only: a ship travels over open water.",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdTraceRoute",
+      "parameters": {
+        "from_x": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "X coordinate of the starting tile.",
+          "type": "integer"
+        },
+        "from_y": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Y coordinate of the starting tile.",
+          "type": "integer"
+        },
+        "max_iterations": {
+          "required": false,
+          "default": 20000,
+          "description": "How hard the pathfinder may try before giving up. Raising it costs time, not money.",
+          "type": "integer"
+        },
+        "tile_from": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to start from. An alternative to from_x and from_y.",
+          "type": "integer"
+        },
+        "tile_to": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
+        "to_x": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "X coordinate of the finishing tile.",
+          "type": "integer"
+        },
+        "to_y": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Y coordinate of the finishing tile.",
+          "type": "integer"
+        },
+        "transport_type": {
+          "required": false,
+          "default": "rail",
+          "description": "rail or road. Defaults to rail.",
+          "type": "string"
+        }
+      },
+      "one_of": [
+        [
+          [
+            "tile_from"
+          ],
+          [
+            "from_x",
+            "from_y"
+          ]
+        ],
+        [
+          [
+            "tile_to"
+          ],
+          [
+            "to_x",
+            "to_y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "exhausted",
+          "from_x",
+          "from_y",
+          "line_exists",
+          "steps",
+          "tiles_reachable",
+          "to_x",
+          "to_y",
+          "transport_type"
+        ]
+      }
     }
   }
 }
