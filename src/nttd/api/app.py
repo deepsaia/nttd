@@ -19,7 +19,6 @@ from nttd.api.control_routes import operator_router as control_operator_router
 from nttd.api.control_routes import participant_router as control_participant_router
 from nttd.api.control_routes import public_router as control_public_router
 from nttd.api.control_routes import router as control_router
-from nttd.api.metrics_routes import router as metrics_router
 from nttd.api.observation_routes import router as observation_router
 from nttd.api.snapshot_routes import router as snapshot_router
 from nttd.api.tiers import TIER_DESCRIPTIONS, Tier
@@ -110,7 +109,6 @@ app.include_router(
 app.include_router(observation_router, prefix=Tier.PARTICIPANT.prefix, tags=[Tier.PARTICIPANT.tag])
 
 app.include_router(control_public_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
-app.include_router(metrics_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
 app.include_router(analysis_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.tag])
 # Public rather than participant: the manifest describes the build, not a session, so it
 # answers before one exists. That is when an agent most needs it.
@@ -126,7 +124,6 @@ app.include_router(admin_router, deprecated=True)
 app.include_router(agent_router, deprecated=True)
 app.include_router(observation_router, deprecated=True)
 app.include_router(action_router, deprecated=True)
-app.include_router(metrics_router, deprecated=True)
 app.include_router(benchmark_router, deprecated=True)
 app.include_router(snapshot_router, deprecated=True)
 app.include_router(analysis_router, deprecated=True)
