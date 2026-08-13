@@ -6,6 +6,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
+from nttd.api.participant_auth import (
+    AuthorizationHeader,
+    ParticipantToken,
+    apply_company_scope,
+    extract_token,
+)
 from nttd.constants import READ_ONLY_GS_ACTIONS
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
@@ -252,6 +258,9 @@ async def get_route_candidates(
 # Cargo route keys, long form and compact, so pricing works for both output shapes.
 _CARGO_KEYS = ("top_unserved_cargo", "cargo")
 
+# The same for town pairs, which are passenger routes and were priced in no unit at all.
+_TOWN_KEYS = ("top_unserved_towns", "towns")
+
 
 async def _price_the_cargo_routes(runtime: Any, offered: dict[str, Any]) -> None:
     """Attach what each cargo route would pay, from the game's own figures.
@@ -297,8 +306,49 @@ async def _price_the_cargo_routes(runtime: Any, offered: dict[str, Any]) -> None
             # What the corridor is worth if everything produced is carried. An upper bound,
             # and the number a build decision is actually weighed against.
             route["estimated_monthly_income"] = per_unit * int(monthly)
+
+        await _price_the_town_routes(runtime, offered, labels)
     except Exception:
         logger.debug("Could not price the route candidates", exc_info=True)
+
+
+async def _price_the_town_routes(
+    runtime: Any, offered: dict[str, Any], labels: dict[str, int],
+) -> None:
+    """Attach a passenger payment rate to each town pair.
+
+    Cargo routes carry income_per_unit and estimated_monthly_income; town routes carried a
+    demand_score, which is a made up number in no unit. So the two lists could not be
+    compared, and a contestant weighing a passenger route against a coal route had one
+    figure in currency and one in nothing.
+
+    demand_score stays, because it captures something the payment rate does not: how much
+    traffic two populations generate. What is added is the rate the game will actually pay
+    per passenger over that distance, and the two together are comparable with a cargo run.
+    """
+    towns = [r for key in _TOWN_KEYS for r in (offered.get(key) or [])]
+    if not towns:
+        return
+    passengers = labels.get("PASS")
+    if passengers is None:
+        return
+    priced: dict[int, int] = {}
+    for route in towns:
+        distance = route.get("distance") or route.get("d")
+        if not isinstance(distance, int):
+            continue
+        if distance not in priced:
+            reply = await runtime.admin_client.send_gamescript(
+                "get_cargo_income",
+                {"cargo_id": passengers, "distance": distance},
+                timeout=10.0,
+            )
+            per_unit = (reply.get("result") or {}).get("income_per_unit")
+            if not isinstance(per_unit, int):
+                continue
+            priced[distance] = per_unit
+        route["cargo"] = "PASS"
+        route["income_per_unit"] = priced[distance]
 
 
 async def _cargo_ids(runtime: Any) -> dict[str, int]:
@@ -450,7 +500,13 @@ async def get_compact_state(session_id: str, company_id: int = -1) -> CompactSna
 
 
 @router.post("/gs/query")
-async def gs_query(session_id: str, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def gs_query(
+    session_id: str,
+    action: str,
+    params: dict[str, Any] | None = None,
+    x_participant_token: ParticipantToken = None,
+    authorization: AuthorizationHeader = None,
+) -> dict[str, Any]:
     """Query game state via GameScript.
 
     Read-only by contract, but the underlying transport is not: send_gamescript
@@ -460,6 +516,13 @@ async def gs_query(session_id: str, action: str, params: dict[str, Any] | None =
     guarded twin correctly returned 403.
 
     Mutating actions are therefore refused rather than merely discouraged.
+
+    The company is scoped here as it is on the action path. It was not, and any handler
+    reading company_id therefore died on its first line: get_stations answered "the index
+    'company_id' does not exist" for a contestant with six stations built, and a caller
+    that treats a missing result as an empty list reads that as owning nothing. company_id
+    is deliberately absent from the manifest because it is a scoping decision rather than
+    the caller's to make, which is exactly why it has to be injected rather than asked for.
     """
     runtime = deps.get_runtime(session_id)
 
@@ -475,4 +538,7 @@ async def gs_query(session_id: str, action: str, params: dict[str, Any] | None =
 
     if not runtime.admin_client.connected:
         raise HTTPException(status_code=503, detail="Not connected to OpenTTD")
-    return await runtime.admin_client.send_gamescript(action, params)
+
+    scoped = dict(params or {})
+    apply_company_scope(runtime, scoped, extract_token(x_participant_token, authorization))
+    return await runtime.admin_client.send_gamescript(action, scoped)
