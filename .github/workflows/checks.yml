@@ -1,0 +1,59 @@
+# Lint and test on Linux, on every push and pull request.
+#
+# Linux specifically. Development happens on macOS, and the one thing a macOS-only check
+# cannot catch is the platform assumption: OPENTTD_BINARY defaults to a hardcoded
+# /Applications/OpenTTD.app path, so any code that touches it works here and fails there.
+# The suite does not need OpenTTD, which is what makes this cheap to run.
+#
+# The gs_test suite is deliberately NOT run: it needs a live OpenTTD session and a session
+# id, and conftest skips it unless -m gs_test is passed explicitly.
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# One run per branch. A force-push while CI is running should not leave two racing.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # requires-python is >=3.13, so both supported versions are tested. Development
+        # happens on 3.14; 3.13 is the floor the package claims and nothing else checks it.
+        python: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+
+      # From uv.lock rather than resolving fresh, so CI tests the dependency set a
+      # developer actually has. --frozen fails if the lock and pyproject disagree, which
+      # is the drift worth catching.
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check src/ tests/ scripts/
+
+      - name: Test
+        run: uv run pytest -q
+
+      # The manifest and the action docs are generated from the GameScript. A change to
+      # main.nut that is committed without regenerating them makes the published surface
+      # disagree with the game, which is the class of bug that produced issues #68 and
+      # #108. The suite has a reproducibility test, and this makes the failure legible.
+      - name: The generated action reference is up to date
+        run: |
+          uv run python scripts/generate_action_manifest.py
+          git diff --exit-code -- config/actions/manifest.json docs/
