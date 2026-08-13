@@ -741,6 +741,9 @@ class NttdGS extends GSController {
         // ---- TILE AREA (2.4.6) -------------------------------------------
         case "get_tile_area": return this.CmdGetTileArea(p);
 
+        // ---- EXISTING CONNECTIVITY -----------------------------------------
+        case "trace_route": return this.CmdTraceRoute(p);
+
         default:
           return { success = false, error = "Unknown action: " + action };
       }
@@ -927,6 +930,106 @@ class NttdGS extends GSController {
       });
     }
     return { success = true, result = towns };
+  }
+
+  // Whether a vehicle can travel from one tile to another over track that ALREADY EXISTS.
+  //
+  // A different question from the build planner behind /state/path, and the one that decides
+  // whether a route earns anything. The planner routes AROUND occupied tiles, correctly for
+  // its own purpose, so once a line is standing the corridor it would have used is blocked
+  // and it reports no path over a route that works. Measured: a corridor answered connected
+  // true before the build and connected false afterwards, with the line standing.
+  //
+  // Answered by walking the game's own AreTilesConnected rather than by testing has_rail on
+  // adjacent tiles. Adjacency is not connectivity: track laid without a hint sits beside a
+  // platform pointing away from it, and every cheap approximation of this in the project so
+  // far has reported a dead route as a working one.
+  //
+  // Bounded by the size of the rail network rather than the map, because it only ever steps
+  // onto tiles that already carry track.
+  function CmdTraceRoute(p) {
+    local pair = this._ResolveTilePair(p);
+    if (pair == null) {
+      return { success = false,
+               error = "Need from_x,from_y and to_x,to_y, or tile_from and tile_to" };
+    }
+    local kind = ("transport_type" in p) ? p.transport_type : "rail";
+    if (kind != "rail" && kind != "road") {
+      return { success = false,
+               error = "trace_route answers rail and road. A ship travels over open water, "
+                     + "so a track walk does not describe it." };
+    }
+    local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
+    local start = pair.from.tile;
+    local goal = pair.to.tile;
+
+    local dir_dx = [1, 0, -1, 0];
+    local dir_dy = [0, 1, 0, -1];
+    local seen = {};
+    local queue = [];
+    local reached = false;
+    local visited_tiles = {};
+    local steps = 0;
+
+    // A rail state is a tile plus the direction it was entered from, because
+    // AreTilesConnected asks about a triple and a train may not reverse. Road has no such
+    // constraint, so its state is the tile alone, entered as direction 0.
+    for (local d = 0; d < 4; d++) {
+      local key = start * 4 + d;
+      seen[key] <- true;
+      queue.append({ tile = start, dir = d });
+      if (kind == "road") break;
+    }
+    visited_tiles[start] <- true;
+
+    local head = 0;
+    while (head < queue.len() && steps < max_iter) {
+      steps++;
+      if (steps % 500 == 0) this._YieldAndProcessEvents();
+      local node = queue[head];
+      head++;
+      if (node.tile == goal) { reached = true; break; }
+
+      local cx = GSMap.GetTileX(node.tile), cy = GSMap.GetTileY(node.tile);
+      local reverse = (node.dir + 2) % 4;
+      for (local exit_dir = 0; exit_dir < 4; exit_dir++) {
+        if (kind == "rail" && exit_dir == reverse) continue;
+        local nx = cx + dir_dx[exit_dir], ny = cy + dir_dy[exit_dir];
+        local next = GSMap.GetTileIndex(nx, ny);
+        if (!GSMap.IsValidTile(next)) continue;
+        local key = (kind == "road") ? next * 4 : next * 4 + exit_dir;
+        if (key in seen) continue;
+
+        local joined = false;
+        if (kind == "road") {
+          joined = GSRoad.IsRoadTile(next) && GSRoad.AreRoadTilesConnected(node.tile, next);
+        } else {
+          local prev = GSMap.GetTileIndex(cx - dir_dx[node.dir], cy - dir_dy[node.dir]);
+          if (!GSMap.IsValidTile(prev)) prev = node.tile;
+          joined = (GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
+                    || GSRail.IsRailDepotTile(next))
+                   && GSRail.AreTilesConnected(prev, node.tile, next);
+        }
+        if (!joined) continue;
+        seen[key] <- true;
+        visited_tiles[next] <- true;
+        queue.append({ tile = next, dir = exit_dir });
+      }
+    }
+
+    local reachable = 0;
+    foreach (_, __ in visited_tiles) reachable++;
+    return { success = true, result = {
+      line_exists = reached,
+      transport_type = kind,
+      from_x = pair.from.x, from_y = pair.from.y,
+      to_x = pair.to.x, to_y = pair.to.y,
+      // How much of the network the walk could reach from the start. A route that stops
+      // short says where the reachable part ends, which is the repair an agent needs.
+      tiles_reachable = reachable,
+      steps = steps,
+      exhausted = (steps >= max_iter),
+    }};
   }
 
   function CmdGetTownInfo(p) {

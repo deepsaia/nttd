@@ -182,6 +182,7 @@ READ_ONLY_GS_ACTIONS: frozenset[str] = frozenset({
     "get_rail_types", "get_road_types", "get_signs", "get_station_info",
     "get_stations", "get_subsidies", "get_tile_area", "get_tile_info",
     "get_town_info", "get_town_rating", "get_towns", "get_vehicle_info",
+    "trace_route",
     "get_vehicles", "get_waypoints", "scan_town_area",
 })
 
