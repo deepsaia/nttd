@@ -132,13 +132,17 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .pexp:hover{color:var(--ink);border-color:var(--accent);}
 .plot.wexp{grid-column:span 2;grid-row:span 3;}
 /* The map does not live in .grid: it sits in the fixed 360px .rail column of .split, so a
-   grid-column span there would do nothing. Expanding therefore drops .split to a single
-   column, which gives the map the full width and pushes the charts below it, and the panel
-   grows to roughly three rows tall. That is the reflow: other panels move, nothing overlaps. */
-.split.wexpanded{grid-template-columns:minmax(0,1fr);}
-.split.wexpanded .rail{order:-1;}
-.split.wexpanded .plot[data-cid="wmap"] .wmap{max-height:min(78vh,900px);
+   grid-column span there does nothing. Two columns wide means DOUBLING that column, plus the
+   gap between them, not taking the whole row. Collapsing .split to one column was tried and
+   gave the map all four columns, which is not what two columns means.
+   Three rows high is three times the collapsed panel, so the charts beside it narrow and the
+   verdicts below it move down: everything adjusts, nothing overlaps. */
+.split.wexpanded{grid-template-columns:minmax(0,1fr) calc(360px * 2 + 12px);}
+.split.wexpanded .plot[data-cid="wmap"] .wmap{max-height:calc(360px * 3);
  width:auto;margin:0 auto;}
+/* Below this the two columns no longer fit side by side, so the rail stacks as it already
+   does at 1080px and the map simply takes the width it is given. */
+@media (max-width:1400px){ .split.wexpanded{grid-template-columns:minmax(0,1fr);} }
 @media (max-width:760px){ .plot.wexp{grid-column:span 1;grid-row:span 2;} }
 .wmap .wbg{fill:var(--panel2);}
 /* crisp-edges so a 256 pixel terrain raster scaled up stays a tile grid rather than a
