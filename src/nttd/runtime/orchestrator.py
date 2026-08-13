@@ -36,13 +36,6 @@ logger = logging.getLogger(__name__)
 _GS_REFRESH_INTERVAL_REALTIME = 10.0   # seconds between GS refreshes in async_realtime mode
 _STAGGER_INTERVAL = 5                  # refresh towns/industries every N cycles
 
-# OpenTTD's ECONOMY clock advances 1 month per real minute, which is what GSDate
-# reports and what every date in nttd refers to. That gives 1 game-day ≈ 1.97s,
-# measured on OpenTTD 15.3 as 10 game-days per 20.0s (2.00 s/day).
-#
-# This rate is FIXED. OpenTTD 15.3 has no game_speed setting, and
-# economy.minutes_per_calendar_year only moves the separate CALENDAR clock
-# (vehicle/house introduction dates), not the economy.
 # World changes nobody asked for, which the stored tilemap has to hear about.
 #
 # nttd sees every contestant action and re-reads what it touched, so that half is covered.
@@ -59,6 +52,20 @@ _WORLD_CHANGE_EVENTS = frozenset({"industry_open", "industry_close", "town_found
 # each brings with it.
 _WORLD_CHANGE_PAD = 6
 
+# The OpenTTD setting that decides whether a command is served while the game is paused.
+# At 3 every command is; at lower levels a build times out AND wedges the script while
+# having actually executed. It lives in the shipped openttd.cfg and nothing pins it, so a
+# step reads it rather than trusting it.
+_PAUSE_LEVEL_SETTING = "construction.command_pause_level"
+_PAUSE_LEVEL_ALL_COMMANDS = 3
+
+# OpenTTD's ECONOMY clock advances 1 month per real minute, which is what GSDate
+# reports and what every date in nttd refers to. That gives 1 game-day ~ 1.97s,
+# measured on OpenTTD 15.3 as 10 game-days per 20.0s (2.00 s/day).
+#
+# This rate is FIXED. OpenTTD 15.3 has no game_speed setting, and
+# economy.minutes_per_calendar_year only moves the separate CALENDAR clock
+# (vehicle/house introduction dates), not the economy.
 _SECS_PER_GAME_DAY = 1.97
 _TIMEOUT_MULTIPLIER = 3.0
 
@@ -125,6 +132,10 @@ class Orchestrator:
         # Steps taken in stepped mode. Counted here rather than by the caller so a
         # reconnecting contestant cannot restart the count and get a longer run.
         self._step_count: int = 0
+
+        # Whether this game serves commands while paused. Resolved on the first step from
+        # the running game, then remembered. See _can_flush_paused.
+        self._paused_flush_ok: bool | None = None
 
     def _on_game_event(self, data: dict[str, Any]) -> None:
         """Handle unsolicited GS game events: refresh what moved, then record it."""
@@ -361,6 +372,38 @@ class Orchestrator:
     # larger than its max_tiles rather than truncating it, so the rectangle is read in row
     # bands that each fit.
     _REFRESH_BAND = 400
+
+    async def _can_flush_paused(self) -> bool:
+        """Whether the game will serve build commands while paused.
+
+        True only at construction.command_pause_level = 3, which is what the shipped
+        openttd.cfg sets. Asked of the running game rather than assumed, because the setting
+        is not in LOCKED_SETTINGS and a scenario could lower it, and the failure at a lower
+        level is the bad kind: the command executes, the reply never arrives, and nttd
+        records a failure for an action that changed the world.
+
+        Read once per session and remembered. It cannot change mid-run: OpenTTD applies it
+        at load and nttd never writes it.
+        """
+        if self._paused_flush_ok is not None:
+            return self._paused_flush_ok
+        try:
+            reply = await self.client.send_gamescript(
+                "get_game_settings",
+                {"keys": [_PAUSE_LEVEL_SETTING]},
+                timeout=10.0,
+            )
+            level = (reply.get("result") or {}).get(_PAUSE_LEVEL_SETTING)
+        except Exception:
+            logger.debug("Could not read %s", _PAUSE_LEVEL_SETTING, exc_info=True)
+            level = None
+        self._paused_flush_ok = level == _PAUSE_LEVEL_ALL_COMMANDS
+        logger.info(
+            "%s is %s, so a step %s flush its actions while paused",
+            _PAUSE_LEVEL_SETTING, level,
+            "will" if self._paused_flush_ok else "will not",
+        )
+        return self._paused_flush_ok
 
     async def refresh_changed_tiles(
         self, envelope: ActionEnvelope, outcome: ActionResult,
@@ -652,37 +695,44 @@ class Orchestrator:
         start_date = await self._authoritative_game_date()
         target_date = start_date + advance_days
 
-        # Actions run with the game RUNNING, not paused.
+        # Actions run while the game is PAUSED, so a step costs exactly the days it says.
         #
-        # The obvious reading is that only the pathfinding actions need this: their A*
-        # yields every 500 iterations through _YieldAndProcessEvents (main.nut:1920,
-        # :2468), whose first statement is Sleep(1), and Sleep counts GAME TICKS, of
-        # which a paused game delivers none. TICK_DEPENDENT_ACTIONS names those two.
+        # This used to unpause first, on the belief that the GameScript could not serve a
+        # command on a paused game. That belief was recorded here from a measurement on
+        # 2026-08-12 in which a paused flush wedged the session: every command timed out and
+        # the admin stream filled with unparseable packets.
         #
-        # Flushing everything else while paused was tried, on 2026-08-12, and it wedges
-        # the session. Measured: every GameScript command issued during the paused flush
-        # timed out (get_stations, get_vehicles, get_infrastructure_costs), and the admin
-        # stream then filled with unparseable packets as the unanswered replies arrived
-        # late and out of order. The GameScript does not process commands on a paused
-        # game at all, so it is not only the yielding ones that need ticks.
+        # The unparseable packets were the cause, not a symptom. Oversized replies were not
+        # being chunked, which desynced the stream and lost every later reply; that is issue
+        # #60, fixed in 3e99660. Re-measured afterwards on a paused game at
+        # construction.command_pause_level = 3:
         #
-        # Read-only queries between steps are a different case and do work while paused,
-        # which is what made the wrong conclusion tempting. Those go through a separate
-        # path and are answered from cached world state rather than by the script.
+        #     build_rail_track     success  0.33s
+        #     build_rail_station   success  0.32s
+        #     build_rail_depot     success  0.36s
+        #     connect_rail         success  5.28s, 37 tiles built
+        #     get_date afterwards  answered, game_date unmoved at 737790
         #
-        # So the flush stays here, between the unpause and the advance. The real fix is
-        # to stop needing the GameScript for pathfinding at all, which is issue #58: plan
-        # in Python against tiles, then issue ordinary builds. These are the workhorse
-        # actions; a design that could not issue them would not be a
-        # design.
+        # So even the pathfinding actions run paused. Their A* yields through Sleep(1), and
+        # under this pause level the SCRIPT still gets ticks while the ECONOMY clock does
+        # not, which is the distinction the old comment missed.
         #
-        # This also keeps the flush safe if the pause level is ever lowered: at
-        # level 1 a paused build times out AND wedges the GameScript, while having
-        # actually executed -- so nttd would record a failure for an action that
-        # mutated the world.
-        await self._unpause()
+        # What this buys is the point of issue #58: a step advances the interval exactly,
+        # because no action can consume game time. A slow batch can no longer outrun it.
+        #
+        # Guarded on the setting rather than trusting it. command_pause_level lives in the
+        # shipped openttd.cfg and is not in LOCKED_SETTINGS, so nothing stops a scenario
+        # lowering it. At level 1 a paused build times out AND wedges the script while
+        # having actually executed, which would record a failure for an action that changed
+        # the world. When the level is not 3 this falls back to the old order, which is
+        # slower and correct.
         action_results: list[ActionResult] = []
-        if batch:
+        flush_paused = await self._can_flush_paused()
+        if flush_paused and batch:
+            action_results = await self._execute_actions(batch)
+
+        await self._unpause()
+        if not flush_paused and batch:
             action_results = await self._execute_actions(batch)
         await self._wait_until_game_date(target_date)
         await self._pause()
