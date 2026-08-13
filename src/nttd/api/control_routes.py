@@ -28,8 +28,9 @@ from nttd.api.participant_auth import (
 )
 from nttd.api.scored_guard import require_unscored
 from nttd.runtime.step_errors import (
-    AlreadyWaitingAtBarrier,
     NotRegisteredForStepping,
+    ScenarioIsNotStepped,
+    StepAlreadyInFlight,
 )
 from nttd.schemas.game import GameState, RuntimeMode
 from nttd.schemas.spend_report import SpendReport
@@ -179,33 +180,44 @@ async def reset_stepped(
     session is a run -- rewinding one in place would leave the action log describing
     two episodes as though they were one.
 
-    Registration is what makes multi-company stepping work. The barrier waits for every
-    registered stepper before advancing the shared clock, so it has to be told which
-    companies are playing; inferring it from the session's company count would stall
-    every window on a company whose runner never attached.
+    Registration is what separates a deliberate step from a mistaken one. Serving
+    ``/step`` against a session that never entered stepped mode would advance the world,
+    and the caller would have a running clock it did not know it had started.
     """
     runtime = deps.get_runtime(session_id)
+    _require_stepped_scenario(runtime)
     token = extract_token(x_participant_token, authorization)
     company_id = resolve_company_id(runtime, token, None)
-    runtime.step_barrier.register(company_id)
+    runtime.step_gate.register(company_id)
 
     snapshot = await runtime.orchestrator.enter_stepped()
-    return StepResult(
-        snapshot=snapshot,
-        step=0,
-        days_advanced=0,
-        steppers=sorted(runtime.step_barrier.registered),
-    )
+    return StepResult(snapshot=snapshot, step=0, days_advanced=0)
+
+
+def _require_stepped_scenario(runtime: Any) -> None:
+    """Refuse stepping unless the scenario declared it.
+
+    This used to be unguarded, so a scenario declaring async_realtime could be converted
+    into a stepped one by calling reset: the world paused and the contestant took over the
+    clock. Verified against a live real-time session before the guard existed.
+
+    Checked against the mode the SCENARIO declared, not against the world's current mode.
+    The world's mode is what a conversion would already have changed, so reading it would
+    let the second call through on the strength of the first.
+    """
+    declared = str(getattr(runtime, "runtime_mode", "") or "")
+    if declared and declared != RuntimeMode.STEPPED:
+        raise HTTPException(status_code=409, detail=str(ScenarioIsNotStepped(declared)))
 
 
 async def _advance_world(
     runtime: Any, days: int | None, batches: list[dict[str, Any]],
 ) -> StepResult:
-    """Advance the shared world once, with every arrived company's actions merged.
+    """Advance the world once with this batch of actions.
 
-    Module level rather than a closure in the route, and given to the barrier as a
-    partial: the barrier decides *when* one advance happens, the orchestrator decides
-    what an advance is.
+    Module level rather than a closure in the route, and given to the gate as a partial:
+    the gate decides *whether* an advance happens, the orchestrator decides what an
+    advance is.
     """
     return await runtime.orchestrator.step(actions=batches, days=days)
 
@@ -219,15 +231,20 @@ async def take_step(
 ) -> StepResult:
     """Flush a batch of actions, advance the world, and observe.
 
-    The synchronous barrier RL and ES need: the request does not return until the
-    world has moved and been re-observed, so a policy never has to guess when its
-    actions took effect. The heartbeat loop cannot serve this -- it waits a
-    wall-clock window for actions to arrive, which truncates a slow policy and idles
-    for a fast one, when the point of stepping is that deliberation is free.
+    The synchronous step RL and ES need: the request does not return until the world
+    has moved and been re-observed, so a policy never has to guess when its actions
+    took effect. The heartbeat loop cannot serve this -- it waits a wall-clock window
+    for actions to arrive, which truncates a slow policy and idles for a fast one, when
+    the point of stepping is that deliberation is free.
 
     Every action passes the same admission check a REST submission does.
     """
     runtime = deps.get_runtime(session_id)
+    # Before the registration check, so a real-time scenario is told it does not step at
+    # all rather than being told to enter stepped mode. The old order sent a contestant
+    # the 409 from NotRegisteredForStepping, which recommends POST /step/reset, and
+    # following that advice converted the scenario.
+    _require_stepped_scenario(runtime)
 
     # The company comes from the token, never from the body. Applied to each action
     # so a batch cannot smuggle a rival's company_id past the scope check.
@@ -252,15 +269,15 @@ async def take_step(
             ),
         )
 
-    # partial rather than a closure: the barrier drives the advance, and it needs a
-    # callable that takes only the merged batch.
+    # partial rather than a closure: the gate drives the advance, and it needs a
+    # callable that takes only the batch.
     advance = functools.partial(_advance_world, runtime, days)
 
     try:
-        return await runtime.step_barrier.arrive(company_id, actions, advance)
+        return await runtime.step_gate.arrive(company_id, actions, advance)
     except NotRegisteredForStepping as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except AlreadyWaitingAtBarrier as exc:
+    except StepAlreadyInFlight as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 

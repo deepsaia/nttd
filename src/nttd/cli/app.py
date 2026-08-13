@@ -25,6 +25,7 @@ Commands:
   nttd submit                Package a session into a submission bundle
   nttd verify                Self-check a submission bundle
   nttd analyze               Generate session analysis reports
+  nttd monitor               Watch sessions in a browser while they run
 """
 
 import typer
@@ -33,6 +34,7 @@ from nttd.cli.actions_command import actions
 from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
 from nttd.cli.mcp_command import mcp
+from nttd.cli.monitor_command import monitor
 from nttd.cli.result_command import result
 from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
@@ -56,6 +58,7 @@ app.command()(verify)
 app.command()(analyze)
 app.command()(actions)
 app.command()(mcp)
+app.command()(monitor)
 
 
 def main() -> None:

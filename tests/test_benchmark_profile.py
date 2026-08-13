@@ -33,7 +33,7 @@ from nttd.config.scenario_config import (
 )
 
 _BENCHMARK_DIR = Path(__file__).parent.parent / "config" / "benchmark"
-_EXAMPLES = ("t2_example", "t3_example")
+_EXAMPLES = ("t2_256_flat_1001_realtime", "t3_512_hilly_2001_realtime")
 
 
 def _get(cfg: Any, path: str, default: Any = None) -> Any:
@@ -436,7 +436,7 @@ def test_an_example_scenario_restates_no_locked_value() -> None:
 def test_the_example_documents_every_allowed_range() -> None:
     """The example is the only place a contestant learns the ranges, so a range
     added in code without a matching comment leaves them guessing."""
-    text = (_BENCHMARK_DIR / "t2_example.conf").read_text()
+    text = (_BENCHMARK_DIR / "t2_256_flat_1001_realtime.conf").read_text()
     for key, allowed in ALLOWED_RANGES.items():
         for value in allowed:
             assert str(value) in text, f"{key} value {value} is not documented"
@@ -638,7 +638,7 @@ def test_every_shipped_example_is_scored_without_declaring_it() -> None:
     Each one conforms, so each is scored on the world alone. If an example declared
     it, a reader would reasonably conclude the declaration is what did the work.
     """
-    for example in _EXAMPLES + ("t2_stepped_example",):
+    for example in _EXAMPLES + ("t2_256_flat_1001_stepped",):
         text = (_BENCHMARK_DIR / f"{example}.conf").read_text()
         body = "\n".join(
             line for line in text.splitlines() if not line.strip().startswith("#")
@@ -651,7 +651,7 @@ def test_every_shipped_example_is_scored_without_declaring_it() -> None:
 
 def test_no_shipped_example_carries_a_version() -> None:
     """A version number had to be remembered and duplicated settings_digest."""
-    for example in _EXAMPLES + ("t2_stepped_example",):
+    for example in _EXAMPLES + ("t2_256_flat_1001_stepped",):
         text = (_BENCHMARK_DIR / f"{example}.conf").read_text()
         body = "\n".join(
             line for line in text.splitlines() if not line.strip().startswith("#")

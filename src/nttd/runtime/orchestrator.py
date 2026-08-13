@@ -16,6 +16,7 @@ from nttd.actions.gs_reply import result_from_reply
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
+from nttd.constants import TICK_DEPENDENT_ACTIONS
 from nttd.runtime.company_lock import CompanyLockManager
 from nttd.runtime.end_conditions import EndConditionChecker
 from nttd.schemas.action_envelope import ActionEnvelope, ActionMode
@@ -23,6 +24,7 @@ from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.game import RuntimeMode
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.step_result import StepResult
+from nttd.state.tile_footprint import affected_area
 from nttd.state.world import WorldState
 from nttd.utils.name_generator import generate_timestamp
 
@@ -41,6 +43,22 @@ _STAGGER_INTERVAL = 5                  # refresh towns/industries every N cycles
 # This rate is FIXED. OpenTTD 15.3 has no game_speed setting, and
 # economy.minutes_per_calendar_year only moves the separate CALENDAR clock
 # (vehicle/house introduction dates), not the economy.
+# World changes nobody asked for, which the stored tilemap has to hear about.
+#
+# nttd sees every contestant action and re-reads what it touched, so that half is covered.
+# These three are the game acting on its own, and until now they went unnoticed: an industry
+# that opened stood on tiles the map still called empty.
+#
+# Town GROWTH is not here because OpenTTD raises no event for it. Houses and roads appearing
+# as a town expands are left to heal on contact, which costs an agent one refused build per
+# stale tile, and that refusal now says why.
+_WORLD_CHANGE_EVENTS = frozenset({"industry_open", "industry_close", "town_founded"})
+
+# Slack around the tile an event names. An industry footprint reaches 4 tiles from its
+# location and a founded town starts small, so this covers both with room for the access road
+# each brings with it.
+_WORLD_CHANGE_PAD = 6
+
 _SECS_PER_GAME_DAY = 1.97
 _TIMEOUT_MULTIPLIER = 3.0
 
@@ -83,6 +101,9 @@ class Orchestrator:
 
         # Optional action tracker (set from app.py)
         self.action_tracker: ActionTracker | None = None
+        # Where tile deltas go, set by SessionRuntime. Optional so an orchestrator can be
+        # built without a session directory, which the tests do.
+        self.tile_writer: Any = None
         self._secs_per_game_day: float = _SECS_PER_GAME_DAY
 
         # End-condition checker (defaults to disabled; set via load_scenario())
@@ -106,10 +127,15 @@ class Orchestrator:
         self._step_count: int = 0
 
     def _on_game_event(self, data: dict[str, Any]) -> None:
-        """Handle unsolicited GS game events and record them."""
+        """Handle unsolicited GS game events: refresh what moved, then record it."""
+        event_type = str(data.get("event_type", "unknown"))
+        # Before the recorder check, deliberately. A session without a recorder still has a
+        # stored tilemap that everything else plans over, and tying map freshness to whether
+        # the run is being recorded would make the map correct only in scored sessions.
+        if event_type in _WORLD_CHANGE_EVENTS:
+            self._schedule_world_refresh(event_type, data)
         if not self.recorder:
             return
-        event_type = str(data.get("event_type", "unknown"))
         company_id = data.get("company_id", data.get("old_company_id"))
         detail_parts: list[str] = []
         for key, val in data.items():
@@ -124,6 +150,52 @@ class Orchestrator:
             detail=detail,
         )
         logger.info("GS game event: %s %s", event_type, detail)
+
+    def _schedule_world_refresh(self, event_type: str, data: dict[str, Any]) -> None:
+        """Queue a re-read of the neighbourhood an autonomous change just named.
+
+        The tilemap is kept current for everything the CONTESTANT does, because nttd sees
+        every action and re-reads what it touched, even on failure. The world also changes on
+        its own, and that was uncovered: an industry that opened stood on tiles the stored map
+        still called empty, and a route planned over them was planned over a fiction.
+
+        Fire and forget, from a synchronous callback on the admin client's own loop, because
+        an event is not a request and nothing is waiting on the answer.
+        """
+        x, y = data.get("x"), data.get("y")
+        if not isinstance(x, int) or not isinstance(y, int):
+            # The subject had already gone when the event fired, so there is no location to
+            # read around. Better to skip than to refresh a rectangle around tile 0.
+            logger.debug("%s carried no coordinates, so no tiles were refreshed", event_type)
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._refresh_around(event_type, x, y))
+
+    async def _refresh_around(self, event_type: str, x: int, y: int) -> None:
+        """Re-read one neighbourhood and append it as a delta."""
+        if self.tile_writer is None:
+            return
+        width = self.world.game.map_width or 256
+        height = self.world.game.map_height or 256
+        area = (
+            max(1, x - _WORLD_CHANGE_PAD),
+            max(1, y - _WORLD_CHANGE_PAD),
+            min(width - 2, x + _WORLD_CHANGE_PAD),
+            min(height - 2, y + _WORLD_CHANGE_PAD),
+        )
+        try:
+            tiles = await self._read_tile_area(*area)
+            if tiles:
+                self.tile_writer.write_delta(tiles)
+                logger.info(
+                    "Refreshed %d tiles around (%d,%d) after %s",
+                    len(tiles), x, y, event_type,
+                )
+        except Exception:
+            logger.debug("Could not refresh tiles after %s", event_type, exc_info=True)
 
     @property
     def mode(self) -> RuntimeMode:
@@ -285,6 +357,87 @@ class Orchestrator:
         """
         return self._end_checker.start_clock(self.world.game.game_date)
 
+    # How many tiles one refresh may ask for at a time. get_tile_area REFUSES an area
+    # larger than its max_tiles rather than truncating it, so the rectangle is read in row
+    # bands that each fit.
+    _REFRESH_BAND = 400
+
+    async def refresh_changed_tiles(
+        self, envelope: ActionEnvelope, outcome: ActionResult,
+    ) -> None:
+        """Bring the stored map back in step with the world after one action.
+
+        nttd is the only way a contestant changes anything, so it always knows which tiles
+        might have moved: the ones the action named, plus the ones a compound build
+        reported laying or failing on. Those are re-read and appended as a delta.
+
+        Called from both action paths rather than from one, because a rule kept in two
+        places is how the action mapping, the terrain scan and the verifier's world check
+        each came to be wrong in this codebase.
+
+        Never fatal. A stale map is a worse map, not a broken run, so a failure here is
+        logged and the action still stands.
+        """
+        if self.tile_writer is None:
+            return
+        if outcome.status is ActionStatus.REJECTED:
+            # Refused before reaching the game, so nothing moved.
+            return
+
+        area = affected_area(
+            envelope.action_type,
+            envelope.parameters or {},
+            outcome.changed_entities,
+            self.world.game.map_width or 256,
+            self.world.game.map_height or 256,
+        )
+        if area is None:
+            return
+
+        try:
+            tiles = await self._read_tile_area(*area)
+            if tiles:
+                self.tile_writer.write_delta(tiles)
+        except Exception:
+            logger.debug(
+                "Could not refresh tiles after %s", envelope.action_type, exc_info=True,
+            )
+
+    async def _read_tile_area(
+        self, x1: int, y1: int, x2: int, y2: int,
+    ) -> list[dict[str, Any]]:
+        """Read an inclusive rectangle, in bands that fit one reply.
+
+        get_tile_area's bounds are inclusive, matching what its parameter names suggest.
+        They were exclusive, so this asked for one past the end to compensate; that was
+        corrected in the handler and here together, since a half-fixed convention is worse
+        than either.
+        """
+        width = x2 - x1 + 1
+        if width <= 0:
+            return []
+        rows_per_band = max(1, self._REFRESH_BAND // width)
+        tiles: list[dict[str, Any]] = []
+        band_start = y1
+        while band_start <= y2:
+            band_end = min(band_start + rows_per_band - 1, y2)
+            reply = await self.client.send_gamescript(
+                "get_tile_area",
+                {"x1": x1, "y1": band_start, "x2": x2, "y2": band_end,
+                 "max_tiles": self._REFRESH_BAND},
+                timeout=20.0,
+            )
+            band = reply.get("result")
+            if not reply.get("success") or not isinstance(band, list):
+                logger.debug(
+                    "Tile refresh band %d-%d failed: %s",
+                    band_start, band_end, reply.get("error"),
+                )
+                return tiles
+            tiles.extend(band)
+            band_start = band_end + 1
+        return tiles
+
     def _record_action(
         self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",
         changed: dict[str, Any] | None = None,
@@ -324,11 +477,19 @@ class Orchestrator:
             # The audit trail must not be able to fail the action it describes.
             logger.exception("Could not record action %s", envelope.action_id)
 
-    async def _execute_actions(self, actions: list[dict[str, Any]]) -> None:
+    async def _execute_actions(self, actions: list[dict[str, Any]]) -> list[ActionResult]:
         """Execute a list of GS action dicts, tracking each in ActionTracker.
 
         Uses per-company locks to serialize same-company actions.
+
+        Returns what happened to each action, in the order submitted. It always knew
+        this and used to discard it: every outcome was written to the tracker and to
+        actions.parquet and then dropped, so a stepped contestant received an
+        observation with no way to tell which of its actions had caused it. Reading the
+        world back is not a substitute, because a refusal often changes nothing at all
+        and is indistinguishable from an action that was never sent.
         """
+        outcomes: list[ActionResult] = []
         # The run is under way once a contestant acts.
         self.start_scored_clock()
 
@@ -360,6 +521,12 @@ class Orchestrator:
                     )
                 self._record_action(envelope, admission.status, admission.error)
                 logger.info("Action %s refused: %s", gs_action, admission.error)
+                outcomes.append(ActionResult(
+                    action_id=envelope.action_id,
+                    action_type=gs_action,
+                    status=admission.status,
+                    error=admission.error,
+                ))
                 continue
 
             if not self.client.connected:
@@ -370,6 +537,12 @@ class Orchestrator:
                 self._record_action(
                     envelope, ActionStatus.FAILED, "Not connected to OpenTTD",
                 )
+                outcomes.append(ActionResult(
+                    action_id=envelope.action_id,
+                    action_type=gs_action,
+                    status=ActionStatus.FAILED,
+                    error="Not connected to OpenTTD",
+                ))
                 continue
 
             lock = self.company_locks.get_lock(company_id)
@@ -392,6 +565,9 @@ class Orchestrator:
                         envelope, outcome.status, outcome.error,
                         changed=outcome.changed_entities,
                     )
+                    await self.refresh_changed_tiles(envelope, outcome)
+                    outcome.action_type = gs_action
+                    outcomes.append(outcome)
                     if outcome.status == ActionStatus.SUCCESS:
                         logger.info("Action %s succeeded", gs_action)
                     else:
@@ -407,6 +583,14 @@ class Orchestrator:
                 self._record_action(
                     envelope, ActionStatus.FAILED, "exception during execution",
                 )
+                outcomes.append(ActionResult(
+                    action_id=envelope.action_id,
+                    action_type=gs_action,
+                    status=ActionStatus.FAILED,
+                    error="exception during execution",
+                ))
+
+        return outcomes
 
     # -------------------------------------------------------------------------
     # Stepped mode: client-driven, for RL and ES
@@ -470,20 +654,26 @@ class Orchestrator:
 
         # Actions run with the game RUNNING, not paused.
         #
-        # Not because single-tile builds need it: at construction.command_pause_level
-        # = 3 a paused build_road_stop returns success in 0.1s. It is the PATHFINDING
-        # actions. The A* loop yields every 500 iterations through
-        # _YieldAndProcessEvents (main.nut:1912, :2414), whose first statement is
-        # Sleep(1) -- and Sleep counts GAME TICKS, of which a paused game delivers
-        # none. So connect_road and connect_rail hang while paused, at any pause
-        # level, once the search is long enough to reach that yield.
+        # The obvious reading is that only the pathfinding actions need this: their A*
+        # yields every 500 iterations through _YieldAndProcessEvents (main.nut:1920,
+        # :2468), whose first statement is Sleep(1), and Sleep counts GAME TICKS, of
+        # which a paused game delivers none. TICK_DEPENDENT_ACTIONS names those two.
         #
-        # Length is what decides it, which is why this cannot be worked around by
-        # inspecting the action: a SHORT connection never yields and succeeds while
-        # paused in 0.0s, while a cross-map one times out. Whether a given
-        # connect_road deadlocks is not knowable before running it, so the flush
-        # simply always sits between the unpause and the advance. These are the
-        # workhorse actions; a design that could not issue them would not be a
+        # Flushing everything else while paused was tried, on 2026-08-12, and it wedges
+        # the session. Measured: every GameScript command issued during the paused flush
+        # timed out (get_stations, get_vehicles, get_infrastructure_costs), and the admin
+        # stream then filled with unparseable packets as the unanswered replies arrived
+        # late and out of order. The GameScript does not process commands on a paused
+        # game at all, so it is not only the yielding ones that need ticks.
+        #
+        # Read-only queries between steps are a different case and do work while paused,
+        # which is what made the wrong conclusion tempting. Those go through a separate
+        # path and are answered from cached world state rather than by the script.
+        #
+        # So the flush stays here, between the unpause and the advance. The real fix is
+        # to stop needing the GameScript for pathfinding at all, which is issue #58: plan
+        # in Python against tiles, then issue ordinary builds. These are the workhorse
+        # actions; a design that could not issue them would not be a
         # design.
         #
         # This also keeps the flush safe if the pause level is ever lowered: at
@@ -491,8 +681,9 @@ class Orchestrator:
         # actually executed -- so nttd would record a failure for an action that
         # mutated the world.
         await self._unpause()
+        action_results: list[ActionResult] = []
         if batch:
-            await self._execute_actions(batch)
+            action_results = await self._execute_actions(batch)
         await self._wait_until_game_date(target_date)
         await self._pause()
 
@@ -523,6 +714,7 @@ class Orchestrator:
             days_advanced=max(0, snapshot.game.game_date - start_date),
             terminated=end_result.triggered,
             end_reason=end_result.reason if end_result.triggered else "",
+            action_results=action_results,
         )
 
     async def _authoritative_game_date(self) -> int:
@@ -796,3 +988,17 @@ class Orchestrator:
             "Game may be running slower than expected or paused externally.",
             days, timeout_s, start_date, self.world.game.game_date, target_date,
         )
+
+
+def _needs_game_ticks(batch: list[dict[str, Any]] | None) -> bool:
+    """Whether this batch contains an action that cannot execute while paused.
+
+    A module-level function rather than a method because it is a property of the batch
+    and nothing else, and because it is the one piece of this worth testing on its own.
+    """
+    if not batch:
+        return False
+    return any(
+        (entry.get("action") or entry.get("action_type")) in TICK_DEPENDENT_ACTIONS
+        for entry in batch
+    )

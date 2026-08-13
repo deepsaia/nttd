@@ -199,7 +199,7 @@ same way.
 |---|---|---|
 | Human | real time **only** | joins the OpenTTD client on the session's `game_port` |
 | Single LLM agent | either | |
-| Multi-agent system | either | several loops sharing one company, or several companies |
+| Multi-agent system | either | several loops sharing one company |
 | RL policy | stepped | `nttd.rl.env.NttdEnv` |
 | ES population | stepped | one session per candidate, same seed |
 
@@ -209,23 +209,22 @@ until a registered stepper calls `POST /step`, and an OpenTTD client has no way 
 Everything else is a choice, and an unusual one is legitimate as long as the mode is
 recorded, which it is.
 
-### Multi-agent means two different things
+### Multi-agent means several loops, one company
 
-Worth separating, because they are scored differently:
+A coordinator plus specialists, all holding the same participant token. nttd sees one
+company and writes one result row, so how many agents the system runs, and how they
+decide, is its own business. In stepped mode they share one batch per step, so if one
+agent spends 5 the rest have 10 between them; in real time there is no ceiling at all.
 
-- **Several loops, one company.** A coordinator plus specialists, all holding the same
-  participant token. nttd sees one company and writes one result row, so how many
-  agents the system runs is its own business. In stepped mode they share one batch per
-  step, so if one agent spends 5 the rest have 10 between them; in real time there is no
-  ceiling at all.
-- **Several companies, one each.** `--agent-companies N` gives one token per company. Each
-  gets its own ceiling and its own result row, and they compete for cargo and town
-  ratings.
+**Several contestant companies is not the other kind of multi-agent entry. It is
+refused.** Two contestants sharing a map compete for the same towns and industries, which
+is a different problem from a solo run on the same world, and nothing on a result row
+records which it was.
 
-For the second, stepped play gathers each company's step into a shared **window**: the
-world advances once per window, so K steps is K intervals whether one company plays or
-four. Without that, two companies each taking one step advanced the world 60 days when
-staggered and 30 when simultaneous.
+That refusal is also why stepping is simple now. While several companies could share one
+clock, each step waited for every registered stepper, because two companies each taking
+one step advanced the world 60 days when staggered and 30 when simultaneous. One
+contestant makes that unreachable rather than guarded against.
 
 ---
 
@@ -297,9 +296,9 @@ counts; the flag says a reader should look at what was attempted.
 uv run nttd server                                                # terminal 1
 
 uv run nttd scenario profile                                      # the rules in force
-uv run nttd scenario validate config/benchmark/t2_example.conf     # check before running
+uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf     # check before running
 
-uv run nttd session create --config config/benchmark/t2_example.conf
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s ses_... --agent-companies 1
 uv run nttd session attach ses_...                                # token and routes
 # ... your runner plays ...
@@ -311,6 +310,6 @@ Shipped examples, all scored on their own merits rather than because they say so
 
 | File | World | Mode |
 |---|---|---|
-| `t2_example.conf` | 256×256 flat | real time, 30 min |
-| `t3_example.conf` | 512×512 hilly | real time, 60 min |
-| `t2_stepped_example.conf` | 256×256 flat | stepped, bounded in steps |
+| `t2_256_flat_1001_realtime.conf` | 256×256 flat | real time, 30 min |
+| `t3_512_hilly_2001_realtime.conf` | 512×512 hilly | real time, 60 min |
+| `t2_256_flat_1001_stepped.conf` | 256×256 flat | stepped, bounded in steps |

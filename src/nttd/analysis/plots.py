@@ -334,7 +334,14 @@ def action_type_distribution(sessions: list[SessionData]) -> go.Figure:
             continue
         actions_pd = s.actions.to_pandas()
         counts = actions_pd.groupby(["action_type", "status"]).size().reset_index(name="count")
-        for status, color in [("success", "#2CA02C"), ("failed", "#D62728")]:
+        # Partial is a real status, not a shade of failure: recorder writes success,
+        # failed or partial, and a compound build is the most common thing an agent does.
+        # Plotting only two of the three quietly dropped the bar that matters most. On one
+        # recorded session connect_rail was 3 success, 8 failed and 11 partial, and the
+        # chart showed 3 green against 8 red as though the 11 had never been attempted.
+        for status, color in [
+            ("success", "#2CA02C"), ("partial", "#FF7F0E"), ("failed", "#D62728"),
+        ]:
             subset = counts[counts["status"] == status]
             fig.add_trace(go.Bar(
                 y=subset["action_type"], x=subset["count"],

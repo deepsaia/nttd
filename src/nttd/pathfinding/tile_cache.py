@@ -62,11 +62,15 @@ class TileCache:
         self, gs_client: Any, x1: int, y1: int, x2: int, y2: int,
     ) -> int:
         """Load a rectangular area from GS. Returns number of tiles loaded."""
+        # Inclusive throughout, matching get_tile_area. range() stops one short, so the
+        # loops run to x2 and y2 and each batch ends on a real tile rather than one past
+        # it. Read the other way, this missed the last row and column of every area it
+        # loaded, which for a corridor is precisely the edge a route runs along.
         count = 0
-        for bx in range(x1, x2, BATCH_SIZE):
-            for by in range(y1, y2, BATCH_SIZE):
-                ex = min(bx + BATCH_SIZE, x2)
-                ey = min(by + BATCH_SIZE, y2)
+        for bx in range(x1, x2 + 1, BATCH_SIZE):
+            for by in range(y1, y2 + 1, BATCH_SIZE):
+                ex = min(bx + BATCH_SIZE - 1, x2)
+                ey = min(by + BATCH_SIZE - 1, y2)
                 result = await gs_client.send_gamescript(
                     "get_tile_area",
                     {"x1": bx, "y1": by, "x2": ex, "y2": ey},

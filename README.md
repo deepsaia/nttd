@@ -68,7 +68,7 @@ runner. What differs is the *runner*.
 
 ```bash
 uv run nttd server                                             # terminal 1
-uv run nttd benchmark --config config/benchmark/t2_example.conf # terminal 2
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf # terminal 2
 ```
 
 `benchmark` creates the session, generates the world, prints the participant token,
@@ -78,7 +78,7 @@ attach yours to the printed session id while it waits.
 If you would rather drive the lifecycle yourself:
 
 ```bash
-uv run nttd session create --config config/benchmark/t2_example.conf
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s ses_... --agent-companies 1
 uv run nttd session attach ses_...     # prints the token and the routes
 # ... your runner plays ...
@@ -89,7 +89,7 @@ uv run nttd result -s ses_...
 Validate a scenario before committing to a long run:
 
 ```bash
-uv run nttd scenario validate config/benchmark/t2_example.conf
+uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd scenario profile            # the rules a scored scenario must satisfy
 ```
 
@@ -168,47 +168,26 @@ requests.post(f"{P}/report", headers=H, json={
 
 `nttd result` then shows the breakdown per model and role.
 
-Note the distinction from the next section: this is several loops cooperating as **one**
-company, which is scoreable. Several *competing* companies is `--agent-companies N`, one
-token each, and that is **not** scoreable: a scored result is one company on one world.
+This is several loops cooperating as **one** company, which is the only shape a
+multi-agent entry takes. A session holds one contestant company, so however many agents
+you run, they agree on a batch and one runner submits it.
 
 ---
 
-#### 2b. Several competing companies
+#### 2b. Why not several competing companies
 
-`uv run nttd session start -s ses_... --agent-companies 2` creates two contestant
-companies with one participant token each, in `participants.json`.
+`--agent-companies 2` is refused. Two contestants sharing a map compete for the same
+towns and industries, which is a different problem from a solo run on the same world, and
+nothing on a result row records which it was, so the two could never be compared.
 
-**Example A: real-time.** Nothing special: each company acts on its own cadence with its
-own token. The score is per company, and observation is full state for
-everyone, so nobody has an information edge. Using one company's token against another is
-refused. The one shared resource is the GameScript: a rival issuing long `connect_rail`
-calls will slow your submissions.
+That refusal is why stepping is simple. While several companies could share one clock,
+each step had to wait for every registered stepper: two companies each taking one step
+advanced the world 60 days when staggered and 30 when simultaneous, which made a
+two-company run both incomparable to a one-company one and non-deterministic against
+itself. One contestant removes the windows, the eviction path and the liveness timeout.
 
-**Example B: stepped, from one process.** For self-play and population training:
-
-```python
-import json
-from nttd.rl.multi_env import NttdParallelEnv
-
-tokens = {int(k): v for k, v in json.load(open(f"logs/sessions/{SID}/participants.json")).items()}
-env = NttdParallelEnv(session_id=SID, tokens=tokens)
-observations, infos = env.reset()
-observations, rewards, terminations, truncations, infos = env.step({
-    "company_0": my_policy(observations["company_0"]),
-    "company_1": [],                      # waiting is a legitimate move
-})
-```
-
-Stepped play gathers each company's step into a shared **window**: the world advances once
-per window, so K steps is K intervals whether one company plays or four. Without that, two
-companies each taking one step advanced the world 60 days when staggered and 30 when
-simultaneous, which would make a two-company run incomparable to a one-company one and
-non-deterministic against itself.
-
-There is no decision deadline, so a slow policy is never truncated; a company that goes
-silent for 10 minutes is dropped and the rest carry on. For N independent policies in N
-processes, use N `NttdEnv` instances and nothing else.
+For extra companies that do **not** compete, use `--ai-opponents N`. They are idle slots:
+nothing contests cargo or town ratings.
 
 ---
 
@@ -217,7 +196,7 @@ processes, use N `NttdEnv` instances and nothing else.
 Real-time punishes a slow policy for being slow. Stepped mode does not: the game is
 **paused between steps**, so deliberation costs zero game-days.
 
-![The step barrier](docs/images/step_barrier.svg)
+![Stepped mode](docs/images/step_barrier.svg)
 
 **Example A: through the Gym environment.**
 
@@ -249,7 +228,7 @@ curl -X POST $P/step -H "X-Participant-Token: $TOKEN" \
 
 `/step` returns only after the world has advanced and been re-observed, so you never
 have to guess when your actions took effect. Use
-`config/benchmark/t2_stepped_example.conf`, which bounds the run in **steps** rather
+`config/benchmark/t2_256_flat_1001_stepped.conf`, which bounds the run in **steps** rather
 than wall-minutes: wall time in stepped mode measures your hardware, not your play.
 
 ---
@@ -326,8 +305,8 @@ setting changes it, so wall-minutes *are* the economy horizon:
 | T3 | 60 min | ~5 game years | economic performance becomes measurable |
 | T4 | 120 min | ~10 game years | longer-running businesses |
 
-Shipped examples: `t2_example.conf` (256×256 flat), `t3_example.conf` (512×512
-hilly), and `t2_stepped_example.conf` (the same world as T2, bounded
+Shipped examples: `t2_256_flat_1001_realtime.conf` (256×256 flat), `t3_512_hilly_2001_realtime.conf` (512×512
+hilly), and `t2_256_flat_1001_stepped.conf` (the same world as T2, bounded
 in steps).
 
 ---

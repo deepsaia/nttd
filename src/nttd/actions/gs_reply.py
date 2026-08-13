@@ -41,13 +41,41 @@ def result_from_reply(action_id: str, reply: dict[str, Any]) -> ActionResult:
             if payload.get("status") == "partial"
             else ActionStatus.FAILED
         ),
-        error=reply.get("error", "GS returned failure"),
+        error=_explain(reply),
         # Present only when OpenTTD refused. nttd's own precondition failures carry no
         # code, and that absence is how the two are told apart.
         error_code=code,
-        error_name=error_codes.error_name(code),
+        # A name the reply gave outright wins over one looked up from a code. A compound
+        # build has no single OpenTTD error to carry a code, so error_name was empty on
+        # every connect ever recorded, and the analysis reports fell back to grouping on
+        # the whole message. That message names counts and a tile, so "1 of 37 at (19,40)"
+        # and "2 of 37 at (21,44)" became separate groups of one, and the top-errors cap
+        # then evicted the refusals that genuinely repeat.
+        error_name=reply.get("error_name") or error_codes.error_name(code),
         error_category=error_codes.category_name(reply.get("error_category")),
         # A failed compound build still changed the world, so what it managed comes back
         # with the failure rather than being dropped.
         changed_entities=payload,
     )
+
+
+def _explain(reply: dict[str, Any]) -> str:
+    """The refusal, in words an agent can act on.
+
+    OpenTTD maps a failure to a named ScriptError only when the underlying CommandCost
+    carries a string it recognises. Everything else arrives as ERR_UNKNOWN, which is most
+    refusals in practice and is the one answer nothing can be done with. A run once spent
+    two of its five actions re-submitting a build onto its own station, because the
+    refusal did not say the tiles were taken.
+
+    So the GameScript inspects the world on the failure path and sends a ``reason`` when
+    it can work one out. It leads, because it is the part worth reading; the game's own
+    wording follows so nothing is lost and an operator can still match it to OpenTTD.
+    """
+    error = reply.get("error")
+    reason = reply.get("reason")
+    if not reason:
+        return error or "GS returned failure"
+    if not error or error == reason:
+        return str(reason)
+    return f"{reason} (the game reported: {error})"

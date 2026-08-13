@@ -106,10 +106,16 @@ class TestItMatchesTheGameScript:
 
         CmdPlantTreeRectangle requires x, y, width and height and refuses anything
         else, while interpreter/validator.py declared x1, y1, x2, y2.
+
+        `tile` joins them because the dispatcher resolves it into x and y before any
+        handler runs, so plant_tree_rectangle(tile=N, width=3, height=3) is a real call.
+        The point of this test is the corner-plus-size shape and the absence of the old
+        rectangle names, not the exact size of the set.
         """
         params = set(actions["plant_tree_rectangle"]["parameters"])
-        assert params == {"x", "y", "width", "height"}
+        assert {"x", "y", "width", "height"} <= params
         assert not params & {"x1", "y1", "x2", "y2"}
+        assert params <= {"x", "y", "width", "height", "tile"}
 
     def test_it_agrees_with_the_hand_written_list_everywhere_else(
         self, actions: dict[str, Any],
@@ -318,9 +324,14 @@ class TestTheManifestAndTheGameScriptAgreeBothWays:
 
         Parameters supplied by a shared tile helper are exempt, because the helper reads
         them and the handler never names them.
+
+        The exempt set is taken from the generator's own table rather than repeated here.
+        Listed by hand it went stale the moment a handler started resolving a third tile:
+        remove_rail takes a prev, current, next triple, and its from_tile and to_tile were
+        reported as invented parameters when the generator had just been taught them.
         """
-        from_helper = {"tile", "x", "y", "tile_from", "tile_to",
-                       "from_x", "from_y", "to_x", "to_y"}
+        helpers = _load_generator()._TILE_HELPERS
+        from_helper = {name for names in helpers.values() for name in names}
         invented: list[str] = []
         for action, body in _handler_bodies().items():
             read = _parameters_the_handler_reads(body)

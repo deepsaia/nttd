@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture
 def default_config() -> ScenarioConfig:
-    """Load the shipped default, which is config/benchmark/t2_example.conf."""
+    """Load the shipped default, which is config/benchmark/t2_256_flat_1001_realtime.conf."""
     return load()
 
 
@@ -49,11 +49,21 @@ def test_load_default_config() -> None:
     assert cfg._raw is not None  # has a parsed ConfigTree
 
 
-def test_load_missing_file_returns_defaults() -> None:
-    """A missing config file returns safe defaults."""
-    cfg = load("/tmp/nonexistent_scenario_config.conf")
-    assert cfg.name == "default"
-    assert cfg._raw is None
+def test_a_named_config_that_is_not_there_is_refused() -> None:
+    """Defaults are right when no config is asked for and wrong when one is.
+
+    A mistyped path used to produce a session that announced itself as created from that
+    file while actually being a 60 minute async_realtime run on a RANDOM seed: unscored,
+    unreproducible, and indistinguishable at a glance from the benchmark requested.
+    """
+    with pytest.raises(FileNotFoundError, match="scenario config not found"):
+        load("/tmp/nonexistent_scenario_config.conf")
+
+
+def test_no_config_at_all_still_returns_defaults() -> None:
+    """Free play, which is the case the fallback exists for."""
+    cfg = load()
+    assert cfg.name is not None
 
 
 def test_load_heartbeat_config() -> None:
@@ -193,11 +203,16 @@ def test_strict_mode_rejects_bad_map_size(tmp_path: Any) -> None:
         scenario_to_settings(load(path), strict=True)
 
 
-def test_strict_mode_rejects_missing_config() -> None:
-    """A missing/unparseable file must not silently become a defaults run."""
-    from nttd.config.scenario_config import ScenarioConfigError
+def test_strict_mode_rejects_a_config_with_no_parsed_tree() -> None:
+    """The second half of the same guard, now that load refuses a named missing file itself.
 
-    cfg = load("/tmp/nonexistent_scenario_for_strict_test.conf")
+    A ScenarioConfig carrying no parsed tree can still be built directly, and strict mode is
+    what stops one being turned into settings for a scored run.
+    """
+    from nttd.config.scenario_config import ScenarioConfig, ScenarioConfigError
+
+    cfg = ScenarioConfig()
+    assert cfg._raw is None
     assert scenario_to_settings(cfg) == {}  # lenient: empty settings
     with pytest.raises(ScenarioConfigError, match="no parsed tree"):
         scenario_to_settings(cfg, strict=True)

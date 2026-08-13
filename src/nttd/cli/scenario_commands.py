@@ -30,7 +30,7 @@ def validate(
     scored run will accept.
 
     Examples:
-      nttd scenario validate config/benchmark/t2_example.conf
+      nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf
       nttd scenario validate my_variant.conf
     """
     from nttd.config.scenario_config import (

@@ -7,7 +7,7 @@ needed to interact with it: AdminClient, WorldState, Bridge, Orchestrator.
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
@@ -17,12 +17,13 @@ from nttd.runtime.orchestrator import Orchestrator
 from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.participant_report import ParticipantReport
 from nttd.runtime.scored_lock import ScoredLock
-from nttd.runtime.step_barrier import StepBarrier
+from nttd.runtime.step_gate import StepGate
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
 from nttd.state.world import WorldState
 from nttd.store.recorder import SessionRecorder
+from nttd.store.terrain_scan import scan_terrain
 from nttd.store.tile_writer import TileWriter
 from nttd.utils.name_generator import generate_company_name
 
@@ -98,18 +99,20 @@ class SessionRuntime:
         # because a self-hosting contestant holds every credential anyway.
         self.scored_lock = ScoredLock()
         self.tile_writer = TileWriter(session_id, data_dir=self.data_dir)
+        # The orchestrator appends tile deltas after an action, from both action paths.
+        self.orchestrator.tile_writer = self.tile_writer
         # Per-company contestant detail for the result record. The contestant runs
         # its own loop, so nttd tallies action counts from its own action log and
         # records model and spend only as declared. See participant_report.
         self.participant_report = ParticipantReport()
-        # Synchronises several companies stepping one shared world. With a single
-        # stepper it is a pass-through: that company is the last arriver on arrival and
-        # drives the advance immediately. See step_barrier for why the clock has to be
-        # shared even though participation is not.
-        self.step_barrier = StepBarrier()
-        self.step_barrier.set_evict_callback(self._record_eviction)
+        # Admits one step at a time for the one company playing this session. See
+        # step_gate for what a barrier here used to have to do, and why it no longer
+        # does.
+        self.step_gate = StepGate()
 
         self.process: asyncio.subprocess.Process | None = None
+        # Open file the OpenTTD process writes to, held so it can be closed on shutdown.
+        self._process_log: TextIO | None = None
         self.poll_task: asyncio.Task[None] | None = None
         self.orchestrator_task: asyncio.Task[None] | None = None
 
@@ -146,11 +149,29 @@ class SessionRuntime:
             " ".join(argv),
         )
 
-        self.process = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
+        # Keep what OpenTTD says. This used to go to DEVNULL, which threw away the only
+        # copy of a GameScript stack trace: a Squirrel error comes back to the caller as
+        # one line, "the index '0' does not exist", with no file, no line and no call
+        # stack, and the trace that names them was printed here and discarded. Diagnosing
+        # a broken handler meant re-deriving it by reading the script.
+        #
+        # It is bounded in practice: a dedicated server logs startup, joins and script
+        # errors, not per-tick chatter.
+        log_path = self.config_dir / "openttd.log"
+        self._process_log = log_path.open("w", buffering=1)
+        # The spawn itself can raise before anything owns the handle: the OpenTTD path is
+        # a hardcoded macOS default, so on any other host this is FileNotFoundError, and
+        # start_server never returns to reach its own cleanup.
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=self._process_log,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except BaseException:
+            self._process_log.close()
+            self._process_log = None
+            raise
 
         # Poll until admin port is connectable
         connected = await self._wait_for_admin_port(admin_password)
@@ -216,9 +237,6 @@ class SessionRuntime:
             self.session_id, len(self.world.towns), len(self.world.companies),
         )
 
-        # Capture tile terrain in the background (non-blocking)
-        asyncio.create_task(self._capture_tiles(), name=f"tiles_{self.session_id}")
-
         # Verify companies were auto-created
         if total > 0:
             rcon = await self.admin_client.send_rcon("companies")
@@ -279,22 +297,59 @@ class SessionRuntime:
             )
         return applied
 
+    def start_tile_capture(self) -> None:
+        """Begin the map scan in the background.
+
+        Started by the caller rather than during connect, so it cannot race the company
+        rename: both go to the GameScript, which serves one command at a time, and the
+        scan is the far longer of the two.
+        """
+        asyncio.create_task(self._capture_tiles(), name=f"tiles_{self.session_id}")
+
     async def _capture_tiles(self) -> None:
-        """Capture full tile terrain data in the background."""
+        """Capture the full tile grid in the background, one band at a time.
+
+        ``get_map_terrain`` answers a band of whole rows, says whether it cut the band
+        short, and says which row to resume from, so this pages until it is done.
+
+        It carries occupancy and ownership as well as shape: the flags bitmask gained
+        rail, road, station, tree, bridge and tunnel, and each tile gained its owner. That
+        is what makes a stored map able to answer whether a tile is taken and whose the
+        track on it is, which is most of what deciding a route needs.
+
+        Reading it through ``get_tile_area`` instead was tried and is much worse. It
+        returns the same facts as named fields, so one tile costs about 150 characters
+        against this encoding's 12. A full scan through it swamped the admin protocol with
+        thousands of packets and starved the game long enough that renaming the company
+        timed out.
+
+        Bounded per band either way. One unbounded reply for a 256 square map measured
+        524 KB and 7.2 seconds, and a larger map simply timed out.
+
+        Both of this routine's previous failures were silent, which is why it is written
+        defensively now. First the reply shape changed from a list to a table and the
+        check here still asked for a list, so every session recorded nothing. Then the
+        replies themselves were too large to survive the admin protocol, which corrupted
+        the connection for the rest of the session.
+
+        Written in one piece at the end rather than a band at a time, so a scan that fails
+        halfway leaves no file rather than a partial grid that looks complete.
+        """
         try:
-            result = await self.admin_client.send_gamescript(
-                "get_map_terrain", {}, timeout=60.0,
+            rows = await scan_terrain(self._ask_gamescript)
+            if rows is None:
+                logger.warning("Tile capture failed for session %s", self.session_id)
+                return
+            count = self.tile_writer.write_full_scan(rows)
+            logger.info(
+                "Tile capture complete for session %s: %d tiles over %d rows",
+                self.session_id, count, len(rows),
             )
-            if result.get("success") and isinstance(result.get("result"), list):
-                count = self.tile_writer.write_full_scan(result["result"])
-                logger.info("Tile capture complete for session %s: %d tiles", self.session_id, count)
-            else:
-                logger.warning(
-                    "Tile capture failed for session %s: %s",
-                    self.session_id, result.get("error", "unknown"),
-                )
         except Exception:
             logger.exception("Tile capture error for session %s", self.session_id)
+
+    async def _ask_gamescript(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        return await self.admin_client.send_gamescript(action, params, timeout=60.0)
 
     def start_orchestrator(self, mode: str = "async_realtime") -> None:
         """Start the orchestrator loop for snapshot capture and end-condition checks."""
@@ -365,16 +420,28 @@ class SessionRuntime:
                 pass
             await self.admin_client.disconnect()
 
-        # Terminate process
-        if self.process and self.process.returncode is None:
-            self.process.terminate()
-            try:
-                await asyncio.wait_for(self.process.wait(), timeout=_SHUTDOWN_TIMEOUT)
-            except asyncio.TimeoutError:
-                logger.warning("Session %s did not exit gracefully, killing", self.session_id)
-                self.process.kill()
-                await self.process.wait()
-            self.process = None
+        # Terminate process, then close what it was writing to.
+        #
+        # In a finally, because everything above can raise or hang: an unbounded
+        # process.wait() after a kill, a recorder flush, an rcon that never answers. The
+        # manager has already popped this runtime by then, so a skipped close is a handle
+        # nothing can ever reach again.
+        try:
+            if self.process and self.process.returncode is None:
+                self.process.terminate()
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=_SHUTDOWN_TIMEOUT)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Session %s did not exit gracefully, killing", self.session_id,
+                    )
+                    self.process.kill()
+                    await self.process.wait()
+                self.process = None
+        finally:
+            if self._process_log is not None:
+                self._process_log.close()
+                self._process_log = None
 
         logger.info("Session %s shut down", self.session_id)
 
@@ -401,20 +468,6 @@ class SessionRuntime:
             elapsed += _CONNECT_POLL_INTERVAL
 
         return False
-
-    def _record_eviction(self, company_id: int) -> None:
-        """Record that a company was dropped from the step barrier for going silent.
-
-        Recorded rather than merely logged: a reader comparing this run to a
-        single-company one needs to see that a stepper stopped participating, since the
-        remaining companies then had the world to themselves.
-        """
-        self.recorder.record_event(
-            self.world.game.game_date,
-            "stepper_evicted",
-            company_id=company_id,
-            detail="did not step within the liveness timeout",
-        )
 
     def _record_client_command(self, command: dict[str, Any]) -> None:
         """Write a command from the game window into the action log.

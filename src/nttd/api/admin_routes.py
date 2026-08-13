@@ -10,10 +10,11 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import nttd.api.dependencies as deps
 from nttd.api.scored_guard import require_unscored
+from nttd.constants import MAX_CONTESTANT_COMPANIES
 from nttd.store.repositories import session_repo
 from nttd.utils.name_generator import generate_session_name
 
@@ -39,7 +40,19 @@ class StartSessionRequest(BaseModel):
     mode: str = "newgame"
     savefile: str | None = None
     ai_opponents: int = 0
-    agent_companies: int = 0
+    agent_companies: int = Field(default=0, ge=0, le=MAX_CONTESTANT_COMPANIES)
+    """How many companies a contestant plays. One, or none.
+
+    Zero means nobody plays through the participant routes, which is what a human entry
+    recorded over CMD_LOGGING looks like.
+
+    More than one is refused rather than allowed and left unscored. A run shared by
+    several contestants is a different problem from a solo one on the same world, and
+    nothing on a result row records which it was, so the two could never be compared.
+    Several agents playing *together* are a multi-agent entry: they drive one company,
+    and their orchestrator decides what it does before submitting a step.
+    """
+
     # Company names by company_id, as strings since JSON object keys are strings.
     # Any company omitted here gets a generated name like 'jade-heron-4f2a'.
     company_names: dict[str, str] | None = None

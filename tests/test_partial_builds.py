@@ -232,3 +232,75 @@ def _function_body(source: str, name: str) -> str:
         depth += {"{": 1, "}": -1}.get(source[index], 0)
         index += 1
     return source[start:index]
+
+
+class TestBuildPathDoesNotSkipWhatItCannotDo:
+    """The silent no-op, pinned.
+
+    `build_path(transport_type="water")` returned success with built = 0. Two causes,
+    both in this handler: anything not "rail" was treated as road, and any step action
+    with no case fell through to a bare `skipped++`. A water path is made of canal steps,
+    so every one was skipped and the reply said the route was laid.
+
+    Verified live after the fix: an unknown transport_type is refused by name, a canal
+    step builds, and an unknown step action comes back as a partial with the reason.
+    """
+
+    def _handler(self, gamescript: str) -> str:
+        start = gamescript.index("function CmdBuildPath(p)")
+        end = gamescript.index("function CmdDemolishTile(p)")
+        return gamescript[start:end]
+
+    def test_an_unknown_transport_type_is_refused(self, gamescript: str) -> None:
+        body = self._handler(gamescript)
+        assert 'transport_type must be rail, road or water' in body
+
+    def test_water_is_a_transport_type_it_knows(self, gamescript: str) -> None:
+        body = self._handler(gamescript)
+        assert 'is_water' in body
+        assert "GSMarine.BuildCanal" in body
+        assert "GSMarine.BuildLock" in body
+
+    def test_an_unknown_step_action_is_a_failure_not_a_skip(self, gamescript: str) -> None:
+        """The root cause. A handler that quietly passes over what it does not
+        understand reports success for having done nothing."""
+        body = self._handler(gamescript)
+        assert "does not know the step action" in body
+        # The bare fall-through that used to end the loop is gone.
+        assert not body.rstrip().endswith("skipped++;\n    }")
+
+    def test_water_does_not_set_a_road_type(self, gamescript: str) -> None:
+        """Treating water as road also set the current road type, which is meaningless
+        and was a symptom of the same defaulting."""
+        body = self._handler(gamescript)
+        assert "else if (!is_water) GSRoad.SetCurrentRoadType" in body
+
+
+class TestTerrainReadsAreBounded:
+    """Reading a whole map is not a reasonable request at any size.
+
+    It defaulted to the entire map: 256x256 measured 524 KB and 7.2 seconds, roughly
+    389,000 tokens. At 512x512 the reply outran gs_query's timeout and came back as a
+    bare failure. The cap is on TILES rather than map size, so one rule holds everywhere
+    and no size has to be forbidden.
+    """
+
+    def _handler(self, gamescript: str) -> str:
+        # To the next function, not a fixed number of characters. A 2600 character window
+        # silently stopped covering the end of the handler as soon as a comment was added,
+        # so a test that reads the whole body is the one that keeps meaning what it says.
+        start = gamescript.index("function CmdGetMapTerrain(p)")
+        end = gamescript.index("function ", start + 1)
+        return gamescript[start:end]
+
+    def test_it_caps_the_tiles_returned(self, gamescript: str) -> None:
+        body = self._handler(gamescript)
+        assert "max_tiles" in body
+        assert "if (max_tiles > 20000) max_tiles = 20000;" in body
+
+    def test_it_says_when_it_cut_the_band_short(self, gamescript: str) -> None:
+        """A short answer that looks complete is the failure this replaced. The caller
+        is told it was truncated and where to resume."""
+        body = self._handler(gamescript)
+        assert "truncated" in body
+        assert "next_from_y" in body

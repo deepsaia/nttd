@@ -165,6 +165,49 @@ def test_the_gate_admits_a_participant_action() -> None:
     assert admit("build_road_stop", company_id=0).allowed is True
 
 
+def test_a_read_only_query_is_not_reported_as_unknown() -> None:
+    """It exists, it is dispatched, and it works. Only the door is different.
+
+    Measured cost of the old wording: an air run spent two of its five actions submitting
+    get_hangars, never found its hangar, and its one buy_vehicle then failed for want of
+    one. "Unknown action_type: get_hangars" is false about something at main.nut:461.
+    """
+    from nttd.actions.gate import admit
+
+    admission = admit("get_hangars", company_id=0)
+    assert admission.allowed is False
+    assert admission.status is ActionStatus.REJECTED
+    assert "Unknown action_type" not in admission.error
+    assert "read-only query" in admission.error
+    # The refusal has to name the door, or it is just a better worded dead end.
+    assert "/state/gs/query" in admission.error
+
+
+def test_every_read_only_query_gets_the_query_explanation() -> None:
+    """All 44, not just the ones an agent has already tripped over."""
+    from nttd.actions.gate import admit
+    from nttd.constants import READ_ONLY_GS_ACTIONS
+
+    for action in READ_ONLY_GS_ACTIONS:
+        admission = admit(action, company_id=0)
+        assert admission.allowed is False, action
+        assert "read-only query" in admission.error, action
+
+
+def test_a_finder_submitted_as_an_action_is_told_it_is_a_query() -> None:
+    """The other half of the same confusion: the finders are queries too."""
+    from nttd.actions.gate import admit
+
+    assert "read-only query" in admit("find_station_spot", company_id=0).error
+
+
+def test_a_genuinely_unknown_name_still_says_unknown() -> None:
+    """The clearer message must not swallow the case it was carved out of."""
+    from nttd.actions.gate import admit
+
+    assert "Unknown action_type" in admit("get_teleporters", company_id=0).error
+
+
 
 
 

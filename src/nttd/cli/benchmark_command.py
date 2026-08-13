@@ -87,8 +87,8 @@ def benchmark(
     silently run with substituted defaults.
 
     Examples:
-      nttd benchmark --config config/benchmark/t2_example.conf
-      nttd benchmark --config config/benchmark/t2_example.conf --seed 2002
+      nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf
+      nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf --seed 2002
     """
     import requests
 

@@ -1,40 +1,69 @@
-"""Errors raised by the step barrier.
+"""Errors raised by the step gate.
 
 Its own module so the orchestrator and the API layer can both refer to it without
 the API importing the runtime for an exception, or the runtime importing FastAPI to
-raise an HTTP error. The route translates it into a 400.
+raise an HTTP error. The route translates it into a 409.
 """
 
 from __future__ import annotations
 
 
-class NotRegisteredForStepping(LookupError):
-    """A company stepped without registering at the barrier first.
+class ScenarioIsNotStepped(PermissionError):
+    """Stepping was asked for on a scenario that declares real-time play.
 
-    Registration is explicit, via ``POST /step/reset``, because the barrier has to know
-    who it is waiting for. Inferring it from the session's company count would stall
-    every window on a company whose runner never attached.
+    The scenario decides the mode, not the contestant, because the two measure different
+    things and the difference is the point of having both. In real time, thinking costs
+    game days, so speed is part of what is scored. In stepped play the world is paused
+    between steps and deliberation is free, which is what makes a language model policy
+    comparable with a trained one on decision quality rather than latency.
+
+    A contestant able to switch would take unlimited thinking time on a scenario scored on
+    the assumption it had not, and land on the same leaderboard as entrants who did.
+    Refused rather than recorded, so the declared mode and the played mode cannot differ
+    and nothing downstream has to reconcile them.
+    """
+
+    def __init__(self, mode: str) -> None:
+        super().__init__(
+            f"This scenario is played in real time, not in steps: its runtime mode is "
+            f"{mode!r}. The world runs on its own clock, so there is nothing to step. "
+            "Submit actions with POST /actions/submit and observe with GET /state/full "
+            "whenever you are ready."
+        )
+        self.mode = mode
+
+
+class NotRegisteredForStepping(LookupError):
+    """A company stepped without entering stepped mode first.
+
+    Registration is explicit, via ``POST /step/reset``, rather than inferred from the
+    session's company count. A ``/step`` against a session that never entered stepped
+    mode is a mistake worth naming: served silently it would advance the world, and the
+    caller would have a running clock it did not know it had started.
     """
 
     def __init__(self, company_id: int) -> None:
         super().__init__(
             f"Company {company_id} has not entered stepped mode. POST /step/reset "
-            "first: the barrier waits for every registered stepper, so it has to be "
-            "told which companies are playing."
+            "first: it pauses the world, registers you as the stepper, and returns the "
+            "opening observation."
         )
         self.company_id = company_id
 
 
-class AlreadyWaitingAtBarrier(RuntimeError):
-    """A company submitted a second step while its first was still in flight.
+class StepAlreadyInFlight(RuntimeError):
+    """A second step arrived while the first was still running.
 
-    One step per company per window. Two concurrent steps from one company would put
-    two batches into a single advance, which is the ceiling bypass in another form.
+    Each step advances the world, so two concurrent ones would make "one step" mean one
+    or two advances depending on timing. Refused rather than queued: a caller that
+    issued two has a bug, and serialising them silently would hide it behind a result
+    that looks correct.
     """
 
     def __init__(self, company_id: int) -> None:
         super().__init__(
-            f"Company {company_id} already has a step in flight. Wait for it to "
-            "return: one step per company per window."
+            f"Company {company_id} already has a step in flight. Wait for it to return: "
+            "each step advances the world, so a second one running alongside would "
+            "advance it twice."
         )
         self.company_id = company_id

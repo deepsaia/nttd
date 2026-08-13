@@ -80,3 +80,47 @@ def test_ranking_is_stable_and_complete() -> None:
 
 def test_empty_input_gives_empty_ranking() -> None:
     assert rank_companies([]) == []
+
+
+class TestTheRatingComesFromACompletedQuarter:
+    """The bug that made every run score zero, pinned so it cannot return.
+
+    `main.nut` read `GSCompany.GetQuarterlyPerformanceRating(cid, 0)`. Quarter 0 is the
+    quarter in progress, and OpenTTD does not rate one until it ends, so it answered -1
+    for the life of every run. Every snapshot nttd had written recorded -1 and every
+    result row scored 0, across a dozen sessions and years of game time.
+
+    Measured live at 1960-04-01, one quarter into a run: quarter 0 gave -1, quarter 1
+    gave 30. After the fix a fresh session reported 30 where it had always reported -1.
+
+    A source-level check, because the real one needs a running game past a quarter
+    boundary. tests/test_gs_integration.py is where that belongs.
+    """
+
+    def _snapshot_block(self) -> str:
+        from pathlib import Path
+
+        source = Path(__file__).parent.parent / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+        text = source.read_text()
+        start = text.index("performance_rating = GSCompany.GetQuarterlyPerformanceRating")
+        return text[start:start + 120]
+
+    def test_the_rating_does_not_ask_for_the_current_quarter(self) -> None:
+        assert "GetQuarterlyPerformanceRating(cid, 0)" not in self._snapshot_block()
+
+    def test_it_asks_for_the_last_completed_quarter(self) -> None:
+        assert "GetQuarterlyPerformanceRating(cid, 1)" in self._snapshot_block()
+
+    def test_company_value_still_asks_for_the_current_quarter(self) -> None:
+        """Deliberately different, and the reason is easy to lose. Company value is not
+        a rating: the current quarter answers it correctly, and the same live probe that
+        returned -1 for the rating returned 1 for the value."""
+        from pathlib import Path
+
+        source = Path(__file__).parent.parent / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+        assert "GetQuarterlyCompanyValue(cid, 0)" in source.read_text()
+
+    def test_the_score_version_moved_off_the_one_that_never_scored(self) -> None:
+        from nttd.analysis.score import SCORE_VERSION
+
+        assert SCORE_VERSION != "v1"

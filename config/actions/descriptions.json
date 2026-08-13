@@ -226,7 +226,7 @@
     },
     "max_tiles": {
       "type": "integer",
-      "description": "How many tiles to report at most. Guards against asking for an area larger than the reply can carry."
+      "description": "How many tiles to report at most. Guards against asking for more than a reply can carry."
     },
     "min_size": {
       "type": "integer",
@@ -406,7 +406,7 @@
     },
     "track": {
       "type": "integer",
-      "description": "Which of the six track pieces on the tile to act on."
+      "description": "Which of the six track pieces on the tile to act on, as a GSRail RAILTRACK value. These are bit flags, not an index: 0 is not a piece and is refused. A straight north-east to south-west piece is 1, north-west to south-east is 2, and the four diagonals are 4, 8, 16 and 32."
     },
     "transport_type": {
       "type": "string",
@@ -459,6 +459,26 @@
     "y2": {
       "type": "integer",
       "description": "Y coordinate of the opposite corner."
+    },
+    "occupancy": {
+      "type": "boolean",
+      "description": "Also report what is built on each tile: the rail, road, station, tree, bridge and tunnel bits in flags, plus the tile owner. Off by default because it costs seven extra reads per tile, and a large band of them slows the game enough that other commands time out."
+    },
+    "days_in_transit": {
+      "type": "integer",
+      "description": "How many days the cargo spends travelling. Defaults to 20, a mid length haul, so that corridors compared without it are compared on the same assumption."
+    },
+    "distance": {
+      "type": "integer",
+      "description": "How far the cargo travels, in tiles. Manhattan distance between the two stations is what the game measures, which /state/routes already reports for every candidate."
+    },
+    "from_tile": {
+      "type": "integer",
+      "description": "Tile index to start from. An alternative to from_x and from_y."
+    },
+    "to_tile": {
+      "type": "integer",
+      "description": "Tile index to finish at. An alternative to to_x and to_y."
     }
   },
   "enum_bindings": {
@@ -525,6 +545,10 @@
     "set_stop_location.stop_location": {
       "class": "GSOrder",
       "prefix": "STOPLOCATION_"
+    },
+    "*.track": {
+      "class": "GSRail",
+      "prefix": "RAILTRACK_"
     }
   },
   "actions": {
@@ -776,7 +800,7 @@
       "description": "Report the map dimensions in tiles."
     },
     "get_map_terrain": {
-      "description": "Report the terrain across a rectangle: height, slope, and whether each tile is water. Reading the whole map at once is large, so ask for the part you need."
+      "description": "Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume, so a band that did not fit is never mistaken for the whole answer. Reading a whole map is not a reasonable request: 256x256 is over half a megabyte. Where something will actually fit is better asked of the find_ family, which dry-runs the real build inside the game."
     },
     "get_orders": {
       "description": "List a vehicle's orders, with their destinations and flags."
@@ -800,7 +824,7 @@
       "description": "List the subsidies on offer and those already awarded."
     },
     "get_tile_area": {
-      "description": "Report height, slope and buildability across a rectangle. max_tiles bounds the reply."
+      "description": "Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it. This is the right tool for almost any question about a piece of ground, including whether your own track is already there. Bounds are INCLUSIVE, so a single tile is x1 equal to x2. max_tiles bounds the reply and the request is REFUSED, not truncated, if the area exceeds it; the default is 400."
     },
     "get_tile_info": {
       "description": "Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to."
@@ -911,7 +935,7 @@
       ]
     },
     "remove_rail": {
-      "description": "Remove track along a line between two tiles."
+      "description": "Remove the single piece of track at one tile, naming the two tiles it joins. Takes the same prev, current, next triple that building rail takes: from_x and from_y for where the track comes from, x and y for the piece being removed, and to_x and to_y for where it leads. All three are required. It does not remove a whole line."
     },
     "remove_rail_station": {
       "description": "Remove the part of a rail station inside a rectangle."
@@ -1011,6 +1035,18 @@
     },
     "stop_vehicle": {
       "description": "Stop a vehicle where it is. Stopping outside a depot blocks the line behind it, and only a vehicle stopped in a depot can be sold or refitted."
+    },
+    "get_cargo_income": {
+      "description": "Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days. Payment falls off with time in transit, so a slower route earns less for the same haul. This is the game's own figure, not a model of it.",
+      "category": "query"
+    },
+    "trace_route": {
+      "description": "Whether a vehicle can travel from one tile to another over track that already exists. This is not the same question as the feasibility check in /state/path, which plans a NEW line and routes around occupied tiles, so it reports no path once a line is standing. Answered by walking the game's own connectivity, so it is the authority on whether a built route will actually carry anything. Rail and road only: a ship travels over open water.",
+      "parameters": {
+        "transport_type": {
+          "description": "rail or road. Defaults to rail."
+        }
+      }
     }
   }
 }

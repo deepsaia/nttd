@@ -11,6 +11,41 @@ client sees in its tool schema.
 """
 
 # ---------------------------------------------------------------------------
+# How many companies a contestant plays
+
+MAX_CONTESTANT_COMPANIES = 1
+"""One company per session, in every mode.
+
+A multi-agent entry is several agents driving *one* company: the orchestrator decides
+what the company does and submits one batch per step. RL and ES runs are one policy per
+session and spawn their own. So nothing needs a second contestant company, and allowing
+one would produce runs nothing can compare: a world shared by two contestants is a
+different problem from a solo run on the same world, and no result row records which it
+was.
+
+Extra *non-contestant* companies are unaffected. ``num_ai_companies`` still creates idle
+slots; they do not compete for cargo or town ratings.
+"""
+
+IDLE_AI_NAME = "nttd Idle"
+"""The only AI nttd will run, and it does nothing at all.
+
+**There are no AI opponents in nttd, by design.** ``ottd_config/ai/nttd-idle`` sleeps
+forever; it exists to hold a company slot open, not to play. Every slot in the shipped
+``openttd.cfg`` names it, and ``config_builder`` refuses to write a config that names
+anything else.
+
+A benchmark measures building a transport business in an empty market. Adding a real
+competitor from OpenTTD's content service would make it measure something else, and
+worse, something that varies: two runs on one seed would face different pressure
+depending on which AI was installed and how it happened to play, and no result row
+records either. nttd would be comparing runs that were never the same problem.
+
+nttd is self-hosted, so this is not a defence against a contestant. It is a guarantee
+that a world generated from a seed is the world anybody else generates from it.
+"""
+
+# ---------------------------------------------------------------------------
 # Participant tier: actions a human player can take through the GUI
 # ---------------------------------------------------------------------------
 
@@ -139,6 +174,7 @@ READ_ONLY_GS_ACTIONS: frozenset[str] = frozenset({
     "find_airport_spots", "find_bus_stop_spots", "find_depot_spots", "find_dock_spots",
     "find_flat_spots", "find_rail_depot_spot", "find_station_spot", "find_water_depot_spots",
     "get_airport_types", "get_bridge_types", "get_cargo_flows", "get_cargo_types",
+    "get_cargo_income",
     "get_clients", "get_companies", "get_company_finance", "get_date",
     "get_engine_details", "get_engines", "get_expense_breakdown", "get_game_settings",
     "get_groups", "get_hangars", "get_industries", "get_industry_info",
@@ -146,6 +182,7 @@ READ_ONLY_GS_ACTIONS: frozenset[str] = frozenset({
     "get_rail_types", "get_road_types", "get_signs", "get_station_info",
     "get_stations", "get_subsidies", "get_tile_area", "get_tile_info",
     "get_town_info", "get_town_rating", "get_towns", "get_vehicle_info",
+    "trace_route",
     "get_vehicles", "get_waypoints", "scan_town_area",
 })
 
@@ -153,3 +190,27 @@ READ_ONLY_GS_ACTIONS: frozenset[str] = frozenset({
 # a route around the action allowlist.
 assert not (READ_ONLY_GS_ACTIONS & KNOWN_ACTIONS)
 assert not (READ_ONLY_GS_ACTIONS & OPERATOR_ACTIONS)
+
+
+# ---------------------------------------------------------------------------
+# Actions that cannot execute while the game is paused
+# ---------------------------------------------------------------------------
+
+# These two search for a route inside the GameScript, and their A* yields every 500
+# iterations through _YieldAndProcessEvents (main.nut:1920 and :2468), whose first
+# statement is Sleep(1). Sleep counts GAME TICKS, and a paused game delivers none, so a
+# long search hangs at any pause level. Everything else is safe paused: at
+# construction.command_pause_level = 3 a paused build returns success in about 0.1s.
+#
+# Derived by reading the dispatch table rather than guessed: _FindRoadPath and
+# _FindRailPath are the only functions that yield, and CmdConnectRoad and CmdConnectRail
+# are their only callers. A test cross-checks that against the GameScript.
+#
+# The step flush consults this so that a batch without either can run against a still
+# world, which is what makes a stepped run's advance exact rather than merely intended.
+TICK_DEPENDENT_ACTIONS: frozenset[str] = frozenset({
+    "connect_rail",
+    "connect_road",
+})
+
+assert TICK_DEPENDENT_ACTIONS <= KNOWN_ACTIONS

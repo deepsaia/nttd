@@ -15,11 +15,15 @@ Requires:
     2. OpenTTD binary available on PATH (auto-started by the session)
 """
 
+import json
 import logging
+import pathlib
 import time
 
 import httpx
 import pytest
+
+from nttd.constants import READ_ONLY_GS_ACTIONS
 
 log = logging.getLogger(__name__)
 
@@ -974,3 +978,94 @@ class TestWaterRoutePipeline:
         ], company_id)[0]
         assert start["status"] == "success", f"start failed: {start.get('error')}"
         log.info("Water route created: vehicle=%d, stations=%s<->%s", vehicle_id, sid_a, sid_b)
+
+
+# ---------------------------------------------------------------------------
+# Every read-only query, called for real
+# ---------------------------------------------------------------------------
+
+# Plausible arguments for the queries that need one. Ids come from the shipped seed and
+# are checked against the live world first, so a missing id fails as a skip rather than
+# masquerading as an API fault.
+_QUERY_ARGUMENTS: dict[str, dict] = {
+    "find_airport_spots": {"town_id": 0},
+    "find_bus_stop_spots": {"town_id": 0},
+    "find_depot_spots": {"town_id": 0},
+    "find_dock_spots": {"town_id": 0},
+    "find_flat_spots": {"x": 40, "y": 40, "radius": 4, "min_size": 2},
+    "find_rail_depot_spot": {"tile": 10280, "radius": 4},
+    "find_station_spot": {"industry_id": 0, "platform_length": 3},
+    "find_water_depot_spots": {"x": 40, "y": 40, "radius": 4},
+    "get_cargo_income": {"cargo_id": 0, "distance": 20},
+    "get_engine_details": {"engine_id": 0},
+    "get_engines": {"vehicle_type": 0},
+    "get_industry_info": {"industry_id": 0},
+    "get_orders": {"vehicle_id": 0},
+    "get_station_info": {"station_id": 0},
+    "get_tile_area": {"x1": 40, "y1": 40, "x2": 42, "y2": 42},
+    "get_tile_info": {"x": 40, "y": 40},
+    "get_town_info": {"town_id": 0},
+    "get_town_rating": {"town_id": 0},
+    "get_vehicle_info": {"vehicle_id": 0},
+    "get_map_terrain": {"from_y": 40, "max_tiles": 200},
+    "scan_town_area": {"town_id": 0, "radius": 4},
+}
+
+# A Squirrel exception reaches the caller as this, from the dispatcher's own catch. It
+# means the handler named a member that does not exist on the class it called, which the
+# binary symbol check in test_gamescript_api_names.py cannot detect: the name usually
+# exists somewhere, just not there.
+_SQUIRREL_MEMBER_ERROR = "does not exist"
+
+
+
+def _participant_headers(session_id: str) -> dict[str, str]:
+    """The token the session issued, read from where the session wrote it.
+
+    A session started with contestant companies enforces its token, and the suite's client
+    carries none, so every query came back 401 before this. participants.json is the
+    documented place to find it: the auth refusal itself says tokens are written to the
+    session directory.
+    """
+    issued = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "logs" / "sessions" / session_id / "participants.json"
+    )
+    if not issued.exists():
+        return {}
+    tokens = json.loads(issued.read_text())
+    first = tokens.get("0") or next(iter(tokens.values()), None)
+    return {"X-Participant-Token": first} if first else {}
+
+@pytest.mark.gs_test
+@pytest.mark.parametrize("action", sorted(READ_ONLY_GS_ACTIONS))
+def test_every_read_only_query_reaches_its_handler(
+    client: httpx.Client, session_id: str, action: str,
+) -> None:
+    """Call each one for real and refuse a Squirrel member error.
+
+    The class of bug this exists for has landed three times: GSOrder.HasSharedOrders, which
+    is not on GSOrder; GSTown.GetLastMonthTransported, which is GSIndustry's; and every
+    handler reading company_id while the read-only path did not inject it. Each shipped, and
+    each looked to a caller like a broken feature rather than a wrong call.
+
+    The symbol check in test_gamescript_api_names.py cannot catch any of them, and says so
+    in its own docstring: the binary knows a name exists, not which class carries it. Only
+    calling the handler does.
+
+    A refusal on its merits is fine. get_station_info on a session with no stations SHOULD
+    fail. What is never acceptable is the dispatcher's catch reporting that the script named
+    something that is not there.
+    """
+    resp = client.post(
+        f"/sessions/{session_id}/state/gs/query",
+        params={"action": action},
+        json=_QUERY_ARGUMENTS.get(action, {}),
+        headers=_participant_headers(session_id),
+    )
+    assert resp.status_code == 200, resp.text
+    reply = resp.json()
+    error = str(reply.get("error") or "")
+    assert _SQUIRREL_MEMBER_ERROR not in error, (
+        f"{action} named a member that does not exist: {error}"
+    )

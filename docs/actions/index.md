@@ -21,10 +21,11 @@ Full detail in [observations.md](observations.md).
 - `find_flat_spots(tile|x,y, [max_results, min_size, platform_length, radius, rail_type, required_cargo, station_test])` Search around a tile for level ground.
 - `find_rail_depot_spot(tile, [max_results, radius, rail_type])` Find a tile near the given one where a rail depot would fit.
 - `find_station_spot([industry_id, max_results, platform_length, radius, rail_type, town_id])` Find somewhere to put a station serving a given industry or town.
-- `find_water_depot_spots([max_results, radius, tile, town_id, x, y])` Search near a town for water a ship depot could be built on.
+- `find_water_depot_spots(tile|x,y, [max_results, radius, town_id])` Search near a town for water a ship depot could be built on.
 - `get_airport_types()` List the airport types this game has, with their sizes and whether they are available yet.
 - `get_bridge_types()` List the bridge designs available, with their speed limits, maximum spans and costs.
 - `get_cargo_flows([keep_monitoring])` Report how much cargo your company has picked up and delivered per town and industry since the monitors were last read.
+- `get_cargo_income(cargo_id, distance, [days_in_transit])` Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days.
 - `get_cargo_types()` List the cargoes this game has, with their labels and ids.
 - `get_clients()` List the clients connected to the server.
 - `get_companies()` List the companies in the game, with their names, values and performance ratings.
@@ -40,7 +41,7 @@ Full detail in [observations.md](observations.md).
 - `get_industry_info(industry_id)` Report one industry in detail: what it produces and accepts, recent production, and how much is waiting.
 - `get_infrastructure_costs()` Report how much track, road and station you own and what it costs to maintain each month.
 - `get_map_size()` Report the map dimensions in tiles.
-- `get_map_terrain([from_y, to_y])` Report the terrain across a rectangle: height, slope, and whether each tile is water.
+- `get_map_terrain([from_y, max_tiles, occupancy, to_y])` Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable.
 - `get_orders(vehicle_id)` List a vehicle's orders, with their destinations and flags.
 - `get_rail_types()` List the rail technologies this game has and which are available yet.
 - `get_road_types()` List the road technologies this game has, tram tracks included, and which are available yet.
@@ -48,8 +49,8 @@ Full detail in [observations.md](observations.md).
 - `get_station_info(station_id)` Report one station in detail: what is waiting, what it accepts, and its cargo ratings.
 - `get_stations()` List your stations, with what is waiting at each and how it is rated.
 - `get_subsidies()` List the subsidies on offer and those already awarded.
-- `get_tile_area(x1, x2, y1, y2, [max_tiles])` Report height, slope and buildability across a rectangle.
-- `get_tile_info(x, y)` Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to.
+- `get_tile_area(x1, x2, y1, y2, [max_tiles])` Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it.
+- `get_tile_info(tile|x,y)` Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to.
 - `get_town_info(town_id)` Report one town in detail: population, houses, what it accepts and how fast it is growing.
 - `get_town_rating(town_id)` Report how a town regards your company.
 - `get_towns()` List the towns on the map, with their locations and populations.
@@ -58,34 +59,35 @@ Full detail in [observations.md](observations.md).
 - `get_waypoints()` List your waypoints.
 - `ping()` Check that the GameScript is answering.
 - `scan_town_area(town_id, [radius])` Report the land around a town: what is buildable, what is already built, and where the roads run.
+- `trace_route(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, transport_type])` Whether a vehicle can travel from one tile to another over track that already exists.
 
 ## Actions
 
 Full detail in [actions.md](actions.md).
 
 - `add_order(vehicle_id, station_id|dest_tile|destination, [order_flags])` Append an order to the end of a vehicle's list.
-- `build_airport(x, y, [airport_type])` Build an airport with its north corner at the given tile.
+- `build_airport(tile|x,y, [airport_type])` Build an airport with its north corner at the given tile.
 - `build_bridge(end_x, end_y, start_x, start_y, [bridge_type, transport_type])` Bridge the gap between two tiles.
-- `build_buoy(x, y)` Place a buoy on a water tile.
-- `build_canal(x, y)` Turn a flat land tile into canal.
-- `build_company_hq(x, y)` Place the company headquarters, which occupies four tiles with its north corner at the given tile.
-- `build_dock(x, y)` Build a dock on a coastal tile, giving ships somewhere to load.
-- `build_lock(x, y)` Build a lock so ships can change height.
+- `build_buoy(tile|x,y)` Place a buoy on a water tile.
+- `build_canal(tile|x,y)` Turn a flat land tile into canal.
+- `build_company_hq(tile|x,y)` Place the company headquarters, which occupies four tiles with its north corner at the given tile.
+- `build_dock(tile|x,y)` Build a dock on a coastal tile, giving ships somewhere to load.
+- `build_lock(tile|x,y)` Build a lock so ships can change height.
 - `build_one_way_road(x1, x2, y1, y2)` Build road between two tiles that may be driven in one direction only, running from the first tile to the second.
 - `build_one_way_road_full(x1, x2, y1, y2)` Build one-way road between two tiles, covering both end tiles fully rather than stopping at their edges.
 - `build_path(steps, [rail_type, road_type, transport_type])` Lay a route you have already chosen, tile by tile.
-- `build_rail_depot(x, y, [direction, rail_type])` Build a rail depot at a tile, entered from the neighbour picked by direction.
-- `build_rail_signal(x, y, [signal_type])` Place a signal on a track tile.
-- `build_rail_station(x, y, [direction, num_platforms, platform_length, rail_type])` Build a rail station with its north corner at the given tile.
-- `build_rail_track(x, y, [rail_type, track])` Lay one track piece on one tile, in a chosen orientation.
-- `build_rail_waypoint(x, y)` Build a waypoint on a track tile.
+- `build_rail_depot(tile|x,y, [direction, rail_type])` Build a rail depot at a tile, entered from the neighbour picked by direction.
+- `build_rail_signal(tile|x,y, [signal_type])` Place a signal on a track tile.
+- `build_rail_station(tile|x,y, [direction, num_platforms, platform_length, rail_type])` Build a rail station with its north corner at the given tile.
+- `build_rail_track(tile|x,y, [rail_type, track])` Lay one track piece on one tile, in a chosen orientation.
+- `build_rail_waypoint(tile|x,y)` Build a waypoint on a track tile.
 - `build_road_depot(tile|x,y, [direction, road_type])` Build a road depot at a tile, entered from the neighbour picked by direction.
 - `build_road_stop(tile|x,y, [direction, is_drive_through, is_truck_stop, road_type])` Build a bus or truck stop.
-- `build_sign(name, x, y)` Place a named sign on a tile.
-- `build_train(engine_id, depot_tile|depot_x,depot_y, [cargo_id, num_wagons, wagon_id])` Build a locomotive in a depot and optionally couple wagons to it.
-- `build_tunnel(x, y, [transport_type])` Bore a tunnel into the hillside at the given tile.
-- `build_water_depot(x, y, [direction])` Build a ship depot on water.
-- `buy_vehicle(engine_id, depot_tile|depot_x,depot_y)` Build a vehicle of any type in a depot.
+- `build_sign(name, tile|x,y)` Place a named sign on a tile.
+- `build_train(engine_id, depot_tile|depot_x,depot_y, depot_tile|depot_x,depot_y, [cargo_id, num_wagons, wagon_id])` Build a locomotive in a depot and optionally couple wagons to it.
+- `build_tunnel(tile|x,y, [transport_type])` Bore a tunnel into the hillside at the given tile.
+- `build_water_depot(tile|x,y, [direction])` Build a ship depot on water.
+- `buy_vehicle(engine_id, depot_tile|depot_x,depot_y, depot_tile|depot_x,depot_y)` Build a vehicle of any type in a depot.
 - `clone_vehicle(vehicle_id, [share_orders])` Build a copy of an existing vehicle in its depot, optionally sharing the original's orders.
 - `connect_rail(tile_from|from_x,from_y, tile_to|to_x,to_y, [from_hint_x, from_hint_y, max_iterations, rail_type, to_hint_x, to_hint_y])` Lay track between two tiles, finding the route itself.
 - `connect_road(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, road_type])` Build road between two tiles, finding the route itself.
@@ -94,26 +96,26 @@ Full detail in [actions.md](actions.md).
 - `copy_orders(main_vehicle_id, vehicle_id)` Replace a vehicle's orders with a copy of another's.
 - `create_group([parent_group_id, vehicle_type])` Create a group to organise vehicles of one type.
 - `delete_group(group_id)` Delete a group.
-- `demolish_tile(x, y)` Clear whatever is on the tile.
+- `demolish_tile(tile|x,y)` Clear whatever is on the tile.
 - `estimate_cost(action, params)` Report what an action would cost without doing it.
 - `insert_order(vehicle_id, station_id|dest_tile|destination, order_index|order_position, [order_flags])` Insert an order at a position, pushing later orders down.
 - `level_tiles(x1, x2, y1, y2)` Flatten the rectangle between two corners to a single height.
-- `lower_tile(slope, x, y)` Lower the named corners of a tile by one step.
+- `lower_tile(slope, tile|x,y)` Lower the named corners of a tile by one step.
 - `move_order(vehicle_id, from_index|from_position, to_index|to_position)` Move an order to a different position in the list.
 - `move_to_group(group_id, vehicle_id)` Move a vehicle into a group.
 - `move_wagon(dest_vehicle_id, dest_wagon, source_vehicle_id, source_wagon, [move_chain])` Move a wagon from one train to another.
 - `open_close_airport(station_id)` Toggle an airport between accepting and refusing arrivals.
 - `perform_town_action(action, town_id)` Do something for a town: advertise, fund buildings, rebuild its roads, build a statue, buy exclusive rights, or bribe it.
-- `plant_tree(x, y)` Plant a tree on a tile.
-- `plant_tree_rectangle(height, width, x, y)` Plant trees across a rectangle given as a corner and a size.
-- `raise_tile(slope, x, y)` Raise the named corners of a tile by one step.
+- `plant_tree(tile|x,y)` Plant a tree on a tile.
+- `plant_tree_rectangle(height, width, tile|x,y)` Plant trees across a rectangle given as a corner and a size.
+- `raise_tile(slope, tile|x,y)` Raise the named corners of a tile by one step.
 - `refit_vehicle(vehicle_id, cargo_id|cargo_type)` Convert a vehicle to carry a different cargo.
-- `remove_airport(x, y)` Remove an airport, given any tile of it.
-- `remove_buoy(x, y)` Remove a buoy.
-- `remove_canal(x, y)` Turn a canal tile back into land.
-- `remove_lock(x, y)` Remove a lock.
+- `remove_airport(tile|x,y)` Remove an airport, given any tile of it.
+- `remove_buoy(tile|x,y)` Remove a buoy.
+- `remove_canal(tile|x,y)` Turn a canal tile back into land.
+- `remove_lock(tile|x,y)` Remove a lock.
 - `remove_order(vehicle_id, order_index|order_position)` Remove one order from a vehicle's list.
-- `remove_rail(from_x, from_y, to_x, to_y, x, y)` Remove track along a line between two tiles.
+- `remove_rail(tile|x,y, tile_from|from_x,from_y, tile_to|to_x,to_y, [from_tile, to_tile])` Remove the single piece of track at one tile, naming the two tiles it joins.
 - `remove_rail_station(tile|x,y, [keep_rail, x1, x2, y1, y2])` Remove the part of a rail station inside a rectangle.
 - `remove_rail_track(tile|x,y, [track])` Remove one track piece from a tile.
 - `remove_road(tile_from|from_x,from_y, tile_to|to_x,to_y, [road_type])` Remove road along a line between two tiles.
@@ -121,7 +123,7 @@ Full detail in [actions.md](actions.md).
 - `remove_road_stop(tile|x,y)` Remove a bus or truck stop.
 - `remove_sign(sign_id)` Remove a sign.
 - `remove_signal(tile|x,y, [front_tile, front_x, front_y])` Remove a signal from a track tile.
-- `remove_water_depot(x, y)` Remove a ship depot.
+- `remove_water_depot(tile|x,y)` Remove a ship depot.
 - `rename_company(name)` Rename your company.
 - `rename_vehicle(name, vehicle_id)` Rename a vehicle.
 - `reverse_vehicle(vehicle_id)` Turn a vehicle around.

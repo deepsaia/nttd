@@ -62,7 +62,7 @@ depends on. Takes a few minutes. Run it after upgrading OpenTTD.
 
 ```bash
 uv run nttd server                                               # terminal 1
-uv run nttd benchmark --config config/benchmark/t2_example.conf   # terminal 2
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf   # terminal 2
 ```
 
 `benchmark` prints the session id and participant token, then waits. Attach your runner
@@ -91,9 +91,9 @@ session data is written; it defaults to `logs/sessions`.
 Stands up a task and waits for it to end.
 
 ```bash
-uv run nttd benchmark --config config/benchmark/t2_example.conf
-uv run nttd benchmark --config config/benchmark/t2_example.conf --seed 2002
-uv run nttd benchmark --config config/benchmark/t2_example.conf -o results/
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf --seed 2002
+uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf -o results/
 ```
 
 | Option | |
@@ -118,7 +118,7 @@ because which world to play is your choice while whether it is scored is not.
 For driving the lifecycle yourself.
 
 ```bash
-uv run nttd session create --config config/benchmark/t2_example.conf
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s ses_... --agent-companies 1
 uv run nttd session attach ses_...
 uv run nttd session list
@@ -133,9 +133,10 @@ and the profile-derived keys that decide whether the run is scored and what boun
 **`start`** generates the world and spawns OpenTTD. `--agent-companies 1` creates the
 company your runner will play; without it there is nothing to play.
 
-More than one contestant company makes the run **unscored**, and `start` says so. A
-scored result is one company on one world; several sharing a map is a different problem.
-Self-play still works, it simply cannot be ranked.
+More than one contestant company is **refused**, before anything spawns. A scored result
+is one company on one world, and several sharing a map is a different problem that
+nothing on a result row records. A multi-agent entry is several agents driving that one
+company. For extra companies that do not compete, use `--ai-opponents N`.
 
 **`attach`** prints the participant token and the routes: real-time and stepped. The
 token exists only in the `start` output and in `participants.json` otherwise, so this is
@@ -148,7 +149,7 @@ how you recover it.
 ### `nttd scenario`
 
 ```bash
-uv run nttd scenario validate config/benchmark/t2_example.conf
+uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd scenario validate my_variant.conf
 uv run nttd scenario profile
 ```
@@ -417,6 +418,75 @@ uv run nttd analyze -s ses_... --compare ses_other --open
 Generates reports from the session's Parquet files. See
 [session_analyzer.md](session_analyzer.md).
 
+Works on a session that is still running: nttd writes a snapshot fragment per step, and
+the read path uses fragments until they are merged.
+
+---
+
+### Asking before building
+
+Two read-only additions worth knowing about, both free and both usable while a stepped
+world is paused.
+
+`GET /state/path` says whether two points can be joined, before any money is spent:
+
+```
+GET /state/path?from_x=76&from_y=184&to_x=73&to_y=155&transport_type=rail
+  -> {"connected": true, "tiles": 34, "bridges": 1, "tunnels": 0,
+      "work": {"build_rail": 31, "build_bridge": 1}}
+```
+
+`work` is the part to read. The same corridor asked for water answers `connected: true`
+with `{"build_canal": 26, "move": 7}`, because the planner will dig the whole way. Connected
+alone would read as a shipping lane.
+
+It reports no money figure on purpose: the pathfinder's cost is its own search cost in
+terrain penalties, and printing that as currency would look authoritative and be wrong. Ask
+`estimate_cost` for money.
+
+`get_cargo_income` says what carrying a cargo pays, which is what makes a route ranking mean
+anything. At distance 32, steel pays 22 a unit against livestock's 16, and `/state/routes`
+now carries `income_per_unit` and `estimated_monthly_income` on every cargo candidate.
+
+---
+
+### `nttd monitor`
+
+```bash
+uv run nttd monitor                        # then open http://127.0.0.1:4281
+uv run nttd monitor --limit 10 --port 4300
+uv run nttd monitor --stop-on-anomaly
+```
+
+A dashboard per session, in a browser, while the session runs. One page listing every
+session and one page per session with its charts, a top-down map with a step scrubber, its
+action log, the game's events, and a health panel.
+
+Reads session directories from disk, so it needs nothing running: it works on a live
+session, on a finished one, and on a session directory copied from another machine. Bound
+to localhost, because the page carries a whole run's telemetry and has no authentication.
+
+**Health** names what has gone wrong and why it matters, rather than leaving it to be
+noticed. Every rule was written against a run that failed silently:
+
+| rule | trips when |
+|---|---|
+| `stalled` | a live session has written nothing for 7 minutes |
+| `not acting` | fewer than one action every four steps |
+| `nothing built` | 10 steps gone and no stations |
+| `no vehicles` | 14 steps gone, stations built, nothing bought |
+| `stations not served` | two or more stations with nothing calling at them |
+| `refusal loop` | one action refused 5 times |
+| `overdrawn` | the balance has gone below zero |
+
+`--stop-on-anomaly` stops a live session that trips a `bad` rule, through the same
+operator endpoint as `nttd session stop`. Off by default: a false positive on a two hour
+tier is expensive, so arming it is deliberate. It never touches the contestant's own
+process, which nttd does not own.
+
+The map is not the game's rendering. It plots what the snapshot already carries, since
+every town, industry, station and vehicle in it has an `x` and a `y`.
+
 ---
 
 ## Scenario configuration
@@ -519,6 +589,16 @@ Under `NTTD_SESSIONS_DIR` (default `logs/sessions`), per session:
 | `result.parquet` | one row per scored company: the leaderboard artifact |
 | `actions.parquet` | every action, refusals included, with status and game date |
 | `snapshots.parquet` | full game state time-series |
+
+`snapshots.parquet` holds each snapshot whole, as `snapshot_json`, and beside it a few
+typed columns extracted from that same snapshot: four `num_*` counts and fourteen `c0_*`
+figures for company 0. **The JSON is the record; the columns are an index into it.** They
+exist so a dashboard can filter or plot a series without parsing a large JSON string per
+row, and they cost 5 to 6 percent of the file to do it.
+
+They are deliberately partial, covering company 0 only and no expenses, so anything wider
+reads the JSON. That is why `nttd result --business` recomputes its metrics from
+`snapshot_json` rather than from the columns.
 | `events.parquet` | lifecycle and game events |
 | `tiles.parquet` | terrain scan |
 | `nttd_scenario.conf` | the resolved scenario, for provenance |
@@ -537,7 +617,7 @@ Under `NTTD_SESSIONS_DIR` (default `logs/sessions`), per session:
 
 ```bash
 uv run pytest -q
-uv run pytest tests/test_step_barrier.py -v
+uv run pytest tests/test_stepped_mode.py -v
 uv run ruff check src/ tests/
 ```
 

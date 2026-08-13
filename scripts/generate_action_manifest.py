@@ -59,14 +59,29 @@ _TIER_SECTIONS = [
         "read_only",
         "observations",
         "Observations",
-        "Read the world. These cost nothing, change nothing, and can be repeated freely.",
+        "Read the world. These cost nothing, change nothing, and can be repeated freely.\n\n"
+        "**These are queries, and they are not submitted as actions.** Ask one with "
+        "`POST /state/gs/query?action=get_stations`, with the parameters as the whole "
+        "body: `{\"industry_id\": 7}`, or `{}` for a query that takes none. The action "
+        "name is a QUERY STRING parameter, not a body field, and putting it in the body "
+        "returns 422. "
+        "Submitting one as an action is refused, because a query endpoint that also "
+        "executed actions would be a way around the action allowlist, and that hole was "
+        "real: `set_max_loan` once raised a scored company's credit ceiling from 300,000 "
+        "to 9,000,000 through it.\n\n"
+        "The distinction is worth reading once rather than discovering. An agent that "
+        "submitted `get_hangars` as an action spent two of its five actions on it, never "
+        "found its hangar, and could then not buy the aircraft it was for.",
     ),
     (
         "participant",
         "actions",
         "Actions",
         "Change the world. These cost money, take effect in the game, and are recorded "
-        "against your company.",
+        "against your company.\n\n"
+        "**These are submitted as actions**, through `POST /actions/submit` in real-time "
+        "play or in a step's batch. Anything on the "
+        "[observations page](observations.md) is a query instead, asked a different way.",
     ),
 ]
 
@@ -77,7 +92,10 @@ _DISPATCH_WITH_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cm
 _DISPATCH_NO_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cmd\w+)\(\)')
 _DISPATCH_INLINE = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+\{')
 
-_FUNCTION = re.compile(r'\n  function (Cmd\w+)\(p(?:\s*=\s*\{\})?\)\s*\{')
+# The parameter list is optional: a handler that takes nothing, such as CmdGetTowns, still
+# has a body worth reading for the shape of its reply. Matching only `(p)` left those
+# fifteen handlers with an empty body and so no documented return.
+_FUNCTION = re.compile(r'\n  function (Cmd\w+)\((?:p(?:\s*=\s*\{\})?)?\)\s*\{')
 
 # local x = ("name" in p) ? p.name : default;
 _OPTIONAL = re.compile(r'"([a-z_0-9]+)"\s+in\s+p\)?\s*\?\s*p\.[a-z_0-9]+\s*:\s*([^;,\)]+)')
@@ -92,18 +110,35 @@ _MENTIONED_DOT = re.compile(r'\bp\.([a-z_0-9]+)')
 _TILE_HELPERS = {
     "_ResolveTile(p)": ("tile", "x", "y"),
     "_ResolveTilePair(p)": ("from_x", "from_y", "to_x", "to_y", "tile_from", "tile_to"),
+    # The helper takes a key prefix, so one handler can resolve several tiles. remove_rail
+    # needs three: the piece to remove and the two tiles it joins.
+    '_ResolveTile(p, "from_")': ("from_tile", "from_x", "from_y"),
+    '_ResolveTile(p, "to_")': ("to_tile", "to_x", "to_y"),
 }
 
 # What each helper insists on. It accepts a tile index or a coordinate pair and refuses
 # the call outright when given neither, so the alternation is part of the contract rather
 # than a convenience. Derived from the helper rather than declared per action, because
 # every one of the 11 callers has the same requirement.
-_TILE_HELPER_ALTERNATIVES = {
-    "_ResolveTile(p)": [[["tile"], ["x", "y"]]],
-    "_ResolveTilePair(p)": [
-        [["tile_from"], ["from_x", "from_y"]],
-        [["tile_to"], ["to_x", "to_y"]],
-    ],
+# What ``_Dispatch`` resolves before ANY handler runs, keyed by the coordinate pair it
+# produces. This is a property of the dispatcher, not of a handler, so it applies to
+# every action taking that pair whether or not the handler calls a helper.
+#
+# It used to be keyed on the helper call instead, which under-reported badly: an action
+# reading p.x directly got no alternative, so the manifest said x and y were the only way
+# in. That is not a documentation nicety. ``interpreter/validator.py`` drives its
+# required-parameter check off this manifest and sits on the submit path, so nttd refused
+# build_dock(tile=N) with "missing required params: x, y" while the GameScript would have
+# resolved it happily. Measured before the fix: build_dock(tile=..) rejected,
+# build_road_stop(tile=..) accepted, and the only difference was which one called a helper.
+#
+# It matters for agents in particular because the find_*_spots family returns
+# {tile, x, y}, so tile is the natural thing to hand back.
+_DISPATCH_TILE_RESOLUTIONS = {
+    ("x", "y"): "tile",
+    ("from_x", "from_y"): "tile_from",
+    ("to_x", "to_y"): "tile_to",
+    ("depot_x", "depot_y"): "depot_tile",
 }
 
 # company_id is supplied by nttd from the participant token and overwritten on the way
@@ -125,6 +160,160 @@ def _function_bodies(source: str) -> dict[str, str]:
             index += 1
         bodies[name] = source[start:index]
     return bodies
+
+
+def _without_comments(text: str) -> str:
+    """Drop line comments, which otherwise donate stray words to the key scanner."""
+    out: list[str] = []
+    for line in text.splitlines():
+        marker = line.find("//")
+        out.append(line if marker == -1 else line[:marker])
+    return "\n".join(out)
+
+
+def _table_keys(text: str, start: int) -> list[str]:
+    """The top level keys of the Squirrel table literal whose opening brace is at start.
+
+    A small scanner rather than a pattern, because a reply nests: tables inside arrays
+    inside tables, and only the outermost level is the shape a caller sees.
+    """
+    keys: list[str] = []
+    depth, index, token, quoted = 0, start, "", False
+    while index < len(text):
+        char = text[index]
+        if quoted:
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                quoted = False
+            index += 1
+            continue
+        if char == '"':
+            quoted = True
+        elif char in "{[(":
+            depth += 1
+            token = ""
+        elif char in "}])":
+            depth -= 1
+            token = ""
+            if depth == 0:
+                break
+        elif depth == 1:
+            if char == "=" and text[index + 1 : index + 2] != "=":
+                name = token.strip()
+                if name.isidentifier():
+                    keys.append(name)
+                token = ""
+            elif char == ",":
+                token = ""
+            else:
+                token += char
+        index += 1
+    return keys
+
+
+def _helper_keys(source: str, helper: str) -> list[str]:
+    """The fields a shared reply builder assembles, for a handler that delegates to one.
+
+    ``result = this._StationRemains(...)`` is a call, not a literal, so the scanner below
+    sees nothing and the action goes out with no documented reply at all. Reads both the
+    table the helper declares and anything it rawsets onto it afterwards.
+    """
+    marker = f"function {helper}("
+    if marker not in source:
+        return []
+    start = source.index(marker)
+    rest = source[start + 1 :]
+    end = rest.find("\n  function ")
+    text = _without_comments(rest if end == -1 else rest[:end])
+
+    keys: list[str] = []
+    declared = text.find("local out = {")
+    if declared != -1:
+        keys.extend(_table_keys(text, text.index("{", declared)))
+    cursor = text.find('.rawset("')
+    while cursor != -1:
+        opening = cursor + len('.rawset("')
+        closing = text.find('"', opening)
+        if closing == -1:
+            break
+        keys.append(text[opening:closing])
+        cursor = text.find('.rawset("', closing)
+    return keys
+
+
+def _returns(body: str, source: str = "") -> dict[str, Any] | None:
+    """What one action's reply carries, read from the handler's own return statements.
+
+    Nothing described a reply before this. All 131 actions documented their parameters and
+    not one documented what came back, so an agent had to guess a field name and read a
+    null as an absent feature. Three working replies were read as broken that way in a
+    single session: find_station_spot's orientation was looked for as `direction` when it
+    is `valid_directions`, get_company_finance's balance as `money`, and get_vehicle_info's
+    load as `cargo_load` when it is a list of {cargo_id, capacity, loaded}.
+
+    Derived from the source rather than written by hand, so it cannot drift the way the
+    prose in #108 did.
+    """
+    text = _without_comments(body)
+    fields: list[str] = []
+    shape = None
+    index = text.find("result = ")
+    while index != -1:
+        after = index + len("result = ")
+        head = text[after : after + 1]
+        if head == "{":
+            shape = shape or "object"
+            fields.extend(_table_keys(text, after))
+        else:
+            # `result = spots` and friends: a list built by append, so the element's keys
+            # are the shape a caller actually reads.
+            end = text.find(" ", after)
+            variable = text[after : end if end != -1 else after].strip().strip("};,")
+            anchor = text.find(f"{variable}.append({{") if variable.isidentifier() else -1
+            declared = text.find(f"local {variable} = {{") if variable.isidentifier() else -1
+            if anchor != -1:
+                shape = "list"
+                fields.extend(_table_keys(text, text.index("{", anchor + len(variable) + 8)))
+            elif declared != -1:
+                # Assembled into a local table first, then returned whole, which is what
+                # find_station_spot does with its result_info.
+                shape = shape or "object"
+                fields.extend(_table_keys(text, text.index("{", declared)))
+            elif text[after : after + len("this._")] == "this._":
+                # Delegated to a shared reply builder.
+                opening = text.find("(", after)
+                helper = text[after + len("this.") : opening]
+                from_helper = _helper_keys(source, helper) if source else []
+                if from_helper:
+                    shape = shape or "object"
+                    fields.extend(from_helper)
+            elif head == "[":
+                shape = shape or "list"
+        index = text.find("result = ", after)
+    if shape is None:
+        return None
+    unique = sorted(set(fields))
+    if not unique:
+        return {"shape": shape}
+    out: dict[str, Any] = {"shape": shape, "fields": unique}
+
+    # A field that is itself a list of tables carries the keys an agent actually reads,
+    # and the outer name alone is no help. find_station_spot answers with `spots`, and
+    # every orientation and flatness fact this project needed lives one level down inside
+    # it, which is how a working feature came to be reported as absent.
+    nested: dict[str, list[str]] = {}
+    for field in unique:
+        anchor = text.find(f"{field}.append({{")
+        if anchor == -1:
+            continue
+        keys = _table_keys(text, text.index("{", anchor + len(field) + 8))
+        if keys:
+            nested[field] = sorted(set(keys))
+    if nested:
+        out["nested"] = nested
+    return out
 
 
 def _parameters(body: str) -> dict[str, dict[str, Any]]:
@@ -232,12 +421,17 @@ def build() -> dict[str, Any]:
 
     for name, function in _DISPATCH_WITH_PARAMS.findall(source):
         body = bodies.get(function, "")
+        params = _parameters(body)
         actions[name] = _entry(
-            name, function, _parameters(body), tiers, categories, written, _tile_alternatives(body)
+            name, function, params, tiers, categories, written,
+            _tile_alternatives(params), _returns(body, source),
         )
 
     for name, function in _DISPATCH_NO_PARAMS.findall(source):
-        actions[name] = _entry(name, function, {}, tiers, categories, written, [])
+        actions[name] = _entry(
+            name, function, {}, tiers, categories, written, [],
+            _returns(bodies.get(function, ""), source),
+        )
 
     for name in _DISPATCH_INLINE.findall(source):
         actions[name] = _entry(name, None, {}, tiers, categories, written, [])
@@ -258,6 +452,7 @@ def _entry(
     categories: dict[str, str],
     written: dict[str, Any],
     derived: list[list[list[str]]],
+    returns: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One manifest entry, merging the hand-written prose with the generated shape."""
     prose = (written.get("actions") or {}).get(name, {})
@@ -274,6 +469,11 @@ def _entry(
     alternatives = {param for group in one_of for branch in group for param in branch}
     for param in alternatives & set(params):
         params[param]["required"] = False
+    # A tile the dispatcher resolves never appears in the handler body, so it is absent
+    # from the extracted parameters and would be advertised in `one_of` while missing
+    # from `parameters`. An agent reading the entry would see it offered and undescribed.
+    for param in sorted(alternatives - set(params)):
+        params[param] = {"required": False}
 
     entry: dict[str, Any] = {
         "description": prose.get("description", ""),
@@ -286,15 +486,32 @@ def _entry(
         entry["one_of"] = one_of
     for param, meta in sorted(params.items()):
         entry["parameters"][param] = _parameter(name, param, meta, prose, written)
+    if returns:
+        entry["returns"] = dict(returns)
+        described = (prose.get("returns") or {})
+        if described:
+            entry["returns"]["fields"] = {
+                field: {"description": described.get(field, "")}
+                for field in returns.get("fields", [])
+            }
     return entry
 
 
-def _tile_alternatives(body: str) -> list[list[list[str]]]:
-    """The alternations a shared tile helper imposes on whichever action calls it."""
+def _tile_alternatives(params: dict[str, dict[str, Any]]) -> list[list[list[str]]]:
+    """The alternations the dispatcher's tile resolution imposes on this action.
+
+    Read off the parameter shape rather than the handler body, because ``_Dispatch``
+    resolves these for every action before the switch. An action taking x and y accepts
+    a tile whether or not its handler ever mentions one.
+
+    Coordinate pairs only. ``x1, y1, x2, y2`` rectangles are untouched: the dispatcher
+    resolves no single tile for a rectangle, and inventing one would advertise a call
+    the game would refuse.
+    """
     groups: list[list[list[str]]] = []
-    for call, alternatives in _TILE_HELPER_ALTERNATIVES.items():
-        if call in body:
-            groups.extend(alternatives)
+    for pair, single in _DISPATCH_TILE_RESOLUTIONS.items():
+        if all(axis in params for axis in pair):
+            groups.append([[single], list(pair)])
     return groups
 
 
@@ -405,8 +622,32 @@ def problems(manifest: dict[str, Any], written: dict[str, Any]) -> list[str]:
         found.extend(_binding_problems(key, binding, actions))
 
     found.extend(_orphan_problems())
+    found.extend(_unadvertised_tile_problems(actions))
 
     return found
+
+
+def _unadvertised_tile_problems(actions: dict[str, Any]) -> list[str]:
+    """Report an action taking a coordinate pair without offering the tile that resolves it.
+
+    The blind spot this closes cost real behaviour rather than just documentation.
+    ``_Dispatch`` resolves tile into x and y for every action, but the alternation used to
+    be derived from whether a handler called a tile helper. An action reading p.x directly
+    got none, and ``interpreter/validator.py`` drives its required-parameter check off this
+    manifest and sits on the submit path, so nttd answered build_dock(tile=N) with
+    "missing required params: x, y" for a call the game would have accepted.
+
+    Derived from the parameter shape now, so this should never fire. It exists because the
+    previous rule also looked correct.
+    """
+    return [
+        f"'{name}' takes {', '.join(pair)} but does not advertise '{single}', "
+        f"which the dispatcher resolves into it"
+        for name, entry in sorted(actions.items())
+        for pair, single in _DISPATCH_TILE_RESOLUTIONS.items()
+        if all(axis in entry["parameters"] for axis in pair)
+        and single not in entry["parameters"]
+    ]
 
 
 def _orphan_problems() -> list[str]:
@@ -500,7 +741,8 @@ def _markdown(manifest: dict[str, Any]) -> str:
         "| Reference | Count | What it is |",
         "| --- | --- | --- |",
         f"| [Observations](actions/observations.md) | {counts['read_only']} "
-        "| Read the world. Changes nothing. |",
+        "| Read the world. Changes nothing. Asked with `POST /state/gs/query`, never "
+        "submitted as an action. |",
         f"| [Actions](actions/actions.md) | {counts['participant']} "
         "| Change the world. This is play. |",
         "",
@@ -652,7 +894,7 @@ def _markdown_action(name: str, entry: dict[str, Any]) -> list[str]:
 
     if not entry["parameters"]:
         lines += ["Takes no parameters.", ""]
-        return lines
+        return lines + _markdown_returns(entry)
 
     # A list rather than a table. 93 of the 129 actions take three parameters or fewer,
     # and a table spends two lines of scaffolding before saying anything: about 2400
@@ -666,6 +908,29 @@ def _markdown_action(name: str, entry: dict[str, Any]) -> list[str]:
             continue
         values = ", ".join(f"`{n}` = {v}" for n, v in meta["enum"]["values"].items())
         lines += [f"`{param}` accepts ({meta['enum']['class']}): {values}", ""]
+    return lines + _markdown_returns(entry)
+
+
+def _markdown_returns(entry: dict[str, Any]) -> list[str]:
+    """The reply's field names, which nothing published before.
+
+    Names alone, not prose. Knowing that the field is called `valid_directions` rather than
+    `direction`, or `balance` rather than `money`, is the whole of what was missing: a
+    reader who guesses wrong sees a null and concludes the feature is absent.
+    """
+    returns = entry.get("returns")
+    if not returns:
+        return []
+    fields = returns.get("fields")
+    if not fields:
+        return ["Returns no data beyond success.", ""]
+    names = fields if isinstance(fields, list) else list(fields)
+    article = "a list of" if returns.get("shape") == "list" else ""
+    lines = [f"Returns {article} `{'`, `'.join(names)}`.".replace("Returns  ", "Returns "), ""]
+    for field, keys in (returns.get("nested") or {}).items():
+        lines.append(f"Each `{field}` carries `{'`, `'.join(keys)}`.")
+    if returns.get("nested"):
+        lines.append("")
     return lines
 
 

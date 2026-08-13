@@ -70,6 +70,22 @@ class RouteRegistry:
                 self._routes[rid] = route
                 logger.info("Route %s created (active): stations %s", rid, list(sids))
 
+            # A route derived from the running game HAS its track, and saying so here is
+            # the only thing that ever will.
+            #
+            # track_confirmed_at is written nowhere else in production: on_action_result
+            # and register_planned_route have no caller outside the tests. So every route
+            # reconcile produced sat at the schema default of 0, and situation reported
+            # "missing: a connection between the stations" for a line whose trains were
+            # running and profitable. That is the first thing the endpoint tells an agent
+            # to read, and on the one route in this project that earned, it was wrong.
+            #
+            # The evidence is what reconcile grouped on: vehicles carrying goto-station
+            # orders for both ends. A train cannot hold those and run unless the track is
+            # there, so the derivation itself is the confirmation.
+            if not route.track_confirmed_at:
+                route.track_confirmed_at = game_date
+
             route.vehicle_ids = [v.id for v in vlist]
             route.vehicle_count = len(vlist)
             route.total_profit_this_year = sum(v.profit_this_year for v in vlist)

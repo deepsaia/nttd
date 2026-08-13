@@ -13,9 +13,14 @@ rather than to the server, which only knows whether an end condition fired.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from nttd.schemas.action_result import ActionResult
 from nttd.schemas.snapshot import StateSnapshot
+
+# The only keys an action entry in a step batch may carry. Everything an action needs
+# goes inside `params`, which is what the MCP step tool and the REST route both send.
+_ACTION_KEYS = frozenset({"action", "params"})
 
 
 class StepResult(BaseModel):
@@ -31,10 +36,19 @@ class StepResult(BaseModel):
         terminated: Whether an end condition fired. The run is over; further steps
             will not advance a finished session.
         end_reason: Which condition, empty while the run continues.
-        steppers: The companies whose actions were flushed into this window, in
-            company order. One entry in a single-agent run. Present because with
-            several companies stepping one world, what a step was worth depends on who
-            was in it, and a reader reconstructing the run cannot infer that.
+        action_results: What happened to each action in the batch this step flushed, in
+            the order submitted. Empty for a step that submitted nothing.
+
+            Present because the observation alone cannot answer it. A refused action
+            often changes nothing at all, so a world that looks unchanged is
+            indistinguishable from one where the action was never sent, and a policy
+            cannot learn not to repeat it. The outcomes were always computed and written
+            to the action log; they were simply not handed back.
+
+    A ``steppers`` list used to sit here, naming the companies whose actions went into
+    one advance. It answered a question that can no longer be asked: a session holds one
+    contestant, so a step is always that company's and the field said only what the
+    token already did.
     """
 
     snapshot: StateSnapshot
@@ -42,7 +56,7 @@ class StepResult(BaseModel):
     days_advanced: int = 0
     terminated: bool = False
     end_reason: str = ""
-    steppers: list[int] = Field(default_factory=list)
+    action_results: list[ActionResult] = Field(default_factory=list)
 
 
 class StepRequest(BaseModel):
@@ -60,3 +74,28 @@ class StepRequest(BaseModel):
 
     actions: list[dict] = Field(default_factory=list)
     days: int | None = None
+
+    @field_validator("actions")
+    @classmethod
+    def _reject_misplaced_parameters(cls, actions: list[dict]) -> list[dict]:
+        """Refuse an action whose parameters were not put in ``params``.
+
+        An action is ``{"action": ..., "params": {...}}``. Written flat, as
+        ``{"action": ..., "x": 8, "y": 31}``, every field beyond ``action`` used to be
+        dropped in silence: ``params`` came out empty and the GameScript then failed on
+        the first field it tried to read, answering "the index 'x' does not exist". That
+        names neither the real mistake nor where the fields should have gone, and it is
+        indistinguishable from genuinely omitting a required argument.
+
+        Dropping a caller's entire parameter set without a word is the worst of the
+        available outcomes, so this refuses instead, naming the strays.
+        """
+        for index, entry in enumerate(actions):
+            stray = sorted(set(entry) - _ACTION_KEYS)
+            if stray:
+                raise ValueError(
+                    f"action {index} ({entry.get('action') or 'unnamed'}) has "
+                    f"{', '.join(stray)} at the top level. Action parameters belong in "
+                    f"`params`: {{\"action\": ..., \"params\": {{...}}}}"
+                )
+        return actions

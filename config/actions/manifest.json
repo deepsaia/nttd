@@ -69,7 +69,13 @@
             "destination"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_count"
+        ]
+      }
     },
     "build_airport": {
       "description": "Build an airport with its north corner at the given tile. The whole footprint must be clear and level, and larger types only become available from the year they are introduced.",
@@ -97,16 +103,40 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "station_id",
+          "tile",
+          "type"
+        ]
       }
     },
     "build_bridge": {
@@ -147,6 +177,13 @@
           "description": "What crosses the bridge: rail, water, or road. Anything else is treated as road.",
           "type": "string"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "end_pos",
+          "start"
+        ]
       }
     },
     "build_buoy": {
@@ -155,16 +192,38 @@
       "category": "marine",
       "gamescript_function": "CmdBuildBuoy",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "build_canal": {
@@ -173,16 +232,38 @@
       "category": "marine",
       "gamescript_function": "CmdBuildCanal",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "build_company_hq": {
@@ -191,16 +272,38 @@
       "category": "company",
       "gamescript_function": "CmdBuildCompanyHQ",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "build_dock": {
@@ -209,16 +312,39 @@
       "category": "air_and_other",
       "gamescript_function": "CmdBuildDock",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "station_id",
+          "tile"
+        ]
       }
     },
     "build_lock": {
@@ -227,16 +353,38 @@
       "category": "marine",
       "gamescript_function": "CmdBuildLock",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "build_one_way_road": {
@@ -265,6 +413,13 @@
           "description": "Y coordinate of the opposite corner.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "from",
+          "to"
+        ]
       }
     },
     "build_one_way_road_full": {
@@ -293,6 +448,13 @@
           "description": "Y coordinate of the opposite corner.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "from",
+          "to"
+        ]
       }
     },
     "build_path": {
@@ -324,6 +486,28 @@
           "description": "What the path carries: rail or road. Anything else is treated as road.",
           "type": "string"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "built",
+          "errors",
+          "existing",
+          "failed",
+          "skipped",
+          "status",
+          "total_steps"
+        ],
+        "nested": {
+          "failed": [
+            "action",
+            "error",
+            "error_category",
+            "error_code",
+            "x",
+            "y"
+          ]
+        }
       }
     },
     "build_rail_depot": {
@@ -344,16 +528,42 @@
           "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "connected",
+          "tile"
+        ]
       }
     },
     "build_rail_signal": {
@@ -385,16 +595,38 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "build_rail_station": {
@@ -427,16 +659,44 @@
           "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "length",
+          "platforms",
+          "station_id",
+          "tile"
+        ]
       }
     },
     "build_rail_track": {
@@ -451,12 +711,17 @@
           "description": "Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "track": {
           "required": false,
           "default": {
             "expression": "GSRail.RAILTRACK_NE_SW"
           },
-          "description": "Which of the six track pieces on the tile to act on.",
+          "description": "Which of the six track pieces on the tile to act on, as a GSRail RAILTRACK value. These are bit flags, not an index: 0 is not a piece and is refused. A straight north-east to south-west piece is 1, north-west to south-east is 2, and the four diagonals are 4, 8, 16 and 32.",
           "type": "integer",
           "enum": {
             "class": "GSRail",
@@ -471,15 +736,32 @@
           }
         },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "build_rail_waypoint": {
@@ -488,16 +770,38 @@
       "category": "rail",
       "gamescript_function": "CmdBuildRailWaypoint",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "build_road_depot": {
@@ -547,7 +851,15 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile",
+          "x",
+          "y"
+        ]
+      }
     },
     "build_road_stop": {
       "description": "Build a bus or truck stop. A drive-through stop sits on the road and is passed through; a bay is entered and reversed out of, which is slower but takes less room.",
@@ -608,7 +920,17 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "station_id",
+          "tile",
+          "type",
+          "x",
+          "y"
+        ]
+      }
     },
     "build_sign": {
       "description": "Place a named sign on a tile. Signs are annotation only and affect nothing in the game.",
@@ -621,16 +943,39 @@
           "description": "A name to give.",
           "type": "string"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name",
+          "sign_id"
+        ]
       }
     },
     "build_train": {
@@ -685,8 +1030,27 @@
             "depot_x",
             "depot_y"
           ]
+        ],
+        [
+          [
+            "depot_tile"
+          ],
+          [
+            "depot_x",
+            "depot_y"
+          ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name",
+          "refitted",
+          "vehicle_id",
+          "wagons_attached",
+          "wagons_failed"
+        ]
+      }
     },
     "build_tunnel": {
       "description": "Bore a tunnel into the hillside at the given tile. OpenTTD picks the far end itself, following the slope until the land rises again, so the exit is reported back rather than chosen.",
@@ -694,6 +1058,11 @@
       "category": "air_and_other",
       "gamescript_function": "CmdBuildTunnel",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "transport_type": {
           "required": false,
           "default": "rail",
@@ -701,15 +1070,33 @@
           "type": "string"
         },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "entrance",
+          "exit_pos"
+        ]
       }
     },
     "build_water_depot": {
@@ -724,16 +1111,38 @@
           "description": "Which neighbouring tile the vehicle enters from: 0 is +x, 1 is +y, 2 is -x, 3 is -y. Any other value means the tile itself.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "buy_vehicle": {
@@ -772,8 +1181,24 @@
             "depot_x",
             "depot_y"
           ]
+        ],
+        [
+          [
+            "depot_tile"
+          ],
+          [
+            "depot_x",
+            "depot_y"
+          ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name",
+          "vehicle_id"
+        ]
+      }
     },
     "change_bank_balance": {
       "description": "Move money into or out of a company's account directly. Operator-tier: this is scenario machinery, not play, and it is refused during a scored game.",
@@ -812,6 +1237,13 @@
             }
           }
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "company_id",
+          "new_balance"
+        ]
       }
     },
     "change_town_rating": {
@@ -830,6 +1262,14 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "company_id",
+          "new_rating",
+          "town_id"
+        ]
       }
     },
     "clone_vehicle": {
@@ -849,6 +1289,13 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name",
+          "vehicle_id"
+        ]
       }
     },
     "connect_rail": {
@@ -945,7 +1392,20 @@
             "to_y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "built",
+          "existing",
+          "failed",
+          "gaps",
+          "iterations",
+          "path",
+          "path_length",
+          "status"
+        ]
+      }
     },
     "connect_road": {
       "description": "Build road between two tiles, finding the route itself. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working road.",
@@ -1021,7 +1481,20 @@
             "to_y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "built",
+          "existing",
+          "failed",
+          "gaps",
+          "iterations",
+          "path",
+          "path_length",
+          "status"
+        ]
+      }
     },
     "convert_rail": {
       "description": "Convert existing track in a rectangle to another rail type. Trains that cannot run on the new type are stranded, so check the fleet first.",
@@ -1084,7 +1557,10 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object"
+      }
     },
     "convert_road_type": {
       "description": "Convert existing road in a rectangle to another road type.",
@@ -1117,6 +1593,12 @@
           "description": "Y coordinate of the opposite corner.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "road_type"
+        ]
       }
     },
     "copy_orders": {
@@ -1135,6 +1617,12 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_count"
+        ]
       }
     },
     "create_group": {
@@ -1157,6 +1645,12 @@
           "description": "One of train, road, ship or aircraft. An unrecognised value silently becomes train.",
           "type": "string"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "group_id"
+        ]
       }
     },
     "create_subsidy": {
@@ -1204,6 +1698,9 @@
             }
           }
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "delete_group": {
@@ -1217,6 +1714,9 @@
           "description": "Which vehicle group.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "demolish_tile": {
@@ -1225,16 +1725,38 @@
       "category": "air_and_other",
       "gamescript_function": "CmdDemolishTile",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "estimate_cost": {
@@ -1253,6 +1775,22 @@
           "description": "The parameters of the action being estimated, exactly as they would be submitted.",
           "type": "object"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "action",
+          "depot_x",
+          "depot_y",
+          "dest_tile",
+          "estimated_cost",
+          "from_x",
+          "from_y",
+          "to_x",
+          "to_y",
+          "x",
+          "y"
+        ]
       }
     },
     "expand_town": {
@@ -1272,6 +1810,13 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "population",
+          "town_id"
+        ]
       }
     },
     "find_airport_spots": {
@@ -1317,6 +1862,18 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "cargo_acceptance",
+          "distance",
+          "height",
+          "tile",
+          "width",
+          "x",
+          "y"
+        ]
       }
     },
     "find_bus_stop_spots": {
@@ -1354,6 +1911,21 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "adjacent_road_count",
+          "adjacent_road_x",
+          "adjacent_road_y",
+          "cargo_acceptance",
+          "direction",
+          "distance",
+          "has_adjacent_road",
+          "tile",
+          "x",
+          "y"
+        ]
       }
     },
     "find_depot_spots": {
@@ -1385,6 +1957,18 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "adjacent_road_x",
+          "adjacent_road_y",
+          "depot_direction",
+          "distance",
+          "tile",
+          "x",
+          "y"
+        ]
       }
     },
     "find_dock_spots": {
@@ -1410,6 +1994,17 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "cargo_acceptance",
+          "distance",
+          "slope",
+          "tile",
+          "x",
+          "y"
+        ]
       }
     },
     "find_flat_spots": {
@@ -1489,7 +2084,18 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "cargo_acceptance",
+          "distance",
+          "max_height",
+          "tile",
+          "x",
+          "y"
+        ]
+      }
     },
     "find_rail_depot_spot": {
       "description": "Find a tile near the given one where a rail depot would fit.",
@@ -1520,6 +2126,18 @@
           "description": "Tile index. Takes precedence over x and y when both are given.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "adjacent_track_x",
+          "adjacent_track_y",
+          "depot_direction",
+          "distance",
+          "tile",
+          "x",
+          "y"
+        ]
       }
     },
     "find_station_spot": {
@@ -1562,6 +2180,28 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "cargo_labels",
+          "spots",
+          "target_name",
+          "target_x",
+          "target_y"
+        ],
+        "nested": {
+          "spots": [
+            "cargo_acceptance",
+            "distance",
+            "max_height",
+            "reachable_directions",
+            "tile",
+            "valid_directions",
+            "x",
+            "y"
+          ]
+        }
       }
     },
     "find_water_depot_spots": {
@@ -1602,6 +2242,26 @@
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "distance",
+          "tile",
+          "x",
+          "y"
+        ]
       }
     },
     "found_town": {
@@ -1656,16 +2316,41 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name",
+          "town_id",
+          "x",
+          "y"
+        ]
       }
     },
     "get_airport_types": {
@@ -1673,14 +2358,34 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetAirportTypes",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "coverage",
+          "height",
+          "id",
+          "width"
+        ]
+      }
     },
     "get_bridge_types": {
       "description": "List the bridge designs available, with their speed limits, maximum spans and costs.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetBridgeTypes",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "id",
+          "max_length",
+          "max_speed",
+          "min_length",
+          "name",
+          "price"
+        ]
+      }
     },
     "get_cargo_flows": {
       "description": "Report how much cargo your company has picked up and delivered per town and industry since the monitors were last read. Reading resets the counters unless keep_monitoring is set, so two reads in a row report different things.",
@@ -1694,6 +2399,55 @@
           "description": "Leave the cargo monitors armed. Reading a monitor resets it, so a report covers only what moved since the last read.",
           "type": "boolean"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "amount",
+          "cargo_id",
+          "cargo_label",
+          "direction",
+          "entity_id",
+          "entity_name",
+          "entity_type"
+        ]
+      }
+    },
+    "get_cargo_income": {
+      "description": "Ask the game what it pays to carry one unit of a cargo a given distance in a given number of days. Payment falls off with time in transit, so a slower route earns less for the same haul. This is the game's own figure, not a model of it.",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdGetCargoIncome",
+      "parameters": {
+        "cargo_id": {
+          "required": true,
+          "description": "Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming.",
+          "type": "integer"
+        },
+        "days_in_transit": {
+          "required": false,
+          "default": {
+            "expression": "this._DEFAULT_TRANSIT_DAYS"
+          },
+          "description": "How many days the cargo spends travelling. Defaults to 20, a mid length haul, so that corridors compared without it are compared on the same assumption.",
+          "type": "integer"
+        },
+        "distance": {
+          "required": true,
+          "description": "How far the cargo travels, in tiles. Manhattan distance between the two stations is what the game measures, which /state/routes already reports for every candidate.",
+          "type": "integer"
+        }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "cargo_id",
+          "days_in_transit",
+          "distance",
+          "income_per_100_units",
+          "income_per_unit",
+          "label"
+        ]
       }
     },
     "get_cargo_types": {
@@ -1701,35 +2455,93 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetCargoTypes",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "id",
+          "is_freight",
+          "label",
+          "name"
+        ]
+      }
     },
     "get_clients": {
       "description": "List the clients connected to the server.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetClients",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "client_id",
+          "company_id",
+          "name"
+        ]
+      }
     },
     "get_companies": {
       "description": "List the companies in the game, with their names, values and performance ratings.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetCompanies",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "company_value",
+          "hq_x",
+          "hq_y",
+          "id",
+          "loan",
+          "max_loan",
+          "money",
+          "name",
+          "performance_rating",
+          "q0_cargo",
+          "q0_expenses",
+          "q0_income"
+        ]
+      }
     },
     "get_company_finance": {
       "description": "Report your company's money, loan, income, expenses and value.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetCompanyFinance",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "balance",
+          "company_id",
+          "loan",
+          "max_loan",
+          "q1_expenses",
+          "q1_income",
+          "q1_value",
+          "q2_expenses",
+          "q2_income",
+          "q2_value"
+        ]
+      }
     },
     "get_date": {
       "description": "Report the current in-game date.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetDate",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "date",
+          "day",
+          "month",
+          "year"
+        ]
+      }
     },
     "get_engine_details": {
       "description": "Report everything about one engine model: capacity, speed, power, running cost, reliability and what it can carry.",
@@ -1742,6 +2554,27 @@
           "description": "Which engine model to build. Numbered by the running game and gated by year, so ask get_engines.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "can_refit",
+          "capacity",
+          "cargo_type",
+          "engine_id",
+          "max_age",
+          "max_speed",
+          "max_tractive_effort",
+          "name",
+          "power",
+          "price",
+          "rail_type",
+          "reliability",
+          "road_type",
+          "running_cost",
+          "vehicle_type",
+          "weight"
+        ]
       }
     },
     "get_engines": {
@@ -1756,6 +2589,24 @@
           "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.",
           "type": "string"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "capacity",
+          "cargo_label",
+          "cargo_type",
+          "id",
+          "is_wagon",
+          "max_speed",
+          "name",
+          "power",
+          "price",
+          "rail_type",
+          "reliability",
+          "running_cost",
+          "weight"
+        ]
       }
     },
     "get_expense_breakdown": {
@@ -1763,7 +2614,25 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetExpenseBreakdown",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "balance",
+          "company_id",
+          "quarterly"
+        ],
+        "nested": {
+          "quarterly": [
+            "cargo_delivered",
+            "company_value",
+            "expenses",
+            "income",
+            "performance_rating",
+            "quarter"
+          ]
+        }
+      }
     },
     "get_game_settings": {
       "description": "Read named game settings. An unknown name reads back as null rather than failing the call.",
@@ -1776,6 +2645,9 @@
           "description": "Names of game settings to read. An unknown name reads back as null rather than failing the call.",
           "type": "array"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "get_groups": {
@@ -1783,21 +2655,60 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetGroups",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "id",
+          "name",
+          "parent_id",
+          "profit_last_year",
+          "profit_this_year",
+          "vehicle_type"
+        ]
+      }
     },
     "get_hangars": {
       "description": "List the hangar tiles of an airport, which is where aircraft are built and serviced.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetHangars",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "airport_type",
+          "airport_x",
+          "airport_y",
+          "hangar_tile",
+          "hangar_x",
+          "hangar_y",
+          "station_id",
+          "station_name"
+        ]
+      }
     },
     "get_industries": {
       "description": "List the industries on the map, with their locations, types and production.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetIndustries",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "accepted",
+          "id",
+          "is_processing",
+          "is_raw",
+          "name",
+          "production",
+          "type_id",
+          "type_name",
+          "x",
+          "y"
+        ]
+      }
     },
     "get_industry_info": {
       "description": "Report one industry in detail: what it produces and accepts, recent production, and how much is waiting.",
@@ -1810,6 +2721,30 @@
           "description": "Which industry.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "accepted",
+          "accepts_cargo",
+          "id",
+          "is_processing",
+          "is_raw",
+          "name",
+          "produces_cargo",
+          "production",
+          "type_id",
+          "type_name",
+          "x",
+          "y"
+        ],
+        "nested": {
+          "accepted": [
+            "cargo_id",
+            "cargo_label",
+            "stockpile"
+          ]
+        }
       }
     },
     "get_infrastructure_costs": {
@@ -1817,17 +2752,42 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetInfrastructureCosts",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "airport_cost",
+          "airport_pieces",
+          "company_id",
+          "rail_cost",
+          "rail_pieces",
+          "road_cost",
+          "road_pieces",
+          "station_cost",
+          "station_pieces",
+          "water_cost",
+          "water_pieces"
+        ]
+      }
     },
     "get_map_size": {
       "description": "Report the map dimensions in tiles.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetMapSize",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "max_x",
+          "max_y",
+          "size_x",
+          "size_y"
+        ]
+      }
     },
     "get_map_terrain": {
-      "description": "Report the terrain across a rectangle: height, slope, and whether each tile is water. Reading the whole map at once is large, so ask for the part you need.",
+      "description": "Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume, so a band that did not fit is never mistaken for the whole answer. Reading a whole map is not a reasonable request: 256x256 is over half a megabyte. Where something will actually fit is better asked of the find_ family, which dry-runs the real build inside the game.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetMapTerrain",
@@ -1838,6 +2798,18 @@
           "description": "Y coordinate of the starting tile.",
           "type": "integer"
         },
+        "max_tiles": {
+          "required": false,
+          "default": 4000,
+          "description": "How many tiles to report at most. Guards against asking for more than a reply can carry.",
+          "type": "integer"
+        },
+        "occupancy": {
+          "required": false,
+          "default": false,
+          "description": "Also report what is built on each tile: the rail, road, station, tree, bridge and tunnel bits in flags, plus the tile owner. Off by default because it costs seven extra reads per tile, and a large band of them slows the game enough that other commands time out.",
+          "type": "boolean"
+        },
         "to_y": {
           "required": false,
           "default": {
@@ -1845,6 +2817,23 @@
           },
           "description": "Y coordinate of the finishing tile.",
           "type": "integer"
+        }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "from_y",
+          "next_from_y",
+          "rows",
+          "tiles_returned",
+          "to_y",
+          "truncated"
+        ],
+        "nested": {
+          "rows": [
+            "tiles",
+            "y"
+          ]
         }
       }
     },
@@ -1859,6 +2848,25 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_count",
+          "orders",
+          "vehicle_id"
+        ],
+        "nested": {
+          "orders": [
+            "destination",
+            "flags",
+            "index",
+            "is_conditional",
+            "is_goto_depot",
+            "is_goto_station",
+            "is_goto_waypoint"
+          ]
+        }
       }
     },
     "get_rail_types": {
@@ -1866,21 +2874,47 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetRailTypes",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "available",
+          "build_cost_per_tile",
+          "id",
+          "name"
+        ]
+      }
     },
     "get_road_types": {
       "description": "List the road technologies this game has, tram tracks included, and which are available yet.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetRoadTypes",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "id",
+          "is_tram",
+          "name"
+        ]
+      }
     },
     "get_signs": {
       "description": "List the signs on the map.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetSigns",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "id",
+          "name",
+          "x",
+          "y"
+        ]
+      }
     },
     "get_station_info": {
       "description": "Report one station in detail: what is waiting, what it accepts, and its cargo ratings.",
@@ -1893,6 +2927,39 @@
           "description": "Which station.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "cargo_waiting",
+          "entry_tiles",
+          "has_airport",
+          "has_bus",
+          "has_dock",
+          "has_rail",
+          "has_truck",
+          "id",
+          "name",
+          "platform_axis",
+          "x",
+          "y"
+        ],
+        "nested": {
+          "cargo_waiting": [
+            "cargo_id",
+            "cargo_label",
+            "rating",
+            "waiting"
+          ],
+          "entry_tiles": [
+            "enterable",
+            "has_rail",
+            "tile",
+            "usable",
+            "x",
+            "y"
+          ]
+        }
       }
     },
     "get_stations": {
@@ -1900,17 +2967,46 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetStations",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "cargo_acceptance",
+          "cargo_waiting",
+          "has_airport",
+          "has_bus",
+          "has_dock",
+          "has_rail",
+          "has_truck",
+          "id",
+          "name",
+          "x",
+          "y"
+        ]
+      }
     },
     "get_subsidies": {
       "description": "List the subsidies on offer and those already awarded.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetSubsidies",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "cargo_type",
+          "destination_index",
+          "destination_type",
+          "id",
+          "is_awarded",
+          "remaining",
+          "source_index",
+          "source_type"
+        ]
+      }
     },
     "get_tile_area": {
-      "description": "Report height, slope and buildability across a rectangle. max_tiles bounds the reply.",
+      "description": "Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it. This is the right tool for almost any question about a piece of ground, including whether your own track is already there. Bounds are INCLUSIVE, so a single tile is x1 equal to x2. max_tiles bounds the reply and the request is REFUSED, not truncated, if the area exceeds it; the default is 400.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetTileArea",
@@ -1918,7 +3014,7 @@
         "max_tiles": {
           "required": false,
           "default": 400,
-          "description": "How many tiles to report at most. Guards against asking for an area larger than the reply can carry.",
+          "description": "How many tiles to report at most. Guards against asking for more than a reply can carry.",
           "type": "integer"
         },
         "x1": {
@@ -1941,6 +3037,25 @@
           "description": "Y coordinate of the opposite corner.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "buildable",
+          "coast",
+          "has_rail",
+          "has_road",
+          "has_tree",
+          "height",
+          "is_bridge",
+          "is_station",
+          "is_tunnel",
+          "owner",
+          "slope",
+          "water",
+          "x",
+          "y"
+        ]
       }
     },
     "get_tile_info": {
@@ -1949,16 +3064,53 @@
       "category": "query",
       "gamescript_function": "CmdGetTileInfo",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "has_tree",
+          "height",
+          "is_bridge",
+          "is_buildable",
+          "is_coast",
+          "is_rail",
+          "is_road",
+          "is_station",
+          "is_tunnel",
+          "is_water",
+          "min_height",
+          "other_end",
+          "owner",
+          "slope",
+          "x",
+          "y"
+        ]
       }
     },
     "get_town_info": {
@@ -1972,6 +3124,26 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "accepts_cargo",
+          "exclusive_rights_company",
+          "exclusive_rights_duration",
+          "fund_buildings_duration",
+          "growth_rate",
+          "has_statue",
+          "houses",
+          "id",
+          "is_city",
+          "name",
+          "population",
+          "produces_cargo",
+          "road_layout",
+          "x",
+          "y"
+        ]
       }
     },
     "get_town_rating": {
@@ -1985,6 +3157,15 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "company_id",
+          "detailed_rating",
+          "rating",
+          "town_id"
+        ]
       }
     },
     "get_towns": {
@@ -1992,7 +3173,17 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetTowns",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "id",
+          "name",
+          "population",
+          "x",
+          "y"
+        ]
+      }
     },
     "get_vehicle_info": {
       "description": "Report one vehicle in detail: where it is, what it carries, its orders, age, reliability and profit.",
@@ -2004,6 +3195,41 @@
           "required": true,
           "description": "Which vehicle.",
           "type": "integer"
+        }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "age",
+          "age_left",
+          "cargo",
+          "current_speed",
+          "engine_id",
+          "has_shared_orders",
+          "id",
+          "in_depot",
+          "is_articulated",
+          "length",
+          "max_age",
+          "name",
+          "orders",
+          "profit_last_year",
+          "profit_this_year",
+          "state",
+          "type",
+          "x",
+          "y"
+        ],
+        "nested": {
+          "orders": [
+            "destination",
+            "flags",
+            "index",
+            "is_conditional",
+            "is_goto_depot",
+            "is_goto_station",
+            "is_goto_waypoint"
+          ]
         }
       }
     },
@@ -2019,6 +3245,30 @@
           "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.",
           "type": "string"
         }
+      },
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "age",
+          "capacity",
+          "current_speed",
+          "engine_id",
+          "id",
+          "in_depot",
+          "is_articulated",
+          "max_age",
+          "name",
+          "order_count",
+          "orders",
+          "profit_last_year",
+          "profit_this_year",
+          "running",
+          "running_cost",
+          "state",
+          "type",
+          "x",
+          "y"
+        ]
       }
     },
     "get_waypoints": {
@@ -2026,7 +3276,18 @@
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetWaypoints",
-      "parameters": {}
+      "parameters": {},
+      "returns": {
+        "shape": "list",
+        "fields": [
+          "id",
+          "is_buoy",
+          "is_rail",
+          "name",
+          "x",
+          "y"
+        ]
+      }
     },
     "insert_order": {
       "description": "Insert an order at a position, pushing later orders down. Takes the same destination forms as add_order.",
@@ -2112,7 +3373,13 @@
             "order_position"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_count"
+        ]
+      }
     },
     "level_tiles": {
       "description": "Flatten the rectangle between two corners to a single height. Cost rises steeply with the amount of earth moved.",
@@ -2140,6 +3407,15 @@
           "description": "Y coordinate of the opposite corner.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "x1",
+          "x2",
+          "y1",
+          "y2"
+        ]
       }
     },
     "lower_tile": {
@@ -2179,16 +3455,39 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "x",
+          "y"
+        ]
       }
     },
     "move_order": {
@@ -2240,7 +3539,10 @@
             "to_position"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object"
+      }
     },
     "move_to_group": {
       "description": "Move a vehicle into a group.",
@@ -2258,6 +3560,9 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "move_wagon": {
@@ -2292,6 +3597,9 @@
           "description": "Position of the wagon within the source vehicle, counting from 0.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "open_close_airport": {
@@ -2305,6 +3613,12 @@
           "description": "Which station.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "station_id"
+        ]
       }
     },
     "perform_town_action": {
@@ -2336,6 +3650,13 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "action",
+          "town_id"
+        ]
       }
     },
     "ping": {
@@ -2351,16 +3672,39 @@
       "category": "landscape",
       "gamescript_function": "CmdPlantTree",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "x",
+          "y"
+        ]
       }
     },
     "plant_tree_rectangle": {
@@ -2374,21 +3718,46 @@
           "description": "Extent along y, in tiles.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "width": {
           "required": true,
           "description": "Extent along x, in tiles.",
           "type": "integer"
         },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ]
       }
     },
     "raise_tile": {
@@ -2428,16 +3797,39 @@
             }
           }
         },
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "x",
+          "y"
+        ]
       }
     },
     "refit_vehicle": {
@@ -2471,7 +3863,10 @@
             "cargo_type"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object"
+      }
     },
     "remove_airport": {
       "description": "Remove an airport, given any tile of it.",
@@ -2479,16 +3874,38 @@
       "category": "air_and_other",
       "gamescript_function": "CmdRemoveAirport",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
       }
     },
     "remove_buoy": {
@@ -2497,16 +3914,35 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveBuoy",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object"
       }
     },
     "remove_canal": {
@@ -2515,16 +3951,35 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveCanal",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object"
       }
     },
     "remove_lock": {
@@ -2533,16 +3988,35 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveLock",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object"
       }
     },
     "remove_order": {
@@ -2576,44 +4050,116 @@
             "order_position"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_count"
+        ]
+      }
     },
     "remove_rail": {
-      "description": "Remove track along a line between two tiles.",
+      "description": "Remove the single piece of track at one tile, naming the two tiles it joins. Takes the same prev, current, next triple that building rail takes: from_x and from_y for where the track comes from, x and y for the piece being removed, and to_x and to_y for where it leads. All three are required. It does not remove a whole line.",
       "tier": "participant",
       "category": "rail",
       "gamescript_function": "CmdRemoveRail",
       "parameters": {
+        "from_tile": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to start from. An alternative to from_x and from_y.",
+          "type": "integer"
+        },
         "from_x": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate of the starting tile.",
           "type": "integer"
         },
         "from_y": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate of the starting tile.",
           "type": "integer"
         },
+        "tile": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
+        "tile_from": {
+          "required": false,
+          "description": "Tile index to start from. An alternative to from_x and from_y.",
+          "type": "integer"
+        },
+        "tile_to": {
+          "required": false,
+          "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
+        "to_tile": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
         "to_x": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate of the finishing tile.",
           "type": "integer"
         },
         "to_y": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate of the finishing tile.",
           "type": "integer"
         },
         "x": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ],
+        [
+          [
+            "tile_from"
+          ],
+          [
+            "from_x",
+            "from_y"
+          ]
+        ],
+        [
+          [
+            "tile_to"
+          ],
+          [
+            "to_x",
+            "to_y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object"
       }
     },
     "remove_rail_station": {
@@ -2677,7 +4223,16 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name",
+          "station_gone",
+          "station_id",
+          "tiles_requested"
+        ]
+      }
     },
     "remove_rail_track": {
       "description": "Remove one track piece from a tile. A tile can carry several, so the piece is named rather than implied.",
@@ -2696,7 +4251,7 @@
           "default": {
             "expression": "GSRail.RAILTRACK_NE_SW"
           },
-          "description": "Which of the six track pieces on the tile to act on.",
+          "description": "Which of the six track pieces on the tile to act on, as a GSRail RAILTRACK value. These are bit flags, not an index: 0 is not a piece and is refused. A straight north-east to south-west piece is 1, north-west to south-east is 2, and the four diagonals are 4, 8, 16 and 32.",
           "type": "integer",
           "enum": {
             "class": "GSRail",
@@ -2733,7 +4288,13 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
+      }
     },
     "remove_road": {
       "description": "Remove road along a line between two tiles.",
@@ -2803,7 +4364,14 @@
             "to_y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "from_tile",
+          "to_tile"
+        ]
+      }
     },
     "remove_road_depot": {
       "description": "Remove a road depot.",
@@ -2840,7 +4408,13 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
+      }
     },
     "remove_road_stop": {
       "description": "Remove a bus or truck stop.",
@@ -2877,7 +4451,13 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "tile"
+        ]
+      }
     },
     "remove_sign": {
       "description": "Remove a sign.",
@@ -2890,6 +4470,9 @@
           "description": "Which sign.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "remove_signal": {
@@ -2942,7 +4525,10 @@
             "y"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object"
+      }
     },
     "remove_water_depot": {
       "description": "Remove a ship depot.",
@@ -2950,16 +4536,35 @@
       "category": "marine",
       "gamescript_function": "CmdRemoveWaterDepot",
       "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
         "x": {
-          "required": true,
+          "required": false,
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
-          "required": true,
+          "required": false,
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object"
       }
     },
     "rename_company": {
@@ -2973,6 +4578,12 @@
           "description": "A name to give.",
           "type": "string"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name"
+        ]
       }
     },
     "rename_vehicle": {
@@ -2991,6 +4602,13 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "name",
+          "vehicle_id"
+        ]
       }
     },
     "reverse_vehicle": {
@@ -3004,6 +4622,9 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "scan_town_area": {
@@ -3023,6 +4644,40 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "buildable",
+          "buildings",
+          "center_x",
+          "center_y",
+          "counts",
+          "radius",
+          "roads",
+          "town_name",
+          "water"
+        ],
+        "nested": {
+          "buildable": [
+            "height",
+            "slope",
+            "x",
+            "y"
+          ],
+          "buildings": [
+            "x",
+            "y"
+          ],
+          "roads": [
+            "x",
+            "y"
+          ],
+          "water": [
+            "x",
+            "y"
+          ]
+        }
       }
     },
     "sell_vehicle": {
@@ -3036,6 +4691,9 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "sell_wagon": {
@@ -3060,6 +4718,9 @@
           "description": "Position of the wagon within the vehicle, counting from 0.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "send_to_depot": {
@@ -3073,6 +4734,9 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "send_to_depot_service": {
@@ -3086,6 +4750,9 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "set_auto_replace": {
@@ -3109,6 +4776,9 @@
           "description": "Which vehicle group.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "set_cargo_goal": {
@@ -3143,6 +4813,14 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "goal",
+          "town_effect",
+          "town_id"
+        ]
       }
     },
     "set_game_setting": {
@@ -3161,6 +4839,13 @@
           "description": "The value to set.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "key",
+          "value"
+        ]
       }
     },
     "set_loan": {
@@ -3174,6 +4859,13 @@
           "description": "An amount of money, in the game's currency units.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "balance",
+          "loan"
+        ]
       }
     },
     "set_max_loan": {
@@ -3187,6 +4879,13 @@
           "description": "An amount of money, in the game's currency units.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "company_id",
+          "max_loan"
+        ]
       }
     },
     "set_order_compare_function": {
@@ -3223,6 +4922,13 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_pos",
+          "vehicle_id"
+        ]
       }
     },
     "set_order_compare_value": {
@@ -3246,6 +4952,13 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_pos",
+          "vehicle_id"
+        ]
       }
     },
     "set_order_condition": {
@@ -3282,6 +4995,13 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_pos",
+          "vehicle_id"
+        ]
       }
     },
     "set_order_flags": {
@@ -3331,6 +5051,9 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "set_stop_location": {
@@ -3362,6 +5085,13 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "order_pos",
+          "vehicle_id"
+        ]
       }
     },
     "set_town_growth": {
@@ -3380,6 +5110,13 @@
           "description": "Which town.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "growth_rate",
+          "town_id"
+        ]
       }
     },
     "share_orders": {
@@ -3398,6 +5135,9 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object"
       }
     },
     "skip_to_order": {
@@ -3431,7 +5171,10 @@
             "order_position"
           ]
         ]
-      ]
+      ],
+      "returns": {
+        "shape": "object"
+      }
     },
     "start_vehicle": {
       "description": "Start a stopped vehicle. A newly built vehicle is stopped until this is called.",
@@ -3444,6 +5187,12 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "running"
+        ]
       }
     },
     "stop_vehicle": {
@@ -3457,6 +5206,102 @@
           "description": "Which vehicle.",
           "type": "integer"
         }
+      },
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "already_stopped"
+        ]
+      }
+    },
+    "trace_route": {
+      "description": "Whether a vehicle can travel from one tile to another over track that already exists. This is not the same question as the feasibility check in /state/path, which plans a NEW line and routes around occupied tiles, so it reports no path once a line is standing. Answered by walking the game's own connectivity, so it is the authority on whether a built route will actually carry anything. Rail and road only: a ship travels over open water.",
+      "tier": "read_only",
+      "category": "query",
+      "gamescript_function": "CmdTraceRoute",
+      "parameters": {
+        "from_x": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "X coordinate of the starting tile.",
+          "type": "integer"
+        },
+        "from_y": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Y coordinate of the starting tile.",
+          "type": "integer"
+        },
+        "max_iterations": {
+          "required": false,
+          "default": 20000,
+          "description": "How hard the pathfinder may try before giving up. Raising it costs time, not money.",
+          "type": "integer"
+        },
+        "tile_from": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to start from. An alternative to from_x and from_y.",
+          "type": "integer"
+        },
+        "tile_to": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
+        "to_x": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "X coordinate of the finishing tile.",
+          "type": "integer"
+        },
+        "to_y": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Y coordinate of the finishing tile.",
+          "type": "integer"
+        },
+        "transport_type": {
+          "required": false,
+          "default": "rail",
+          "description": "rail or road. Defaults to rail.",
+          "type": "string"
+        }
+      },
+      "one_of": [
+        [
+          [
+            "tile_from"
+          ],
+          [
+            "from_x",
+            "from_y"
+          ]
+        ],
+        [
+          [
+            "tile_to"
+          ],
+          [
+            "to_x",
+            "to_y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "exhausted",
+          "from_x",
+          "from_y",
+          "line_exists",
+          "steps",
+          "tiles_reachable",
+          "to_x",
+          "to_y",
+          "transport_type"
+        ]
       }
     }
   }

@@ -10,7 +10,54 @@ import re
 import shutil
 from pathlib import Path
 
+from nttd.constants import IDLE_AI_NAME
+
 logger = logging.getLogger(__name__)
+
+def _ai_players(content: str) -> list[str]:
+    """The AI named in each ``[ai_players]`` slot.
+
+    Walked line by line rather than matched with a pattern. The file is an INI with one
+    quoted name per line, which reads the same either way, and a pattern that has to
+    stop at the next section header is the part that goes wrong: `[game_scripts]`
+    follows `[ai_players]` in the real config.
+    """
+    names: list[str] = []
+    inside = False
+    for raw in content.splitlines():
+        line = raw.strip()
+        if line.startswith("["):
+            inside = line == "[ai_players]"
+            continue
+        if not inside or not line.startswith('"'):
+            continue
+        closing = line.find('"', 1)
+        if closing > 1:
+            names.append(line[1:closing])
+    return names
+
+
+def _assert_only_the_idle_ai(content: str, source: Path) -> None:
+    """Refuse a config that would run anything but the do-nothing AI.
+
+    There are no AI opponents in nttd. Every ``[ai_players]`` slot in the shipped
+    config names the idle AI, so this cannot fire unless that file was edited or an AI
+    was installed and selected. It is checked rather than assumed because the failure is
+    silent otherwise: a run against a real competitor looks like an ordinary run, and
+    nothing in the result says the world had somebody else building in it.
+
+    Raises:
+        ValueError: a slot names an AI that is not the idle one.
+    """
+    intruders = sorted(set(_ai_players(content)) - {IDLE_AI_NAME})
+    if intruders:
+        raise ValueError(
+            f"{source} selects {', '.join(repr(n) for n in intruders)} as an AI player. "
+            f"nttd runs no AI opponents: every slot must name {IDLE_AI_NAME!r}, which "
+            f"holds a company open and does nothing. A real competitor would change what "
+            f"the benchmark measures, and two runs on one seed would face different "
+            f"pressure with nothing recording it."
+        )
 
 
 def _patch_ini_value(content: str, key: str, value: str) -> str:
@@ -147,6 +194,7 @@ def build_session_config(
     src_cfg = base_config_dir / "openttd.cfg"
     dst_cfg = session_dir / "openttd.cfg"
     cfg_content = src_cfg.read_text()
+    _assert_only_the_idle_ai(cfg_content, src_cfg)
     cfg_content = _patch_ini_value(cfg_content, "server_port", str(game_port))
     cfg_content = _patch_ini_value(cfg_content, "server_admin_port", str(admin_port))
 

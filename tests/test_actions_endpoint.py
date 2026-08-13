@@ -66,10 +66,21 @@ class TestOperatorActionsAreLeftOutButNotHidden:
 
 
 class TestFiltering:
-    @pytest.mark.parametrize(
-        ("tier", "expected"), [("read_only", 44), ("participant", 77), ("operator", 9)],
-    )
-    def test_by_tier(self, client: TestClient, tier: str, expected: int) -> None:
+    @pytest.mark.parametrize("tier", ["read_only", "participant", "operator"])
+    def test_by_tier(self, client: TestClient, tier: str) -> None:
+        """Counted from the vocabulary rather than written down.
+
+        These were literals, so adding one read only query failed a test about filtering,
+        which is not what it was testing. The number is derived from the same constants the
+        manifest is generated from, so the two cannot disagree.
+        """
+        from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS, READ_ONLY_GS_ACTIONS
+
+        expected = {
+            "read_only": len(READ_ONLY_GS_ACTIONS),
+            "participant": len(KNOWN_ACTIONS),
+            "operator": len(OPERATOR_ACTIONS),
+        }[tier]
         body = client.get("/v1/public/actions", params={"tier": tier}).json()
         assert body["count"] == expected
         assert {e["tier"] for e in body["actions"].values()} == {tier}

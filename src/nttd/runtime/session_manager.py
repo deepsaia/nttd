@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from nttd.runtime.orchestrator import Orchestrator
 
 from nttd.analysis.score import rank_companies
-from nttd.config import single_company
 from nttd.config.benchmark_profile import dimensions_from_settings
 from nttd.config.scenario_config import (
     BankruptcyConfig,
@@ -232,16 +231,10 @@ class SessionManager:
         # Lock a scored session before the server is up, so the window between
         # spawn and lock cannot be used.
         #
-        # The company count is only known here: it arrives as a start argument, not
-        # from the scenario, so the profile check on the config cannot see it. A run
-        # shared by several contestants is a different problem from a solo one on the
-        # same world, and nothing on a result row records which it was.
-        scored = effective_settings.get("_scored") == "1"
-        too_many = single_company.blocks_scoring(agent_companies)
-        if scored and too_many:
-            logger.warning("Session %s is not scored: %s", session_id, too_many)
-            scored = False
-        runtime.scored_lock.scored = scored
+        # A session used to be allowed several contestant companies and merely refused
+        # scoring for it. It is now refused outright, in MAX_CONTESTANT_COMPANIES, so
+        # there is no longer a company count that can disqualify a run.
+        runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
         runtime.dimensions = dimensions_from_settings(effective_settings)
         _apply_step_size(runtime, effective_settings)
         if runtime.scored_lock.scored:
@@ -278,6 +271,14 @@ class SessionManager:
                 runtime.participants.issue(company_id)
             runtime.participants.write(session_dir)
             await runtime.name_companies(agent_companies, names=company_names)
+            # Only now start the map scan, and never before naming.
+            #
+            # Both talk to the GameScript, which serves one command at a time, and the
+            # scan is by far the longer: a 256 square map is about 40 seconds of Squirrel.
+            # Started first, it starved the rename, which timed out and left the company
+            # called Unnamed. That is not cosmetic: the leaderboard identifies a run by
+            # its company name, and so does the monitor.
+            runtime.start_tile_capture()
 
         # Configure orchestrator from runtime settings
         orch = runtime.orchestrator
@@ -568,15 +569,7 @@ class SessionManager:
             # reachable again. Without this a recovered scored session would run
             # unlocked and unbounded, so an nttd restart would silently turn a
             # scored run into an unprotected one.
-            # The same company rule as at start. Without it a restart would re-score a
-            # multi-company session, because _scored is stored from the scenario and
-            # the count that disqualified it lives in a different key.
-            recovered_scored = stored.get("_scored") == "1"
-            if recovered_scored and single_company.blocks_scoring(
-                int(stored.get("_agent_companies", "0") or 0),
-            ):
-                recovered_scored = False
-            runtime.scored_lock.scored = recovered_scored
+            runtime.scored_lock.scored = stored.get("_scored") == "1"
             runtime.dimensions = dimensions_from_settings(stored)
             _apply_step_size(runtime, stored)
             if runtime.scored_lock.scored:

@@ -200,7 +200,11 @@ class TestTheManifestTool:
     def test_it_summarises_without_an_argument(self) -> None:
         """The full manifest is large. Choosing an action needs one line each."""
         body = self._call()
-        assert body["count"] == 121
+        # Derived, not written down: the total moves whenever the vocabulary does, and a
+        # literal here fails a test about summarising rather than about counting.
+        from nttd.constants import KNOWN_ACTIONS, READ_ONLY_GS_ACTIONS
+
+        assert body["count"] == len(KNOWN_ACTIONS) + len(READ_ONLY_GS_ACTIONS)
         assert "found_town" not in body["actions"]
 
     def test_it_returns_one_action_in_full(self) -> None:
