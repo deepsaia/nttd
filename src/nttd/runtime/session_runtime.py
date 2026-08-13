@@ -7,7 +7,7 @@ needed to interact with it: AdminClient, WorldState, Bridge, Orchestrator.
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from nttd.actions.tracker import ActionTracker
 from nttd.bridge.admin_client import AdminClient
@@ -111,6 +111,8 @@ class SessionRuntime:
         self.step_gate = StepGate()
 
         self.process: asyncio.subprocess.Process | None = None
+        # Open file the OpenTTD process writes to, held so it can be closed on shutdown.
+        self._process_log: TextIO | None = None
         self.poll_task: asyncio.Task[None] | None = None
         self.orchestrator_task: asyncio.Task[None] | None = None
 
@@ -147,10 +149,20 @@ class SessionRuntime:
             " ".join(argv),
         )
 
+        # Keep what OpenTTD says. This used to go to DEVNULL, which threw away the only
+        # copy of a GameScript stack trace: a Squirrel error comes back to the caller as
+        # one line, "the index '0' does not exist", with no file, no line and no call
+        # stack, and the trace that names them was printed here and discarded. Diagnosing
+        # a broken handler meant re-deriving it by reading the script.
+        #
+        # It is bounded in practice: a dedicated server logs startup, joins and script
+        # errors, not per-tick chatter.
+        log_path = self.config_dir / "openttd.log"
+        self._process_log = log_path.open("w", buffering=1)
         self.process = await asyncio.create_subprocess_exec(
             *argv,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stdout=self._process_log,
+            stderr=asyncio.subprocess.STDOUT,
         )
 
         # Poll until admin port is connectable
@@ -410,6 +422,10 @@ class SessionRuntime:
                 self.process.kill()
                 await self.process.wait()
             self.process = None
+
+        if self._process_log is not None:
+            self._process_log.close()
+            self._process_log = None
 
         logger.info("Session %s shut down", self.session_id)
 
