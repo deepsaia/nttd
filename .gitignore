@@ -55,3 +55,8 @@ docs/superpowers/
 # Kept out of the repo because they are working material rather than nttd's docs.
 docs/study/
 .playwright-mcp/
+
+# Scratch gameplay driver and experiment worlds. The scenario config that defines a
+# submitted world travels inside the session bundle as nttd_scenario.conf, so nothing here
+# is needed to reproduce a run.
+experiments/
