@@ -138,6 +138,11 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
    Three rows high is three times the collapsed panel, so the charts beside it narrow and the
    verdicts below it move down: everything adjusts, nothing overlaps. */
 .split.wexpanded{grid-template-columns:minmax(0,1fr) calc(360px * 2 + 12px);}
+/* Keep TWO chart columns to the left of the expanded map, not one stretched one. The chart
+   grid is auto-fill from a 330px minimum, so narrowing its column collapsed it to a single
+   column and the first two plots, the rating and the company value, stacked instead of
+   sitting side by side. Pinned to two and allowed to shrink below the auto-fill minimum. */
+.split.wexpanded .grid{grid-template-columns:repeat(2,minmax(0,1fr));}
 .split.wexpanded .plot[data-cid="wmap"] .wmap{max-height:calc(360px * 3);
  width:auto;margin:0 auto;}
 /* Below this the two columns no longer fit side by side, so the rail stacks as it already
