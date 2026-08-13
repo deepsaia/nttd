@@ -107,6 +107,10 @@ _MENTIONED_DOT = re.compile(r'\bp\.([a-z_0-9]+)')
 _TILE_HELPERS = {
     "_ResolveTile(p)": ("tile", "x", "y"),
     "_ResolveTilePair(p)": ("from_x", "from_y", "to_x", "to_y", "tile_from", "tile_to"),
+    # The helper takes a key prefix, so one handler can resolve several tiles. remove_rail
+    # needs three: the piece to remove and the two tiles it joins.
+    '_ResolveTile(p, "from_")': ("from_tile", "from_x", "from_y"),
+    '_ResolveTile(p, "to_")': ("to_tile", "to_x", "to_y"),
 }
 
 # What each helper insists on. It accepts a tile index or a coordinate pair and refuses

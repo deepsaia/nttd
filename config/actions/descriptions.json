@@ -471,6 +471,14 @@
     "distance": {
       "type": "integer",
       "description": "How far the cargo travels, in tiles. Manhattan distance between the two stations is what the game measures, which /state/routes already reports for every candidate."
+    },
+    "from_tile": {
+      "type": "integer",
+      "description": "Tile index to start from. An alternative to from_x and from_y."
+    },
+    "to_tile": {
+      "type": "integer",
+      "description": "Tile index to finish at. An alternative to to_x and to_y."
     }
   },
   "enum_bindings": {
@@ -927,7 +935,7 @@
       ]
     },
     "remove_rail": {
-      "description": "Remove track along a line between two tiles."
+      "description": "Remove the single piece of track at one tile, naming the two tiles it joins. Takes the same prev, current, next triple that building rail takes: from_x and from_y for where the track comes from, x and y for the piece being removed, and to_x and to_y for where it leads. All three are required. It does not remove a whole line."
     },
     "remove_rail_station": {
       "description": "Remove the part of a rail station inside a rectangle."

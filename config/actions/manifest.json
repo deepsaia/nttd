@@ -442,16 +442,19 @@
         },
         "tile": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Tile index. Takes precedence over x and y when both are given.",
           "type": "integer"
         },
         "x": {
           "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
@@ -557,16 +560,19 @@
         },
         "tile": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Tile index. Takes precedence over x and y when both are given.",
           "type": "integer"
         },
         "x": {
           "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
@@ -3046,23 +3052,32 @@
       ]
     },
     "remove_rail": {
-      "description": "Remove track along a line between two tiles.",
+      "description": "Remove the single piece of track at one tile, naming the two tiles it joins. Takes the same prev, current, next triple that building rail takes: from_x and from_y for where the track comes from, x and y for the piece being removed, and to_x and to_y for where it leads. All three are required. It does not remove a whole line.",
       "tier": "participant",
       "category": "rail",
       "gamescript_function": "CmdRemoveRail",
       "parameters": {
+        "from_tile": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to start from. An alternative to from_x and from_y.",
+          "type": "integer"
+        },
         "from_x": {
           "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate of the starting tile.",
           "type": "integer"
         },
         "from_y": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate of the starting tile.",
           "type": "integer"
         },
         "tile": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Tile index. Takes precedence over x and y when both are given.",
           "type": "integer"
         },
@@ -3076,23 +3091,33 @@
           "description": "Tile index to finish at. An alternative to to_x and to_y.",
           "type": "integer"
         },
+        "to_tile": {
+          "required": false,
+          "via": "tile_resolver",
+          "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
         "to_x": {
           "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate of the finishing tile.",
           "type": "integer"
         },
         "to_y": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate of the finishing tile.",
           "type": "integer"
         },
         "x": {
           "required": false,
+          "via": "tile_resolver",
           "description": "X coordinate on the map, counting from 0.",
           "type": "integer"
         },
         "y": {
           "required": false,
+          "via": "tile_resolver",
           "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
