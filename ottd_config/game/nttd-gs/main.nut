@@ -746,8 +746,37 @@ class NttdGS extends GSController {
       }
     } catch (e) {
       GSLog.Warning("nttd error in '" + action + "': " + e);
-      return { success = false, error = "" + e };
+      return this._Uncaught(action, "" + e);
     }
+  }
+
+  // A Squirrel exception, turned into something a caller can act on.
+  //
+  // Nearly all of these are one mistake: a handler read p.<field> for an argument that was
+  // not supplied. Squirrel answers "the index 'town_id' does not exist", which names the
+  // field but reads like an internal fault, and is identical to the message you get when a
+  // handler calls a member that is not on the class. 57 handlers dereference an id that
+  // way, so translating it here fixes all of them at once rather than guarding each.
+  //
+  // A parameter name is lower case with underscores. A member name is CamelCase. That is
+  // enough to tell the caller's mistake from ours, and to say which it was.
+  function _Uncaught(action, message) {
+    local opening = message.find("'");
+    if (message.find("the index '") == 0 && opening != null) {
+      local closing = message.find("'", opening + 1);
+      if (closing != null) {
+        local name = message.slice(opening + 1, closing);
+        if (name == name.tolower()) {
+          return { success = false, error = message,
+                   reason = action + " requires the parameter '" + name
+                          + "', and it was not supplied" };
+        }
+        return { success = false, error = message,
+                 reason = "nttd called '" + name + "' on a GameScript class that does not "
+                        + "provide it, which is a bug in nttd rather than in this request" };
+      }
+    }
+    return { success = false, error = message };
   }
 
   // ===========================================================================
@@ -903,7 +932,44 @@ class NttdGS extends GSController {
   function CmdGetTownInfo(p) {
     if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
     local loc = GSTown.GetLocation(p.town_id);
+
+    // What the town actually trades, which is the whole reason to build here.
+    //
+    // A town produces passengers and mail continuously and accepts them at any station in
+    // its catchment, so two stations and a train is a working route with no supply chain to
+    // reason about. It is the first thing a human builds and nothing here said so: this
+    // reply carried population and road_layout and not one word about cargo, so an agent
+    // reasoning from it could not tell a town was worth anything at all.
+    //
+    // Rates are last month's, per cargo, so a town that has never been served still reports
+    // what it produces rather than nothing.
+    local produced = [];
+    local accepted = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      local last = GSTown.GetLastMonthProduction(p.town_id, cargo_id);
+      if (last > 0) {
+        produced.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          last_month = last,
+          // GSTown names these differently from GSIndustry: supplied, and a percentage.
+          // GetLastMonthTransported is the industry call and does not exist here, which is
+          // how the first version of this threw on its own first loop.
+          supplied = GSTown.GetLastMonthSupplied(p.town_id, cargo_id),
+          transported_percent =
+            GSTown.GetLastMonthTransportedPercentage(p.town_id, cargo_id),
+        });
+      }
+      if (GSTown.GetCargoGoal(p.town_id, cargo_id) > 0) {
+        accepted.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          goal = GSTown.GetCargoGoal(p.town_id, cargo_id),
+        });
+      }
+    }
+
     return { success = true, result = {
+      produces_cargo = produced,
+      accepts_cargo = accepted,
       id = p.town_id,
       name = GSTown.GetName(p.town_id),
       population = GSTown.GetPopulation(p.town_id),
@@ -996,14 +1062,40 @@ class NttdGS extends GSController {
         });
       }
     }
+
+    // What this KIND of industry produces, as opposed to what this one shipped last month.
+    //
+    // `produced` above is built from GetLastMonthProduction, which is 0 before an industry
+    // has ever run. So at the start of a game every factory, sawmill and power station
+    // reported producing nothing, and an agent could not learn a processing industry's
+    // output cargo at the one moment it has to choose what to build. Measured: Tontburg
+    // Springs Factory reported accepted STEL, GRAI, LVST and production [], while it makes
+    // GOOD, a fact the tile level cargo scan knew all along.
+    local produces_types = [];
+    foreach (cargo_id, _ in GSIndustryType.GetProducedCargo(itype)) {
+      produces_types.append({
+        cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+      });
+    }
+    local accepts_types = [];
+    foreach (cargo_id, _ in GSIndustryType.GetAcceptedCargo(itype)) {
+      accepts_types.append({
+        cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+      });
+    }
     return { success = true, result = {
       id = p.industry_id, name = GSIndustry.GetName(p.industry_id),
       type_id = itype, type_name = GSIndustryType.GetName(itype),
       x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc),
       is_raw = GSIndustryType.IsRawIndustry(itype),
       is_processing = GSIndustryType.IsProcessingIndustry(itype),
+      // Last month's figures. Empty for an industry that has not run yet.
       production = produced,
-      accepted = accepted
+      accepted = accepted,
+      // What this kind of industry produces and takes, regardless of whether it has yet.
+      // This is the pair to reason about a supply chain from on day one.
+      produces_cargo = produces_types,
+      accepts_cargo = accepts_types
     }};
   }
 
@@ -1138,6 +1230,12 @@ class NttdGS extends GSController {
         entry_tiles.append({
           tile = entry, x = GSMap.GetTileX(entry), y = GSMap.GetTileY(entry),
           has_rail = GSRail.IsRailTile(entry),
+          // Whether a train can actually get from here into the platform. has_rail is not
+          // that, and the difference is a route that earns nothing: track laid without a
+          // hint sits on the entry pointing away from the station.
+          enterable = this._CanEnterPlatform(entry, candidate.platform),
+          // Whether track could be laid here at all, for an entry that is still empty.
+          usable = this._EntryIsUsable(entry),
         });
       }
     }
@@ -1877,6 +1975,25 @@ class NttdGS extends GSController {
           }
         }
         if (valid_dirs.len() == 0) continue;
+
+        // Which of those orientations a train could actually reach.
+        //
+        // valid_dirs says the platform FITS. That is not the same question, and near a town
+        // the two disagree often. Measured: a spot offered with both orientations valid had
+        // NEITHER entry usable along x, both a town building and a road, and one usable
+        // along y. Taking the first built a station no train could ever enter, and the only
+        // repair was to demolish it.
+        local reachable_dirs = [];
+        foreach (dir in valid_dirs) {
+          local dx = (dir == 0) ? 1 : 0;
+          local dy = (dir == 0) ? 0 : 1;
+          local before = GSMap.GetTileIndex(x - dx, y - dy);
+          local after = GSMap.GetTileIndex(
+            x + dx * platform_length, y + dy * platform_length);
+          local ok = (GSMap.IsValidTile(before) && this._EntryIsUsable(before))
+                  || (GSMap.IsValidTile(after) && this._EntryIsUsable(after));
+          if (ok) reachable_dirs.append(dir);
+        }
         // Check cargo using first valid direction's footprint
         local ci_w = (valid_dirs[0] == 0) ? platform_length : 1;
         local ci_h = (valid_dirs[0] == 0) ? 1 : platform_length;
@@ -1893,10 +2010,14 @@ class NttdGS extends GSController {
         if (!has_target_cargo) continue;
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           max_height = base_h, cargo_acceptance = cargo_info,
-          valid_directions = valid_dirs });
+          // The platform fits in these orientations.
+          valid_directions = valid_dirs,
+          // And a train could reach it in these. Build in one of THESE. An empty list means
+          // the footprint fits and the station would be unusable.
+          reachable_directions = reachable_dirs });
       }
     }
-    this._SortByDistance(spots);
+    this._SortStationSpots(spots);
     if (spots.len() > max_results) spots = spots.slice(0, max_results);
 
     local result_info = {
@@ -2416,6 +2537,20 @@ class NttdGS extends GSController {
       local why = this._Diagnose(hint);
       if (why != null) out.rawset("reason", why);
     }
+    // ERR_NONE means the command failed WITHOUT the game setting an error, so there is
+    // nothing to translate and a caller sees a refusal that says only "none". Measured on
+    // buy_vehicle: the third purchase in one depot in one step refused this way on both
+    // routes of a session, with no way to tell it from a bug in nttd.
+    //
+    // Saying that plainly is the least this can do, and it is what #102 asks for: the
+    // absence of a reason is itself the information.
+    if (!("reason" in out) && out.error == "ERR_NONE") {
+      out.rawset("reason",
+        "the game refused this without giving a reason, which usually means a limit was "
+        + "reached rather than a precondition failed: check the company's vehicle count "
+        + "against the max_trains setting, and whether the depot already holds unassembled "
+        + "stock from earlier in this step");
+    }
     return out;
   }
 
@@ -2573,15 +2708,76 @@ class NttdGS extends GSController {
     return entries;
   }
 
-  // The entry a line coming from `towards` should aim at: the nearer end.
+  // Whether track could ever be laid on an entry tile.
+  //
+  // Buildable, or already carrying rail. A town building, a body of water or another
+  // company's property is none of those, and near a town that is the common case rather
+  // than the exception.
+  // What is left of a station after part of it was removed.
+  //
+  // `station_gone` is the field that matters: a caller that asked for one tile of a longer
+  // platform gets success and a station that is still standing, and nothing else in the
+  // reply distinguishes that from a demolition.
+  function _StationRemains(tile, tiles_asked) {
+    local sid = GSStation.GetStationID(tile);
+    local gone = (sid == GSStation.STATION_INVALID) || !GSStation.IsValidStation(sid);
+    local out = { tiles_requested = tiles_asked, station_gone = gone };
+    if (!gone) {
+      out.rawset("station_id", sid);
+      out.rawset("name", GSBaseStation.GetName(sid));
+    }
+    return out;
+  }
+
+  function _EntryIsUsable(entry) {
+    return GSTile.IsBuildable(entry) || GSRail.IsRailTile(entry);
+  }
+
+  // Whether a train can actually pass from an entry tile into the platform it adjoins.
+  //
+  // This is the question, and has_rail is not it. Track on an entry tile can lead
+  // anywhere: laid without a hint, the last piece of a connection points away from the
+  // platform, so the entry carries rail that joins nothing. Measured on a passenger route
+  // whose entry reported has_rail true while the train reached the tile beyond it, turned
+  // around, and carried nobody for eleven steps.
+  //
+  // A train may arrive at the entry from any side, including around a corner, so every
+  // neighbour is offered to AreTilesConnected rather than only the one along the axis.
+  function _CanEnterPlatform(entry, platform) {
+    if (!GSRail.IsRailTile(entry)) return false;
+    local x = GSMap.GetTileX(entry), y = GSMap.GetTileY(entry);
+    local around = [
+      GSMap.GetTileIndex(x + 1, y), GSMap.GetTileIndex(x - 1, y),
+      GSMap.GetTileIndex(x, y + 1), GSMap.GetTileIndex(x, y - 1),
+    ];
+    foreach (side in around) {
+      if (side == platform || !GSMap.IsValidTile(side)) continue;
+      if (GSRail.AreTilesConnected(side, entry, platform)) return true;
+    }
+    return false;
+  }
+
+  // The entry a line coming from `towards` should aim at.
+  //
+  // Nearest USABLE end, not simply nearest. Distance alone sent two routes in one session
+  // at an entry that was a town building: at Mennbury the blocked entry was four tiles
+  // nearer than the clear one, so it was chosen twice, and each attempt failed on the same
+  // tile with ERR_AREA_NOT_CLEAR. A route that cannot be built is not closer to anything.
   function _NearestRailEntry(station_tile, towards) {
     local entries = this._RailStationEntries(station_tile);
     if (entries.len() == 0) return null;
-    local best = entries[0];
-    local best_d = GSMap.DistanceManhattan(best.entry, towards);
-    foreach (candidate in entries) {
-      local d = GSMap.DistanceManhattan(candidate.entry, towards);
-      if (d < best_d) { best = candidate; best_d = d; }
+    local best = null;
+    local best_d = 0;
+    // Two passes over the same list: usable ends first, and only if none is usable does
+    // the nearest blocked one come back, so the caller still gets a refusal that names a
+    // tile rather than nothing at all.
+    for (local pass = 0; pass < 2; pass++) {
+      foreach (candidate in entries) {
+        if (pass == 0 && !this._EntryIsUsable(candidate.entry)) continue;
+        local d = GSMap.DistanceManhattan(candidate.entry, towards);
+        if (best == null || d < best_d) { best = candidate; best_d = d; }
+      }
+      if (best != null) return best;
     }
     return best;
   }
@@ -2593,19 +2789,11 @@ class NttdGS extends GSController {
       local b = path[i].tile;
       // Bridges and tunnels span more than one tile, so adjacency does not apply.
       if (GSMap.DistanceManhattan(a, b) != 1) continue;
-      // A station tile gets NO special treatment here, deliberately.
+      // A station tile gets NO special treatment here, deliberately. Treating one as
+      // automatically joined was tried and is wrong: a platform is enterable along its own
+      // axis and not across it, AreTilesConnected answers that correctly, and overriding it
+      // hid the most expensive failure in the game.
       //
-      // Treating one as automatically joined was tried and is wrong. AreTilesConnected
-      // asks whether a train can pass from one tile to the next, and about a station it
-      // answers that correctly: a platform is enterable along its own axis and not across
-      // it. Overriding it hides the most expensive failure in the game.
-      //
-      // Measured. A station whose platform ran along x at (76,184) to (78,184) was joined
-      // by track at (78,183), perpendicular, touching the side of the end tile, with both
-      // real entry tiles empty. connect_rail reported one failed segment out of 36, the
-      // route registry created a route, and the train ran for 105 days, lost 260, and
-      // never reached the other station. With the override, the gap check called that
-      // connected too.
       // AreTilesConnected asks about the MIDDLE tile of a triple: can a train reach `to`
       // from `from` by way of `tile`. So it needs a tile on each side, and the first
       // segment has nothing before it.
@@ -2912,15 +3100,26 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local keep_rail = ("keep_rail" in p) ? p.keep_rail : false;
     // Accept single tile (removes that platform tile) or x1,y1,x2,y2 rectangle
+    // Say what survived. This returned an empty table, so removing ONE tile of a three tile
+    // platform was indistinguishable from removing the station: the caller saw success and
+    // a station that was still there, still serving, still named in every later report.
+    // A single tile is a one tile rectangle, which is correct and is exactly why the reply
+    // has to state the consequence rather than the fact that a command was accepted.
     local r = this._ResolveTile(p);
     if (r != null) {
-      if (GSRail.RemoveRailStationTileRectangle(r.tile, r.tile, keep_rail)) return { success = true, result = {} };
+      if (GSRail.RemoveRailStationTileRectangle(r.tile, r.tile, keep_rail)) {
+        return { success = true, result = this._StationRemains(r.tile, 1) };
+      }
       return this._Refused();
     }
     if (("x1" in p) && ("y1" in p) && ("x2" in p) && ("y2" in p)) {
       local tile1 = GSMap.GetTileIndex(p.x1, p.y1);
       local tile2 = GSMap.GetTileIndex(p.x2, p.y2);
-      if (GSRail.RemoveRailStationTileRectangle(tile1, tile2, keep_rail)) return { success = true, result = {} };
+      local wide = abs(p.x2 - p.x1) + 1;
+      local tall = abs(p.y2 - p.y1) + 1;
+      if (GSRail.RemoveRailStationTileRectangle(tile1, tile2, keep_rail)) {
+        return { success = true, result = this._StationRemains(tile1, wide * tall) };
+      }
       return this._Refused();
     }
     return { success = false, error = "Need tile or x,y or x1,y1,x2,y2" };
@@ -3315,15 +3514,25 @@ class NttdGS extends GSController {
     // the platform tile ADJOINING that entry. A caller naming any other tile of the
     // station leaves the final segment unbuildable, and the station's origin is the wrong
     // one whenever the line arrives at the far end.
-    local from_entry = this._NearestRailEntry(from_tile, to_tile);
-    if (from_entry != null) {
-      from_hint = from_entry.platform;
-      from_tile = from_entry.entry;
+    // An explicit hint from the caller means "I know which end I want", and is left alone.
+    // Without this there was no way to override the choice at all: the hint parameters set
+    // the hint and not the endpoint, so a caller who had worked out which entry was usable
+    // could not say so, and watched the same blocked tile refuse twice.
+    local caller_chose_from = (from_hint != null);
+    local caller_chose_to = (to_hint != null);
+    if (!caller_chose_from) {
+      local from_entry = this._NearestRailEntry(from_tile, to_tile);
+      if (from_entry != null) {
+        from_hint = from_entry.platform;
+        from_tile = from_entry.entry;
+      }
     }
-    local to_entry = this._NearestRailEntry(to_tile, from_tile);
-    if (to_entry != null) {
-      to_hint = to_entry.platform;
-      to_tile = to_entry.entry;
+    if (!caller_chose_to) {
+      local to_entry = this._NearestRailEntry(to_tile, from_tile);
+      if (to_entry != null) {
+        to_hint = to_entry.platform;
+        to_tile = to_entry.entry;
+      }
     }
 
     // Phase 1: Pathfind (runs in GSTestMode internally).
@@ -4854,6 +5063,28 @@ class NttdGS extends GSController {
   // ===========================================================================
   // INTERNAL HELPERS
   // ===========================================================================
+
+  // Station spots, reachable ones first and nearest within that.
+  //
+  // Sorting on distance alone put an unusable spot at the head of the list, and the head of
+  // the list is what a caller takes. A station a train cannot enter is worse at any
+  // distance than one it can, so reachability outranks it rather than tie breaking it.
+  function _SortStationSpots(arr) {
+    for (local i = 1; i < arr.len(); i++) {
+      local key = arr[i];
+      local key_blocked = (key.reachable_directions.len() == 0) ? 1 : 0;
+      local j = i - 1;
+      while (j >= 0) {
+        local other_blocked = (arr[j].reachable_directions.len() == 0) ? 1 : 0;
+        local worse = (other_blocked > key_blocked)
+          || (other_blocked == key_blocked && arr[j].distance > key.distance);
+        if (!worse) break;
+        arr[j + 1] = arr[j];
+        j--;
+      }
+      arr[j + 1] = key;
+    }
+  }
 
   function _SortByDistance(arr) {
     for (local i = 1; i < arr.len(); i++) {
