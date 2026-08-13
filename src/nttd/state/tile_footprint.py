@@ -107,7 +107,18 @@ def _iter_reported(changed: dict[str, Any] | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     # `tile` on a successful build is [x, y] rather than a mapping, and is already covered
     # by the parameters, so only the per segment lists are read here.
-    for key in ("failed", "gaps", "built_tiles"):
+    #
+    # `path` is the important one and was missing. `built_tiles` was read instead, and no
+    # handler has ever emitted it: the name appears nowhere in the GameScript. So on a
+    # CLEAN connection, where `failed` and `gaps` are both empty by definition, the only
+    # evidence left was the caller's own endpoints, and the rectangle collapsed to the
+    # straight line between them. A route that detours around water or, since the slope
+    # rule, around a corner it may not turn on, left that detour recorded as empty land in
+    # the map every observation and every Python path is planned over.
+    #
+    # It does not widen the worst case: a connection's endpoints already bound the
+    # rectangle, so the path only adds the margin by which the route left that box.
+    for key in ("failed", "gaps", "path"):
         value = changed.get(key)
         if isinstance(value, list):
             out.extend(item for item in value if isinstance(item, dict))
