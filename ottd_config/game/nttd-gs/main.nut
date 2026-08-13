@@ -3904,8 +3904,42 @@ class NttdGS extends GSController {
       local action = ("action" in step) ? step.action : "move";
       local sx = step.x, sy = step.y;
 
-      // Skip start/end markers and plain movement on existing infra
+      // Skip start/end markers and plain movement on existing infra.
+      //
+      // EXCEPT for road, where "the tile already has road" and "a vehicle can drive from the
+      // last tile onto this one" are different claims. A road tile carries direction bits, and
+      // two adjacent road tiles are connected only if their bits face each other. A town's
+      // street grid has bits for its own streets, so a path that crosses it and turns off it
+      // walks over real road tiles that are not joined in the direction the path needs.
+      //
+      // Skipping every move step is what made a planned road route unusable. Measured: a
+      // 30 tile route from (179,223) to (199,228) built its 6 build_road steps, every tile on
+      // the path reported is_road true, the planner then reported 28 moves and nothing left to
+      // build, and trace_route still answered line_exists false. Nothing was missing; the
+      // tiles were simply not joined.
+      //
+      // BuildRoad between the two tiles fixes the bits and is free when they are already
+      // joined, which it reports as ERR_ALREADY_BUILT. Rail is deliberately left alone: a rail
+      // move step would need the three tile context to place a piece, and adding track an
+      // agent did not ask for is worse than the gap. Water needs nothing, since open water is
+      // navigable.
       if (action == "start" || action == "end" || action == "move") {
+        if (action == "move" && !is_rail && !is_water && i > 0) {
+          local from_tile = GSMap.GetTileIndex(steps[i - 1].x, steps[i - 1].y);
+          local onto_tile = GSMap.GetTileIndex(sx, sy);
+          if (GSRoad.BuildRoad(from_tile, onto_tile)) {
+            built++;
+            continue;
+          }
+          local jerr = GSError.GetLastErrorString();
+          if (jerr == "ERR_ALREADY_BUILT") { existing++; continue; }
+          // A join that cannot be made is reported rather than swallowed: it is the difference
+          // between a route and a route-shaped set of tiles.
+          failed.append({ x = sx, y = sy, action = "join_road", error = jerr,
+                          error_code = GSError.GetLastError(),
+                          error_category = GSError.GetErrorCategory() });
+          continue;
+        }
         skipped++;
         continue;
       }
