@@ -314,6 +314,14 @@ class SessionManager:
 
         runtime.start_orchestrator(mode=runtime_mode)
 
+        # A stepped world must not move before the contestant arrives. start_orchestrator
+        # already declines to run a loop and its comment says the game "stays paused in
+        # between", but nothing had ever issued the pause: that happened at the first
+        # /step/reset, months of game time later on a slow start.
+        if runtime_mode == "stepped":
+            await runtime.orchestrator.pause_at_start()
+            runtime.start_game_date = runtime.world.game.game_date
+
         self.runtimes[session_id] = runtime
         logger.info(
             "Session %s started: game_port=%d, admin_port=%d, pid=%s, mode=%s",

@@ -826,6 +826,30 @@ class Orchestrator:
         )
 
 
+    async def pause_at_start(self) -> None:
+        """Freeze the economy clock as soon as a stepped session exists.
+
+        A stepped session used to run unpaused from spawn until the contestant's first
+        /step/reset, because enter_stepped is the only thing that pauses and it is reached
+        only from that endpoint. Every game day of OpenTTD's boot, the 64,516 tile scan, and
+        the contestant's own connect-and-plan latency was charged to the run.
+
+        Measured before this existed: a session declaring 182 steps of one game day reached
+        2020-05-29 before reset landed, so 149 of its 182 days were already gone. Two runs of
+        the same declared scenario therefore started at different game dates, which is the one
+        thing a benchmark cannot allow.
+
+        Safe this early because construction.command_pause_level is 3 in the shipped config:
+        the GameScript keeps receiving ticks while the economy clock stands still, so the tile
+        scan running concurrently still completes.
+        """
+        await self._pause()
+        self.world.game.mode = RuntimeMode.STEPPED
+        logger.info(
+            "Stepped session paused at spawn, date=%d; the clock waits for the contestant",
+            self.world.game.game_date,
+        )
+
     async def _pause(self) -> None:
         """Pause the game and reflect it in world state."""
         if self.client.connected:
