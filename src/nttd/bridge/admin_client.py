@@ -266,6 +266,17 @@ class AdminClient:
         try:
             await asyncio.wait_for(self._gs_events[correlation_id].wait(), timeout=timeout)
         except asyncio.TimeoutError:
+            # Whatever arrived before the deadline is dropped here, and it has to be done on
+            # this path specifically. _merge_chunks is what normally pops it, and it only runs
+            # on success, so a timeout left the partial reply in the dict for the life of the
+            # session: measured at 50 KB stranded for one timing-out get_map_terrain, and a
+            # policy that retries such a scan strands that again on every attempt.
+            #
+            # Deliberately not in the `finally` below, which would be the obvious place and is
+            # wrong: `finally` runs before `return self._merge_chunks(...)`, so popping there
+            # would throw away the chunks of every successful reply.
+            self._gs_responses.pop(correlation_id, None)
+
             # Two different faults wore the same word. A slow command is the caller's problem
             # and worth retrying or budgeting for; a stream that lost the reply is nttd's, and
             # retrying against it makes things worse. They were indistinguishable, so a
