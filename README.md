@@ -35,8 +35,13 @@ checks.
 
 ## Install
 
-Requirements: Python 3.13+, [uv](https://docs.astral.sh/uv/), and
-[OpenTTD 15.x](https://www.openttd.org/downloads/openttd-releases/latest).
+Requirements: **macOS**, Python 3.13+, [uv](https://docs.astral.sh/uv/), and
+[OpenTTD 15.3](https://www.openttd.org/downloads/openttd-releases/latest).
+
+> **Known issue: nttd is developed and tested on macOS only.** Nothing is deliberately
+> platform specific and the Python is portable, but running a game on Linux or Windows is
+> untested and needs the steps under [Running on Linux](#running-on-linux-untested). See
+> that section before trying.
 
 ```bash
 git clone git@github.com:deepsaia/nttd.git
@@ -58,6 +63,53 @@ uv run python -m scripts.verify_environment
 That spawns real servers and takes a few minutes. It checks seed determinism, the
 economy clock rate, engine availability, and the pause semantics the step barrier
 depends on. Run it after upgrading OpenTTD.
+
+### Running on Linux (untested)
+
+nttd has never been run end to end on Linux. Lint and the test suite run there in CI, but
+the suite needs no OpenTTD, so nothing has ever proved a game starts. If you want to try,
+these are the two things known to be in the way.
+
+**1. The binary is looked for at a macOS path.** The default is
+`/Applications/OpenTTD.app/Contents/MacOS/openttd`, written out in six places. Set
+`NTTD_OPENTTD_BINARY` to your executable and the server, the CLI and the scripts will use it.
+
+**2. No distribution packages OpenTTD 15.3,** which is what nttd is written against. Checked
+in August 2026:
+
+| Source | Version |
+| --- | --- |
+| Ubuntu 24.04 noble, which is `ubuntu-latest` | 13.4 |
+| Ubuntu plucky, Debian trixie | 14.1 |
+| Debian sid | 15.1 |
+
+This is not cosmetic. OpenTTD refuses a savegame written by a newer version, so an older
+build cannot read a session's `final.sav` at all, and several behaviours nttd depends on were
+established by measurement against 15.3. Install the official release rather than the
+package:
+
+```bash
+curl -fsSLO https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
+tar -xJf openttd-15.3-linux-generic-amd64.tar.xz
+export NTTD_OPENTTD_BINARY="$PWD/openttd-15.3-linux-generic-amd64/openttd"
+```
+
+Add OpenGFX as well. The release tarball ships the baseset metadata but no graphics, and
+OpenTTD will not start without a base graphics set even under `-D`, where nothing is drawn:
+
+```bash
+curl -fsSLO https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip
+unzip -q opengfx-8.0-all.zip && tar -xf opengfx-8.0.tar \
+  -C openttd-15.3-linux-generic-amd64/baseset
+```
+
+The generic build is dynamically linked, so on a slim system you may also need
+`libfontconfig1 libfreetype6 liblzma5 liblzo2-2 libpng16-16 zlib1g`. Then check it before
+trusting it: `$NTTD_OPENTTD_BINARY --version`, followed by
+`uv run python -m scripts.verify_environment`, which is the script that would catch a
+version difference actually mattering.
+
+Reports of what does and does not work are welcome.
 
 ---
 
