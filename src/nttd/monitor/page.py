@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlencode
 
+from nttd.analysis.date_utils import game_date_to_dmy
 from nttd.monitor import assets
 from nttd.monitor.charts import (
     colour,
@@ -39,6 +40,19 @@ _SINGLE_CHARTS = (
     ("income", "Income"),
     ("cargo_waiting", "Cargo waiting at stations"),
 )
+
+
+def _when(game_date: Any) -> str:
+    """A game date as 05-Jan-1950, or blank when there is none.
+
+    The tables used to print the raw day count OpenTTD reports, 737792, which no reader can
+    place in time. Blank rather than "0" for a missing value, because a date of zero is a claim
+    and an absent date is not.
+    """
+    try:
+        return game_date_to_dmy(int(game_date))
+    except (TypeError, ValueError):
+        return ""
 
 
 def shell(inner: str, refresh: int = 0) -> str:
@@ -219,7 +233,7 @@ def _meta_strip(meta: dict[str, Any]) -> str:
         ("map", meta["map"]),
         ("play", meta["mode"]),
         ("model", meta["model"]),
-        ("game date", meta["game_date"]),
+        ("game date", _when(meta["game_date"])),
     ]
     parts = [
         f'<span class="chip">{esc(label)}: {esc(value)}</span>'
@@ -304,7 +318,7 @@ def _series(
 
 def _action_table(feed: SessionFeed) -> str:
     rows = [
-        [str(a.get("game_date") or ""), a.get("action_type") or "",
+        [_when(a.get("game_date")), a.get("action_type") or "",
          a.get("status") or "", (a.get("error") or "")[:90]]
         for a in feed.actions()[:120]
     ]
@@ -316,7 +330,7 @@ def _action_table(feed: SessionFeed) -> str:
 
 def _event_table(feed: SessionFeed) -> str:
     rows = [
-        [str(e.get("game_date") or ""), e.get("event_type") or "",
+        [_when(e.get("game_date")), e.get("event_type") or "",
          str(e.get("detail") or "")[:90]]
         for e in feed.events()[:120]
     ]

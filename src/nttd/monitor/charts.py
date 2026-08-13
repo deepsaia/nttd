@@ -63,19 +63,30 @@ def panel(
     cid: str = "",
     data: str = "",
     span: str = "one",
+    expandable: bool = False,
 ) -> str:
     """One titled panel. ``span`` is how many grid columns it takes: one, two or full.
 
     A named span rather than a boolean because there are three real cases and the third
     is not "more wide": a table of twelve columns must have the whole row or its last
     columns are simply cut off, which is what happened to the health column.
+
+    ``expandable`` adds a toggle to the title bar. The panel then has two sizes and the grid
+    reflows around it, which is what the map needs: one column is enough to see that a route
+    exists and too small to see where it goes.
     """
     geom = f' data-geom="{data}"' if data else ""
     css = "plot" if span == "one" else f"plot {span}"
+    # Unicode rather than an icon font, so the control survives with no network and no assets.
+    toggle = (
+        f'<button class="pexp" type="button" data-expand="{esc(cid)}" '
+        f'title="Expand or collapse" aria-label="Expand or collapse">\u2922</button>'
+        if expandable else ""
+    )
     return (
         f'<div class="{css}" data-cid="{esc(cid)}"{geom}>'
         f'<div class="ptitle">{esc(title)}'
-        f'<span class="readout" id="ro-{esc(cid)}"></span></div>{inner}</div>'
+        f'<span class="readout" id="ro-{esc(cid)}"></span>{toggle}</div>{inner}</div>'
     )
 
 

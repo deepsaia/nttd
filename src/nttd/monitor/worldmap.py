@@ -96,7 +96,7 @@ def world_panel(
     )
     body.append(_scrubber(frames))
     body.append(f'<div class="wdata" data-frames="{esc(payload)}"></div>')
-    return panel(title, "".join(body), cid="wmap", span="one")
+    return panel(title, "".join(body), cid="wmap", span="one", expandable=True)
 
 
 def _terrain(terrain: dict[str, Any] | None) -> str:

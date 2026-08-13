@@ -122,6 +122,24 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
  text-overflow:ellipsis;white-space:nowrap;}
 /* the top down map */
 .wmap{width:100%;height:auto;display:block;border-radius:8px;}
+
+/* The expand toggle, and the two sizes it switches between.
+   Collapsed is the original one-column panel. Expanded takes two columns and three rows, so
+   the grid reflows the other panels around it rather than the map overlaying them: one column
+   is enough to see that a route exists and too small to see where it goes. */
+.pexp{margin-left:auto;background:none;border:1px solid var(--line);color:var(--muted);
+ border-radius:6px;cursor:pointer;font-size:12px;line-height:1;padding:2px 6px;}
+.pexp:hover{color:var(--ink);border-color:var(--accent);}
+.plot.wexp{grid-column:span 2;grid-row:span 3;}
+/* The map does not live in .grid: it sits in the fixed 360px .rail column of .split, so a
+   grid-column span there would do nothing. Expanding therefore drops .split to a single
+   column, which gives the map the full width and pushes the charts below it, and the panel
+   grows to roughly three rows tall. That is the reflow: other panels move, nothing overlaps. */
+.split.wexpanded{grid-template-columns:minmax(0,1fr);}
+.split.wexpanded .rail{order:-1;}
+.split.wexpanded .plot[data-cid="wmap"] .wmap{max-height:min(78vh,900px);
+ width:auto;margin:0 auto;}
+@media (max-width:760px){ .plot.wexp{grid-column:span 1;grid-row:span 2;} }
 .wmap .wbg{fill:var(--panel2);}
 /* crisp-edges so a 256 pixel terrain raster scaled up stays a tile grid rather than a
    blur; the map is data, not a photograph. */
@@ -187,6 +205,27 @@ THEME_HEAD_JS = r"""
 
 THEME_BODY_JS = r"""
 (function(){ var b=document.getElementById('themebtn'); if(!b) return;
+ // The world map's two sizes. Remembered per browser, because a reader who wants the big map
+ // wants it after the ten second refresh too, and the page is re-rendered server side.
+ function applyWorld(on){
+  var panel=document.querySelector('.plot[data-cid="wmap"]');
+  if(!panel) return;
+  var split=panel.closest('.split');
+  panel.classList.toggle('wexp', on);
+  if(split) split.classList.toggle('wexpanded', on);
+  var b=panel.querySelector('.pexp');
+  if(b){ b.textContent = on ? '\u2921' : '\u2922';
+         b.setAttribute('aria-expanded', on ? 'true' : 'false'); }
+ }
+ try{ applyWorld(localStorage.getItem('nttdWorldExpanded')==='1'); }catch(e){}
+ document.addEventListener('click', function(ev){
+  var b=ev.target.closest && ev.target.closest('.pexp');
+  if(!b) return;
+  var panel=document.querySelector('.plot[data-cid="wmap"]');
+  var on=!(panel && panel.classList.contains('wexp'));
+  applyWorld(on);
+  try{ localStorage.setItem('nttdWorldExpanded', on ? '1' : '0'); }catch(e){}
+ });
  function cur(){ return document.documentElement.getAttribute('data-theme')||'system'; }
  b.title='theme: '+cur()+' (click to switch)';
  b.addEventListener('click', function(){ var order=['system','light','dark'];

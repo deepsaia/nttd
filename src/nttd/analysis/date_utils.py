@@ -48,6 +48,17 @@ def game_date_to_str(game_date: int) -> str:
     return f"{day} {_MONTH_NAMES[month - 1]} {year}"
 
 
+def game_date_to_dmy(game_date: int) -> str:
+    """Convert game_date to '05-Jan-1950' format.
+
+    Zero padded and hyphenated, for the action and event tables. Those columns used to show the
+    raw day count, 737792, which is what OpenTTD reports and what nothing can read: two rows
+    twelve days apart looked like two arbitrary large numbers.
+    """
+    year, month, day = game_date_to_ymd(game_date)
+    return f"{day:02d}-{_MONTH_NAMES[month - 1]}-{year}"
+
+
 def game_date_to_short(game_date: int) -> str:
     """Convert game_date to 'Jan 1950' format (month + year only)."""
     year, month, _ = game_date_to_ymd(game_date)
