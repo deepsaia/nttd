@@ -213,7 +213,37 @@ def _table_keys(text: str, start: int) -> list[str]:
     return keys
 
 
-def _returns(body: str) -> dict[str, Any] | None:
+def _helper_keys(source: str, helper: str) -> list[str]:
+    """The fields a shared reply builder assembles, for a handler that delegates to one.
+
+    ``result = this._StationRemains(...)`` is a call, not a literal, so the scanner below
+    sees nothing and the action goes out with no documented reply at all. Reads both the
+    table the helper declares and anything it rawsets onto it afterwards.
+    """
+    marker = f"function {helper}("
+    if marker not in source:
+        return []
+    start = source.index(marker)
+    rest = source[start + 1 :]
+    end = rest.find("\n  function ")
+    text = _without_comments(rest if end == -1 else rest[:end])
+
+    keys: list[str] = []
+    declared = text.find("local out = {")
+    if declared != -1:
+        keys.extend(_table_keys(text, text.index("{", declared)))
+    cursor = text.find('.rawset("')
+    while cursor != -1:
+        opening = cursor + len('.rawset("')
+        closing = text.find('"', opening)
+        if closing == -1:
+            break
+        keys.append(text[opening:closing])
+        cursor = text.find('.rawset("', closing)
+    return keys
+
+
+def _returns(body: str, source: str = "") -> dict[str, Any] | None:
     """What one action's reply carries, read from the handler's own return statements.
 
     Nothing described a reply before this. All 131 actions documented their parameters and
@@ -251,6 +281,14 @@ def _returns(body: str) -> dict[str, Any] | None:
                 # find_station_spot does with its result_info.
                 shape = shape or "object"
                 fields.extend(_table_keys(text, text.index("{", declared)))
+            elif text[after : after + len("this._")] == "this._":
+                # Delegated to a shared reply builder.
+                opening = text.find("(", after)
+                helper = text[after + len("this.") : opening]
+                from_helper = _helper_keys(source, helper) if source else []
+                if from_helper:
+                    shape = shape or "object"
+                    fields.extend(from_helper)
             elif head == "[":
                 shape = shape or "list"
         index = text.find("result = ", after)
@@ -386,13 +424,13 @@ def build() -> dict[str, Any]:
         params = _parameters(body)
         actions[name] = _entry(
             name, function, params, tiers, categories, written,
-            _tile_alternatives(params), _returns(body),
+            _tile_alternatives(params), _returns(body, source),
         )
 
     for name, function in _DISPATCH_NO_PARAMS.findall(source):
         actions[name] = _entry(
             name, function, {}, tiers, categories, written, [],
-            _returns(bodies.get(function, "")),
+            _returns(bodies.get(function, ""), source),
         )
 
     for name in _DISPATCH_INLINE.findall(source):
