@@ -159,11 +159,19 @@ class SessionRuntime:
         # errors, not per-tick chatter.
         log_path = self.config_dir / "openttd.log"
         self._process_log = log_path.open("w", buffering=1)
-        self.process = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=self._process_log,
-            stderr=asyncio.subprocess.STDOUT,
-        )
+        # The spawn itself can raise before anything owns the handle: the OpenTTD path is
+        # a hardcoded macOS default, so on any other host this is FileNotFoundError, and
+        # start_server never returns to reach its own cleanup.
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=self._process_log,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except BaseException:
+            self._process_log.close()
+            self._process_log = None
+            raise
 
         # Poll until admin port is connectable
         connected = await self._wait_for_admin_port(admin_password)
@@ -412,20 +420,28 @@ class SessionRuntime:
                 pass
             await self.admin_client.disconnect()
 
-        # Terminate process
-        if self.process and self.process.returncode is None:
-            self.process.terminate()
-            try:
-                await asyncio.wait_for(self.process.wait(), timeout=_SHUTDOWN_TIMEOUT)
-            except asyncio.TimeoutError:
-                logger.warning("Session %s did not exit gracefully, killing", self.session_id)
-                self.process.kill()
-                await self.process.wait()
-            self.process = None
-
-        if self._process_log is not None:
-            self._process_log.close()
-            self._process_log = None
+        # Terminate process, then close what it was writing to.
+        #
+        # In a finally, because everything above can raise or hang: an unbounded
+        # process.wait() after a kill, a recorder flush, an rcon that never answers. The
+        # manager has already popped this runtime by then, so a skipped close is a handle
+        # nothing can ever reach again.
+        try:
+            if self.process and self.process.returncode is None:
+                self.process.terminate()
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=_SHUTDOWN_TIMEOUT)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Session %s did not exit gracefully, killing", self.session_id,
+                    )
+                    self.process.kill()
+                    await self.process.wait()
+                self.process = None
+        finally:
+            if self._process_log is not None:
+                self._process_log.close()
+                self._process_log = None
 
         logger.info("Session %s shut down", self.session_id)
 
