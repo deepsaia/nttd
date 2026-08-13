@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 import nttd.api.dependencies as deps
 from nttd import resources
@@ -86,6 +87,21 @@ app = FastAPI(
         for tier in (Tier.PARTICIPANT, Tier.PUBLIC, Tier.OPERATOR)
     ],
 )
+
+
+@app.exception_handler(session_paths.InvalidSessionIdError)
+async def _reject_invalid_session_id(
+    request: Request, exc: session_paths.InvalidSessionIdError,
+) -> JSONResponse:
+    """Answer 400 rather than 500 when a session id could not name one session directory.
+
+    Registered once, for the same reason the check itself lives in one module: 34 routes take
+    a session id as a path parameter, and catching it per route is a thing to forget. Without
+    this the rejection is an uncaught ValueError, which FastAPI reports as a server error with
+    a traceback, blaming nttd for the caller's argument.
+    """
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
 
 # --- Trust-tiered surface (preferred) -------------------------------------
 #
