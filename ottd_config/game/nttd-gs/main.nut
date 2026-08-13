@@ -2566,18 +2566,48 @@ class NttdGS extends GSController {
       // route registry created a route, and the train ran for 105 days, lost 260, and
       // never reached the other station. With the override, the gap check called that
       // connected too.
+      // AreTilesConnected asks about the MIDDLE tile of a triple: can a train reach `to`
+      // from `from` by way of `tile`. So it needs a tile on each side, and the first
+      // segment has nothing before it.
+      //
+      // Passing `a` as its own predecessor, which is what this did, asks whether a train
+      // can enter a tile from itself. That is always false, so every route ever built
+      // reported a gap on its first segment, every connect_rail came back "partial", and
+      // a line with nothing wrong with it was indistinguishable from a broken one.
+      //
+      // The interior triples are what this can honestly answer. Whether the two ends
+      // reach their stations is a different question, answered by the entry tiles in
+      // get_station_info, and guessing at it here produced the false alarm.
+      if (is_rail && i < 2) continue;
       local joined = is_rail
-        ? GSRail.AreTilesConnected(i > 1 ? path[i - 2].tile : a, a, b)
+        ? GSRail.AreTilesConnected(path[i - 2].tile, a, b)
         : GSRoad.AreRoadTilesConnected(a, b);
       if (!joined) gaps.append({ x = path[i].x, y = path[i].y });
     }
     return gaps;
   }
 
-  function _PartialError(failed, total) {
-    local first = failed[0];
-    return failed.len() + " of " + total + " segments failed, first at ("
-           + first.x + "," + first.y + "): " + first.error;
+  // Why a connection came back partial, in one line, from whichever of the two things
+  // went wrong.
+  //
+  // This used to read failed[0] unconditionally. A route whose segments all built but
+  // whose gap check complained has an EMPTY failed list, so the index threw, the whole
+  // command died inside the dispatcher's catch, and connect_rail answered every caller
+  // with "the index '0' does not exist" and built nothing it could report. Combined with
+  // the spurious first-segment gap above, that broke connect_rail outright.
+  function _PartialError(failed, total, gaps = null) {
+    if (failed.len() > 0) {
+      local first = failed[0];
+      return failed.len() + " of " + total + " segments failed, first at ("
+             + first.x + "," + first.y + "): " + first.error;
+    }
+    if (gaps != null && gaps.len() > 0) {
+      local first = gaps[0];
+      return "every segment built, but the line is not continuous: " + gaps.len()
+             + " of " + total + " have no through connection, first at ("
+             + first.x + "," + first.y + ")";
+    }
+    return "connection incomplete";
   }
 
   function _BuildRoadPath(path) {
@@ -2665,7 +2695,7 @@ class NttdGS extends GSController {
     local gaps = this._RouteGaps(pf.path, false);
     local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
-      error = complete ? null : this._PartialError(build.failed, pf.path.len()),
+      error = complete ? null : this._PartialError(build.failed, pf.path.len(), gaps),
       result = {
       status = complete ? "complete" : "partial",
       path_length = pf.path.len(),
@@ -3220,7 +3250,7 @@ class NttdGS extends GSController {
     local gaps = this._RouteGaps(pf.path, true);
     local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
-      error = complete ? null : this._PartialError(build.failed, pf.path.len()),
+      error = complete ? null : this._PartialError(build.failed, pf.path.len(), gaps),
       result = {
       status = complete ? "complete" : "partial",
       path_length = pf.path.len(),
