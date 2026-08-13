@@ -296,7 +296,11 @@ def test_the_step_size_reaches_the_runtime() -> None:
     """A scenario's heartbeat.interval_days was never emitted into settings, so the
     orchestrator kept its 30-day default: a scenario asking for 15 silently got 30,
     every step covered twice the intended world, and the run reached its horizon in
-    half the steps."""
+    half the steps.
+
+    The shipped tiers now step one game day at a time, which makes this matter more rather
+    than less: a scenario asking for 1 and silently getting 30 would cover thirty times the
+    intended world per step."""
     from nttd.config.scenario_config import load, scenario_to_settings
 
     settings = scenario_to_settings(
@@ -306,7 +310,7 @@ def test_the_step_size_reaches_the_runtime() -> None:
         ),
         strict=True,
     )
-    assert settings["_heartbeat_interval_days"] == "15"
+    assert settings["_heartbeat_interval_days"] == "1"
 
 
 def test_the_step_size_is_applied_on_start_and_on_recovery() -> None:

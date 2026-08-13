@@ -556,7 +556,7 @@ A scenario carrying either is refused, with a message saying where it went.
 
 ```hocon
   runtime  { mode = "stepped" }
-  heartbeat { interval_days = 15 }        # game-days per step
+  heartbeat { interval_days = 1 }         # game-days per step
 
   end_conditions {
     time_limit     { enabled = false }    # see below
