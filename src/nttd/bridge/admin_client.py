@@ -36,6 +36,15 @@ CLIENT_ID_SERVER = 1
 _RECONNECT_BASE_DELAY = 2.0   # seconds before first retry
 _RECONNECT_MAX_DELAY  = 30.0  # cap on backoff
 
+# Unparseable GameScript packets: how many in a row before the stream is treated as out of
+# step, and how many to log individually before falling back to the counter.
+#
+# A handful can follow a single oversized reply. A sustained run cannot: it means the tail of
+# something is still arriving as fragments, so every later reply is landing against the wrong
+# correlation id. Three is enough to tell those apart without reconnecting over noise.
+_UNPARSEABLE_RESYNC_AFTER = 3
+_UNPARSEABLE_LOG_LIMIT = 3
+
 
 class AdminGameScriptPacket(Packet):
     """Packet to send JSON data to the in-game GameScript (ADMIN_GAMESCRIPT, type 6)."""
@@ -75,6 +84,12 @@ class AdminClient:
         self._gs_events: dict[str, asyncio.Event] = {}
         self._gs_totals: dict[str, int] = {}
         self._gs_counter: int = 0
+
+        # Transport health, read by whoever is watching the session. A desync used to be
+        # discoverable only by counting warning lines after the run.
+        self.unparseable_total: int = 0
+        self.unparseable_streak: int = 0
+        self.resyncs: int = 0
 
         # Set to True to suppress reconnect after an intentional disconnect()
         self._intentional_disconnect = False
@@ -243,13 +258,41 @@ class AdminClient:
         json_str = json.dumps(msg)
         logger.debug("GS send: %s", json_str)
         packet = AdminGameScriptPacket(json_str)
+        # Noted before sending, so a timeout can say whether the stream misbehaved while this
+        # command was outstanding.
+        garbled_before = self.unparseable_total
         await self._send(packet)
 
         try:
             await asyncio.wait_for(self._gs_events[correlation_id].wait(), timeout=timeout)
         except asyncio.TimeoutError:
+            # Two different faults wore the same word. A slow command is the caller's problem
+            # and worth retrying or budgeting for; a stream that lost the reply is nttd's, and
+            # retrying against it makes things worse. They were indistinguishable, so a
+            # desynced session looked like a slow pathfinder for as long as it lasted.
+            garbled = self.unparseable_total - garbled_before
+            if garbled > 0:
+                logger.error(
+                    "GameScript reply lost: %s (id=%s) timed out after %d unparseable "
+                    "packets arrived while it was outstanding",
+                    action, correlation_id, garbled,
+                )
+                return {
+                    "id": correlation_id, "success": False, "error": "transport",
+                    "reason": (
+                        f"the reply was lost in transport, not refused: {garbled} "
+                        f"unparseable packets arrived while this command was outstanding, "
+                        f"so the admin stream was out of step"
+                    ),
+                }
             logger.warning("GameScript command timed out: %s (id=%s)", action, correlation_id)
-            return {"id": correlation_id, "success": False, "error": "timeout"}
+            return {
+                "id": correlation_id, "success": False, "error": "timeout",
+                "reason": (
+                    f"the game did not answer within {timeout:.0f}s and the stream was "
+                    f"healthy, so the command was slow rather than lost"
+                ),
+            }
         finally:
             self._gs_events.pop(correlation_id, None)
             self._gs_totals.pop(correlation_id, None)
@@ -423,12 +466,78 @@ class AdminClient:
                     raw = packet.json.rstrip("\x00")
                     data = json.loads(raw)
                     logger.debug("GS recv: %s", data)
+                    self.unparseable_streak = 0
                     self._handle_gs_response(data)
                 except (json.JSONDecodeError, AttributeError) as e:
-                    logger.warning("Failed to parse GS packet: %s (raw=%r)", e, packet.json)
+                    if await self._note_unparseable(e, packet.json):
+                        continue
                 continue
 
             await self._dispatch(packet)
+
+    async def _note_unparseable(self, failure: Exception, raw: Any) -> bool:
+        """Record a packet that could not be read, and resynchronise if they keep coming.
+
+        One unparseable packet is noise. A run of them means the stream is out of step: a
+        reply that overran the packet limit was split by the transport rather than by the
+        script, so its tail arrives as fragments that parse as nothing and every later reply
+        lands against the wrong correlation id. Measured historically at 247,869 in a single
+        session, during which action results were attributed to the wrong actions.
+
+        Two things were wrong with only logging it. The condition was invisible while it was
+        happening, discoverable afterwards by counting log lines; and 247,869 warning lines
+        are themselves a fault, so the log is rate limited here.
+
+        Returns True when the caller should continue its loop because a reconnect was run.
+        """
+        self.unparseable_total += 1
+        self.unparseable_streak += 1
+
+        if self.unparseable_streak <= _UNPARSEABLE_LOG_LIMIT:
+            logger.warning(
+                "Failed to parse GS packet (%d in a row, %d this session): %s (raw=%r)",
+                self.unparseable_streak, self.unparseable_total, failure, raw,
+            )
+        elif self.unparseable_streak == _UNPARSEABLE_LOG_LIMIT + 1:
+            logger.warning(
+                "Further unparseable packets will not be logged individually; "
+                "the count is on the client as unparseable_total",
+            )
+
+        if self.unparseable_streak < _UNPARSEABLE_RESYNC_AFTER:
+            return False
+
+        # Out of step, so start again rather than keep interpreting fragments. Every waiter
+        # is released first: they are waiting on ids whose replies are already lost, and a
+        # timeout each is slower and says less than a transport error now.
+        logger.error(
+            "Admin stream is out of step after %d unparseable packets: reconnecting",
+            self.unparseable_streak,
+        )
+        self.resyncs += 1
+        self.unparseable_streak = 0
+        self._connected = False
+        for event in self._gs_events.values():
+            event.set()
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
+            self._reader = None
+        await self._reconnect_loop()
+        return True
+
+    def transport_health(self) -> dict[str, Any]:
+        """What the stream has been doing, for whoever is watching the session.
+
+        Surfaced rather than logged, which is the point of the counters: a session that is
+        desyncing should be visible while it happens.
+        """
+        return {
+            "connected": self._connected,
+            "unparseable_total": self.unparseable_total,
+            "unparseable_streak": self.unparseable_streak,
+            "resyncs": self.resyncs,
+        }
 
     async def disconnect(self) -> None:
         self._intentional_disconnect = True

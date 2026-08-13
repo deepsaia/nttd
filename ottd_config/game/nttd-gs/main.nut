@@ -3708,21 +3708,33 @@ class NttdGS extends GSController {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.BuildCanal(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return this._Refused();
+    // wants = "water": _Diagnose turns this into "this tile is not water, and what
+    // was asked for needs water", which is the mistake these four actually get. A dock
+    // spot is a COASTAL tile and a ship depot needs open water, and the two finders
+    // return tiles that look alike in a reply.
+    return this._Refused({ tile = tile, wants = "water", company = p.company_id });
   }
 
   function CmdBuildLock(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.BuildLock(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return this._Refused();
+    // wants = "water": _Diagnose turns this into "this tile is not water, and what
+    // was asked for needs water", which is the mistake these four actually get. A dock
+    // spot is a COASTAL tile and a ship depot needs open water, and the two finders
+    // return tiles that look alike in a reply.
+    return this._Refused({ tile = tile, wants = "water", company = p.company_id });
   }
 
   function CmdBuildBuoy(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local tile = GSMap.GetTileIndex(p.x, p.y);
     if (GSMarine.BuildBuoy(tile)) return { success = true, result = { tile = [p.x, p.y] } };
-    return this._Refused();
+    // wants = "water": _Diagnose turns this into "this tile is not water, and what
+    // was asked for needs water", which is the mistake these four actually get. A dock
+    // spot is a COASTAL tile and a ship depot needs open water, and the two finders
+    // return tiles that look alike in a reply.
+    return this._Refused({ tile = tile, wants = "water", company = p.company_id });
   }
 
   function CmdBuildWaterDepot(p) {
@@ -3732,7 +3744,11 @@ class NttdGS extends GSController {
     if (GSMarine.BuildWaterDepot(tile, this._GetAdjacentTile(tile, dir))) {
       return { success = true, result = { tile = [p.x, p.y] } };
     }
-    return this._Refused();
+    // wants = "water": _Diagnose turns this into "this tile is not water, and what
+    // was asked for needs water", which is the mistake these four actually get. A dock
+    // spot is a COASTAL tile and a ship depot needs open water, and the two finders
+    // return tiles that look alike in a reply.
+    return this._Refused({ tile = tile, wants = "water", company = p.company_id });
   }
 
   function CmdRemoveCanal(p) {

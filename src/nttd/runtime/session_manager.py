@@ -605,7 +605,14 @@ class SessionManager:
                 logger.exception("Error shutting down session %s", sid)
 
     def list_running(self) -> list[dict[str, Any]]:
-        """List all currently running sessions with their ports."""
+        """List all currently running sessions with their ports and transport health.
+
+        The transport figures are here because a desyncing admin stream is the one fault that
+        corrupts results rather than stopping the run: replies land against the wrong command
+        and every layer above reports something plausible and wrong. It used to be
+        discoverable only by counting warning lines after the fact, so it belongs on the
+        surface that says whether a session is alive.
+        """
         return [
             {
                 "session_id": sid,
@@ -613,6 +620,7 @@ class SessionManager:
                 "admin_port": rt.admin_port,
                 "connected": rt.connected,
                 "pid": rt.process.pid if rt.process else None,
+                "transport": rt.admin_client.transport_health(),
             }
             for sid, rt in self.runtimes.items()
         ]
