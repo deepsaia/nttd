@@ -912,8 +912,13 @@ Returns `name`, `vehicle_id`.
 
 ### `clone_vehicle`
 
-Build a copy of an existing vehicle in its depot, optionally sharing the original's orders.
+Build a copy of an existing vehicle, optionally sharing the original's orders. Give depot_tile or depot_x and depot_y to say which depot builds the copy; without them the vehicle's current tile is used, which only works while it is parked in a depot.
 
+Supply one of: `depot_tile` or `depot_x` and `depot_y`.
+
+- `depot_tile` (integer, optional) Tile index of the depot the vehicle is built in.
+- `depot_x` (integer, optional) X coordinate of the depot the vehicle is built in.
+- `depot_y` (integer, optional) Y coordinate of the depot the vehicle is built in.
 - `share_orders` (boolean, default true) Share the original's order list rather than taking a copy. Shared orders change together afterwards.
 - `vehicle_id` (integer, required) Which vehicle.
 

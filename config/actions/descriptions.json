@@ -673,7 +673,7 @@
       "description": "Set a company's standing with a town directly. Operator-tier: it overrides the reputation a contestant is supposed to earn."
     },
     "clone_vehicle": {
-      "description": "Build a copy of an existing vehicle in its depot, optionally sharing the original's orders."
+      "description": "Build a copy of an existing vehicle, optionally sharing the original's orders. Give depot_tile or depot_x and depot_y to say which depot builds the copy; without them the vehicle's current tile is used, which only works while it is parked in a depot."
     },
     "connect_rail": {
       "description": "Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working line."

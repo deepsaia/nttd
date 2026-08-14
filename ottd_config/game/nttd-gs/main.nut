@@ -4343,7 +4343,18 @@ class NttdGS extends GSController {
 
   function CmdCloneVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local depot = GSVehicle.GetLocation(p.vehicle_id);
+    // The depot to build the copy in. GSVehicle.GetLocation is the vehicle's CURRENT tile,
+    // which is a depot only while the vehicle is parked in one, so taking it unconditionally
+    // made this action work solely on a vehicle that had never been started. Growing a fleet
+    // is the whole point of cloning, and a fleet worth growing is already out on the road.
+    local depot = null;
+    if ("depot_tile" in p && p.depot_tile != null) {
+      depot = p.depot_tile;
+    } else if ("depot_x" in p && p.depot_x != null && "depot_y" in p && p.depot_y != null) {
+      depot = GSMap.GetTileIndex(p.depot_x, p.depot_y);
+    } else {
+      depot = GSVehicle.GetLocation(p.vehicle_id);
+    }
     local share = ("share_orders" in p) ? p.share_orders : true;
     local cid = GSVehicle.CloneVehicle(depot, p.vehicle_id, share);
     if (GSVehicle.IsValidVehicle(cid)) {

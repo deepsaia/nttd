@@ -1275,11 +1275,26 @@
       }
     },
     "clone_vehicle": {
-      "description": "Build a copy of an existing vehicle in its depot, optionally sharing the original's orders.",
+      "description": "Build a copy of an existing vehicle, optionally sharing the original's orders. Give depot_tile or depot_x and depot_y to say which depot builds the copy; without them the vehicle's current tile is used, which only works while it is parked in a depot.",
       "tier": "participant",
       "category": "vehicle",
       "gamescript_function": "CmdCloneVehicle",
       "parameters": {
+        "depot_tile": {
+          "required": false,
+          "description": "Tile index of the depot the vehicle is built in.",
+          "type": "integer"
+        },
+        "depot_x": {
+          "required": false,
+          "description": "X coordinate of the depot the vehicle is built in.",
+          "type": "integer"
+        },
+        "depot_y": {
+          "required": false,
+          "description": "Y coordinate of the depot the vehicle is built in.",
+          "type": "integer"
+        },
         "share_orders": {
           "required": false,
           "default": true,
@@ -1292,6 +1307,17 @@
           "type": "integer"
         }
       },
+      "one_of": [
+        [
+          [
+            "depot_tile"
+          ],
+          [
+            "depot_x",
+            "depot_y"
+          ]
+        ]
+      ],
       "returns": {
         "shape": "object",
         "fields": [
