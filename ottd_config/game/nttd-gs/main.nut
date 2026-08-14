@@ -2193,13 +2193,24 @@ class NttdGS extends GSController {
         local tile = GSMap.GetTileIndex(x, y);
         if (!GSMap.IsValidTile(tile)) continue;
         if (!GSTile.IsWaterTile(tile)) continue;
-        // Dry-run: test if BuildWaterDepot would actually succeed here
-        {
+        // A ship depot occupies TWO tiles, so the orientation has to be searched, not
+        // assumed. This tested only (tile, tile + 1), the eastern neighbour, which rejects
+        // every stretch of water running north to south. On one measured 256x256 map with
+        // thirteen coastal towns it found a single spot in the whole world, and water mode
+        // was unplayable because there was nowhere to build a ship. Try all four, and report
+        // WHICH one worked so the caller can pass it to build_water_depot: that action takes
+        // a direction, and a spot without one is a spot the caller has to guess about.
+        local found_dir = -1;
+        for (local dir = 0; dir < 4 && found_dir < 0; dir++) {
+          local partner = this._GetAdjacentTile(tile, dir);
+          if (!GSMap.IsValidTile(partner)) continue;
           local company_mode = GSCompanyMode(company_id);
           local test_mode = GSTestMode();
-          if (!GSMarine.BuildWaterDepot(tile, tile + 1)) continue;
+          if (GSMarine.BuildWaterDepot(tile, partner)) found_dir = dir;
         }
-        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy) });
+        if (found_dir < 0) continue;
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+                       depot_direction = found_dir });
       }
     }
     this._SortByDistance(spots);

@@ -121,7 +121,7 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
-Returns a list of `distance`, `tile`, `x`, `y`.
+Returns a list of `depot_direction`, `distance`, `tile`, `x`, `y`.
 
 ### `get_airport_types`
 

@@ -2285,6 +2285,7 @@
       "returns": {
         "shape": "list",
         "fields": [
+          "depot_direction",
           "distance",
           "tile",
           "x",
