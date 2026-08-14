@@ -291,6 +291,13 @@ one before it:
     vehicle moved        -> says nothing about whether it is carrying anything
     station accumulating -> says nothing about whether MY vehicle is the one collecting
 
+**The result: better analysis, worse score.** Session 4b scored 35 on 4 vehicles with 324 units
+per vehicle. Session 4c, with the corrected route ranker, scored **18** on 5 vehicles with 112
+units per vehicle. The ranking was right and the execution was not: the largest route was
+starved by the duplicate station for the first 120 days, and two trains sat dead. Analysis buys
+nothing that execution does not deliver, which is the argument for making the three health
+checks above automatic rather than remembered.
+
 Final shape: three routes running (wood 31t, oil 50t, iron ore 33t), one abandoned when its
 train failed the movement check. Only the oil route earned from the start, at 7,663 by day 120;
 the other two were each losing money for a diagnosable reason rather than a mysterious one.
