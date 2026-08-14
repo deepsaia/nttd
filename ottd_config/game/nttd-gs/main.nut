@@ -658,6 +658,7 @@ class NttdGS extends GSController {
         case "remove_rail_station": return this.CmdRemoveRailStation(p);
         case "convert_rail":        return this.CmdConvertRail(p);
         case "connect_rail":        return this.CmdConnectRail(p);
+        case "connect_depot":       return this.CmdConnectDepot(p);
 
         // ---- BUILDING: MARINE ----------------------------------------------
         case "build_canal":        return this.CmdBuildCanal(p);
@@ -934,6 +935,18 @@ class NttdGS extends GSController {
           if (GSTile.HasTreeOnTile(tile)) flags = flags | 64;
           if (GSBridge.IsBridgeTile(tile)) flags = flags | 128;
           if (GSTunnel.IsTunnelTile(tile)) flags = flags | 256;
+          // RUNNING LINE, as distinct from a station platform. A platform sets the rail bit
+          // too, so flags 40 is rail|station and "where is the track" cannot be answered with
+          // flags & 8: a depot placed against a platform can never be joined, and every curve
+          // attempted there returns ERR_AREA_NOT_CLEAR without saying why. Bits 512 and 1024
+          // are track a vehicle can run along and nothing else.
+          if ((flags & 8) && !(flags & 32)) flags = flags | 512;
+          if ((flags & 16) && !(flags & 32)) flags = flags | 1024;
+          // A depot is neither a station nor plain track, and nothing else in the surface
+          // reports one: OpenTTD does not treat it as a station, so an agent that loses track
+          // of where it built one has no way to ask.
+          if (GSRail.IsRailDepotTile(tile) || GSRoad.IsRoadDepotTile(tile)
+              || GSMarine.IsWaterDepotTile(tile)) flags = flags | 2048;
           owner = GSTile.GetOwner(tile);
         }
         row_tiles.append([GSTile.GetMaxHeight(tile), GSTile.GetSlope(tile), flags, owner]);
@@ -3218,6 +3231,63 @@ class NttdGS extends GSController {
       return { success = true, result = { tile = [r.x, r.y], platforms = platforms, length = length, station_id = sid } };
     }
     return this._Refused({ tile = tile, wants = "land", company = p.company_id });
+  }
+
+  function CmdConnectDepot(p) {
+    // Join a depot to the line beside it. Pure mechanism, and it took three attempts to get
+    // right by hand: find the neighbour carrying running line, then add the curve piece that
+    // touches the depot's edge. connect_rail cannot do this job at all, because it lays rail on
+    // both endpoints and so fails ERR_AREA_NOT_CLEAR against the very depot it is aiming at.
+    //
+    // The direction bits are the part nobody should have to rediscover: x+ is SW, x- is NE,
+    // y+ is SE, y- is NW, so a depot reached from the SW needs its neighbour to carry
+    // RAILTRACK_NW_SW or RAILTRACK_SW_SE.
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = ("tile" in p && p.tile != null)
+      ? p.tile : GSMap.GetTileIndex(p.x, p.y);
+    if (!GSRail.IsRailDepotTile(tile)) {
+      return { success = false, error = "not a rail depot: nothing to connect" };
+    }
+    // Which neighbour holds running line, tried in the order a depot is usually built against.
+    local curves = {};
+    curves[0] <- [16, 8];    // line to the SW of the depot
+    curves[2] <- [4, 32];    // to the NE
+    curves[1] <- [8, 32];    // to the SE
+    curves[3] <- [4, 16];    // to the NW
+    local tried = [];
+    foreach (dir, pieces in curves) {
+      local neighbour = this._GetAdjacentTile(tile, dir);
+      if (!GSMap.IsValidTile(neighbour)) continue;
+      if (!GSRail.IsRailTile(neighbour)) continue;
+      // A platform sets the rail bit too, and no track piece can ever be added to one.
+      if (GSStation.GetStationID(neighbour) != GSStation.STATION_INVALID) {
+        tried.append({ x = GSMap.GetTileX(neighbour), y = GSMap.GetTileY(neighbour),
+                       error = "that neighbour is a station platform, not running line" });
+        continue;
+      }
+      foreach (piece in pieces) {
+        if (GSRail.BuildRailTrack(neighbour, piece)) {
+          return { success = true, result = {
+            tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
+            joined_at = [GSMap.GetTileX(neighbour), GSMap.GetTileY(neighbour)],
+            track = piece, already_connected = false
+          }};
+        }
+        local err = GSError.GetLastErrorString();
+        if (err == "ERR_ALREADY_BUILT") {
+          return { success = true, result = {
+            tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
+            joined_at = [GSMap.GetTileX(neighbour), GSMap.GetTileY(neighbour)],
+            track = piece, already_connected = true
+          }};
+        }
+        tried.append({ x = GSMap.GetTileX(neighbour), y = GSMap.GetTileY(neighbour),
+                       track = piece, error = err });
+      }
+    }
+    return { success = false,
+             error = "no neighbouring running line would take a curve into this depot",
+             result = { tried = tried } };
   }
 
   function CmdBuildRailDepot(p) {

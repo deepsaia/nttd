@@ -5,7 +5,7 @@ Change the world. These cost money, take effect in the game, and are recorded ag
 **These are submitted as actions**, through `POST /actions/submit` in real-time play or in a step's batch. Anything on the [observations page](observations.md) is a query instead, asked a different way.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 77 of 132 actions.
+Part of the [action reference](../action_reference.md). 78 of 133 actions.
 
 ## Contents
 
@@ -16,7 +16,7 @@ Part of the [action reference](../action_reference.md). 77 of 132 actions.
 - **marine**: `build_buoy`, `build_canal`, `build_lock`, `build_path`, `build_water_depot`, `remove_buoy`, `remove_canal`, `remove_lock`, `remove_water_depot`
 - **order**: `add_order`, `copy_orders`, `insert_order`, `move_order`, `remove_order`, `set_order_compare_function`, `set_order_compare_value`, `set_order_condition`, `set_order_flags`, `set_stop_location`, `share_orders`, `skip_to_order`
 - **planning**: `estimate_cost`
-- **rail**: `build_rail_depot`, `build_rail_signal`, `build_rail_station`, `build_rail_track`, `build_rail_waypoint`, `connect_rail`, `convert_rail`, `remove_rail`, `remove_rail_station`, `remove_rail_track`, `remove_signal`
+- **rail**: `build_rail_depot`, `build_rail_signal`, `build_rail_station`, `build_rail_track`, `build_rail_waypoint`, `connect_depot`, `connect_rail`, `convert_rail`, `remove_rail`, `remove_rail_station`, `remove_rail_track`, `remove_signal`
 - **road**: `build_one_way_road`, `build_one_way_road_full`, `build_road_depot`, `build_road_stop`, `connect_road`, `convert_road_type`, `remove_road`, `remove_road_depot`, `remove_road_stop`
 - **sign**: `build_sign`, `remove_sign`
 - **town**: `perform_town_action`
@@ -600,6 +600,20 @@ Supply one of: `tile` or `x` and `y`.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 Returns `tile`.
+
+### `connect_depot`
+
+Join a rail depot to the running line beside it. A depot is not connected by building it: the neighbouring track needs a curve piece facing the depot's entrance, and connect_rail cannot supply one because it lays rail on both endpoints and so fails against the depot itself. Reports which tile it joined to and whether the connection already existed. Refuses when the only neighbouring rail is a station platform, which can never take a track piece.
+
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `already_connected`, `joined_at`, `tile`, `track`, `tried`.
+
+Each `tried` carries `error`, `x`, `y`.
 
 ### `connect_rail`
 

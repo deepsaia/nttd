@@ -135,6 +135,68 @@ class TestAnEventThatCannotBeReadSaysSo:
         assert "GSLog.Error(\"nttd: could not process event type" in forwarder
 
 
+class TestJoiningADepotIsOneAction:
+    """Joining a rail depot to its line took four actions, a direction-bit mapping and a slope
+    check, and it took three attempts to get right by hand. There is no judgement in any of it.
+
+    connect_rail cannot do the job: it lays rail on BOTH endpoints, so aimed at a depot it fails
+    ERR_AREA_NOT_CLEAR against the very depot it is trying to reach.
+    """
+
+    def test_the_action_exists_and_a_contestant_may_use_it(self) -> None:
+        assert _ACTIONS["connect_depot"]["tier"] == "participant"
+
+    def test_it_takes_a_tile_or_coordinates(self) -> None:
+        assert {"tile", "x", "y"} <= set(_ACTIONS["connect_depot"]["parameters"])
+
+    def test_it_says_where_it_joined_and_whether_it_had_to(self) -> None:
+        """An action that reports nothing leaves the caller to re-derive what happened."""
+        fields = _returns("connect_depot")
+        assert "joined_at" in fields
+        assert "already_connected" in fields
+
+    def test_it_refuses_a_platform_rather_than_failing_obscurely(self) -> None:
+        """A station platform sets the rail bit but can never take a track piece, and every
+        attempt there returns a bare ERR_AREA_NOT_CLEAR."""
+        assert "that neighbour is a station platform, not running line" in _GS
+
+    def test_a_failure_lists_what_it_tried(self) -> None:
+        assert "tried" in _returns("connect_depot")
+
+    def test_the_new_action_is_registered_in_every_layer(self) -> None:
+        """A new action is the ONE case that needs hand-registration: its tier in constants.py
+        and its prose in descriptions.json. Return fields and parameters do not."""
+        from nttd.constants import KNOWN_ACTIONS
+        from nttd.mcp.action_types import PlayableAction
+
+        assert "connect_depot" in KNOWN_ACTIONS, "HTTP accepts it"
+        assert "connect_depot" in [a.value for a in PlayableAction], "MCP exposes it"
+        assert _ACTIONS["connect_depot"]["gamescript_function"] == "CmdConnectDepot"
+
+
+class TestTheTerrainSeparatesTrackFromPlatform:
+    """Flags 40 is rail|station, so "where is the running line" could not be answered: a depot
+    placed against a platform can never be joined, and the attempt returns ERR_AREA_NOT_CLEAR
+    without saying why. And nothing reported depots at all, because OpenTTD does not treat one
+    as a station.
+    """
+
+    def test_running_line_has_its_own_bit(self) -> None:
+        assert "if ((flags & 8) && !(flags & 32)) flags = flags | 512" in _GS
+        assert "if ((flags & 16) && !(flags & 32)) flags = flags | 1024" in _GS
+
+    def test_depots_are_reported(self) -> None:
+        assert "flags | 2048" in _GS
+        for probe in ("IsRailDepotTile", "IsRoadDepotTile", "IsWaterDepotTile"):
+            assert probe in _GS, probe
+
+    def test_the_bits_are_documented_where_the_reply_is_described(self) -> None:
+        """A bit field nobody can decode is not an observation."""
+        described = (_ROOT / "docs" / "actions" / "observations.md").read_text()
+        assert "512 rail RUNNING LINE" in described
+        assert "2048 depot" in described
+
+
 def test_no_http_or_mcp_change_was_needed_for_any_of_these() -> None:
     """All of the above are return fields or widened parameters, and both layers are generic:
     HTTP passes the GameScript reply through, and MCP builds its enums from the manifest. This

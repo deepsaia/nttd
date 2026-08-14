@@ -1326,6 +1326,57 @@
         ]
       }
     },
+    "connect_depot": {
+      "description": "Join a rail depot to the running line beside it. A depot is not connected by building it: the neighbouring track needs a curve piece facing the depot's entrance, and connect_rail cannot supply one because it lays rail on both endpoints and so fails against the depot itself. Reports which tile it joined to and whether the connection already existed. Refuses when the only neighbouring rail is a station platform, which can never take a track piece.",
+      "tier": "participant",
+      "category": "rail",
+      "gamescript_function": "CmdConnectDepot",
+      "parameters": {
+        "tile": {
+          "required": false,
+          "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
+        "x": {
+          "required": false,
+          "description": "X coordinate on the map, counting from 0.",
+          "type": "integer"
+        },
+        "y": {
+          "required": false,
+          "description": "Y coordinate on the map, counting from 0.",
+          "type": "integer"
+        }
+      },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
+      "returns": {
+        "shape": "object",
+        "fields": [
+          "already_connected",
+          "joined_at",
+          "tile",
+          "track",
+          "tried"
+        ],
+        "nested": {
+          "tried": [
+            "error",
+            "x",
+            "y"
+          ]
+        }
+      }
+    },
     "connect_rail": {
       "description": "Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working line.",
       "tier": "participant",
@@ -2851,7 +2902,7 @@
       }
     },
     "get_map_terrain": {
-      "description": "Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume, so a band that did not fit is never mistaken for the whole answer. Reading a whole map is not a reasonable request: 256x256 is over half a megabyte. Where something will actually fit is better asked of the find_ family, which dry-runs the real build inside the game.",
+      "description": "Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume. With occupancy, each tile's flags also carry what is built on it, as bits: 1 water, 2 coast, 4 buildable, 8 rail, 16 road, 32 station, 64 trees, 128 bridge, 256 tunnel, 512 rail RUNNING LINE, 1024 road running line, 2048 depot. A station platform sets the rail or road bit too, so 8 and 16 answer \"is there track here\" with yes for a platform; 512 and 1024 are track a vehicle can run along and nothing else, which is what a depot has to be joined to.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetMapTerrain",

@@ -7,7 +7,7 @@ Read the world. These cost nothing, change nothing, and can be repeated freely.
 The distinction is worth reading once rather than discovering. An agent that submitted `get_hangars` as an action spent two of its five actions on it, never found its hangar, and could then not buy the aircraft it was for.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 46 of 132 actions.
+Part of the [action reference](../action_reference.md). 46 of 133 actions.
 
 ## Contents
 
@@ -288,7 +288,7 @@ Returns `max_x`, `max_y`, `size_x`, `size_y`.
 
 ### `get_map_terrain`
 
-Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume, so a band that did not fit is never mistaken for the whole answer. Reading a whole map is not a reasonable request: 256x256 is over half a megabyte. Where something will actually fit is better asked of the find_ family, which dry-runs the real build inside the game.
+Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume. With occupancy, each tile's flags also carry what is built on it, as bits: 1 water, 2 coast, 4 buildable, 8 rail, 16 road, 32 station, 64 trees, 128 bridge, 256 tunnel, 512 rail RUNNING LINE, 1024 road running line, 2048 depot. A station platform sets the rail or road bit too, so 8 and 16 answer "is there track here" with yes for a platform; 512 and 1024 are track a vehicle can run along and nothing else, which is what a depot has to be joined to.
 
 - `from_y` (integer, default 1) Y coordinate of the starting tile.
 - `max_tiles` (integer, default 4000) How many tiles to report at most. Guards against asking for more than a reply can carry.

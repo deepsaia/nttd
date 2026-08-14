@@ -89,6 +89,7 @@ Full detail in [actions.md](actions.md).
 - `build_water_depot(tile|x,y, [direction])` Build a ship depot on water.
 - `buy_vehicle(engine_id, depot_tile|depot_x,depot_y, depot_tile|depot_x,depot_y)` Build a vehicle of any type in a depot.
 - `clone_vehicle(vehicle_id, depot_tile|depot_x,depot_y, [share_orders])` Build a copy of an existing vehicle, optionally sharing the original's orders.
+- `connect_depot(tile|x,y)` Join a rail depot to the running line beside it.
 - `connect_rail(tile_from|from_x,from_y, tile_to|to_x,to_y, [from_hint_x, from_hint_y, max_iterations, rail_type, to_hint_x, to_hint_y])` Lay track between two tiles, finding the route itself.
 - `connect_road(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, road_type])` Build road between two tiles, finding the route itself.
 - `convert_rail(tile|x,y, [rail_type, x1, x2, y1, y2])` Convert existing track in a rectangle to another rail type.
