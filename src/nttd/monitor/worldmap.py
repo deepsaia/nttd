@@ -234,5 +234,5 @@ def _scrubber(frames: list[dict[str, Any]]) -> str:
         '<span class="livedot"></span>LIVE</button>'
         f'<input type="range" class="wslider" min="0" max="{last}" value="{last}" '
         f'step="1" aria-label="step"/>'
-        f'<span class="wstep">step {last}</span></div>'
+        f'<span class="wstep">step {last + 1}</span></div>'
     ) + legend_row()

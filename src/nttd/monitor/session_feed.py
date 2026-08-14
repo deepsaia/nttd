@@ -256,7 +256,14 @@ class SessionFeed:
         return [raw for raw in frame["snapshot_json"].to_list() if raw]
 
     def _snapshot_count(self) -> int:
-        return len(self._raw_snapshots())
+        """How many steps this session has, counted ONCE for the whole page.
+
+        Counts parsed snapshots, not raw rows. The two differ when a fragment is torn, which
+        happens while another process is writing, and the map scrubber has always built its
+        frames from the parsed list. Counting raw rows here made the sidebar, the cards and
+        the index table disagree with the scrubber by however many rows were unreadable.
+        """
+        return len(self._snapshots())
 
     def _company(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         """The contestant company. A session holds exactly one, so this is the first."""

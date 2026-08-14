@@ -369,7 +369,9 @@ JS = r"""
       c.setAttribute('fill', vehicleColours[v[2]]||'#e6ebf5');
       group.appendChild(c);
     });
-    if(out) out.textContent='step '+i+(f.d?' ('+f.d+')':'');
+    // 1-based, so the scrubber agrees with the step COUNT shown in the sidebar,
+    // the cards and the index table. Zero-based here read as one step fewer.
+    if(out) out.textContent='step '+(i+1)+(f.d?' ('+f.d+')':'');
     if(slider) slider.value=i;
   }
   function setLive(on){

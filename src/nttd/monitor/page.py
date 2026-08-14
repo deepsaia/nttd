@@ -30,7 +30,7 @@ from nttd.monitor.worldmap import world_panel
 # How often the browser re-requests a page showing a live session. A step takes about a
 # minute, so this is frequent enough to see progress and rare enough not to reparse the
 # world every few seconds.
-LIVE_REFRESH_SECONDS = 10
+LIVE_REFRESH_SECONDS = 5
 
 # The single series charts, as (field, title). Money and counts that only make sense
 # against a companion are charted separately below.
