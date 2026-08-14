@@ -409,6 +409,69 @@ capital that is already paid for, and an order list is free to rewrite.
 
 ---
 
+## 4f. Air, the dominant mode, and the one measurement that decides it
+
+Seed 1404719626. **Score 153**, against a previous best of 58 across every other mode, on 5
+aircraft and 12 airports, delivering roughly 3,596 units. Rating peaked at 146 where no other
+session exceeded 38. Air is not marginally better; it is a different order of result.
+
+**AIRPORT COVERAGE IS TINY, AND THAT IS THE WHOLE GAME.** A commuter airport has coverage 4.
+`find_airport_spots` searched with radius 18 and returned spots 16 to 28 tiles from the town
+centre, which are outside their own catchment. Measured after 105 days on four such airports:
+
+    Flarnfield  population 4,379  airport 16 tiles out   1 passenger waiting
+    Invedingstone       3,385     airport 28 tiles out   nothing
+    Ponston             1,937     airport  3 tiles out   28 waiting   <- the only one working
+    quarterly income 25, cargo delivered 3, all four aircraft losing 1,000 to 2,300
+
+Rebuilding the same airports close in, searching radius 3 to 7 instead of 18:
+
+    Flarnfield close-in airport, 7 tiles out:  358 passengers and 150 mail waiting
+    quarterly income 25 -> 38,467 -> 131,740   cargo 3 -> 395 -> 1,413
+
+So the rule is not "find somewhere an airport fits". It is **site inside the coverage radius, and
+prefer a bigger airport type only when nothing fits close**. Distance to the town centre is the
+single number that decides whether an air route earns anything at all, and the finder will not
+rank by it: it sorts by cargo acceptance first, so a large radius buries the useful answer.
+
+**The hangar is not the airport tile.** `buy_vehicle` at the airport's own reported x,y fails
+ERR_UNKNOWN, four times in a row, with nothing pointing at the cause. Aircraft are built in a
+hangar, which sits elsewhere inside the footprint: for a 5x4 commuter airport reported at
+(38,210), the hangar is at (42,210). `get_hangars` returns the mapping for every airport owned,
+and is the only way to learn it.
+
+**Airport type 0 does not exist in 2020.** The game offers ids 1 to 8, and `find_airport_spots`
+defaults to 0, so the default search dry-runs an unavailable airport at every tile and reports
+nothing. Only {1, 3, 4, 5, 7} take aeroplanes; 2, 6 and 8 are helipads, so building one and then
+buying a plane leaves the plane with nowhere to land.
+
+**Air rewards distance, inverting road and matching nothing else.** There is no per-tile
+infrastructure, so a 427 tile route costs exactly what a 40 tile route costs to build, while
+payment per unit rises with distance and a 236 km/h aircraft still completes many trips. The
+best routes here were 350 and 427 tiles. Compare: road wants short and dense, rail wants a
+middle distance sized to its production, water wants short because ships are slow.
+
+**One aircraft carries two cargoes.** The Dinger 200 holds 400 passengers AND 80 mail, so every
+route contributes to cargo diversity without any extra vehicle. Nothing else in the game gives
+that for free.
+
+**The vehicle choice is not close.** Ranked by capacity per unit of running cost:
+
+    Dinger 200    400 cap, 236 km/h, 49,218, run 6,975   -> 0.057
+    AirTaxi        75 cap, 236 km/h, 32,812, run 3,656   -> 0.021
+    Dinger 1000   130 cap, 579 km/h, 164,062, run 7,059  -> 0.018
+
+The fastest aircraft is the worst buy. This is the opposite of the water finding, and the
+reconciliation is that speed matters until trips stop being the constraint: a ship at 64 km/h is
+trip-limited, an aircraft at 236 km/h is not, so capacity takes over.
+
+**Air is capital-hungry and can bankrupt you mid-build.** Minimum cash across the run was
+**2,129**, with five aircraft each costing 6,975 a year to run. The danger window is exactly the
+period when airports are built and aircraft bought but routes have not yet returned a full
+delivery cycle. Every other mode has a gentler failure curve.
+
+---
+
 ## 5. What the five networks need
 
 ### Shared, all five
