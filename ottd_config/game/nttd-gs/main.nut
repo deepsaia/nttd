@@ -24,6 +24,12 @@ class NttdGS extends GSController {
   _DEFAULT_TRANSIT_DAYS = 20;
   _pathfind_queue = null;
   _event_names = null;
+  // Declared here, not just assigned in Start. Squirrel will not create a new instance slot
+  // with `=`, so assigning these in Start alone killed the script on the first line that
+  // touched them: "the index '_cargo_by_type' does not exist", and every session came up with
+  // a dead GameScript that answered nothing.
+  _cargo_by_type = null;
+  _last_load = null;
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
@@ -4705,6 +4711,11 @@ class NttdGS extends GSController {
   }
 
   function _AccountDeliveries() {
+    // GSVehicleList() is EMPTY outside a company mode. Every working handler wraps it in
+    // GSCompanyMode; this did not, so it enumerated nothing and all four counters stayed at
+    // zero while the game reported 222 units delivered. Company 0 because a scored session
+    // holds exactly one contestant company by construction.
+    local company_mode = GSCompanyMode(0);
     // One pass over the vehicles this company owns. A load that fell while the vehicle sits in
     // a station is cargo handed over; a load that fell anywhere else is a vehicle being sold or
     // crashing, and must not be counted as a delivery.
