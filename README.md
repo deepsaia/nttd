@@ -425,7 +425,7 @@ Full API at `http://localhost:8000/docs` once the server is running.
 | [Play modes and scoring](docs/play_modes.md) | Which worlds are scoreable, the two modes, and how a run is ranked |
 | [CLI guide](docs/cli_guide.md) | Every command, with examples |
 | [Agent guide](docs/agent_guide.md) | Writing a runner against the participant routes |
-| [Action reference](docs/action_reference.md) | All 132 actions, their parameters and accepted values |
+| [Action reference](docs/action_reference.md) | Every action, its parameters and accepted values |
 | [MCP guide](docs/mcp_guide.md) | Playing over MCP: five tools, both transports |
 | [Session analysis](docs/session_analyzer.md) | Reading a completed run |
 
