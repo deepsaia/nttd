@@ -268,9 +268,34 @@ re-built to confirm never saw success and walked on to build a second, third and
 read the state and commit, not spray attempts: the action budget is scored, and a run that
 spends 40 percent of it on predictable refusals has thrown that much away.
 
+**Two stations on one industry: the older one takes everything.** The clearest single finding of
+the session, and the reason the wood route earned nothing for 120 days. A first, abandoned
+attempt had built a station at (94,189); the retry built another at (93,190), one tile away, and
+the train served the second. At day 738019:
+
+    station 0 (94,189)  WOOD waiting 422, rating 27     <- nobody served it
+    station 2 (93,190)  nothing waiting                 <- the train's actual stop
+
+An industry delivers to ONE station, and it is not necessarily the newest or nearest. The train
+ran its route correctly, at speed, on a verified line, with a correct consist and a sensible load
+flag, and carried nothing, because the cargo was accumulating four tiles away. Re-pointing the
+orders at station 0 fixed it.
+
+Two consequences for the networks. First, a failed build attempt must be CLEANED UP, not
+abandoned in place: leftover stations poach the cargo of the route that replaces them. Second,
+the health check every network needs is not "is the vehicle moving" but **"is the station my
+vehicle serves accumulating cargo"**. Three distinct failure modes now, each invisible to the
+one before it:
+
+    line verified        -> says nothing about whether a vehicle can path it
+    vehicle moved        -> says nothing about whether it is carrying anything
+    station accumulating -> says nothing about whether MY vehicle is the one collecting
+
 Final shape: three routes running (wood 31t, oil 50t, iron ore 33t), one abandoned when its
-train failed the movement check. Abandoning cost one train; not checking would have cost the
-train AND the rest of the run's attention.
+train failed the movement check. Only the oil route earned from the start, at 7,663 by day 120;
+the other two were each losing money for a diagnosable reason rather than a mysterious one.
+Abandoning the dead route cost one train; not checking would have cost the train AND the rest
+of the run's attention.
 
 ---
 
