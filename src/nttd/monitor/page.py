@@ -63,7 +63,8 @@ def shell(inner: str, refresh: int = 0) -> str:
         f"<title>nttd monitor</title>"
         f"<script>{assets.THEME_HEAD_JS}</script><style>{assets.CSS}</style></head>"
         f'<body><div class="app">{inner}</div>'
-        f"<script>{assets.JS}</script><script>{assets.THEME_BODY_JS}</script></body></html>"
+        f"<script>{assets.JS}</script><script>{assets.THEME_BODY_JS}</script>"
+        f"<script>{assets.DELETE_BODY_JS}</script></body></html>"
     )
 
 
@@ -150,13 +151,19 @@ def _sidebar(entries: list[dict[str, Any]], active: str | None) -> str:
         meta = entry["meta"]
         health = entry["health"]
         dot = '<span class="livedot" title="running now"></span>' if meta["live"] else ""
+        # The delete control is a sibling of the link, not a child: a button inside an anchor
+        # is invalid HTML and browsers resolve it by following the link instead. A form with
+        # method="post" rather than a link, so no prefetch or crawl can delete a session.
         out.append(
+            f'<div class="navrow">'
             f'<a class="nav {"on" if meta["session_id"] == active else ""}" '
             f'href="{_session_link(meta["session_id"])}">'
             f'<span class="ndot" style="background:{colour(index)}"></span>'
             f'<span class="meta"><span class="name">{dot}{esc(meta["name"])}</span>'
             f'<span class="stat">step {meta["steps"]} &middot; rating '
             f'{number(meta["rating"])} &middot; {esc(health["summary"])}</span></span></a>'
+            f'{_delete_control(meta)}'
+            f'</div>'
         )
     out.append("</div>")
     return "".join(out)
@@ -199,6 +206,27 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
         "no sessions",
     )
     return header + cards + '<div class="grid">' + listing + "</div>"
+
+
+def _delete_control(meta: dict[str, Any]) -> str:
+    """The hover-revealed delete button for one session.
+
+    A running session gets a disabled control rather than none. Offering nothing looks like a
+    rendering gap; saying why it cannot be deleted is the useful answer, and removing the
+    directory under a live recorder would leave the server writing to a path that is gone.
+    """
+    if meta["live"]:
+        return ('<span class="delbtn off" title="still running; stop the session first">'
+                + assets.TRASH_ICON + "</span>")
+    session_id = esc(meta["session_id"])
+    name = esc(meta["name"])
+    return (
+        f'<form class="delform" method="post" action="/delete" '
+        f'data-name="{name}">'
+        f'<input type="hidden" name="session" value="{session_id}">'
+        f'<button class="delbtn" type="submit" title="delete this session from disk" '
+        f'aria-label="delete {name}">{assets.TRASH_ICON}</button></form>'
+    )
 
 
 def _session_header(meta: dict[str, Any]) -> str:

@@ -109,6 +109,20 @@ class SessionRegistry:
         meta["live"] = state == "running"
         meta["age_seconds"] = self.age_seconds(meta["session_id"])
 
+    def is_live(self, session_id: str) -> bool:
+        """Whether something is still writing to this session.
+
+        Asked before deleting a session, so it errs towards "live": a session it cannot read
+        is reported as live, because refusing to delete something is recoverable and deleting
+        a running recording's directory is not.
+        """
+        try:
+            meta = self.feed(session_id).meta()
+        except Exception:
+            logger.warning("Cannot read %s to check liveness; treating as live", session_id)
+            return True
+        return self.state_of(meta) == "running"
+
     def health(self, feed: SessionFeed, meta: dict[str, Any]) -> Health:
         return Health(
             meta=meta,

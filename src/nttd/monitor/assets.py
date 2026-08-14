@@ -41,6 +41,20 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
  color:var(--ink);border:1px solid transparent;border-radius:9px;margin-bottom:5px;
  background:var(--panel2);}
 .nav:hover{border-color:var(--line);}
+/* The delete control overlays the row's right edge and only appears on hover, so the list
+   reads as a list until you reach for it. It is not display:none when hidden, because a
+   keyboard user tabbing through needs to be able to focus it. */
+.navrow{position:relative;}
+.delform{position:absolute;top:0;right:0;height:calc(100% - 5px);margin:0;display:flex;
+ align-items:center;}
+.delbtn{display:flex;align-items:center;justify-content:center;width:26px;height:26px;
+ margin-right:5px;padding:0;border:1px solid transparent;border-radius:7px;cursor:pointer;
+ background:var(--panel2);color:var(--muted);opacity:0;transition:opacity .12s,color .12s;}
+.navrow:hover .delbtn,.delbtn:focus-visible{opacity:1;}
+.delbtn:hover{color:var(--bad);border-color:var(--bad);}
+.delbtn.off{cursor:not-allowed;position:absolute;top:50%;right:5px;transform:translateY(-50%);
+ opacity:0;}
+.navrow:hover .delbtn.off{opacity:.35;}
 .nav.on{border-color:var(--accent);}
 .nav .meta{min-width:0;flex:1 1 auto;}
 .nav .name{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;
@@ -205,6 +219,30 @@ THEME_ICONS = (
     'fill="currentColor" stroke="none">'
     '<path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8z"/></svg>'
 )
+
+TRASH_ICON = (
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
+    'stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/>'
+    '<path d="M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1z"/>'
+    '<path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>'
+    '<path d="M10 11v7M14 11v7"/></svg>'
+)
+
+# Deleting a session is not undoable, so the confirm names the session being removed rather
+# than asking "are you sure": the button lives in a list of near-identical generated names,
+# and the whole risk is deleting the neighbour of the one intended.
+DELETE_BODY_JS = r"""
+(function(){
+  document.querySelectorAll('form.delform').forEach(function(f){
+    f.addEventListener('submit', function(e){
+      var name = f.getAttribute('data-name') || 'this session';
+      if(!confirm('Delete ' + name + ' and every file it wrote to disk?\nThis cannot be undone.')){
+        e.preventDefault();
+      }
+    });
+  });
+})();
+"""
 
 # Applied before first paint so there is no flash of the wrong theme.
 THEME_HEAD_JS = r"""

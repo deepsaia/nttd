@@ -1,4 +1,4 @@
-"""The HTTP handler: two routes, both returning a whole page.
+"""The HTTP handler: two GET routes returning a whole page, and one POST that deletes.
 
 A top level class rather than one defined inside the serve function, so it can be
 imported and exercised directly. It reads its configuration from ``self.server``, which
@@ -17,12 +17,16 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from nttd.monitor import page
+from nttd.store import session_paths, session_remover
 
 logger = logging.getLogger(__name__)
 
 # The map's base image lives on its own route so the browser caches it across the page's
 # ten second refresh. Terrain is captured once at session start and barely changes.
 TERRAIN_PATH = "/terrain.png"
+
+# The only route that mutates anything, and the only one that accepts POST.
+DELETE_PATH = "/delete"
 
 
 class MonitorHandler(BaseHTTPRequestHandler):
@@ -59,6 +63,54 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802 - the name is fixed by the base class
+        """The one route that changes anything: deleting a session's files.
+
+        POST rather than a link, so no prefetch, crawler or accidental refresh can destroy a
+        recording, and it answers with a redirect so the browser reloads the list rather than
+        leaving a resubmittable form in the history.
+        """
+        if urlparse(self.path).path != DELETE_PATH:
+            self.send_error(404)
+            return
+
+        length = int(self.headers.get("Content-Length") or 0)
+        form = parse_qs(self.rfile.read(length).decode("utf-8")) if length else {}
+        session_id = (form.get("session") or [""])[0]
+
+        try:
+            self._delete(session_id)
+        except session_paths.InvalidSessionIdError:
+            logger.warning("Refused to delete %r: not a session id", session_id)
+            self.send_error(400, "not a session id")
+            return
+        except Exception:
+            logger.exception("Failed to delete session %s", session_id)
+            self.send_error(500, "could not delete the session")
+            return
+
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _delete(self, session_id: str) -> None:
+        """Remove one session, refusing while it is still being written.
+
+        The liveness check is here rather than in the remover because only the registry knows
+        how recently a session wrote. Deleting the directory under a running recorder would
+        leave the server flushing into a path that no longer exists.
+        """
+        if not session_id:
+            raise session_paths.InvalidSessionIdError("no session given")
+        # Validate BEFORE asking whether it is live. is_live cannot read a nonsense id, and it
+        # errs towards "live", so checking it first turned "../escape" into a 500 "still
+        # running" instead of a 400 "not a session id".
+        session_paths.validate_session_id(session_id)
+        if self.server.registry.is_live(session_id):
+            raise RuntimeError(f"{session_id} is still running")
+        session_remover.remove_session(session_id, self.server.registry.root)
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         """Quiet by default. One line per browser refresh, every ten seconds, for every
