@@ -204,9 +204,13 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
 def _session_header(meta: dict[str, Any]) -> str:
     live = '<span class="livedot"></span>' if meta["live"] else ""
     ended = "" if meta["live"] else f" &middot; ended: {esc(meta['end_reason'] or 'no reason recorded')}"
+    # What the run was FOR, beside what it is called. A board of near-identical ids says
+    # nothing about which one was the rail attempt and which the combined one.
+    aim = meta.get("description") or ""
+    intent = f'<span class="aim">{esc(aim)}</span>' if aim else ""
     return (
         f'<div class="tabs"><a class="tab" href="/">&lsaquo; all sessions</a>'
-        f'<span class="tab on">{live}{esc(meta["name"])}</span>'
+        f'<span class="tab on">{live}{esc(meta["name"])}</span>{intent}'
         f'<span class="hint">{esc(meta["session_id"])}{ended}</span></div>'
     )
 

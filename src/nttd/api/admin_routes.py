@@ -170,6 +170,12 @@ async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
     meta: dict[str, str] = {}
     if request.config_path:
         meta["config_path"] = request.config_path
+        # The scenario's own one line statement of what the run is for, carried onto the
+        # session so the monitor can show it beside the name. Optional: scenarios that
+        # do not set one simply have no description, and nothing renders.
+        description = (cfg.description or "").strip()
+        if description:
+            meta["description"] = description
 
     await session_repo.create_session(
         session_id=session_id,

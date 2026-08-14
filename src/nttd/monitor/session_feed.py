@@ -59,6 +59,7 @@ class SessionFeed:
             "name": company.get("name") or data.name or data.session_id,
             "session_name": data.name or data.session_id,
             "scenario": data.config_name,
+            "description": data.description,
             "model": data.model,
             "status": data.status,
             # Unmerged fragments mean "running OR stopped uncleanly", which is not the

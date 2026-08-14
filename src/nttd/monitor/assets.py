@@ -55,6 +55,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .tab{font-size:14px;font-weight:600;color:var(--muted);text-decoration:none;padding:4px 0;}
 .tab.on{color:var(--ink);border-bottom:2px solid var(--accent);}
 .hint{color:var(--muted);font-size:11px;margin-left:auto;}
+.aim{color:var(--muted);font-size:12px;font-style:italic;padding-left:8px;}
 .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
  padding:9px 14px;min-width:112px;}

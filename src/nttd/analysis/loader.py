@@ -64,6 +64,16 @@ class SessionData:
         return ""
 
     @property
+    def description(self) -> str:
+        """What this run was trying to achieve, as declared when it was created.
+
+        Set per session rather than per scenario: two runs of one scenario can be
+        attempting different things, and the scenario description says what the WORLD is.
+        Falls back to the scenario's own description when the caller gave none.
+        """
+        return str(self.meta.get("description", "") or "")
+
+    @property
     def model(self) -> str:
         """The model or models that played, as the contestant reported them.
 
