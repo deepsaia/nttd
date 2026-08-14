@@ -73,9 +73,12 @@ def test_an_index_with_no_live_session_does_not_refresh_itself(tmp_path: Path) -
     assert "http-equiv=\"refresh\"" not in html
 
 
-def test_an_index_with_a_live_session_refreshes_itself(tmp_path: Path) -> None:
+def test_a_live_session_is_pushed_to_rather_than_polled(tmp_path: Path) -> None:
+    """A meta refresh redrew an identical page most times it fired, and still lagged a real
+    change by up to its interval. The page opens one stream and waits instead."""
     html = page.index_page([_entry(_session(tmp_path, live=True))])
-    assert f'content="{page.LIVE_REFRESH_SECONDS}"' in html
+    assert "http-equiv=\"refresh\"" not in html
+    assert "EventSource('/live')" in html
 
 
 def test_the_index_lists_what_each_session_built(tmp_path: Path) -> None:

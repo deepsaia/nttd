@@ -247,6 +247,24 @@ DELETE_BODY_JS = r"""
 })();
 """
 
+# The page updates when the server says something changed, rather than on a timer. One request
+# that then waits, so an idle dashboard is idle, and a written snapshot shows up at once.
+#
+# Reload rather than patch the DOM: the whole page is rendered server side, so a reload is the
+# same code path as the first paint and cannot drift from it. The scrubber position survives
+# because it is kept in sessionStorage.
+LIVE_BODY_JS = r"""
+(function(){
+  if(!window.EventSource) return;
+  var es = new EventSource('/live');
+  var reload = function(){ window.location.reload(); };
+  es.addEventListener('data', reload);
+  // A source edit restarts the server, so wait for it to come back before reloading, or the
+  // browser races the exec and shows a connection error instead of the new page.
+  es.addEventListener('code', function(){ setTimeout(reload, 700); });
+})();
+"""
+
 # Applied before first paint so there is no flash of the wrong theme.
 THEME_HEAD_JS = r"""
 (function(){ try{ var t=localStorage.getItem('nttd-theme');

@@ -25,6 +25,7 @@ from nttd.monitor.registry import SessionRegistry
 from nttd.monitor.request_handler import MonitorHandler
 from nttd.monitor.sentry import Sentry
 from nttd.monitor.terrain_png import TerrainPng
+from nttd.monitor.watcher import Watcher
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class MonitorServer(ThreadingHTTPServer):
         super().__init__(address, MonitorHandler)
         self.registry = registry
         self.session_limit = session_limit
+        # What the /live stream watches: session writes, and edits to the monitor's own source.
+        self.watcher = Watcher(registry.root)
         self._terrain: dict[str, tuple[int, Any]] = {}
         self._terrain_lock = threading.Lock()
 

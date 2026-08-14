@@ -63,8 +63,8 @@ def test_the_scrubber_label_is_one_based() -> None:
     assert 'max="1"' in rendered, "the slider itself stays zero-based"
 
 
-def test_the_live_page_refreshes_every_five_seconds() -> None:
+def test_the_live_page_does_not_poll() -> None:
     from nttd.monitor import page
 
-    assert page.LIVE_REFRESH_SECONDS == 5
-    assert 'content="5"' in page.shell("x", refresh=page.LIVE_REFRESH_SECONDS)
+    assert page.LIVE_REFRESH_SECONDS == 0, "no timer; /live pushes"
+    assert "http-equiv" not in page.shell("x", refresh=page.LIVE_REFRESH_SECONDS)

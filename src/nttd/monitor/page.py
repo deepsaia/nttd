@@ -32,10 +32,10 @@ from nttd.monitor.session_feed import (
 )
 from nttd.monitor.worldmap import world_panel
 
-# How often the browser re-requests a page showing a live session. A step takes about a
-# minute, so this is frequent enough to see progress and rare enough not to reparse the
-# world every few seconds.
-LIVE_REFRESH_SECONDS = 5
+# Kept only as the fallback for a browser with no EventSource. The page is normally pushed to
+# by /live, so it does not poll at all: a meta refresh redrew an identical page most times it
+# fired and still lagged a real change by up to its interval.
+LIVE_REFRESH_SECONDS = 0
 
 # The single series charts, as (field, title). Money and counts that only make sense
 # against a companion are charted separately below.
@@ -62,6 +62,7 @@ def _when(game_date: Any) -> str:
 
 
 def shell(inner: str, refresh: int = 0) -> str:
+    """The page, with the live stream attached. `refresh` is only honoured if non-zero."""
     meta_refresh = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     return (
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">{meta_refresh}'
@@ -70,7 +71,8 @@ def shell(inner: str, refresh: int = 0) -> str:
         f"<script>{assets.THEME_HEAD_JS}</script><style>{assets.CSS}</style></head>"
         f'<body><div class="app">{inner}</div>'
         f"<script>{assets.JS}</script><script>{assets.THEME_BODY_JS}</script>"
-        f"<script>{assets.DELETE_BODY_JS}</script></body></html>"
+        f"<script>{assets.DELETE_BODY_JS}</script>"
+        f"<script>{assets.LIVE_BODY_JS}</script></body></html>"
     )
 
 
