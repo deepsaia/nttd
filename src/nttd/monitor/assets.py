@@ -185,6 +185,9 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .tbl th{text-align:left;color:var(--muted);font-weight:600;font-size:10.5px;
  text-transform:uppercase;letter-spacing:.4px;padding:4px 6px;position:sticky;top:0;
  background:var(--panel);}
+/* The first column of every table is a date or a state: short, fixed, and the one thing you
+   scan down. Wrapping "05-Jan-1950" onto two lines doubled every row's height. */
+.tbl th:first-child,.tbl td:first-child{white-space:nowrap;width:1%;padding-right:12px;}
 .tbl td{padding:4px 6px;border-top:1px solid var(--line);
  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 .tbl tr:hover td{background:var(--panel2);}

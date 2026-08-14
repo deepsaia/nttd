@@ -191,7 +191,7 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
             str(meta["stations"]),
             str(meta["vehicles"]),
             f"{meta['actions']} ({meta['refused']} refused)",
-            f"{meta['minutes']}m",
+            _clock(meta["minutes"]),
             health["summary"],
         ])
     header = (
@@ -200,7 +200,7 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
     )
     listing = table(
         ["state", "name", "scenario", "seed", "steps", "rating", "value", "stations",
-         "vehicles", "actions", "wall", "health"],
+         "vehicles", "actions", "wall (hh:mm:ss)", "health"],
         rows,
         "Sessions, newest first",
         "no sessions",
@@ -243,6 +243,16 @@ def _session_header(meta: dict[str, Any]) -> str:
     )
 
 
+def _clock(minutes: float | None) -> str:
+    """Elapsed wall time as hh:mm:ss.
+
+    Minutes with one decimal was unreadable at the range these runs cover: a T1 run is about
+    45 minutes and a T4 is two hours, so "127.4m" needs arithmetic before it means anything.
+    """
+    total = int(round((minutes or 0) * 60))
+    return f"{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
+
+
 def _session_cards(meta: dict[str, Any], verdicts: list[dict[str, str]]) -> str:
     worst = verdicts[0]["level"] if verdicts else "ok"
     return kpi_cards([
@@ -253,7 +263,7 @@ def _session_cards(meta: dict[str, Any], verdicts: list[dict[str, str]]) -> str:
         ("vehicles", meta["vehicles"], "good" if meta["vehicles"] else "bad"),
         ("steps", meta["steps"], ""),
         ("actions", f"{meta['actions']} / {meta['refused']} refused", ""),
-        ("wall time", f"{meta['minutes']}m", ""),
+        ("wall time (hh:mm:ss)", _clock(meta["minutes"]), ""),
         ("health", "healthy" if worst == "ok" else worst, worst if worst != "ok" else "good"),
     ])
 
