@@ -1531,7 +1531,11 @@ class NttdGS extends GSController {
         weight = GSEngine.GetWeight(id),
         reliability = GSEngine.GetReliability(id),
         is_wagon = GSEngine.IsWagon(id),
-        rail_type = rt
+        rail_type = rt,
+        // Aircraft only: 0 helicopter, 1 small plane, 3 big plane. A big plane has a crash
+        // chance on every landing at a small airport, so this is the difference between a
+        // fleet and a sequence of write-offs. -1 for everything that does not fly.
+        plane_type = (vt == GSVehicle.VT_AIR) ? GSEngine.GetPlaneType(id) : -1
       });
     }
     return { success = true, result = engines };
@@ -5232,10 +5236,21 @@ class NttdGS extends GSController {
     if (!GSEngine.IsValidEngine(eid))
       return { success = false, error = "Invalid engine ID" };
 
+    // Which class of aircraft this is, because it decides whether the plane will CRASH.
+    // A big plane landing at a small airport has a crash chance on every landing, and
+    // nothing else in the reply hints at it: two aircraft lost 98,000 of hulls on commuter
+    // airports before the cause was found in the event log rather than in any query.
+    // -1 for anything that is not an aircraft.
+    local plane_type = -1;
+    if (GSEngine.GetVehicleType(eid) == GSVehicle.VT_AIR) {
+      plane_type = GSEngine.GetPlaneType(eid);
+    }
+
     return { success = true, result = {
       engine_id = eid,
       name = GSEngine.GetName(eid),
       vehicle_type = this._VehicleTypeName(GSEngine.GetVehicleType(eid)),
+      plane_type = plane_type,
       cargo_type = GSEngine.GetCargoType(eid),
       capacity = GSEngine.GetCapacity(eid),
       max_speed = GSEngine.GetMaxSpeed(eid),

@@ -203,7 +203,7 @@ Report everything about one engine model: capacity, speed, power, running cost, 
 
 - `engine_id` (integer, required) Which engine model to build. Numbered by the running game and gated by year, so ask get_engines.
 
-Returns `can_refit`, `capacity`, `cargo_type`, `engine_id`, `max_age`, `max_speed`, `max_tractive_effort`, `name`, `power`, `price`, `rail_type`, `reliability`, `road_type`, `running_cost`, `vehicle_type`, `weight`.
+Returns `can_refit`, `capacity`, `cargo_type`, `engine_id`, `max_age`, `max_speed`, `max_tractive_effort`, `name`, `plane_type`, `power`, `price`, `rail_type`, `reliability`, `road_type`, `running_cost`, `vehicle_type`, `weight`.
 
 ### `get_engines`
 
@@ -211,7 +211,7 @@ List engine models that can be bought now. What is available changes with the ye
 
 - `vehicle_type` (string, default "train") One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.
 
-Returns a list of `capacity`, `cargo_label`, `cargo_type`, `id`, `is_wagon`, `max_speed`, `name`, `power`, `price`, `rail_type`, `reliability`, `running_cost`, `weight`.
+Returns a list of `capacity`, `cargo_label`, `cargo_type`, `id`, `is_wagon`, `max_speed`, `name`, `plane_type`, `power`, `price`, `rail_type`, `reliability`, `running_cost`, `weight`.
 
 ### `get_expense_breakdown`
 
