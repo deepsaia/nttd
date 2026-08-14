@@ -4264,10 +4264,27 @@ class NttdGS extends GSController {
     if ("cargo_id" in p && p.cargo_id != null) {
       refitted = GSVehicle.RefitVehicle(vid, p.cargo_id) ? true : false;
     }
+    // Report what the assembled consist actually carries, not what was asked for. A refit
+    // skips any vehicle that cannot take the cargo, so an engine with its own hold plus
+    // wagons that refuse the refit leaves a train carrying TWO cargo types. That is not
+    // cosmetic: an OF_FULL_LOAD order then waits for every type to fill, and a station
+    // that only ever produces one of them parks the train forever. Returning the real
+    // capacities is what makes that visible at build time instead of ten steps later.
+    local capacities = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      local capacity = GSVehicle.GetCapacity(vid, cargo_id);
+      if (capacity > 0) {
+        capacities.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          capacity = capacity
+        });
+      }
+    }
     return { success = true, result = {
       vehicle_id = vid, name = GSVehicle.GetName(vid),
       wagons_attached = wagons_attached, wagons_failed = wagons_failed,
-      refitted = refitted
+      refitted = refitted, capacity_by_cargo = capacities,
+      carries_one_cargo = capacities.len() <= 1
     }};
   }
 

@@ -893,7 +893,7 @@ Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 - `num_wagons` (integer, default 1) How many wagons to build and couple on.
 - `wagon_id` (integer, optional) Which wagon model to build and couple on.
 
-Returns `name`, `refitted`, `vehicle_id`, `wagons_attached`, `wagons_failed`.
+Returns `capacity_by_cargo`, `carries_one_cargo`, `name`, `refitted`, `vehicle_id`, `wagons_attached`, `wagons_failed`.
 
 ### `buy_vehicle`
 
