@@ -240,6 +240,12 @@ def _read_series(session_dir: Path, company_id: int) -> _CompanySeries | None:
         series.max_loan.append(int(company.get("max_loan") or 0))
         series.income.append(int(company.get("q0_income") or 0))
         series.expenses.append(int(company.get("q0_expenses") or 0))
+        # q0_cargo is the quarter IN PROGRESS and RESETS at every quarter boundary. Stored
+        # raw here; _cumulative_cargo turns it into a running total, which is what every
+        # consumer actually wants. Sampling the raw counter is how a run that delivered 3,526
+        # units over its year reported 0: the 25, 50 and 75 percent checkpoints of a 366 day
+        # run land within a day or two of the quarter boundaries, where the counter has just
+        # gone back to zero.
         series.cargo.append(int(company.get("q0_cargo") or 0))
         series.maintenance.append(_maintenance(snapshot, company_id))
 
@@ -321,9 +327,32 @@ def _capital(metrics: BusinessMetrics, series: _CompanySeries) -> None:
         metrics.return_on_capital = round(gained / peak, 4)
 
 
+def _cumulative_cargo(quarterly: list[int]) -> list[int]:
+    """A running total of cargo delivered, from a counter that resets each quarter.
+
+    OpenTTD reports GetQuarterlyCargoDelivered for the quarter in progress, so the series
+    sawtooths: it climbs through a quarter and drops to zero at the boundary. A fall therefore
+    means a quarter closed, and the value just before the fall is that quarter's total.
+
+    Measured on a real 366 day run: per-quarter peaks of 370, 885, 1216 and 1055, so 3,526 for
+    the year. Every point sample of the raw counter reported 0, because the sample points and
+    the resets coincide.
+    """
+    running: list[int] = []
+    banked = 0
+    previous = 0
+    for current in quarterly:
+        if current < previous:
+            banked += previous
+        running.append(banked + current)
+        previous = current
+    return running
+
+
 def _growth(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     """The shape of the run, not just where it ended."""
     count = len(series)
+    delivered = _cumulative_cargo(series.cargo)
     for fraction, value_field, cargo_field in (
         (0.25, "value_at_25pct", "cargo_at_25pct"),
         (0.50, "value_at_50pct", "cargo_at_50pct"),
@@ -331,7 +360,7 @@ def _growth(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     ):
         index = min(int(count * fraction), count - 1)
         setattr(metrics, value_field, series.value[index])
-        setattr(metrics, cargo_field, series.cargo[index])
+        setattr(metrics, cargo_field, delivered[index])
 
     for index, (income, expense) in enumerate(zip(series.income, series.expenses)):
         if income > 0 and income + expense > 0:
@@ -375,7 +404,9 @@ def _operations(metrics: BusinessMetrics, series: _CompanySeries) -> None:
             series.idle_vehicles[-1] / metrics.vehicles_final, 4,
         )
 
-    delivered = series.cargo[-1] if series.cargo else 0
+    # The cumulative total, not the last raw reading: a run ending on a quarter boundary reads
+    # zero from the in-progress counter however much it carried all year.
+    delivered = _cumulative_cargo(series.cargo)[-1] if series.cargo else 0
     if metrics.vehicles_final:
         metrics.cargo_per_vehicle = round(delivered / metrics.vehicles_final, 2)
     if metrics.stations_final:
