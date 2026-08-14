@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from nttd.analysis.date_utils import game_date_to_ymd
 from nttd.analysis.loader import SessionData
 
 # The NETWORK pieces a company owns: the things a vehicle travels along. Named here rather
@@ -114,12 +115,28 @@ class SessionFeed:
         """
         rows: list[dict[str, Any]] = []
         actions_by_date = self._actions_by_date()
+        # Banked fleet profit from years already closed. profit_this_year resets on 1 January
+        # and a T1 run ENDS on 1 January, so the live sum reads near zero on the final
+        # snapshot: measured 174,449 on 30-Dec-2020 and -20 the next step. Banking at the
+        # year boundary keeps the cumulative series monotone.
+        #
+        # Banked on the game YEAR changing, not on the sum dropping. A crashed or sold vehicle
+        # also drops the sum, and treating that as a year end would count its earnings twice.
+        banked = 0
+        previous_year: int | None = None
+        previous_live = 0
         for index, snapshot in enumerate(self._snapshots()):
             game = snapshot.get("game") or {}
             company = self._company(snapshot)
             infra = self._infrastructure(snapshot)
             date = game.get("game_date")
             attempted, refused = actions_by_date.get(date, (0, 0))
+            vehicles = snapshot.get("vehicles") or []
+            live_profit = sum((v.get("profit_this_year") or 0) for v in vehicles)
+            year = game_date_to_ymd(int(date))[0] if date is not None else None
+            if previous_year is not None and year != previous_year:
+                banked += previous_live
+            previous_year, previous_live = year, live_profit
             row = {
                 "step": index,
                 "game_date": date,
@@ -132,9 +149,15 @@ class SessionFeed:
                 # nothing about the last few days. Each vehicle's profit_this_year updates
                 # continuously and already nets its running cost, so the fleet total is the
                 # honest answer to "is this company earning right now".
-                "fleet_profit": sum(
-                    (v.get("profit_this_year") or 0) for v in (snapshot.get("vehicles") or [])
-                ),
+                "fleet_profit": live_profit,
+                "fleet_profit_total": banked + live_profit,
+                # What the fleet has been TOLD to do, and how many distinct services that is.
+                # A vehicle with no orders is the failure a clone produces: it inherits the
+                # order list but arrives stopped, so it sits in the depot earning nothing while
+                # looking correctly configured.
+                "orders_total": sum(len(v.get("orders") or []) for v in vehicles),
+                "routes_distinct": _count_routes(vehicles),
+                "vehicles_idle": sum(1 for v in vehicles if not (v.get("orders") or [])),
                 "profit_last_year": company.get("profit_last_year"),
                 "rating": company.get("performance_rating"),
                 "stations": len(snapshot.get("stations") or []),
@@ -343,6 +366,25 @@ def _decode(raw: str) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         return None
     return decoded if isinstance(decoded, dict) else None
+
+
+def _count_routes(vehicles: list[dict[str, Any]]) -> int:
+    """How many distinct services the fleet runs.
+
+    A route is the SET of stations a vehicle visits, so two vehicles sharing an order list
+    are one route and not two. Counted from the order destinations rather than from vehicle
+    count, because the useful question is how much of the map is served, and adding a third
+    bus to one town pair does not serve any more of it.
+    """
+    seen = set()
+    for vehicle in vehicles:
+        stops = frozenset(
+            o.get("destination") for o in (vehicle.get("orders") or [])
+            if o.get("is_goto_station")
+        )
+        if len(stops) > 1:
+            seen.add(stops)
+    return len(seen)
 
 
 def _count_vehicle_kinds(vehicles: list[dict[str, Any]]) -> dict[str, int]:

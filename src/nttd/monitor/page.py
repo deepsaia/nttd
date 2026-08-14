@@ -43,7 +43,7 @@ _SINGLE_CHARTS = (
     ("rating", "Performance rating (the score)"),
     ("value", "Company value"),
     ("income", "Income (this quarter, resets each quarter)"),
-    ("fleet_profit", "Fleet profit this year (live)"),
+    ("fleet_profit_total", "Fleet profit, cumulative (live)"),
     ("cargo_waiting", "Cargo waiting at stations"),
 )
 
@@ -334,6 +334,13 @@ def _charts(steps: list[dict[str, Any]]) -> list[str]:
          *(_series(kind, colour(2 + index), steps, f"stations_{kind}")
            for index, kind in enumerate(STATION_KINDS))],
         "Stations owned, by kind", "v",
+    ))
+    out.append(line_chart(
+        "corders",
+        [_series("routes", colour(1), steps, "routes_distinct"),
+         _series("orders", colour(4), steps, "orders_total"),
+         _series("vehicles with no orders", colour(6), steps, "vehicles_idle")],
+        "Orders and routes", "v",
     ))
     out.append(line_chart(
         "cfleet",
