@@ -348,6 +348,15 @@ class SessionManager:
             # lives at this single point rather than in the real-time loop.
             final_save = await self._capture_final_save(session_id, runtime)
 
+            # Finish the traces BEFORE scoring. The business metrics read the recorded
+            # series out of snapshots.parquet, and that file is only written when the
+            # recorder merges its fragments. Scoring first meant every metric in every
+            # result ever written was zero, because the file it reads did not exist yet.
+            try:
+                await runtime.recorder.stop()
+            except Exception:
+                logger.exception("Session %s: failed to finalize traces", session_id)
+
             # Score before shutting down -- the world state is needed, and a
             # failure here must not prevent the process from being stopped.
             try:

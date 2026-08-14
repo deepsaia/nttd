@@ -116,6 +116,7 @@ class SessionRecorder:
         self._total_rows_flushed: int = 0
         self._flush_count: int = 0
         self._parquet: ParquetWriter = ParquetWriter(session_id, data_dir)
+        self._stopped = False
 
     @property
     def session_dir(self) -> Path:
@@ -129,6 +130,15 @@ class SessionRecorder:
         logger.info("SessionRecorder started for session %s (dir=%s)", self.session_id, self._session_dir)
 
     async def stop(self) -> None:
+        """Flush and merge the traces. Safe to call twice.
+
+        Called once by ``stop_session`` before the result is scored, because the business
+        metrics read ``snapshots.parquet`` and that file does not exist until the merge
+        below runs; and again by ``SessionRuntime.shutdown``, which owns the recorder.
+        """
+        if self._stopped:
+            return
+        self._stopped = True
         self._running = False
         if self._flush_task is not None:
             self._flush_task.cancel()
