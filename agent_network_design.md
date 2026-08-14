@@ -139,6 +139,141 @@ Every network needs it as a standing watch, not a one-off assertion.
 
 ---
 
+## 4b. The rail session, played move by move
+
+Seed 677471231, T1 stepped, 256x256 flat. Three routes built and running by day ~180. Every
+number here was measured in that session.
+
+**Choose the route on revenue, not distance.** The five candidate pairs, priced with
+`get_cargo_income` at their own distance against the source's `last_month` production:
+
+| pair | dist | production | income/unit | revenue/month |
+| --- | --- | --- | --- | --- |
+| Forest -> Sawmill | 40 | 128 | 24 | **3,072** |
+| Farm -> Factory (GRAI) | 27 | 80 | 15 | 1,200 |
+| Farm -> Factory (LVST) | 27 | 72 | 13 | 936 |
+| Forest -> Sawmill | 24 | 64 | 14 | 896 |
+| Farm -> Factory (GRAI) | 24 | 56 | 13 | 728 |
+
+The shortest pair was worth a quarter of the longest. Income per unit rises with distance, so
+the road builder's rule that short beats long is a ROAD rule and inverts for rail. Picking the
+nearest pair, which is what the mode builder used to do, throws away most of the map's value.
+
+**Every steel mill showed production 0.** Processing industries produce nothing until something
+feeds them, so a pair ranker that reads only "produces this cargo" will confidently choose a
+route with no cargo on it. Filter on `last_month > 0`.
+
+**Only one locomotive exists at rail type 0 in 2020,** the 'Dash' diesel, and it carries 80
+passengers of its own. So the mixed consist that deadlocked the earlier session is not an
+unlucky choice, it is the DEFAULT: any wood or grain train built with this engine has a
+passenger hold unless the whole consist is refitted. Passing `cargo_id` to `build_train` refits
+the engine too, and `carries_one_cargo: true` in the reply proves it at build time. Capacity
+came out 140: 20 in the refitted engine plus 4 wagons at 30.
+
+**A rail depot needs a junction piece, and the finder will not give you one.** Three depots,
+same recipe each time:
+
+    find flat ground (slope 0) beside the line -> build_rail_depot facing it
+      -> build_rail_track on the NEIGHBOUR with the curve that touches the depot's edge
+      -> the build reply's own `connected` flag tells you whether it worked
+
+`connect_rail` cannot do this job: it lays rail on both endpoints, so aimed at a depot tile it
+returns ERR_AREA_NOT_CLEAR against the depot it is trying to reach. The direction bits matter,
+and the mapping is worth writing down once: **x+ is SW, x- is NE, y+ is SE, y- is NW**. A depot
+on the far side of a tile in the x+ direction needs that tile to carry `RAILTRACK_NW_SW` (16)
+or `RAILTRACK_SW_SE` (8). Building one of the pair usually reports the other ALREADY_BUILT,
+which is fine.
+
+**`find_rail_depot_spot` searches a radius and does not care which line it finds.** Asked for a
+depot near the grain station at (145,116) with radius 8, it returned ground beside the WOOD
+line at (144,125). The depot built, reported `connected: true`, the train built and started, and
+then sat still forever: it was on the wrong network and had no path to its own stations. It cost
+21,000 and could not even be sold, because selling requires the vehicle to be in a depot and it
+could not reach one. `send_to_depot` answered ERR_UNKNOWN. **Verify the depot reaches the
+route's own two stations before buying anything to put in it.**
+
+**Full load is a throughput decision, and it goes both ways.** Measured on the same day:
+
+- Wood route, production 128/month against capacity 140. Partial loads carried 44 per trip and
+  delivered 88 in 50 days, with 66 units piling up at the station. Switching order 0 to
+  `OF_FULL_LOAD_ANY` (96) made every trip carry a full 140. Train profit went 1,987 -> 11,725.
+- Grain route, production 56/month against the same capacity 140. The same flag starved it: the
+  train sat at the farm absorbing grain as it appeared, waiting for a full load it would need
+  two and a half months to reach, and showed profit **-231**. Dropping to flags 0 turned it to
+  **+1,132** within 25 days.
+
+So the rule is not "use full load". It is: **full load pays when the source fills the train
+within one round trip, and starves the route when it cannot.** Compare `last_month` production
+against consist capacity and the cycle time before choosing.
+
+**Single track caps a route at one train.** Unsignalled track has no protection, so scaling rail
+is more ROUTES, not more vehicles on a route. That inverts the road lesson again, where cloning
+a proven bus onto a proven route is the cheapest possible growth.
+
+**Water breaks corridors, and `connect_rail` will not use a bridge you built for it.** The first
+grain pair failed on ERR_TUNNEL_CANNOT_BUILD_ON_WATER at (186,194). `build_bridge` spanned the
+three water tiles successfully, and the next `connect_rail` re-planned from scratch, ignored the
+bridge, and hit water two tiles away at (188,195). Connecting each leg to a bridge end instead
+failed the other way, because a bridge ramp is not clear ground. Abandoning that pair for an
+inland one cost less than fighting it, and that is the general lesson: a corridor that needs
+water works is worth a lot less than its revenue table suggests.
+
+**Drawing the loan destroys reported company value.** Value is assets minus debt, so taking
+300,000 to fund routes took value to **1** while the rating climbed. Both are scored, and the
+rating charges 5 percent for carrying a loan. The plan that follows is to borrow early, spend
+it on cargo capacity, and repay what cash allows before the run ends.
+
+---
+
+## 4c. The second rail session: ranking routes properly, and four ways a depot fails
+
+Seed 1716811708. The route ranker from session 4b was wrong, and fixing it changed everything.
+
+**Revenue per month is the wrong ranking.** Priced naively, this map's best pairs were 189, 272
+and 225 tiles long at 135 to 176 per unit, showing 18,000 to 20,000 a month. All fantasy: at a
+measured **3.3 tiles per game day**, a 189 tile route is a 114 day round trip, so it completes
+three trips a year and delivers 420 units. Ranking by what can actually be carried:
+
+    cycle_days   = 2 * distance / 3.3 + 6      (6 days of loading and unloading, measured)
+    trips_a_year = 366 / cycle_days
+    deliverable  = min(production_a_month * 12, consist_capacity * trips_a_year)
+
+That reordered the board completely. The top pair became a 31 tile wood run at 1,824 units a
+year, and the best long candidate fell to 420. **Distance raises income per unit and lowers
+throughput, and throughput wins**, because cargo delivered is 40 percent of the rating and the
+leaderboard tiebreak is cargo. The naive ranking would have bought a 272 tile oil route.
+
+**A station platform sets the RAIL bit.** Flags 40 is rail|station. Treating "bit 8 is set" as
+"this is running line" put a depot against a platform, where no track piece can ever be added:
+every curve answered ERR_AREA_NOT_CLEAR, the depot never joined, and the train sat in it. Test
+`flags & 8 and not flags & 32`.
+
+**Speed is not movement.** The train in that unjoined depot reported `current_speed` cycling
+0, 39, 21, 0, 36 across eight days while `x,y` never left (95,188). It was rocking inside the
+depot. A movement check that samples speed passes this; one that samples POSITION catches it.
+That is the check worth wiring into every network.
+
+**Ground beside a line is not necessarily buildable.** Tree tiles report flags 0, and
+`build_rail_depot` answers "this tile is not buildable, so it must be cleared or levelled
+first". They are still usable, at the cost of a `demolish_tile` first, so they belong in a
+fallback tier rather than being filtered out: requiring the BUILDABLE bit reported "nowhere
+flat beside a line within 20 tiles" while the line had level ground on both sides.
+
+**Do not re-issue a build to re-read its status.** `build_rail_depot` returns a `connected`
+flag, but issuing it a second time answers ERR_ALREADY_BUILT with no flag, so a helper that
+re-built to confirm never saw success and walked on to build a second, third and fourth depot.
+
+**Failed actions cost what successful ones cost.** 15 of this session's first 38 actions failed,
+14 of them one helper firing both candidate curve pieces at six candidate spots. A helper must
+read the state and commit, not spray attempts: the action budget is scored, and a run that
+spends 40 percent of it on predictable refusals has thrown that much away.
+
+Final shape: three routes running (wood 31t, oil 50t, iron ore 33t), one abandoned when its
+train failed the movement check. Abandoning cost one train; not checking would have cost the
+train AND the rest of the run's attention.
+
+---
+
 ## 5. What the five networks need
 
 ### Shared, all five
