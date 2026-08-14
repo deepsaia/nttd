@@ -81,6 +81,8 @@ These are the ones that cost time. Every one belongs in a coded_tool so no agent
 | Occupancy is opt-in | Without `occupancy: true`, flags carry only water/coast/buildable. Decoding with rail/road/station bits reads **trees as rail** | Always pass `occupancy: true` when asking where track is |
 | Row width | Rows are **254** wide on a 256 map, with no `from_x` | x = index + 1. The void edges are excluded |
 | Step response key | `action_results`, not `results` | Reading the wrong key hid a partial build entirely: the step looked silent and successful |
+| `order_flags: 64` | `OF_FULL_LOAD` means full load of **every** cargo the consist can carry. A train that can hold two cargo types at a station producing one waits forever | Use `96` (`OF_FULL_LOAD_ANY`) or `0`. Only use 64 when the consist carries exactly one cargo |
+| `build_train` refits the engine | A refit skips any vehicle that cannot take the cargo, so a mismatched `cargo_id` silently leaves a **mixed consist** | `build_train` now returns `capacity_by_cargo` and `carries_one_cargo`. Assert `carries_one_cargo` before ordering with a full-load flag |
 
 ---
 
@@ -116,9 +118,24 @@ route I intend to build arrive at a usable end". Those are different questions a
 them.
 
 **Always verify with `trace_route` after connecting.** `connect_rail` returning `partial` is
-informative, but a `success` is not proof a train can run: `trace_route` walks the game's own
-connectivity and is the authority. `check_connection` answers a different question again, whether
-a NEW line could be built, and reports no path once a line stands.
+informative, but a `success` is not proof a train can run. `check_connection` answers a different
+question again, whether a NEW line could be built, and reports no path once a line stands.
+
+**But `trace_route` is necessary, not sufficient, for rail.** I wrote in an earlier pass that it
+"is the authority". A live session disproved that. Station to station, `trace_route` returned
+`line_exists: true` over 16 reachable tiles, and the train still left its platform, ran three
+tiles, and stopped dead: `state: 0` (running), `current_speed: 0`, unmoved across twelve stepped
+days, profit sliding from -176 to -222 on running costs alone. Tracing from the tile the train
+actually stood on returned `line_exists: false, tiles_reachable: 1`.
+
+So the two walkers disagree, and OpenTTD's train pathfinder is the one that decides whether the
+company earns. The operational rule that follows:
+
+    verify with trace_route BEFORE buying, then verify the train MOVED after starting it.
+    A vehicle whose position is unchanged across several steps is a failed route, not a slow one.
+
+That second check is cheap, it is a read, and no amount of build-time verification replaces it.
+Every network needs it as a standing watch, not a one-off assertion.
 
 ---
 
@@ -291,3 +308,14 @@ for the rest. Rail last.
    industry. Not filed yet; worth filing, since every agent that plans cargo hits it.
 3. **An unknown action name on the query endpoint returns 403 "not a read-only query"** rather
    than "unknown action", which sends the reader looking for a permission problem. Not filed yet.
+4. **Cargo delivered was read off a counter that resets every quarter.** Fixed. The game reports
+   the quarter IN PROGRESS, so the series sawtooths, and the growth checkpoints at 25/50/75
+   percent of a 366 day run land on the resets. A run that carried 3,526 units reported 0.
+5. **Every business metric in every result ever written was zero.** Fixed, and the worse of the
+   two. The result was scored BEFORE the recorder merged its fragments into `snapshots.parquet`,
+   so the metrics read a file that did not exist yet and silently returned an empty record.
+   Recomputing one finished session from disk afterwards gave 30 vehicles, 6 stations, 37,909
+   value at the halfway mark, against 0 for all of them in the file. Nothing raised.
+6. **`trace_route` and OpenTTD's own train pathfinder disagree.** Not filed yet, and the most
+   consequential of the open ones: it means a route can pass every build-time check nttd offers
+   and still never move a train. See section 4.
