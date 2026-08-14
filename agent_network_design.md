@@ -306,6 +306,48 @@ of the run's attention.
 
 ---
 
+## 4d. Road, measured properly: saturation is the whole story
+
+Two earlier bus sessions plus a third on a fresh seed. The two earlier ones scored 58 and 52,
+the best of any mode, and their recovered cargo figures explain why: **1,573 and 3,526 units**
+delivered against rail's best of 1,297. Buses on short town pairs are the strongest mode for the
+metric that carries 40 percent of the rating.
+
+Note on those two: they share seed 19566827, so they are two runs of ONE world, not two worlds.
+Useful for comparing strategies, useless for showing a strategy generalises, which is why a
+third was played on a fresh seed.
+
+**A two stop town pair saturates at three or four buses.** The sharpest number in the session.
+Ten buses on Gretown (3,552) to Gonthill (715), 31 tiles:
+
+    profits after 50 days: -155 -155 -110 -105 -77 -77 -43 | 376 529 679
+    stops drained to 3 and 8 waiting passengers, ratings 74 and 78
+
+Seven of ten lost money. They were not broken; there was simply nothing left to carry. High
+station ratings are the tell: a rating of 78 with 8 passengers waiting means the service is
+faster than the town produces. So the growth lever for road is the same as for rail, more ROUTES,
+and the counter-intuitive part is that adding buses to a good route actively lowers the score by
+dragging the profitable-vehicles share down.
+
+**A clone arrives stopped.** `clone_vehicle` copies the order list but not the running state.
+Three cloned buses sat in the depot at exactly 0 profit for 45 days, each with a correct
+two-order list, while the original earned 222. Nothing reports it: they are parked, not failed.
+Every clone needs a `start_vehicle` behind it.
+
+**`build_path` does not build bridges, but the work plan asks for them.** `check_connection`
+returned `work: {move: 12, build_road: 14, build_bridge: 1}` for a 29 tile corridor. build_path
+built the roads, skipped the bridge, and the corridor did not verify. The work plan is therefore
+a build LIST, not a promise: any entry other than move and build_road has to be issued
+separately. Screening candidate pairs on `build_bridge == 0` costs nothing, because
+check_connection is a free read, and it is much cheaper than discovering the gap after paying
+for stops.
+
+**Population over distance is the right pair ranking for road**, and it inverts rail's. Road
+income per unit barely moves with distance while trip time does, so short and dense wins. The
+same map's best rail route was 31 tiles and its best road route 31 tiles for opposite reasons.
+
+---
+
 ## 5. What the five networks need
 
 ### Shared, all five
