@@ -38,7 +38,6 @@ def test_the_unit_is_stated_where_the_number_is_shown() -> None:
     card = page._session_cards(
         {"rating": 25, "value": 1, "balance": 100, "stations": 8, "vehicles": 4,
          "steps": 366, "actions": 42, "refused": 12, "minutes": 43.9},
-        [],
     )
     assert "wall time (hh:mm:ss)" in card
     assert "00:43:54" in card

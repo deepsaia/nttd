@@ -24,7 +24,7 @@ from nttd.monitor.charts import (
     panel,
     table,
 )
-from nttd.monitor.session_feed import INFRA_KINDS, SessionFeed
+from nttd.monitor.session_feed import INFRA_KINDS, STATION_KINDS, SessionFeed
 from nttd.monitor.worldmap import world_panel
 
 # How often the browser re-requests a page showing a live session. A step takes about a
@@ -114,7 +114,7 @@ def session_page(
     steps = feed.steps()
     body = [_sidebar(entries, meta["session_id"]), '<div class="main">']
     body.append(_session_header(meta))
-    body.append(_session_cards(meta, verdicts))
+    body.append(_session_cards(meta))
     body.append(_meta_strip(meta))
 
     body.append('<div class="split">')
@@ -150,7 +150,6 @@ def _sidebar(entries: list[dict[str, Any]], active: str | None) -> str:
     ]
     for index, entry in enumerate(entries):
         meta = entry["meta"]
-        health = entry["health"]
         dot = '<span class="livedot" title="running now"></span>' if meta["live"] else ""
         # The delete control is a sibling of the link, not a child: a button inside an anchor
         # is invalid HTML and browsers resolve it by following the link instead. A form with
@@ -162,7 +161,7 @@ def _sidebar(entries: list[dict[str, Any]], active: str | None) -> str:
             f'<span class="ndot" style="background:{colour(index)}"></span>'
             f'<span class="meta"><span class="name">{dot}{esc(meta["name"])}</span>'
             f'<span class="stat">step {meta["steps"]} &middot; rating '
-            f'{number(meta["rating"])} &middot; {esc(health["summary"])}</span></span></a>'
+            f'{number(meta["rating"])}</span></span></a>'
             f'{_delete_control(meta)}'
             f'</div>'
         )
@@ -254,8 +253,14 @@ def _clock(minutes: float | None) -> str:
     return f"{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
 
 
-def _session_cards(meta: dict[str, Any], verdicts: list[dict[str, str]]) -> str:
-    worst = verdicts[0]["level"] if verdicts else "ok"
+def _session_cards(meta: dict[str, Any]) -> str:
+    """The headline figures, and no verdict.
+
+    There was a "health" card here reading "bad", and the same word in every sidebar row. A
+    one word judgement at the top of the page decides for the reader what the numbers mean, and
+    it was doing so from rules that are heuristics. The Health panel still lists exactly which
+    rule tripped and why, which is the useful form: evidence rather than a grade.
+    """
     return kpi_cards([
         ("rating", number(meta["rating"]), "good" if (meta["rating"] or 0) > 30 else "warn"),
         ("company value", number(meta["value"]), ""),
@@ -265,7 +270,6 @@ def _session_cards(meta: dict[str, Any], verdicts: list[dict[str, str]]) -> str:
         ("steps", meta["steps"], ""),
         ("actions", f"{meta['actions']} / {meta['refused']} refused", ""),
         ("wall time (hh:mm:ss)", _clock(meta["minutes"]), ""),
-        ("health", "healthy" if worst == "ok" else worst, worst if worst != "ok" else "good"),
     ])
 
 
@@ -321,8 +325,9 @@ def _charts(steps: list[dict[str, Any]]) -> list[str]:
     ))
     out.append(line_chart(
         "cbuilt",
-        [_series("stations", colour(1), steps, "stations"),
-         _series("vehicles", colour(2), steps, "vehicles")],
+        [_series("vehicles", colour(2), steps, "vehicles"),
+         *(_series(f"{kind} stations", colour(3 + index), steps, f"stations_{kind}")
+           for index, kind in enumerate(STATION_KINDS))],
         "Stations against vehicles", "v",
     ))
     out.append(line_chart(

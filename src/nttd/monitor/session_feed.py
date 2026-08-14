@@ -21,10 +21,22 @@ from typing import Any
 
 from nttd.analysis.loader import SessionData
 
-# The infrastructure kinds a company can own, in the order they are charted. Named here
-# rather than discovered from the data so a mode that built none of something still gets
-# a labelled zero series instead of vanishing from the legend.
-INFRA_KINDS = ("rail", "road", "water", "station", "airport")
+# The NETWORK pieces a company owns: the things a vehicle travels along. Named here rather
+# than discovered from the data so a mode that built none of something still gets a labelled
+# zero series instead of vanishing from the legend.
+#
+# Stations and airports used to be in this list, and they do not belong: a station tile is not
+# a piece of network, it is a place vehicles stop. Counting them beside rail pieces put a
+# number in the tens next to a number in the hundreds, and read as if the company had built
+# almost no stations. They are charted against vehicles instead, which is the comparison that
+# means something.
+INFRA_KINDS = ("rail", "road", "water")
+
+# The station-like things a company owns, counted per step. Every one of these is somewhere a
+# vehicle stops, so they belong on the same chart as the fleet that stops at them. Depots are
+# absent because the snapshot does not report them: OpenTTD does not treat a depot as a
+# station, so there is nothing to count without inventing it.
+STATION_KINDS = ("rail", "bus", "truck", "dock", "air")
 
 
 class SessionFeed:
@@ -128,6 +140,9 @@ class SessionFeed:
             }
             for kind in INFRA_KINDS:
                 row[f"{kind}_pieces"] = infra.get(f"{kind}_pieces", 0)
+            counted = _count_station_kinds(snapshot.get("stations") or [])
+            for kind in STATION_KINDS:
+                row[f"stations_{kind}"] = counted.get(kind, 0)
             rows.append(row)
         return rows
 
@@ -320,6 +335,19 @@ def _decode(raw: str) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         return None
     return decoded if isinstance(decoded, dict) else None
+
+
+def _count_station_kinds(stations: list[dict[str, Any]]) -> dict[str, int]:
+    """How many of each station-like thing the company owns.
+
+    Counted by the same first-match rule the map markers use, so the chart and the map never
+    disagree about what a station is.
+    """
+    tally: dict[str, int] = {}
+    for station in stations:
+        kind = _station_kind(station)
+        tally[kind] = tally.get(kind, 0) + 1
+    return tally
 
 
 def _station_kind(station: dict[str, Any]) -> str:

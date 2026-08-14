@@ -146,11 +146,27 @@ def test_cargo_waiting_is_summed_across_stations(tmp_path: Path) -> None:
 
 
 def test_infrastructure_is_charted_per_kind(tmp_path: Path) -> None:
+    """Network pieces only: the things a vehicle travels ALONG."""
     steps = _feed(tmp_path, _write_merged(tmp_path)).steps()
     assert steps[1]["rail_pieces"] == 6
-    assert steps[1]["station_pieces"] == 6
     # A kind nothing was built of still gets a labelled zero rather than vanishing.
-    assert steps[1]["airport_pieces"] == 0
+    assert steps[1]["water_pieces"] == 0
+
+
+def test_stations_are_counted_by_kind_and_not_as_infrastructure(tmp_path: Path) -> None:
+    """A station tile is not a piece of network, it is a place vehicles stop.
+
+    Charted beside rail pieces it was a number in the tens next to one in the hundreds, which
+    read as if almost no stations had been built. It belongs against the fleet instead, broken
+    down so a reader can see WHICH kind of stop the company owns.
+    """
+    steps = _feed(tmp_path, _write_merged(tmp_path)).steps()
+    assert "station_pieces" not in steps[1], "stations are no longer network pieces"
+    assert "airport_pieces" not in steps[1]
+    # One series per station-like kind, zero included, so the legend is stable across modes.
+    for kind in ("rail", "bus", "truck", "dock", "air"):
+        assert f"stations_{kind}" in steps[1]
+    assert steps[1]["stations_rail"] >= 1
 
 
 def test_the_action_mix_separates_successes_from_refusals(tmp_path: Path) -> None:
