@@ -94,7 +94,8 @@ def test_a_session_page_carries_the_map_the_charts_and_the_logs(tmp_path: Path) 
         "wmap",            # the world map
         "wslider",         # its step scrubber
         "Performance rating",
-        "Stations against vehicles",
+        "Stations owned, by kind",
+        "Vehicles owned, by type",
         "Infrastructure pieces owned",
         "Actions per step",
         "Health",

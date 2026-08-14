@@ -169,6 +169,28 @@ def test_stations_are_counted_by_kind_and_not_as_infrastructure(tmp_path: Path) 
     assert steps[1]["stations_rail"] >= 1
 
 
+def test_the_fleet_is_counted_by_type_on_its_own_chart() -> None:
+    """Stations and vehicles are two quantities, so they are two charts.
+
+    One chart carrying a total plus five station kinds plus four vehicle types was nine series
+    deep, and the fleet was unreadable underneath the stations.
+    """
+    from nttd.monitor.page import _charts
+    from nttd.monitor.session_feed import VEHICLE_KINDS
+
+    assert VEHICLE_KINDS == ("train", "road", "ship", "aircraft")
+    rendered = "".join(_charts([{
+        "step": 0, "stations": 2, "vehicles": 3, "stations_rail": 2, "vehicles_train": 3,
+        **{f"stations_{k}": 0 for k in ("bus", "truck", "dock", "air")},
+        **{f"vehicles_{k}": 0 for k in ("road", "ship", "aircraft")},
+        **{f"{k}_pieces": 0 for k in ("rail", "road", "water")},
+        "rating": 1, "value": 1, "income": 1, "fleet_profit": 1, "cargo_waiting": 0,
+        "balance": 0, "loan": 0, "profit_last_year": 0, "actions": 0, "refused": 0,
+    }]))
+    assert "Stations owned, by kind" in rendered
+    assert "Vehicles owned, by type" in rendered
+
+
 def test_the_action_mix_separates_successes_from_refusals(tmp_path: Path) -> None:
     mix = _feed(tmp_path, _write_merged(tmp_path)).action_mix()
     assert ("build_rail_station", 2, 0) in mix

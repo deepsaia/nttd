@@ -24,7 +24,12 @@ from nttd.monitor.charts import (
     panel,
     table,
 )
-from nttd.monitor.session_feed import INFRA_KINDS, STATION_KINDS, SessionFeed
+from nttd.monitor.session_feed import (
+    INFRA_KINDS,
+    STATION_KINDS,
+    VEHICLE_KINDS,
+    SessionFeed,
+)
 from nttd.monitor.worldmap import world_panel
 
 # How often the browser re-requests a page showing a live session. A step takes about a
@@ -325,10 +330,17 @@ def _charts(steps: list[dict[str, Any]]) -> list[str]:
     ))
     out.append(line_chart(
         "cbuilt",
-        [_series("vehicles", colour(2), steps, "vehicles"),
-         *(_series(f"{kind} stations", colour(3 + index), steps, f"stations_{kind}")
+        [_series("total", colour(1), steps, "stations"),
+         *(_series(kind, colour(2 + index), steps, f"stations_{kind}")
            for index, kind in enumerate(STATION_KINDS))],
-        "Stations against vehicles", "v",
+        "Stations owned, by kind", "v",
+    ))
+    out.append(line_chart(
+        "cfleet",
+        [_series("total", colour(2), steps, "vehicles"),
+         *(_series(kind, colour(3 + index), steps, f"vehicles_{kind}")
+           for index, kind in enumerate(VEHICLE_KINDS))],
+        "Vehicles owned, by type", "v",
     ))
     out.append(line_chart(
         "cinfra",

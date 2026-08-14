@@ -38,6 +38,11 @@ INFRA_KINDS = ("rail", "road", "water")
 # station, so there is nothing to count without inventing it.
 STATION_KINDS = ("rail", "bus", "truck", "dock", "air")
 
+# The vehicle types a company can own, as the snapshot spells them. Charted on their own
+# rather than beside the stations: a fleet and the places it stops are two different
+# quantities, and one chart carrying both was nine series deep and unreadable.
+VEHICLE_KINDS = ("train", "road", "ship", "aircraft")
+
 
 class SessionFeed:
     """The per-step view of one session."""
@@ -143,6 +148,9 @@ class SessionFeed:
             counted = _count_station_kinds(snapshot.get("stations") or [])
             for kind in STATION_KINDS:
                 row[f"stations_{kind}"] = counted.get(kind, 0)
+            fleet = _count_vehicle_kinds(snapshot.get("vehicles") or [])
+            for kind in VEHICLE_KINDS:
+                row[f"vehicles_{kind}"] = fleet.get(kind, 0)
             rows.append(row)
         return rows
 
@@ -335,6 +343,15 @@ def _decode(raw: str) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         return None
     return decoded if isinstance(decoded, dict) else None
+
+
+def _count_vehicle_kinds(vehicles: list[dict[str, Any]]) -> dict[str, int]:
+    """How many of each vehicle type the company owns, by the snapshot's own `type` field."""
+    tally: dict[str, int] = {}
+    for vehicle in vehicles:
+        kind = str(vehicle.get("type") or "other")
+        tally[kind] = tally.get(kind, 0) + 1
+    return tally
 
 
 def _count_station_kinds(stations: list[dict[str, Any]]) -> dict[str, int]:
