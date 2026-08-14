@@ -31,3 +31,8 @@ class Company(BaseModel):
     q0_income: int = 0
     q0_expenses: int = 0
     q0_cargo: int = 0
+    # The quarter in progress resets to zero at every boundary, and a run ends on one, so
+    # q0_cargo is not a total. These two are: the last complete quarter, and every quarter
+    # the game still remembers. The scored tiebreak reads the total.
+    q1_cargo: int = 0
+    cargo_delivered_total: int = 0

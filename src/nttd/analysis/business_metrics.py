@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Bumped when a formula changes, so a board can tell which rows are comparable. The
 # score has its own version; this is a separate thing that can move independently.
-METRICS_VERSION = "v1"
+METRICS_VERSION = "v2"
 
 @dataclass
 class BusinessMetrics:
@@ -276,6 +276,24 @@ def _maintenance(snapshot: dict[str, Any], company_id: int) -> int:
     return total
 
 
+def _last_complete_index(income: list[int]) -> int:
+    """The index of the last snapshot of the last COMPLETE quarter.
+
+    Quarterly income is an accumulator the game resets at each boundary, so the series climbs
+    and drops. The final snapshot of a run is therefore a partial quarter a day or two old:
+    measured, a run ended with quarterly income of 12 against maintenance of hundreds, and
+    maintenance_burden_final came out at -21.39 where the ratio can only sensibly be 0 to 1.
+
+    The value just before the last drop is the last quarter that actually finished.
+    """
+    if not income:
+        return -1
+    for index in range(len(income) - 1, 0, -1):
+        if income[index] < income[index - 1]:
+            return index - 1
+    return len(income) - 1
+
+
 def _profitability(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     """Margin and how much of revenue upkeep eats.
 
@@ -285,12 +303,19 @@ def _profitability(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     """
     margins = [
         (income + expense) / income
-        for income, expense in zip(series.income, series.expenses)
+        for income, expense in zip(series.income, series.expenses, strict=False)
         if income > 0
     ]
     if margins:
-        metrics.operating_margin_final = round(margins[-1], 4)
         metrics.operating_margin_mean = round(sum(margins) / len(margins), 4)
+
+    # "Final" means the last quarter that COMPLETED, not the last snapshot recorded. See
+    # _last_complete_index: the last snapshot lands inside a fresh quarter.
+    settled = _last_complete_index(series.income)
+    if settled >= 0 and series.income[settled] > 0:
+        metrics.operating_margin_final = round(
+            (series.income[settled] + series.expenses[settled]) / series.income[settled], 4,
+        )
 
     earning = [
         index for index, income in enumerate(series.income) if income > 0
@@ -303,12 +328,15 @@ def _profitability(metrics: BusinessMetrics, series: _CompanySeries) -> None:
 
     burdens = [
         upkeep / income
-        for upkeep, income in zip(series.maintenance, series.income)
+        for upkeep, income in zip(series.maintenance, series.income, strict=False)
         if income > 0 and upkeep > 0
     ]
     if burdens:
-        metrics.maintenance_burden_final = round(burdens[-1], 4)
         metrics.maintenance_burden_mean = round(sum(burdens) / len(burdens), 4)
+    if settled >= 0 and series.income[settled] > 0 and series.maintenance[settled] > 0:
+        metrics.maintenance_burden_final = round(
+            series.maintenance[settled] / series.income[settled], 4,
+        )
 
 
 def _capital(metrics: BusinessMetrics, series: _CompanySeries) -> None:
@@ -397,9 +425,16 @@ def _operations(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     metrics.stations_final = series.stations[-1] if series.stations else 0
 
     if metrics.vehicles_final:
-        metrics.profitable_vehicle_share = round(
-            series.profitable_vehicles[-1] / metrics.vehicles_final, 4,
+        # The PEAK share, not the final one. profit_this_year resets on 1 January and a 366 day
+        # run ends on 1 January, so the last snapshot has every vehicle back at zero and the
+        # final share read 0.00 for all eleven measured sessions, including ones whose aircraft
+        # each earned close to 50,000. The peak answers the question the metric is for: did this
+        # company run a fleet that paid for itself.
+        best = max(
+            (count / owned) if owned else 0.0
+            for count, owned in zip(series.profitable_vehicles, series.vehicles, strict=False)
         )
+        metrics.profitable_vehicle_share = round(best, 4)
         metrics.idle_vehicle_share = round(
             series.idle_vehicles[-1] / metrics.vehicles_final, 4,
         )

@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from nttd.analysis.score import score_company
+from nttd.analysis.score import SCORE_VERSION, score_company
 from nttd.schemas.company import Company
 from nttd.schemas.verification import CheckOutcome
 from nttd.store.map_digest import map_digest
@@ -107,6 +107,17 @@ async def score_recomputed(
         score = recomputed.get(company_id)
         if score is None:
             problems.append(f"company {company_id} is absent from the reloaded save")
+            continue
+        # A bundle scored under an older definition cannot be compared against this one. The
+        # tiebreak changed meaning at v3, from the quarter in progress to the run total, so a
+        # v2 result reads as a mismatch of thousands against zero. That is a version skew and
+        # not a claim the entrant made falsely, and reporting it as fraud would be wrong.
+        recorded_version = row.get("score_version")
+        if recorded_version and recorded_version != SCORE_VERSION:
+            problems.append(
+                f"company {company_id}: scored under {recorded_version}, this verifier is "
+                f"{SCORE_VERSION}; rescore the bundle rather than comparing across versions"
+            )
             continue
         checked += 1
         if score.primary != row.get("primary_score"):

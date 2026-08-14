@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from nttd.schemas.company import Company
 
 # Bump on any change to how primary/tiebreak are derived.
-SCORE_VERSION = "v2"
+SCORE_VERSION = "v3"
 
 # OpenTTD answers -1 for a quarter it cannot rate. The GameScript now asks for quarter 1,
 # the last completed one, so this is reached when a run ends before its first quarter
@@ -70,7 +70,11 @@ def score_company(company: Company) -> CompanyScore:
         company_name=company.name or "",
         score_version=SCORE_VERSION,
         primary=max(rating, 0),
-        tiebreak=company.q0_cargo,
+        # The RUN's cargo, not the quarter in progress. q0_cargo resets at every quarter
+        # boundary and a run ends on one, so the old tiebreak read 0 for every company that
+        # ever played: one measured run carried 3,526 units and tied at nothing. Bumped to v3
+        # because the number a board sorts on changed meaning, and two definitions must not mix.
+        tiebreak=company.cargo_delivered_total,
         company_value=company.value,
         balance=company.money,
         loan=company.loan,

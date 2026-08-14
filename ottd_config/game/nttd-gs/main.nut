@@ -1265,6 +1265,16 @@ class NttdGS extends GSController {
         q0_income = GSCompany.GetQuarterlyIncome(cid, 0),
         q0_expenses = GSCompany.GetQuarterlyExpenses(cid, 0),
         q0_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 0),
+        // Quarter 0 is the quarter IN PROGRESS and OpenTTD resets it to zero at every
+        // boundary, so q0_cargo is a sawtooth. A 366 day run ends on 1 January, which is a
+        // boundary, so the final snapshot always read 0: one measured run carried 3,526 units
+        // and reported none, in the scored tiebreak and in every cargo column.
+        //
+        // q1_cargo is the last COMPLETE quarter, and cargo_delivered_total sums the quarters
+        // the game still remembers. OpenTTD keeps 24 of them, so the total covers six game
+        // years, which is longer than any tier here.
+        q1_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 1),
+        cargo_delivered_total = this._CargoDeliveredTotal(cid),
       });
     }
     return { success = true, result = companies };
@@ -4672,6 +4682,17 @@ class NttdGS extends GSController {
     }
     if (from_r == null || to_r == null) return null;
     return { from = from_r, to = to_r };
+  }
+
+  function _CargoDeliveredTotal(cid) {
+    // Every completed quarter the game still remembers, summed. Starts at 1 because 0 is the
+    // quarter in progress and would be double counted as it grows.
+    local total = 0;
+    for (local q = 1; q <= GSCompany.EARLIEST_QUARTER; q++) {
+      local delivered = GSCompany.GetQuarterlyCargoDelivered(cid, q);
+      if (delivered > 0) total += delivered;
+    }
+    return total;
   }
 
   function _GetAdjacentTile(tile, direction) {

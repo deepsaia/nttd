@@ -19,10 +19,24 @@ def _company(cid: int, **kwargs: object) -> Company:
 
 
 def test_primary_is_performance_rating() -> None:
-    score = score_company(_company(0, performance_rating=740, q0_cargo=1200, value=50_000))
+    score = score_company(
+        _company(0, performance_rating=740, cargo_delivered_total=1200, value=50_000),
+    )
     assert score.primary == 740
     assert score.tiebreak == 1200
     assert score.score_version == SCORE_VERSION
+
+
+def test_the_tiebreak_is_the_run_total_and_not_the_quarter_in_progress() -> None:
+    """q0_cargo resets at every quarter boundary and a run ENDS on one, so it read 0 for
+    every company that ever played. One measured run carried 3,526 units and tied at nothing.
+    """
+    company = _company(0, performance_rating=600, q0_cargo=0, cargo_delivered_total=3526)
+    assert score_company(company).tiebreak == 3526
+
+
+def test_a_company_that_delivered_nothing_still_ties_at_zero() -> None:
+    assert score_company(_company(0, performance_rating=600)).tiebreak == 0
 
 
 def test_company_value_does_not_affect_rank() -> None:
@@ -39,8 +53,8 @@ def test_company_value_does_not_affect_rank() -> None:
 
 
 def test_cargo_breaks_ties() -> None:
-    a = _company(0, performance_rating=600, q0_cargo=500)
-    b = _company(1, performance_rating=600, q0_cargo=900)
+    a = _company(0, performance_rating=600, cargo_delivered_total=500)
+    b = _company(1, performance_rating=600, cargo_delivered_total=900)
     assert [s.company_id for s in rank_companies([a, b])] == [1, 0]
 
 

@@ -222,6 +222,18 @@ class SessionFeed:
             })
         return frames
 
+    def metrics(self) -> dict[str, Any]:
+        """The scored business metrics, or empty while the run is still going.
+
+        Read from result.parquet rather than recomputed, so the page shows the same numbers the
+        leaderboard sorts on. They exist only once a session ends: the metrics are derived from
+        the merged snapshot series, and that file is written when the recorder finalises.
+        """
+        result = self._data.result
+        if result is None or result.is_empty():
+            return {}
+        return result.row(0, named=True)
+
     def tiles(self) -> Any:
         """The recorded terrain grid, for the map's base image.
 

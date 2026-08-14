@@ -205,6 +205,15 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
  margin-right:5px;animation:pulse 1.6s infinite;}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(53,208,165,.5);}
  70%{box-shadow:0 0 0 6px rgba(53,208,165,0);}100%{box-shadow:0 0 0 0 rgba(53,208,165,0);}}
+/* The scored metrics: six groups of label-and-number, dense enough to read at a glance and
+   wide enough that a money figure does not wrap. */
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 18px;}
+.mgroup{min-width:0;}
+.mgt{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;
+ margin:2px 0 5px;border-bottom:1px solid var(--line);padding-bottom:3px;}
+.mrow{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-size:11.5px;}
+.mk{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mv{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .err{color:var(--bad);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 code{background:var(--panel2);padding:2px 6px;border-radius:5px;}
 """

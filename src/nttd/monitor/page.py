@@ -137,7 +137,9 @@ def session_page(
     body.append('<div class="grid pair">')
     body.append(_action_table(feed))
     body.append(_event_table(feed))
-    body.append("</div></div>")
+    body.append("</div>")
+    body.append(_metrics_panel(feed.metrics()))
+    body.append("</div>")
     return shell("".join(body), refresh=LIVE_REFRESH_SECONDS if meta["live"] else 0)
 
 
@@ -213,6 +215,97 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
         "no sessions",
     )
     return header + cards + '<div class="grid">' + listing + "</div>"
+
+
+# The scored business metrics, grouped as they are computed, with the formatter each needs.
+# Last on the page deliberately: they are the summary of a finished run, not something to watch
+# while it plays, and every one of them is fixed once the session ends.
+_METRIC_GROUPS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
+    ("Profitability", (
+        ("operating_margin_final", "operating margin, final", "ratio"),
+        ("operating_margin_mean", "operating margin, mean", "ratio"),
+        ("profitable_quarters_share", "profitable quarters", "ratio"),
+        ("maintenance_burden_final", "maintenance burden", "ratio"),
+    )),
+    ("Capital", (
+        ("return_on_capital", "return on capital", "ratio"),
+        ("peak_capital_deployed", "peak capital deployed", "money"),
+        ("days_to_first_profit", "days to first profit", "days"),
+    )),
+    ("Growth", (
+        ("value_at_25pct", "value at 25%", "money"),
+        ("value_at_50pct", "value at 50%", "money"),
+        ("value_at_75pct", "value at 75%", "money"),
+        ("cargo_at_25pct", "cargo at 25%", "count"),
+        ("cargo_at_50pct", "cargo at 50%", "count"),
+        ("cargo_at_75pct", "cargo at 75%", "count"),
+    )),
+    ("Risk", (
+        ("peak_credit_used", "peak credit used", "ratio"),
+        ("final_credit_used", "final credit used", "ratio"),
+        ("min_cash", "minimum cash", "money"),
+        ("ended_in_debt", "ended in debt", "flag"),
+    )),
+    ("Operations", (
+        ("profitable_vehicle_share", "profitable vehicles, peak", "ratio"),
+        ("idle_vehicle_share", "idle vehicles", "ratio"),
+        ("vehicles_final", "vehicles", "count"),
+        ("stations_final", "stations", "count"),
+        ("cargo_per_vehicle", "cargo per vehicle", "rate"),
+        ("cargo_per_station", "cargo per station", "rate"),
+    )),
+    ("Decision economy", (
+        ("action_success_rate", "action success rate", "ratio"),
+        ("value_per_action", "value per action", "rate"),
+        ("usd_per_score_point", "USD per score point", "rate"),
+    )),
+)
+
+
+def _metric_value(raw: Any, kind: str) -> str:
+    """One metric, formatted for its kind. Blank when the run never produced it."""
+    if raw is None:
+        return "-"
+    if kind == "flag":
+        return "yes" if raw else "no"
+    if kind == "days":
+        # -1 is the sentinel for "never turned a profit", which is a fact and not a missing value.
+        return "never" if int(raw) < 0 else str(int(raw))
+    if kind == "ratio":
+        return f"{float(raw):.2f}"
+    if kind == "rate":
+        return f"{float(raw):,.1f}"
+    return f"{int(raw):,}"
+
+
+def _metrics_panel(metrics: dict[str, Any]) -> str:
+    """The scored metrics, or a line saying when they will exist.
+
+    Shown because nothing on this page carried them: twenty four numbers were computed into
+    result.parquet and sorted on by the leaderboard, and a reader watching a run had no way to
+    see any of them.
+    """
+    if not metrics:
+        return panel(
+            "Business metrics",
+            '<div class="ph">Computed when the session ends, from the merged snapshot series. '
+            "These are the figures the leaderboard sorts on.</div>",
+            span="full",
+        )
+    blocks = []
+    for title, fields in _METRIC_GROUPS:
+        rows = "".join(
+            f'<div class="mrow"><span class="mk">{esc(label)}</span>'
+            f'<span class="mv">{esc(_metric_value(metrics.get(key), kind))}</span></div>'
+            for key, label, kind in fields
+        )
+        blocks.append(f'<div class="mgroup"><div class="mgt">{esc(title)}</div>{rows}</div>')
+    version = metrics.get("metrics_version") or "?"
+    return panel(
+        f"Business metrics ({esc(str(version))})",
+        f'<div class="mgrid">{"".join(blocks)}</div>',
+        span="full",
+    )
 
 
 def _delete_control(meta: dict[str, Any]) -> str:
