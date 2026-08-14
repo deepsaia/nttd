@@ -489,6 +489,58 @@ it builds.
 
 ---
 
+## 4g. Both combined runs, and the trap that cost three aircraft
+
+Seeds 662166489 and 362700556, scoring **92** and **130**. The second is the highest cargo total
+of the whole programme, 4,952 units, and the second highest score.
+
+**BIG PLANES CRASH AT SMALL AIRPORTS, and nothing in the surface said so.** The most expensive
+finding here. Combined run 1 lost **three Dinger 200s**, roughly 150,000 of hulls, to bare
+`vehicle_crashed` events with no detail. OpenTTD gives a big plane a crash chance on every
+landing at a small airport, and the commuter airport is small. `get_engine_details` returned
+capacity, speed, price and running cost, and no field describing the plane's class at all, so
+the trap sits exactly where the optimiser lands: the Dinger 200 IS the best aircraft by capacity
+per running cost, and the commuter IS the cheapest airport that fits.
+
+Fixed by exposing `plane_type` on `get_engines` and `get_engine_details` (0 helicopter, 1 small,
+3 big, -1 for the rest); `GSAirport` already published `PT_BIG_PLANE` and `AT_COMMUTER` in
+enums.json, so only the per-engine field was missing. Filed as #97 for the remaining half: the
+crash event should name what died and where.
+
+**The plane class choice is a real trade, and catchment breaks the tie.** With the field visible,
+run 2 could reason about it:
+
+    big plane   eff 0.057 capacity per running cost, needs a LARGE class airport
+    small plane eff 0.023, safe at a commuter airport
+
+On that map a LARGE airport fitted no closer to Plonhill than a commuter one, 11 tiles either
+way, so going large would have cost nothing in catchment and gained safety. It was a coin flip,
+and I took small planes at close commuter airports. Result: **11 vehicles alive at the end, zero
+crashes**, against run 1's three write-offs, and a higher score despite one third the capacity
+per plane. The lesson generalises as: match the plane class to the airport class deliberately,
+and when the two airport classes site equally far out, the large one is free safety.
+
+**ENGINE AVAILABILITY EXPIRES MID-RUN.** Five aircraft were bought on day one with engine 237.
+Two hundred days later the same call answered "this engine cannot be bought in the current year"
+(ERR_PRECONDITION_FAILED), and two growth waves bought nothing at all before I read the error
+rather than the count. A T1 run crosses a year boundary and models retire on it. **Re-query
+`get_engines` at every purchase; never cache an engine id across a run.** This is invisible if
+a builder checks only whether the fleet grew, which is what mine did.
+
+**The mode order that worked.** Air is the revenue backbone and everything else is support:
+
+    air    the earner, but 60 to 140 days before the first real quarter of income
+    water  cheap, safe, immediate, and the only leg earning during air's ramp
+    road   fast to revenue when towns are close, worthless when they are not
+    rail   the most work per unit delivered; last, if at all
+
+Run 1 nearly died of this: 197,000 on aircraft plus 30,000 on airports plus a hovercraft took
+cash to **2,805** while air had not yet ramped. It recovered to 56,709 within 35 days and both
+planes went from -2,561 to +49,950. **The water leg is what kept it solvent**, and on a combined
+run that is its job: not the biggest earner, the one that pays during the gap.
+
+---
+
 ## 5. What the five networks need
 
 ### Shared, all five
