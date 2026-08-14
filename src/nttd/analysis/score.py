@@ -53,10 +53,6 @@ class CompanyScore:
     company_name: str
     performance_rating: int
     total_cargo: int
-    rail_cargo: int
-    road_cargo: int
-    water_cargo: int
-    air_cargo: int
     company_value: int
     balance: int
     loan: int
@@ -81,10 +77,6 @@ def score_company(company: Company) -> CompanyScore:
         # boundary and a run ends on one, so the old tiebreak read 0 for every company that
         # ever played. One measured run carried 3,526 units and tied at nothing.
         total_cargo=company.cargo_delivered_total,
-        rail_cargo=company.rail_cargo,
-        road_cargo=company.road_cargo,
-        water_cargo=company.water_cargo,
-        air_cargo=company.air_cargo,
         company_value=company.value,
         balance=company.money,
         loan=company.loan,

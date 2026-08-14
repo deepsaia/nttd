@@ -24,28 +24,10 @@ class NttdGS extends GSController {
   _DEFAULT_TRANSIT_DAYS = 20;
   _pathfind_queue = null;
   _event_names = null;
-  // Declared here, not just assigned in Start. Squirrel will not create a new instance slot
-  // with `=`, so assigning these in Start alone killed the script on the first line that
-  // touched them: "the index '_cargo_by_type' does not exist", and every session came up with
-  // a dead GameScript that answered nothing.
-  _cargo_by_type = null;
-  _last_load = null;
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
     this._pathfind_queue = [];
-    // Cargo delivered, split by the transport that carried it. OpenTTD does not report this:
-    // GetQuarterlyCargoDelivered is company wide and GSCargoMonitor is per town or industry,
-    // so the split has to be accounted here. Watched per vehicle, banked when a load drops
-    // while the vehicle is at a station, which is a delivery.
-    //
-    // Done in the GS rather than from recorded snapshots because the GS is ticked even while
-    // the economy is paused, and snapshots are a game day apart: a 236 km/h aircraft finishes
-    // a leg inside one day, so sampling daily undercounts exactly the mode that earns most.
-    // Keyed by the game's own vehicle type names, which are what _VehicleTypeName returns.
-    // Keying it by the column names (rail, water, air) silently matched only "road".
-    this._cargo_by_type = { train = 0, road = 0, ship = 0, aircraft = 0 };
-    this._last_load = {};
     this._event_names = {};
     this._event_names[GSEvent.ET_VEHICLE_CRASHED]       <- "vehicle_crashed";
     this._event_names[GSEvent.ET_VEHICLE_LOST]          <- "vehicle_lost";
@@ -76,7 +58,6 @@ class NttdGS extends GSController {
     this._event_names[GSEvent.ET_PRESIDENT_RENAMED]    <- "president_renamed";
     while (true) {
       this._HandleEvents();
-      this._AccountDeliveries();
       // Process pathfinding commands that were queued during a prior pathfind yield.
       while (this._pathfind_queue.len() > 0) {
         local cmd = this._pathfind_queue.remove(0);
@@ -1294,13 +1275,6 @@ class NttdGS extends GSController {
         // years, which is longer than any tier here.
         q1_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 1),
         cargo_delivered_total = this._CargoDeliveredTotal(cid),
-        // Attributed by us, per transport. The four should sum to cargo_delivered_total, which
-        // is the game's own figure: a mismatch means the attribution is wrong, and is meant to
-        // be visible rather than hidden by deriving the total from the parts.
-        rail_cargo = this._cargo_by_type.train,
-        road_cargo = this._cargo_by_type.road,
-        water_cargo = this._cargo_by_type.ship,
-        air_cargo = this._cargo_by_type.aircraft,
       });
     }
     return { success = true, result = companies };
@@ -4708,32 +4682,6 @@ class NttdGS extends GSController {
     }
     if (from_r == null || to_r == null) return null;
     return { from = from_r, to = to_r };
-  }
-
-  function _AccountDeliveries() {
-    // GSVehicleList() is EMPTY outside a company mode. Every working handler wraps it in
-    // GSCompanyMode; this did not, so it enumerated nothing and all four counters stayed at
-    // zero while the game reported 222 units delivered. Company 0 because a scored session
-    // holds exactly one contestant company by construction.
-    local company_mode = GSCompanyMode(0);
-    // One pass over the vehicles this company owns. A load that fell while the vehicle sits in
-    // a station is cargo handed over; a load that fell anywhere else is a vehicle being sold or
-    // crashing, and must not be counted as a delivery.
-    foreach (vid, _ in GSVehicleList()) {
-      local kind = this._VehicleTypeName(GSVehicle.GetVehicleType(vid));
-      if (!(kind in this._cargo_by_type)) continue;
-      local loaded = 0;
-      foreach (cargo_id, _ in GSCargoList()) {
-        if (GSVehicle.GetCapacity(vid, cargo_id) > 0) {
-          loaded += GSVehicle.GetCargoLoad(vid, cargo_id);
-        }
-      }
-      local before = (vid in this._last_load) ? this._last_load[vid] : 0;
-      if (loaded < before && GSVehicle.GetState(vid) == GSVehicle.VS_AT_STATION) {
-        this._cargo_by_type[kind] += (before - loaded);
-      }
-      this._last_load[vid] <- loaded;
-    }
   }
 
   function _CargoDeliveredTotal(cid) {

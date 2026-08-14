@@ -340,7 +340,7 @@ class TestReadingAnOlderResult:
 
         row = read_result(self._old_result(tmp_path))[0]
         assert row["total_cargo"] == 0
-        assert row["rail_cargo"] == 0
+        assert row["company_value"] == 0
         assert row["clean_run"] is False
         assert row["final_save_digest"] == ""
 

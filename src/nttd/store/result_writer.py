@@ -49,13 +49,6 @@ _SCHEMA = pa.schema([
     # The run's delivered cargo, and what breaks a tie on equal ratings. One column: a
     # tiebreak_cargo beside an identical total_cargo is the same number under two names.
     ("total_cargo", pa.int64()),
-    # Attributed per transport by the GameScript, which accounts it per vehicle because the
-    # game reports cargo only company-wide. These four should sum to total_cargo; when they do
-    # not, the attribution is wrong, and that is meant to be visible.
-    ("rail_cargo", pa.int64()),
-    ("road_cargo", pa.int64()),
-    ("water_cargo", pa.int64()),
-    ("air_cargo", pa.int64()),
     ("company_value", pa.int64()),
     ("final_balance", pa.int64()),
     ("final_loan", pa.int64()),
@@ -245,10 +238,6 @@ class ResultWriter:
                 "company_name": score.company_name,
                 "performance_rating": score.performance_rating,
                 "total_cargo": score.total_cargo,
-                "rail_cargo": score.rail_cargo,
-                "road_cargo": score.road_cargo,
-                "water_cargo": score.water_cargo,
-                "air_cargo": score.air_cargo,
                 "company_value": score.company_value,
                 "final_balance": score.balance,
                 "final_loan": score.loan,

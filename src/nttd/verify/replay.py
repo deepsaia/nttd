@@ -122,13 +122,6 @@ async def score_recomputed(
                 f"company {company_id}: save gives {score.total_cargo} cargo, "
                 f"result claims {row.get('total_cargo')}"
             )
-        for mode in ("rail", "road", "water", "air"):
-            recomputed = getattr(score, f"{mode}_cargo")
-            if recomputed != row.get(f"{mode}_cargo"):
-                problems.append(
-                    f"company {company_id}: save gives {recomputed} {mode} cargo, "
-                    f"result claims {row.get(f'{mode}_cargo')}"
-                )
 
     if problems:
         return CheckOutcome(

@@ -199,7 +199,6 @@ def result(
     table.add_column("Company")
     table.add_column("Score", justify="right")
     table.add_column("Cargo", justify="right")
-    table.add_column("rail/road/water/air", justify="right")
     table.add_column("Value", justify="right")
     table.add_column("Actions", justify="right")
     table.add_column("Model")
@@ -214,7 +213,6 @@ def result(
             str(row["performance_rating"]) if row["performance_rating"] >= 0
             else "[yellow]unrated[/]",
             f"{row['total_cargo']:,}",
-            "/".join(str(row[f"{m}_cargo"]) for m in ("rail", "road", "water", "air")),
             f"{row['company_value']:,}",
             f"{ok}/{actions}" if actions else "-",
             row["model"] or "-",

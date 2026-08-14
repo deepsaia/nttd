@@ -36,10 +36,3 @@ class Company(BaseModel):
     # the game still remembers. The scored tiebreak reads the total.
     q1_cargo: int = 0
     cargo_delivered_total: int = 0
-    # Cargo split by the transport that carried it. The game does not report this, so the
-    # GameScript accounts it per vehicle; these four should sum to cargo_delivered_total, and
-    # a mismatch is a bug in the attribution rather than something to paper over.
-    rail_cargo: int = 0
-    road_cargo: int = 0
-    water_cargo: int = 0
-    air_cargo: int = 0
