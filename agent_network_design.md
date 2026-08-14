@@ -541,6 +541,78 @@ run that is its job: not the biggest earner, the one that pays during the gap.
 
 ---
 
+## 4h. What nttd still cannot tell an agent
+
+Eleven sessions produced a list of gaps that are not strategy problems. Each one cost real money
+or real days, and each is invisible from inside the surface.
+
+**THE BIGGEST GAP: nothing says a vehicle is stuck.** A vehicle with no path halts. Queried, it
+reports `state: 0` (running) and `current_speed: 0`, which is identical to one waiting at a
+signal or loading. Worse, a train rocking inside an unjoined depot reported speeds of 0, 39, 21
+and 36 across eight days while never leaving its tile. The only detection available is polling
+position across several steps and inferring, which costs steps and is what a contestant is
+scored on. OpenTTD knows a vehicle is lost. The surface should say so.
+
+**Nothing says which station serves an industry.** An industry delivers to exactly one station,
+and it is not necessarily the nearest or newest. A leftover station four tiles away silently took
+422 units of wood while the served station showed nothing, for 120 days. There is no query for
+"which station collects here", so the failure is only visible by noticing that cargo accumulates
+somewhere you did not build.
+
+**The finders are inconsistent, and two of them actively mislead.**
+
+| finder | problem |
+| --- | --- |
+| `find_rail_depot_spot` | demands `tile`; every sibling takes `town_id` or x/y. Returns spots beside a DIFFERENT line, with no way to ask for the line serving two given stations. Cost 21,000 and an unsellable train |
+| `find_airport_spots` | sorts by cargo acceptance, so a wide radius buries the close-in spot that decides everything. Reports no coverage radius, and defaults to airport type 0, which does not exist after 1950 |
+| `find_water_depot_spots` | tested one orientation of two, so 1 of 16 towns had a spot where 10 of 14 do. Fixed |
+| `find_dock_spots` | fine, but the docks it returns cannot be passed to `check_connection` |
+
+**Two "verify before you spend" checks do not verify.** `trace_route` gives false positives AND
+false negatives on rail: it passed a route no train could run, and failed a depot the game itself
+reported as connected. `check_connection` for water returns no path between any two docks,
+because a dock is a station tile and the walker only crosses water. Both are the documented
+pre-flight check. Filed as #95 and #96.
+
+**The work plan is a list, not a promise.** `check_connection` answers
+`work: {move, build_road, build_bridge}`, and `build_path` builds the roads and skips the bridge,
+leaving a corridor that does not verify. `connect_rail` then re-plans from scratch and will not
+use a bridge built for it, hitting water two tiles away instead.
+
+**Three things expire or change without warning.** Engine availability retires mid-run
+(ERR_PRECONDITION_FAILED on an id bought 200 days earlier). Airport type 0 does not exist in
+2020. Only one locomotive exists at rail type 0, and it carries passengers, so every freight
+train is a mixed consist unless the whole thing is refitted.
+
+**A crash is reported as nothing.** `vehicle_crashed` carries no vehicle, no location, no cause.
+Three aircraft and roughly 150,000 disappeared behind two such events, and the reason (a big
+plane landing at a small airport) was not discoverable from any query until `plane_type` was
+added. Filed as #97.
+
+**Terrain flags conflate a station with track.** Flags 40 is rail|station, so "where is the
+running line" cannot be answered with `flags & 8`. A depot placed against a platform can never
+be joined, and every attempt returns ERR_AREA_NOT_CLEAR without saying why.
+
+**Depots are not reported at all.** OpenTTD does not treat a depot as a station, so nothing in
+the snapshot lists them. An agent that loses track of where it built one cannot ask.
+
+### The actions worth adding
+
+Ranked by what they would have saved across these eleven runs:
+
+1. **`get_vehicle_status`, or a `lost` flag on `get_vehicle_info`.** The single highest value
+   addition. It converts the most expensive failure mode from "poll and infer" into one read.
+2. **`get_industry_station`, or `served_by` on `get_industries`.** Removes the whole
+   station-poaching class of failure.
+3. **`connect_depot`.** The depot junction recipe is four actions, a direction-bit mapping and
+   a slope check, and it is pure mechanism. It belongs in the game, not in every agent.
+4. **Coverage on the airport and station finders.** The number that decides an air route's
+   income is not in the reply that chooses the site.
+5. **A rollback for a failed build.** Abandoning a half-built route leaves stations that poach
+   cargo from the route that replaces them, so "undo what I just tried" is a real need.
+
+---
+
 ## 5. What the five networks need
 
 ### Shared, all five
