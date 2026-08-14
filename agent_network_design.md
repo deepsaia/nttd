@@ -470,6 +470,23 @@ trip-limited, an aircraft at 236 km/h is not, so capacity takes over.
 period when airports are built and aircraft bought but routes have not yet returned a full
 delivery cycle. Every other mode has a gentler failure curve.
 
+**Air, second run (seed 1544821107): score 111, and the siting rule transfers.** Every airport
+was sited close-in from the start, ranking candidates by population divided by distance to the
+town centre rather than by whether one fitted. The difference that made:
+
+    session 1  four airports 16-28 tiles out, then rebuilt close   score 153, min cash  2,129
+    session 2  six airports sited close from the start             score 111, min cash 27,686
+
+Session 2 scored lower and was never in danger. Session 1 scored higher because rebuilding gave
+it twelve airports against six, so more towns were served, but it spent 105 days earning nothing
+and came within 2,129 of bankruptcy. **35 of 36 actions succeeded**, the cleanest run of the
+programme, because no build was speculative.
+
+Air still ramps slowly: 60 days of loaded flights before the first quarter of real income, and
+both runs showed the same curve of income near zero, then tens of thousands, then over a hundred
+thousand a quarter. A network that judges a route in its first 50 days will kill every air route
+it builds.
+
 ---
 
 ## 5. What the five networks need
