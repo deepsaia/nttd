@@ -23,9 +23,6 @@ from dataclasses import dataclass
 
 from nttd.schemas.company import Company
 
-# Bump on any change to how primary/tiebreak are derived.
-SCORE_VERSION = "v3"
-
 # OpenTTD answers -1 for a quarter it cannot rate. The GameScript now asks for quarter 1,
 # the last completed one, so this is reached when a run ends before its first quarter
 # closes rather than, as it used to be, always.
@@ -40,45 +37,57 @@ _DAYS_IN_QUARTER = 92
 
 @dataclass(frozen=True)
 class CompanyScore:
-    """A single company's score under a specific score version."""
+    """One company's score. One definition, so there is no version to carry.
+
+    ``performance_rating`` is stored RAW, exactly as the game answers it, including -1 for a
+    quarter it could not rate. It used to be split into two columns, a clamped ``primary_score``
+    and a ``rating_available`` flag, which is one fact recorded twice: the flag existed only to
+    restore the information the clamp destroyed. -1 already sorts below 0, so the clamp was not
+    even needed for ordering.
+
+    ``total_cargo`` is the run's delivered cargo and is also what breaks a tie, so it is one
+    column rather than a ``tiebreak_cargo`` beside an identical ``total_cargo``.
+    """
 
     company_id: int
     company_name: str
-    score_version: str
-    primary: int
-    tiebreak: int
+    performance_rating: int
+    total_cargo: int
+    rail_cargo: int
+    road_cargo: int
+    water_cargo: int
+    air_cargo: int
     company_value: int
     balance: int
     loan: int
-    rating_available: bool
+
+    @property
+    def rating_available(self) -> bool:
+        """Derived, not stored: -1 is the game saying it could not rate the quarter."""
+        return self.performance_rating != _RATING_UNAVAILABLE
 
     def sort_key(self) -> tuple[int, int]:
-        """Descending rank order: primary, then tiebreak."""
-        return (self.primary, self.tiebreak)
+        """Descending rank order: the rating, then the cargo that broke the tie."""
+        return (self.performance_rating, self.total_cargo)
 
 
 def score_company(company: Company) -> CompanyScore:
-    """Score one company from its final state.
-
-    An unavailable rating scores 0 rather than -1, so a company that never earned
-    a rating ranks below one that did without inverting the ordering.
-    """
-    rating = company.performance_rating
-    available = rating != _RATING_UNAVAILABLE
+    """Score one company from its final state, as the game reports it."""
     return CompanyScore(
         company_id=company.id,
         company_name=company.name or "",
-        score_version=SCORE_VERSION,
-        primary=max(rating, 0),
-        # The RUN's cargo, not the quarter in progress. q0_cargo resets at every quarter
+        performance_rating=company.performance_rating,
+        # The RUN's cargo, not the quarter in progress: q0_cargo resets at every quarter
         # boundary and a run ends on one, so the old tiebreak read 0 for every company that
-        # ever played: one measured run carried 3,526 units and tied at nothing. Bumped to v3
-        # because the number a board sorts on changed meaning, and two definitions must not mix.
-        tiebreak=company.cargo_delivered_total,
+        # ever played. One measured run carried 3,526 units and tied at nothing.
+        total_cargo=company.cargo_delivered_total,
+        rail_cargo=company.rail_cargo,
+        road_cargo=company.road_cargo,
+        water_cargo=company.water_cargo,
+        air_cargo=company.air_cargo,
         company_value=company.value,
         balance=company.money,
         loan=company.loan,
-        rating_available=available,
     )
 
 

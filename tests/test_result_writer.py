@@ -62,7 +62,7 @@ def test_one_row_per_scored_company_ranked(tmp_path: Path) -> None:
     rows = _write(tmp_path)
     assert len(rows) == 2
     assert [r["company_id"] for r in rows] == [0, 1], "rows follow rank order"
-    assert rows[0]["primary_score"] == 740
+    assert rows[0]["performance_rating"] == 740
 
 
 def test_task_identity_is_recorded(tmp_path: Path) -> None:
@@ -103,7 +103,7 @@ def test_company_without_participant_still_scored(tmp_path: Path) -> None:
     """An AI opponent or unattended company has a score but no contestant."""
     rows = _write(tmp_path)
     unattended = next(r for r in rows if r["company_id"] == 1)
-    assert unattended["primary_score"] == 380
+    assert unattended["performance_rating"] == 380
     assert unattended["agent_id"] == ""
     assert unattended["model"] == ""
 
@@ -142,7 +142,7 @@ def test_no_task_instance_records_empty_identity(tmp_path: Path) -> None:
     row = _write(tmp_path, task=None)[0]
     assert row["task_id"] == ""
     assert row["map_seed"] == -1
-    assert row["primary_score"] == 740, "score is still recorded"
+    assert row["performance_rating"] == 740, "score is still recorded"
 
 
 def test_no_scores_writes_nothing(tmp_path: Path) -> None:
@@ -186,7 +186,7 @@ def test_blocked_attempt_is_recorded_without_voiding_the_score(tmp_path: Path) -
     assert row["clean_run"] is False
     assert row["blocked_attempts"] == 2
     assert "deity/change_balance" in row["blocked_operations"]
-    assert row["primary_score"] == 740, "the score is still recorded"
+    assert row["performance_rating"] == 740, "the score is still recorded"
 
 
 def test_unscored_run_is_marked_as_such(tmp_path: Path) -> None:

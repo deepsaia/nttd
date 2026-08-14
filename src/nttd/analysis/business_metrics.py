@@ -198,6 +198,15 @@ def _from_series(
     )
 
 
+def has_series(session_dir: Path) -> bool:
+    """Whether this session recorded a snapshot series to derive metrics from.
+
+    Asked before printing metrics, because every metric defaults to zero and a zero reads as a
+    measurement. "Days to first profit: 0" claims the company was profitable on day one.
+    """
+    return (session_dir / "snapshots.parquet").exists()
+
+
 def _read_series(session_dir: Path, company_id: int) -> _CompanySeries | None:
     """Pull one company out of every snapshot.
 

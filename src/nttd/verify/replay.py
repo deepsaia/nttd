@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from nttd.analysis.score import SCORE_VERSION, score_company
+from nttd.analysis.score import score_company
 from nttd.schemas.company import Company
 from nttd.schemas.verification import CheckOutcome
 from nttd.store.map_digest import map_digest
@@ -108,28 +108,27 @@ async def score_recomputed(
         if score is None:
             problems.append(f"company {company_id} is absent from the reloaded save")
             continue
-        # A bundle scored under an older definition cannot be compared against this one. The
-        # tiebreak changed meaning at v3, from the quarter in progress to the run total, so a
-        # v2 result reads as a mismatch of thousands against zero. That is a version skew and
-        # not a claim the entrant made falsely, and reporting it as fraud would be wrong.
-        recorded_version = row.get("score_version")
-        if recorded_version and recorded_version != SCORE_VERSION:
-            problems.append(
-                f"company {company_id}: scored under {recorded_version}, this verifier is "
-                f"{SCORE_VERSION}; rescore the bundle rather than comparing across versions"
-            )
-            continue
+        # No version to reconcile: there is one definition of every column, everywhere. What
+        # the code was when a bundle was written is pinned by nttd_git_sha and
+        # gamescript_digest, which say it far more precisely than a hand-typed version string.
         checked += 1
-        if score.primary != row.get("primary_score"):
+        if score.performance_rating != row.get("performance_rating"):
             problems.append(
-                f"company {company_id}: save gives {score.primary}, "
-                f"result claims {row.get('primary_score')}"
+                f"company {company_id}: save rates {score.performance_rating}, "
+                f"result claims {row.get('performance_rating')}"
             )
-        if score.tiebreak != row.get("tiebreak_cargo"):
+        if score.total_cargo != row.get("total_cargo"):
             problems.append(
-                f"company {company_id}: save gives {score.tiebreak} cargo, "
-                f"result claims {row.get('tiebreak_cargo')}"
+                f"company {company_id}: save gives {score.total_cargo} cargo, "
+                f"result claims {row.get('total_cargo')}"
             )
+        for mode in ("rail", "road", "water", "air"):
+            recomputed = getattr(score, f"{mode}_cargo")
+            if recomputed != row.get(f"{mode}_cargo"):
+                problems.append(
+                    f"company {company_id}: save gives {recomputed} {mode} cargo, "
+                    f"result claims {row.get(f'{mode}_cargo')}"
+                )
 
     if problems:
         return CheckOutcome(

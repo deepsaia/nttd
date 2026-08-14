@@ -284,15 +284,18 @@ class TestAgainstRealRecordedSessions:
         ), "no recorded session produced a single non-zero metric"
 
 
-def test_every_metric_reaches_the_result_schema() -> None:
-    """A metric computed and then dropped by the schema is worse than one not
-    computed: it looks present in the code and is absent from the artifact."""
+def test_no_business_metric_reaches_the_leaderboard_record() -> None:
+    """They are derived, still being refined, and a public board must not be sorted on a
+    definition in flux. They are still computed for the monitor from the same artifacts, so
+    nothing is lost by keeping them out of the record a leaderboard reads.
+    """
     from dataclasses import fields
 
+    from nttd.analysis.business_metrics import BusinessMetrics
     from nttd.store.result_writer import _SCHEMA
 
-    for spec in fields(business_metrics.BusinessMetrics):
-        assert spec.name in _SCHEMA.names, spec.name
+    for spec in fields(BusinessMetrics):
+        assert spec.name not in _SCHEMA.names, spec.name
 
 
 class TestReadingAnOlderResult:
@@ -336,10 +339,10 @@ class TestReadingAnOlderResult:
         from nttd.store.result_writer import read_result
 
         row = read_result(self._old_result(tmp_path))[0]
-        assert row["operating_margin_final"] == 0.0
-        assert row["vehicles_final"] == 0
-        assert row["ended_in_debt"] is False
-        assert row["metrics_version"] == ""
+        assert row["total_cargo"] == 0
+        assert row["rail_cargo"] == 0
+        assert row["clean_run"] is False
+        assert row["final_save_digest"] == ""
 
     def test_what_was_recorded_is_untouched(self, tmp_path: Path) -> None:
         from nttd.store.result_writer import read_result
@@ -356,7 +359,8 @@ class TestReadingAnOlderResult:
         from nttd.cli.result_command import _print_business_metrics
         from nttd.store.result_writer import read_result
 
-        _print_business_metrics(read_result(self._old_result(tmp_path)))
+        session = self._old_result(tmp_path)
+        _print_business_metrics(read_result(session), session)
         output = capsys.readouterr().out
         assert "No business metrics" in output
         assert "days to first profit" not in output

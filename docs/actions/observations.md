@@ -179,7 +179,7 @@ List the companies in the game, with their names, values and performance ratings
 
 Takes no parameters.
 
-Returns a list of `cargo_delivered_total`, `company_value`, `hq_x`, `hq_y`, `id`, `loan`, `max_loan`, `money`, `name`, `performance_rating`, `q0_cargo`, `q0_expenses`, `q0_income`, `q1_cargo`.
+Returns a list of `air_cargo`, `cargo_delivered_total`, `company_value`, `hq_x`, `hq_y`, `id`, `loan`, `max_loan`, `money`, `name`, `performance_rating`, `q0_cargo`, `q0_expenses`, `q0_income`, `q1_cargo`, `rail_cargo`, `road_cargo`, `water_cargo`.
 
 ### `get_company_finance`
 

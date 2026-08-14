@@ -2519,6 +2519,7 @@
       "returns": {
         "shape": "list",
         "fields": [
+          "air_cargo",
           "cargo_delivered_total",
           "company_value",
           "hq_x",
@@ -2532,7 +2533,10 @@
           "q0_cargo",
           "q0_expenses",
           "q0_income",
-          "q1_cargo"
+          "q1_cargo",
+          "rail_cargo",
+          "road_cargo",
+          "water_cargo"
         ]
       }
     },

@@ -10,7 +10,7 @@ Run with: uv run pytest tests/test_score.py -v
 
 from __future__ import annotations
 
-from nttd.analysis.score import SCORE_VERSION, rank_companies, score_company
+from nttd.analysis.score import rank_companies, score_company
 from nttd.schemas.company import Company
 
 
@@ -22,9 +22,9 @@ def test_primary_is_performance_rating() -> None:
     score = score_company(
         _company(0, performance_rating=740, cargo_delivered_total=1200, value=50_000),
     )
-    assert score.primary == 740
-    assert score.tiebreak == 1200
-    assert score.score_version == SCORE_VERSION
+    assert score.performance_rating == 740
+    assert score.total_cargo == 1200
+    assert score.rating_available is True
 
 
 def test_the_tiebreak_is_the_run_total_and_not_the_quarter_in_progress() -> None:
@@ -32,11 +32,11 @@ def test_the_tiebreak_is_the_run_total_and_not_the_quarter_in_progress() -> None
     every company that ever played. One measured run carried 3,526 units and tied at nothing.
     """
     company = _company(0, performance_rating=600, q0_cargo=0, cargo_delivered_total=3526)
-    assert score_company(company).tiebreak == 3526
+    assert score_company(company).total_cargo == 3526
 
 
 def test_a_company_that_delivered_nothing_still_ties_at_zero() -> None:
-    assert score_company(_company(0, performance_rating=600)).tiebreak == 0
+    assert score_company(_company(0, performance_rating=600)).total_cargo == 0
 
 
 def test_company_value_does_not_affect_rank() -> None:
@@ -58,19 +58,20 @@ def test_cargo_breaks_ties() -> None:
     assert [s.company_id for s in rank_companies([a, b])] == [1, 0]
 
 
-def test_unavailable_rating_scores_zero_not_negative() -> None:
-    """OpenTTD reports -1 before it has a quarter of history.
+def test_an_unrated_company_keeps_the_games_own_minus_one() -> None:
+    """OpenTTD reports -1 before it has a quarter of history, and that is recorded as -1.
 
-    Clamping to 0 keeps an unrated company below a rated one without letting a
-    negative value invert the comparison.
+    It used to be clamped to 0 with a separate rating_available flag beside it, which is one
+    fact stored twice: the flag existed only to say which zeros were really -1. And -1 already
+    sorts below 0, so the clamp was not needed for ordering either.
     """
     unrated = score_company(_company(0))  # performance_rating defaults to -1
-    assert unrated.primary == 0
-    assert unrated.rating_available is False
+    assert unrated.performance_rating == -1
+    assert unrated.rating_available is False, "derived from the value, not stored beside it"
 
     rated = score_company(_company(1, performance_rating=5))
     assert rated.rating_available is True
-    assert rated.primary > unrated.primary
+    assert rated.performance_rating > unrated.performance_rating
 
 
 def test_inactive_companies_are_excluded() -> None:
@@ -134,7 +135,10 @@ class TestTheRatingComesFromACompletedQuarter:
         source = Path(__file__).parent.parent / "ottd_config" / "game" / "nttd-gs" / "main.nut"
         assert "GetQuarterlyCompanyValue(cid, 0)" in source.read_text()
 
-    def test_the_score_version_moved_off_the_one_that_never_scored(self) -> None:
-        from nttd.analysis.score import SCORE_VERSION
+    def test_there_is_no_score_version_to_carry(self) -> None:
+        """One definition of every column, everywhere. A version string let wrong numbers be
+        labelled instead of fixed, and provenance is already pinned by nttd_git_sha and
+        gamescript_digest, which say what produced a number far more precisely."""
+        import nttd.analysis.score as score_module
 
-        assert SCORE_VERSION != "v1"
+        assert not hasattr(score_module, "SCORE_VERSION")
