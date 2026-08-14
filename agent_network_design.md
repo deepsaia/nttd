@@ -348,6 +348,67 @@ same map's best rail route was 31 tiles and its best road route 31 tiles for opp
 
 ---
 
+## 4e. Water, twice: the mode with the fewest failure modes and the sharpest economics
+
+Two sessions, seeds 1526769347 and 1560904169, scoring **38** and **29**. The first is the best
+of any single-mode run so far, and both finished with **every action succeeding** (55/55 and
+57/57) because water needs no track, no depot junction, and no station orientation.
+
+**SPEED BEATS CAPACITY, and it is not close.** The finding of the programme. Same map, same
+routes, same day:
+
+    hovercraft  100 capacity, 112 km/h, 28,183 to buy, 3,117/yr to run   +3,358 and +2,923
+    ferry       130 capacity,  64 km/h, 21,328 to buy, 1,312/yr to run   +658 down to -389
+
+Payment decays with transit time, so trips per year dominates load size. Buying two hovercraft
+took the rating 19 -> 32 on their own. The second session then found the limit: **twelve
+hovercraft at 3,117 a year is 37,000 of running cost**, which pinned cash near 20,000 for the
+last 150 days and made further growth impossible. Speed is worth paying for per vehicle and
+ruinous per fleet, so the count has to be sized against income, not against ambition.
+
+**A HUB REUSES ONE DOCK; IT DOES NOT BUILD A SECOND.** The anti-poaching lesson from rail,
+applied deliberately: the second route out of Slarnway used the EXISTING dock as its origin
+rather than building another one at the same town. One depot, one hub, many spokes. No station
+ever competed with another for the same town's passengers.
+
+**There are separate seas, and nothing tells you except a plan.** Session two had seven docks
+that looked like one network. The sailability matrix, built from water-to-water plans:
+
+    docks 0,1,2,3  interconnect,  46 to 131 tiles,  0 canal tiles
+    docks 4,5,6    interconnect,  12 to  60 tiles,  0 canal tiles
+    0..3 <-> 4..6  17 to 18 canal tiles required   -> NOT sailable
+
+A ship built in the eastern depot and ordered to a western dock left its depot, reported
+`current_speed` above zero, passed the movement check, and could never arrive. **The movement
+check does not prove reachability across disconnected water.** Serving the west needed its own
+depot in the western sea, which is why only 10 of 14 towns having a depot spot matters so much.
+
+**`check_connection` for water cannot be called dock to dock.** Measured on a route that had a
+hovercraft earning 924 on it:
+
+    dock  -> dock    tiles 0,  work {}
+    water -> water   tiles 46, work {move: 46}, can_build true
+
+A dock is a STATION tile and the water cost function walks water tiles, so both endpoints are
+rejected. Seven pairs tested, all zero, three of them being actively sailed. Filed as #96. The
+rule for the networks: **plan between the water tiles ADJACENT to the docks, never between the
+docks.** And since the water planner will route through land by costing canals, "a path exists"
+is not "sailable": require `work` to contain no canal, lock or terraform entry.
+
+**Only one town on a 256x256 map had a ship depot spot, and that was nttd's bug, not the map's.**
+`find_water_depot_spots` dry-ran `BuildWaterDepot(tile, tile + 1)` only, the eastern neighbour,
+so every north-south stretch of water was rejected. A depot occupies two tiles and the
+orientation has to be searched. Fixed to try all four and to return `depot_direction`, since
+`build_water_depot` takes one: **1 of 16 towns before, 10 of 14 after**, with the working
+orientation a mix of 0 and 1. Water mode was close to unplayable on maps whose channels happen
+to run the wrong way, and it would have looked like bad luck with the seed.
+
+**Redeploying beats scrapping.** Two ships losing 1,657 and 688 on weak spokes were re-ordered
+onto the strongest route rather than sold: quarterly income went 3,337 -> 9,277. A vehicle is
+capital that is already paid for, and an order list is free to rewrite.
+
+---
+
 ## 5. What the five networks need
 
 ### Shared, all five
