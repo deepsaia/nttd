@@ -19,7 +19,7 @@ Full detail in [observations.md](observations.md).
 - `find_depot_spots(town_id, [max_results, radius, road_type])` Search near a town for places a road depot would fit.
 - `find_dock_spots(town_id, [max_results, radius])` Search near a town for coastal tiles a dock could be built on.
 - `find_flat_spots(tile|x,y, [max_results, min_size, platform_length, radius, rail_type, required_cargo, station_test])` Search around a tile for level ground.
-- `find_rail_depot_spot(tile, [max_results, radius, rail_type])` Find a tile near the given one where a rail depot would fit.
+- `find_rail_depot_spot(tile|x,y, [max_results, radius, rail_type, town_id])` Find a tile near the given one where a rail depot would fit.
 - `find_station_spot([industry_id, max_results, platform_length, radius, rail_type, town_id])` Find somewhere to put a station serving a given industry or town.
 - `find_water_depot_spots(tile|x,y, [max_results, radius, town_id])` Search near a town for water a ship depot could be built on.
 - `get_airport_types()` List the airport types this game has, with their sizes and whether they are available yet.

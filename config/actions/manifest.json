@@ -1895,10 +1895,12 @@
         "shape": "list",
         "fields": [
           "cargo_acceptance",
+          "coverage",
           "distance",
           "height",
           "tile",
           "width",
+          "within_coverage",
           "x",
           "y"
         ]
@@ -2150,11 +2152,37 @@
           "type": "integer"
         },
         "tile": {
-          "required": true,
+          "required": false,
           "description": "Tile index. Takes precedence over x and y when both are given.",
+          "type": "integer"
+        },
+        "town_id": {
+          "required": false,
+          "description": "Which town.",
+          "type": "integer"
+        },
+        "x": {
+          "required": false,
+          "description": "X coordinate on the map, counting from 0.",
+          "type": "integer"
+        },
+        "y": {
+          "required": false,
+          "description": "Y coordinate on the map, counting from 0.",
           "type": "integer"
         }
       },
+      "one_of": [
+        [
+          [
+            "tile"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ]
+      ],
       "returns": {
         "shape": "list",
         "fields": [
@@ -2738,6 +2766,7 @@
           "name",
           "produces_cargo",
           "production",
+          "served_by",
           "type_id",
           "type_name",
           "x",
@@ -3242,9 +3271,11 @@
           "engine_id",
           "has_shared_orders",
           "id",
+          "idle_reason",
           "in_depot",
           "is_articulated",
           "length",
+          "lost",
           "max_age",
           "name",
           "orders",

@@ -24,10 +24,14 @@ class NttdGS extends GSController {
   _DEFAULT_TRANSIT_DAYS = 20;
   _pathfind_queue = null;
   _event_names = null;
+  // Vehicles the game has reported lost, against the tile they were on when reported. Declared
+  // on the class because Squirrel will not create a new instance slot with plain assignment.
+  _lost_vehicles = null;
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
     this._pathfind_queue = [];
+    this._lost_vehicles = {};
     this._event_names = {};
     this._event_names[GSEvent.ET_VEHICLE_CRASHED]       <- "vehicle_crashed";
     this._event_names[GSEvent.ET_VEHICLE_LOST]          <- "vehicle_lost";
@@ -326,7 +330,22 @@ class NttdGS extends GSController {
           break;
       }
     } catch (e) {
-      GSLog.Warning("nttd: could not process event type " + et + ": " + e);
+      // Say so in the payload, not only in a log nobody reads. A getter that throws used to
+      // leave the event with no fields at all: three aircraft were destroyed and the recorded
+      // events said only "vehicle_crashed", with no vehicle and no place, because the extraction
+      // failed here and the failure was swallowed. GSLog.Warning does not reach openttd.log at
+      // the default level either, so the loss was invisible twice over.
+      payload.rawset("extract_error", "" + e);
+      GSLog.Error("nttd: could not process event type " + et + ": " + e);
+    }
+
+    // A vehicle the GAME says is lost. This is the only authoritative signal that a vehicle has
+    // no path: queried directly, a lost vehicle reports state running and speed 0, which is
+    // indistinguishable from one waiting at a signal. Remembered with the tile it was on, so
+    // the flag can be cleared once it moves again.
+    if (et == GSEvent.ET_VEHICLE_LOST && ("vehicle_id" in payload)) {
+      local vid = payload.vehicle_id;
+      this._lost_vehicles[vid] <- GSVehicle.GetLocation(vid);
     }
 
     GSAdmin.Send(payload);
@@ -1169,6 +1188,13 @@ class NttdGS extends GSController {
         production = produced,
         accepted = accepted_list,
         produces_cargo = produces_types,
+        // Which of the company's stations is close enough to collect here, and how many are.
+        // An industry delivers to ONE station and not necessarily the nearest or newest: a
+        // leftover station four tiles away silently took 422 units of wood for 120 days while
+        // the station the train actually served showed nothing waiting. More than one in range
+        // is the warning; the failure is otherwise only visible by noticing cargo piling up
+        // somewhere you did not build.
+        served_by = this._ServingStations(loc),
         accepts_cargo = accepts_types,
       });
     }
@@ -1498,6 +1524,14 @@ class NttdGS extends GSController {
       age_left = GSVehicle.GetAgeLeft(vid),
       profit_this_year = GSVehicle.GetProfitThisYear(vid),
       profit_last_year = GSVehicle.GetProfitLastYear(vid),
+      // Whether the GAME says this vehicle has no path. Without it, a halted vehicle is
+      // indistinguishable from one waiting at a signal or loading: both answer state 0 and
+      // speed 0. Detecting it otherwise means polling position across several steps, which
+      // spends the steps a contestant is scored on.
+      lost = this._IsLost(vid),
+      // Why it is not moving, when it is not. A stopped vehicle, one sitting in a depot and one
+      // with nowhere to go need three different fixes, and the raw state does not separate them.
+      idle_reason = this._IdleReason(vid),
       current_speed = GSVehicle.GetCurrentSpeed(vid),
       state = GSVehicle.GetState(vid),
       in_depot = GSVehicle.IsStoppedInDepot(vid),
@@ -1862,6 +1896,16 @@ class NttdGS extends GSController {
   }
 
   function CmdFindRailDepotSpot(p) {
+    // Accept town_id or x,y as well as tile. Every sibling finder takes those, and demanding a
+    // tile index here answered a bare "tile parameter required" that reads like there being
+    // nowhere to put a depot.
+    if (!("tile" in p)) {
+      if ("town_id" in p && GSTown.IsValidTown(p.town_id)) {
+        p.tile <- GSTown.GetLocation(p.town_id);
+      } else if ("x" in p && "y" in p) {
+        p.tile <- GSMap.GetTileIndex(p.x, p.y);
+      }
+    }
     if (!("tile" in p)) return { success = false, error = "tile parameter required" };
     local company_id = ("company_id" in p) ? p.company_id : 0;
     local radius = ("radius" in p) ? p.radius : 10;
@@ -1932,8 +1976,15 @@ class NttdGS extends GSController {
           if (!GSAirport.BuildAirport(tile, airport_type, GSStation.STATION_NEW)) continue;
         }
         local cargo_info = this._GetTileCargoInfo(tile, aw, ah, 4);
+        // Coverage is the number that decides whether an air route earns anything, and it was
+        // not in the reply that chooses the site. Measured: airports 16 to 28 tiles from their
+        // town earned nothing at all, one town of 4,379 people offering a single passenger,
+        // because a commuter airport reaches 4 tiles. `distance` is to the town centre, so
+        // `within_coverage` answers directly whether this spot will see the town.
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
-          width = aw, height = ah, cargo_acceptance = cargo_info });
+          width = aw, height = ah, cargo_acceptance = cargo_info,
+          coverage = GSAirport.GetAirportCoverageRadius(airport_type),
+          within_coverage = (abs(dx) + abs(dy)) <= GSAirport.GetAirportCoverageRadius(airport_type) });
       }
     }
     // Sort by cargo acceptance count (desc), then distance (asc)
@@ -4682,6 +4733,54 @@ class NttdGS extends GSController {
     }
     if (from_r == null || to_r == null) return null;
     return { from = from_r, to = to_r };
+  }
+
+  function _ServingStations(loc) {
+    // The company's stations near enough to be collecting here, nearest first.
+    //
+    // Inside a company mode, because GSStationList is EMPTY outside one, exactly as
+    // GSVehicleList is. Reports distance rather than asserting which one wins: catchment differs
+    // by station type, and the useful signal is "more than one of yours is in range", which is
+    // the situation that silently starves the route you just built.
+    local company_mode = GSCompanyMode(0);
+    local found = [];
+    foreach (sid, _ in GSStationList(GSStation.STATION_ANY)) {
+      local stile = GSStation.GetLocation(sid);
+      local distance = GSMap.DistanceManhattan(loc, stile);
+      if (distance > 10) continue;
+      found.append({
+        station_id = sid, name = GSStation.GetName(sid),
+        x = GSMap.GetTileX(stile), y = GSMap.GetTileY(stile),
+        distance = distance
+      });
+    }
+    return found;
+  }
+
+  function _IsLost(vid) {
+    // Reported lost by the game, and not moved since. The lost flag has no "found" event, so it
+    // is cleared the moment the vehicle is somewhere else than where it was when reported.
+    if (!(vid in this._lost_vehicles)) return false;
+    if (GSVehicle.GetLocation(vid) != this._lost_vehicles[vid]) {
+      delete this._lost_vehicles[vid];
+      return false;
+    }
+    return true;
+  }
+
+  function _IdleReason(vid) {
+    // Empty when the vehicle is moving. Anything else names what to do about it: a stopped
+    // vehicle needs starting, one in a depot needs sending out, a lost one needs track or
+    // orders, and one at a station waiting on a full load needs its order flags changed.
+    if (GSVehicle.GetCurrentSpeed(vid) > 0) return "";
+    local state = GSVehicle.GetState(vid);
+    if (state == GSVehicle.VS_STOPPED) return "stopped";
+    if (state == GSVehicle.VS_IN_DEPOT) return "in_depot";
+    if (state == GSVehicle.VS_BROKEN) return "broken_down";
+    if (state == GSVehicle.VS_CRASHED) return "crashed";
+    if (this._IsLost(vid)) return "no_path";
+    if (state == GSVehicle.VS_AT_STATION) return "at_station";
+    return "halted";
   }
 
   function _CargoDeliveredTotal(cid) {

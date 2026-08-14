@@ -28,7 +28,7 @@ Search near a town for places an airport of the given type would fit.
 
 `airport_type` accepts (GSAirport): `AT_COMMUTER` = 5, `AT_HELIDEPOT` = 6, `AT_HELIPORT` = 2, `AT_HELISTATION` = 8, `AT_INTERCON` = 7, `AT_INTERNATIONAL` = 4, `AT_LARGE` = 1, `AT_METROPOLITAN` = 3, `AT_SMALL` = 0
 
-Returns a list of `cargo_acceptance`, `distance`, `height`, `tile`, `width`, `x`, `y`.
+Returns a list of `cargo_acceptance`, `coverage`, `distance`, `height`, `tile`, `width`, `within_coverage`, `x`, `y`.
 
 ### `find_bus_stop_spots`
 
@@ -86,10 +86,15 @@ Returns a list of `cargo_acceptance`, `distance`, `max_height`, `tile`, `x`, `y`
 
 Find a tile near the given one where a rail depot would fit.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `max_results` (integer, default 5) How many results to return at most.
 - `radius` (integer, default 10) How far from the centre tile to search, in tiles.
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
-- `tile` (integer, required) Tile index. Takes precedence over x and y when both are given.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `town_id` (integer, optional) Which town.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 Returns a list of `adjacent_track_x`, `adjacent_track_y`, `depot_direction`, `distance`, `tile`, `x`, `y`.
 
@@ -253,7 +258,7 @@ List the industries on the map, with their locations, types and production.
 
 Takes no parameters.
 
-Returns a list of `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `produces_cargo`, `production`, `type_id`, `type_name`, `x`, `y`.
+Returns a list of `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `produces_cargo`, `production`, `served_by`, `type_id`, `type_name`, `x`, `y`.
 
 ### `get_industry_info`
 
@@ -409,7 +414,7 @@ Report one vehicle in detail: where it is, what it carries, its orders, age, rel
 
 - `vehicle_id` (integer, required) Which vehicle.
 
-Returns `age`, `age_left`, `cargo`, `current_speed`, `engine_id`, `has_shared_orders`, `id`, `in_depot`, `is_articulated`, `length`, `max_age`, `name`, `orders`, `profit_last_year`, `profit_this_year`, `state`, `type`, `x`, `y`.
+Returns `age`, `age_left`, `cargo`, `current_speed`, `engine_id`, `has_shared_orders`, `id`, `idle_reason`, `in_depot`, `is_articulated`, `length`, `lost`, `max_age`, `name`, `orders`, `profit_last_year`, `profit_this_year`, `state`, `type`, `x`, `y`.
 
 Each `orders` carries `destination`, `flags`, `index`, `is_conditional`, `is_goto_depot`, `is_goto_station`, `is_goto_waypoint`.
 

@@ -1,0 +1,146 @@
+"""Every failure a query can be asked about says why, instead of looking like success.
+
+Each case here was a silent failure: a halted vehicle that read as running, an industry whose
+cargo went to a station nobody served, an airport sited outside its own catchment, a finder that
+answered "tile parameter required" when asked in the obvious way, and a crash event that named
+neither the vehicle nor the place. In every one the information existed and was thrown away.
+
+Asserted against main.nut and the generated manifest rather than a live game, because these are
+contract changes: what the reply CARRIES. Whether the numbers are right is a question for a live
+session, and each of these was found by one.
+
+Every fix here is a new return field or a widened parameter set, which is why nothing in the HTTP
+or MCP layers needed touching: HTTP passes GameScript replies through unchanged, and MCP builds
+its action enums from the manifest at import. Only a NEW ACTION needs registering by hand, in
+constants.py for its tier and descriptions.json for its prose.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+_GS = (_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut").read_text()
+_ACTIONS = json.loads((_ROOT / "config" / "actions" / "manifest.json").read_text())["actions"]
+
+
+def _returns(action: str) -> list[str]:
+    return (_ACTIONS[action].get("returns") or {}).get("fields", [])
+
+
+class TestAVehicleSaysWhyItIsNotMoving:
+    """A halted vehicle answered state 0 and speed 0, the same as one waiting at a signal.
+
+    Three measured cases: a train stopped for twelve days on a verified line; a train rocking
+    inside an unjoined depot at speeds of 0, 39, 21, 36 without ever changing tile; and a ship
+    built in one sea ordered to a dock in another. Detecting any of them meant polling position
+    across steps, which spends the steps a contestant is scored on.
+    """
+
+    def test_the_reply_carries_the_games_own_lost_flag(self) -> None:
+        assert "lost" in _returns("get_vehicle_info")
+
+    def test_the_reply_says_why_it_is_idle(self) -> None:
+        assert "idle_reason" in _returns("get_vehicle_info")
+
+    def test_lost_comes_from_the_games_event_and_not_from_a_guess(self) -> None:
+        """ET_VEHICLE_LOST is the only authoritative signal; the GS already received it and
+        threw it away."""
+        assert "ET_VEHICLE_LOST && (\"vehicle_id\" in payload)" in _GS
+        assert "_lost_vehicles[vid] <- GSVehicle.GetLocation(vid)" in _GS
+
+    def test_the_flag_clears_when_the_vehicle_moves(self) -> None:
+        """There is no "found" event, so a flag that only ever sets would be permanent."""
+        assert "delete this._lost_vehicles[vid]" in _GS
+
+    def test_the_idle_reasons_separate_the_fixes(self) -> None:
+        """Stopped, in a depot and no-path need three different actions taken."""
+        for reason in ('"stopped"', '"in_depot"', '"no_path"', '"at_station"', '"broken_down"'):
+            assert reason in _GS, reason
+
+
+class TestAnIndustrySaysWhichStationCollects:
+    """A leftover station four tiles away took 422 units of wood for 120 days while the station
+    the train served showed nothing. An industry delivers to ONE station, and not necessarily
+    the nearest or the newest.
+    """
+
+    def test_industries_report_the_stations_in_range(self) -> None:
+        assert "served_by" in _returns("get_industries")
+
+    def test_it_lists_them_rather_than_naming_a_winner(self) -> None:
+        """Catchment differs by station type. More than one in range is the warning worth
+        having; asserting which one wins would be a guess presented as a fact."""
+        assert "station_id = sid" in _GS
+        assert "distance = distance" in _GS
+
+    def test_the_station_list_is_read_inside_a_company_mode(self) -> None:
+        """GSStationList is EMPTY outside one, exactly as GSVehicleList is. That trap cost an
+        hour and made four counters read zero while the game reported 222 units delivered."""
+        serving = _GS[_GS.index("function _ServingStations"):]
+        serving = serving[:serving.index("function _IsLost")]
+        # Comments stripped: the explanation names GSStationList before the code reaches it, and
+        # matching prose would pass whatever the code did.
+        code = "\n".join(
+            line for line in serving.splitlines() if not line.strip().startswith("//")
+        )
+        assert "GSCompanyMode(0)" in code
+        assert code.index("GSCompanyMode(0)") < code.index("GSStationList")
+
+
+class TestTheAirportFinderReportsWhatDecidesTheRoute:
+    """Airports 16 to 28 tiles from their towns earned nothing: a town of 4,379 people offered
+    one waiting passenger, because a commuter airport reaches 4 tiles. Coverage was not in the
+    reply that chooses the site.
+    """
+
+    def test_coverage_is_reported(self) -> None:
+        assert "coverage" in _returns("find_airport_spots")
+
+    def test_the_answer_is_given_directly_as_well(self) -> None:
+        """A reader should not have to compare two numbers to learn the site is useless."""
+        assert "within_coverage" in _returns("find_airport_spots")
+
+    def test_it_comes_from_the_game_rather_than_a_table_of_ours(self) -> None:
+        assert "GSAirport.GetAirportCoverageRadius(airport_type)" in _GS
+
+
+class TestTheRailDepotFinderTakesWhatItsSiblingsTake:
+    """It demanded a tile index where every sibling takes town_id or x/y, and answered a bare
+    "tile parameter required" that reads like there being nowhere to put a depot.
+    """
+
+    def test_it_accepts_a_town_or_coordinates_now(self) -> None:
+        params = set(_ACTIONS["find_rail_depot_spot"]["parameters"])
+        assert {"town_id", "x", "y", "tile"} <= params
+
+    def test_tile_is_no_longer_required(self) -> None:
+        assert not _ACTIONS["find_rail_depot_spot"]["parameters"]["tile"].get("required")
+
+
+class TestAnEventThatCannotBeReadSaysSo:
+    """Three aircraft and roughly 150,000 disappeared behind two `vehicle_crashed` events that
+    carried no vehicle, no place and no cause. The extraction threw, a catch swallowed it, and
+    the bare payload went out. GSLog.Warning does not reach openttd.log at the default level
+    either, so the loss was invisible twice over.
+    """
+
+    def test_a_failed_extraction_is_reported_in_the_payload(self) -> None:
+        assert 'payload.rawset("extract_error"' in _GS
+
+    def test_it_is_logged_at_a_level_that_reaches_the_log(self) -> None:
+        forwarder = _GS[_GS.index("function _ForwardGameEvent"):]
+        forwarder = forwarder[:forwarder.index("GSAdmin.Send(payload)")]
+        assert "GSLog.Error(\"nttd: could not process event type" in forwarder
+
+
+def test_no_http_or_mcp_change_was_needed_for_any_of_these() -> None:
+    """All of the above are return fields or widened parameters, and both layers are generic:
+    HTTP passes the GameScript reply through, and MCP builds its enums from the manifest. This
+    pins that, so a future change that quietly special-cases a field gets noticed.
+    """
+    from nttd.mcp import action_types
+
+    assert "find_rail_depot_spot" in [a.value for a in action_types.ObservationAction]
+    assert "get_vehicle_info" in [a.value for a in action_types.ObservationAction]
