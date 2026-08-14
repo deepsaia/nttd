@@ -37,7 +37,8 @@ LIVE_REFRESH_SECONDS = 5
 _SINGLE_CHARTS = (
     ("rating", "Performance rating (the score)"),
     ("value", "Company value"),
-    ("income", "Income"),
+    ("income", "Income (this quarter, resets each quarter)"),
+    ("fleet_profit", "Fleet profit this year (live)"),
     ("cargo_waiting", "Cargo waiting at stations"),
 )
 

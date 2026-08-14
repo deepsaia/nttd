@@ -110,6 +110,14 @@ class SessionFeed:
                 "loan": company.get("loan"),
                 "value": company.get("value"),
                 "income": company.get("income"),
+                # Live earnings. `income` is GetQuarterlyIncome, an accumulator that resets
+                # at every quarter boundary, so the income chart is a sawtooth that says
+                # nothing about the last few days. Each vehicle's profit_this_year updates
+                # continuously and already nets its running cost, so the fleet total is the
+                # honest answer to "is this company earning right now".
+                "fleet_profit": sum(
+                    (v.get("profit_this_year") or 0) for v in (snapshot.get("vehicles") or [])
+                ),
                 "profit_last_year": company.get("profit_last_year"),
                 "rating": company.get("performance_rating"),
                 "stations": len(snapshot.get("stations") or []),
