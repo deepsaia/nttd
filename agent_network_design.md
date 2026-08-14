@@ -2,12 +2,30 @@
 
 Working notes for the five neuro-san networks: one per transport mode, plus a combined one.
 
-**Status, stated plainly.** One session was played on seed 581017999 (T1 stepped, 256x256 flat),
-and it did not reach a running train. The nine remaining sessions have not been played. What is
-below is what the attempt taught, and the findings are the point: every trap here is one an
-agent network has to survive, and each was found by hitting it rather than by reading code.
+**Status.** Three sessions played to completion or near it, on three different worlds. Road now
+earns reliably; rail builds, verifies and loads but stalls; air and water are untested. Seven
+sessions remain. Every finding below was hit rather than read.
 
-Two nttd bugs were found and one is already fixed. See "Bugs found while playing".
+    road, rule-based baseline   seed 19566827   score 58   value 28,326   41 actions
+    road, hand-played           seed 19566827   score 52   value 60,377  115 actions
+    rail, hand-played           seed 1780227570 line verified, train loaded, then stalled
+
+Four nttd bugs were found and three are fixed. See "Bugs found while playing".
+
+## 0. The result that changed the strategy
+
+Hand-playing road MORE THAN DOUBLED company value, 28,326 to 60,377, and the score went DOWN,
+58 to 52. That is worth stating plainly because it inverts the obvious plan.
+
+Why, from the rating's own weights: 40 percent is ANNUAL CARGO DELIVERED, and buses on 20 to 37
+tile routes deliver slowly however many you buy. Drawing the full loan forfeits the 5 percent
+"no loan" component outright. Thirty vehicles dilute the 10 percent "profitable vehicles" share
+while the newest are still paying themselves off.
+
+**So the objective for every network is cargo UNITS DELIVERED, not fleet size and not company
+value.** That favours short dense routes, high capacity per vehicle, and cargo that regenerates
+fast. It is why rail on a 12 tile oil run is a better shape than road on a 37 tile passenger run,
+even though road is far easier to build.
 
 ---
 
@@ -214,6 +232,42 @@ would assume.
 - Reading a partial build and deciding repair versus abandon
 
 ---
+
+## 6b. What the second and third sessions added
+
+**Roads work end to end now.** Three routes verified out of five attempted on one map, so expect
+around 50 percent attrition on road corridors and plan surplus candidates. The two that failed
+cost nothing but a plan and a build_path, because the verify gate ran before any vehicle spend.
+
+**The map dictates the strategy, so no distance rule survives contact.** Seed 19566827 had NO
+town pair closer than 20 tiles, so "prefer 6 to 14 tiles" selected nothing and had to widen on
+the spot. A pair ranker must adapt its band to the world rather than carry a constant.
+
+**Idle cash is a real cost.** Borrowing the full 300,000 early left 150,000 sitting for about a
+hundred game days paying interest against nothing. Borrow late, deploy immediately, and only
+against a route already carrying.
+
+**Rail siting by approach works.** Deriving the axis from the planned corridor and then asking
+for a spot whose valid_directions contains it produced a line that verified FIRST TRY, where
+siting by distance had failed three separate ways. Of 14 spots offered at each end, 8 and 7
+respectively faced the needed axis, so the constraint is cheap to satisfy once it is asked for.
+
+**Rolling stock is gated by rail type, and the default is wrong.** In 2020 the engine list is
+dominated by maglev and monorail: of 40 train engines, only 12 are rail_type 0, which is what
+connect_rail builds by default. The only conventional loco is the Dash at 120 km/h. An agent that
+picks the fastest engine gets a maglev that cannot run on the track it just built. Either choose
+the engine first and build that rail type, or filter engines by the rail type actually laid.
+
+**build_train exists and is the right tool.** Buying a loco and then wagons separately half
+worked: the loco and one wagon appeared, three more wagons failed, and nothing was attached.
+build_train takes engine_id, wagon_id, num_wagons and cargo_id and assembles the whole thing.
+
+**Unresolved, and the next thing to fix.** The oil train loaded 150 units and then stopped dead
+two tiles past its own station at speed 0, profit negative. So loading works and the line
+verified, but the train will not run the route. Suspects, in order: the order flag I passed as 64
+for full load may be holding it, the train may have left by the far platform end and be unable to
+turn, or a train needs a signal or a second platform to reverse. Resolve this before the rail
+network is designed, because it is the last thing between rail and revenue.
 
 ## 7. Sessions still to play
 
