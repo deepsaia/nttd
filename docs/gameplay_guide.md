@@ -1,8 +1,8 @@
 # Playing nttd well
 
-What the score actually measures, and what eight hand-played runs found out about earning it.
+What the score actually measures, and what it takes to earn it.
 
-Everything here is either read out of OpenTTD's own source or measured in a recorded run. Where
+Everything here is either read out of OpenTTD's own source or measured in recorded play. Where
 a number comes from the game it is linked to the line that computes it, in the 15.3 sources this
 build plays. Nothing in this guide is inferred from how the game feels.
 
@@ -24,7 +24,7 @@ It is nine components, each capped, each worth a fixed slice of 1000:
 | `SCORE_MIN_INCOME` | **worst** quarter's income plus expenses, last 12 | 50,000 | 50 |
 | `SCORE_CARGO` | distinct cargo types delivered last quarter | 8 | 50 |
 | `SCORE_MONEY` | bank balance | 10,000,000 | 50 |
-| `SCORE_LOAN` | `250,000 − current_loan` | loan of 0 | 50 |
+| `SCORE_LOAN` | `250,000 - current_loan` | loan of 0 | 50 |
 
 The weights are the
 [`_score_info` table](https://github.com/OpenTTD/OpenTTD/blob/15.3/src/economy.cpp#L91); each part
@@ -45,11 +45,12 @@ which is worth knowing before optimising for them:
 - **`SCORE_MIN_INCOME` (50 points) needs every quarter profitable.** It takes the worst of the
   last twelve quarters, and a company that spends its first quarter building has a negative one.
 - **`SCORE_LOAN` (50 points) is 0 if you borrow more than 250,000.** The part is
-  `250,000 − current_loan`, clamped at zero. Borrowing the full 300,000 ceiling, which every run
-  in this guide did, forfeits all 50.
+  `250,000 - current_loan`, clamped at zero. Borrowing the full 300,000 ceiling forfeits all 50,
+  so a run that borrows to the limit should be sure the money buys something that earns.
 
-So a realistic ceiling for a single year is around 800, and the best run here scored **173**.
-Treat the rating as a scale you are near the bottom of, not one you are near the top of.
+So a realistic ceiling for a single year is around 800, and hand-played runs on random seeds land
+well under a quarter of that. Treat the rating as a scale you are near the bottom of, not one you
+are near the top of.
 
 ### Company value is a different question
 
@@ -59,42 +60,35 @@ where assets are station facilities plus vehicles at
 [one and a half times their current value](https://github.com/OpenTTD/OpenTTD/blob/15.3/src/economy.cpp#L115),
 and the result is floored at 1.
 
-That floor explains a result that looks like a bug: the two rail runs below report a company
-value of exactly **1**. They borrowed 300,000, built track, and never earned. Assets minus loan
-went negative and the game clamped it. A company value of 1 is not a rounding error, it is a
-company that owes more than it owns.
+That floor explains a result that looks like a bug. A company that borrows 300,000, spends it on
+track and never earns has assets worth less than its loan, so the subtraction goes negative and
+the game clamps it. A company value of exactly **1** is not a rounding error, it is a company
+that owes more than it owns.
 
 It also means **drawing a loan does not raise company value**, because the loan is subtracted
 again. Borrowing is a way to buy earning assets sooner, not a way to look bigger.
 
 ---
 
-## 2. What eight runs actually scored
+## 2. Where the points come from
 
-One T1 run per row, played by hand, same tier and settings, seeds random.
+Aircraft need no infrastructure between their endpoints, so the only decisions that matter are
+ones the game answers well: which town, which airport type, and whether the site is inside its
+own catchment. Rail and water both depend on a junction between a depot and a line, and that
+junction is the thing hardest to confirm before committing money to it. Road sits in between:
+the corridor mostly exists already, but the joins do not.
 
-| mode | rating | cargo | company value | what decided it |
-|---|---:|---:|---:|---|
-| air | **173** | 4,975 | 479,146 | four airports big planes could use, long legs |
-| combined | **144** | 4,377 | 210,876 | air for revenue, buses for early cash |
-| combined | **120** | 3,016 | 129,443 | same shape, shorter legs |
-| air | **118** | 3,491 | 189,755 | one endpoint was a 348-person village |
-| water | **73** | 3,485 | 122,592 | one hub dock both big towns could reach |
-| rail | 17 | 720 | 1 | one line of six built; five hit water |
-| rail | 1 | 0 | 1 | vehicles never left their depots |
-| water | 0 | 0 | 39,190 | every depot spot was in a cut-off pool |
+That difference, not the vehicles, is what separates a strong run from an empty one. Measured
+across a set of one-year runs on random seeds, air and mixed air-and-road networks scored several
+times what rail and water managed, and the rail attempts that failed did not fail by a little:
+they delivered nothing at all.
 
-The spread is not about vehicles. **Aircraft need no infrastructure between their endpoints**, so
-the only decisions that matter are ones the game answers well: which town, which airport type, is
-the site inside the catchment. Rail and water both depend on a junction between a depot and a
-line, and that junction is the thing hardest to confirm before committing money to it.
+![A finished run, as the monitor shows it](images/monitor.png)
 
-![The top-scoring run, as the monitor shows it](images/monitor.png)
-
-*The 173-point run at the end of its year: rating and company value climbing in steps as each
-aircraft entered service, cargo waiting at stations oscillating as planes clear it, and a fleet
-of nine against four stations. The flat "infrastructure pieces" line is the point of the mode:
-an air network builds nothing between its endpoints.*
+*A one-year air run at the end of its year: rating and company value climbing in steps as each
+aircraft enters service, cargo waiting at stations oscillating as planes clear it, and a fleet of
+nine against four stations. The flat "infrastructure pieces" line is the point of the mode: an
+air network builds nothing between its endpoints.*
 
 ---
 
@@ -104,15 +98,15 @@ an air network builds nothing between its endpoints.*
 
 1. **Rank towns by population and check the airport fits inside its own catchment.** A commuter
    airport covers 4 tiles. An airport sited 16 to 28 tiles from the town centre earns almost
-   nothing: one measured run took income from 25 to 131,740 by re-siting alone.
+   nothing: re-siting the airports alone has taken a quarter's income from 25 to 131,740.
 2. **Match the plane to the airport.** Large aircraft crash at small airports. Where the good
    towns only take commuter fields, fly small planes; where they take large or international
    fields, big planes carry four times the load on the same leg.
-3. **Both endpoints must be real towns.** The 118-point run flew a long leg into a 348-person
-   village and its big planes returned almost empty. Airport capability is not a reason to pick
-   a destination; population is.
+3. **Both endpoints must be real towns.** A long leg into a 348-person village returns big planes
+   almost empty, and costs the same to fly as a leg into a city. Airport capability is not a
+   reason to pick a destination; population is.
 4. **Long legs pay.** On one map a single big plane on a 205-tile leg earned 74,986 while small
-   planes on 35-tile hops earned 13,000.
+   planes shuttling 35-tile hops earned around 13,000 each.
 
 ### Road, the mode that pays first
 
@@ -130,8 +124,8 @@ cheapest reliable test is to run one and watch whether it moves.
 
 ### Rail, the hardest mode by a distance
 
-Rail failed in three separate runs for three different reasons, and the failure always looked
-like success: track built, connectivity checks passed, trains bought, nothing delivered.
+Rail fails in several distinct ways, and the failure always looks like success: track built,
+connectivity checks passed, trains bought, nothing delivered.
 
 - A depot built beside a platform joins that station's **stub** of track, not the main line.
   Measured at three towns, every such depot reached 5 to 8 tiles of a 71-tile line. Put the depot
@@ -159,8 +153,9 @@ Each of these produced a fleet that existed, had correct orders, and delivered n
 The monitor's **fleet table** answers the first three directly: it lists every vehicle worst
 earner first with a plain-language problem column, so a single silent failure among thirty
 vehicles is the first row rather than something to hunt for. The **actions by type** table answers
-a different question the totals hide: whether one call is failing repeatedly. On the failed rail
-run it read `connect_rail: 22 submitted, 16 refused`, which is the whole diagnosis in one line.
+a different question the totals hide: whether one call is failing repeatedly. On a failed rail
+network it reads `connect_rail: 22 submitted, 16 refused`, which is the whole diagnosis in one
+line.
 
 ---
 

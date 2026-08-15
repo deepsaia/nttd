@@ -1019,7 +1019,7 @@ Start a stopped vehicle. A newly built vehicle is stopped until this is called.
 
 - `vehicle_id` (integer, required) Which vehicle.
 
-Returns `running`.
+Returns `already_running`, `running`.
 
 ### `stop_vehicle`
 

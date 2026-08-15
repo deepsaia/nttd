@@ -230,10 +230,10 @@ contestant makes that unreachable rather than guarded against.
 
 ## 5. Scoring
 
-`primary_score` is OpenTTD's own quarterly **performance rating**, 0–1000: a composite of
-eight components, of which annual cargo delivered is the largest at 40%. `tiebreak_cargo`
-breaks ties. `company_value` is recorded for display and does **not** affect rank, because
-it rises simply by drawing a loan.
+`performance_rating` is OpenTTD's own quarterly rating, 0 to 1000, taken from the game
+unchanged. It is nine capped components, and cargo delivered over the last four quarters is
+by far the largest at 400 of the 1000 points. `total_cargo`, every unit the run delivered,
+breaks ties. `company_value` is recorded for display and does **not** affect rank.
 
 Using the game's own rating rather than an nttd invention matters: it is the number the
 game itself considers success, it is not tuned to any strategy nttd happens to favour, and
@@ -241,12 +241,24 @@ it cannot drift as nttd changes.
 
 Two details a reader of a row needs:
 
-- **`rating_available`**. OpenTTD reports -1 until a company has a full quarter of
-  history. An unavailable rating is recorded as 0 rather than -1, so a company that never
-  earned one ranks below a company that did instead of above everything. The flag says
-  which case a 0 is. This matters most at T1, which is largely pre-revenue.
-- **`score_version`**. Bumped whenever the derivation changes, so a board can tell which
-  entries are comparable instead of silently mixing definitions.
+- **An unrated company reports -1.** OpenTTD does not rate a company until it has a full
+  quarter of history, and that value is carried through as the game gave it rather than
+  being flattened to 0, so a run that was never rated is distinguishable from one that was
+  rated badly. This matters most at T1, which is largely pre-revenue.
+- **`total_cargo` is banked, not read back.** The counter the game exposes covers the
+  quarter in progress and resets at every boundary. A 366 day run ends on 1 January, which
+  is a boundary, so reading it at the end returns 0 however much the run carried. Each
+  quarter is banked as it closes, and that total travels in the savegame so a verifier can
+  recompute it.
+
+There are no version columns on either the score or the metrics. Both ranked figures come
+from the game, so a change to either is a bug fix rather than a change to what winning
+means.
+
+Company value does **not** rise by drawing a loan. It is assets minus the loan plus cash,
+floored at 1, so borrowing converts one term into another and nets to zero until the money
+buys something that earns. A company value of exactly 1 is a company that owes more than it
+owns. See `docs/gameplay_guide.md` for the full derivation and the measured evidence.
 
 One row per scored company in `result.parquet`, written when the session stops.
 
@@ -274,14 +286,12 @@ log.
 
 ### What makes two rows comparable
 
-Same `task_id`, `profile_version`, `score_version`, and `runtime_mode`. All four are
-recorded, so a reader can check rather than assume:
+Same `task_id`, `profile_version` and `runtime_mode`. All three are recorded, so a reader
+can check rather than assume:
 
 - **`task_id`** means the same world, including the seed.
 - **`profile_version`** means the same admission rules. It is a digest of the rules
   themselves, not a hand-written number, so it changes exactly when they do.
-- **`score_version`** means the same scoring. Two rows under different versions are not
-  the same measurement even on the same world.
 - **`runtime_mode`** matters because real time scores speed and stepped does not.
   Comparing across them compares two different things.
 
