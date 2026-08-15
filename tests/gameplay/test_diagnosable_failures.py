@@ -305,3 +305,25 @@ def test_no_http_or_mcp_change_was_needed_for_any_of_these() -> None:
 
     assert "find_rail_depot_spot" in [a.value for a in action_types.ObservationAction]
     assert "get_vehicle_info" in [a.value for a in action_types.ObservationAction]
+
+
+def test_a_lost_vehicle_says_so_in_the_observation() -> None:
+    """The GameScript reporting it is only half the path.
+
+    WorldState builds each Vehicle from an explicit field list, and lost/idle_reason were not
+    on it, so both arrived as their defaults however clearly the game had answered. Measured:
+    a train sat in the far corner of the map for 130 days, every station empty and zero cargo
+    delivered, and the observation said lost=None. The same omission on the company side scored
+    every run at zero cargo, so this is the second instance of one mistake.
+    """
+    from nttd.state.world import WorldState
+
+    world = WorldState()
+    world.apply_gs_vehicles(0, [{
+        "id": 21, "type": "train", "x": 39, "y": 40,
+        "lost": True, "idle_reason": "no_path",
+    }])
+
+    vehicle = world.vehicles[21]
+    assert vehicle.lost is True
+    assert vehicle.idle_reason == "no_path"

@@ -211,6 +211,10 @@ class WorldState:
                 in_depot=r.get("in_depot", False),
                 order_count=r.get("order_count", 0),
                 orders=orders,
+                # The GameScript reports both; leaving them off this list is what made a lost
+                # train indistinguishable from a working one in every observation.
+                lost=r.get("lost", False),
+                idle_reason=r.get("idle_reason", ""),
             )
         # Remove stale vehicles no longer returned by GS for this company
         stale = [vid for vid, v in self.vehicles.items()

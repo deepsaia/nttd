@@ -38,3 +38,8 @@ class Vehicle(BaseModel):
     in_depot: bool = False
     order_count: int = 0
     orders: list[Order] = []
+    # Why a vehicle is earning nothing. The game knows, and without these the only symptom is
+    # a fleet that moves and delivers no cargo: one measured run had a train wandering the far
+    # corner of the map for 130 days while every station it owned stayed empty.
+    lost: bool = False
+    idle_reason: str = ""
