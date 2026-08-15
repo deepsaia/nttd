@@ -115,6 +115,10 @@ Reports of what does and does not work are welcome.
 
 ## Running a benchmark
 
+New here? [docs/getting_started.md](docs/getting_started.md) walks one whole experiment end
+to end: install, run a session, play it with a runner from nttd-examples, watch it in the
+monitor, read the result, and publish it through nttd-leaderboard.
+
 Every run is the same three steps: start the server, stand up a task, attach your
 runner. What differs is the *runner*.
 
@@ -421,10 +425,12 @@ Full API at `http://localhost:8000/docs` once the server is running.
 
 | | |
 |---|---|
+| [Getting started](docs/getting_started.md) | One whole experiment, from install to a published row |
 | [Architecture](docs/architecture.md) | How the pieces fit, and why the boundaries are where they are |
 | [Play modes and scoring](docs/play_modes.md) | Which worlds are scoreable, the two modes, and how a run is ranked |
 | [CLI guide](docs/cli_guide.md) | Every command, with examples |
 | [Agent guide](docs/agent_guide.md) | Writing a runner against the participant routes |
+| [Gameplay guide](docs/gameplay_guide.md) | What the score measures, and how to earn it |
 | [Action reference](docs/action_reference.md) | Every action, its parameters and accepted values |
 | [MCP guide](docs/mcp_guide.md) | Playing over MCP: five tools, both transports |
 | [Session analysis](docs/session_analyzer.md) | Reading a completed run |
