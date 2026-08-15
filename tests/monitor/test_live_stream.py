@@ -115,3 +115,34 @@ def test_a_reader_closing_the_page_is_not_logged_as_a_server_error() -> None:
          patch("http.server.ThreadingHTTPServer.handle_error") as base:
         MonitorServer.handle_error(None, object(), ("127.0.0.1", 5000))  # type: ignore[arg-type]
     base.assert_not_called()
+
+
+def test_a_session_finishing_mid_read_is_not_hundreds_of_warnings(tmp_path: Path) -> None:
+    """Finalising merges every fragment into one file and removes the directory.
+
+    A monitor read that started just before that logged one WARNING per fragment, so the end
+    of a 366 step run printed hundreds of them. The merged file holds the same rows.
+    """
+    import logging
+    from unittest.mock import patch
+
+    from nttd.store.parquet_reader import read_fragments
+
+    session = tmp_path / "ses_20260815_073254_060e426f"
+    fragments = session / "_fragments"
+    fragments.mkdir(parents=True)
+    (fragments / "snapshots_0001.parquet").write_bytes(b"")
+
+    logger = logging.getLogger("nttd.store.parquet_reader")
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    logger.addHandler(handler)
+    try:
+        with patch("nttd.store.parquet_reader.pq.read_table", side_effect=FileNotFoundError):
+            read_fragments(session, "snapshots")
+    finally:
+        logger.removeHandler(handler)
+
+    warnings = [r for r in records if r.levelno >= logging.WARNING]
+    assert not warnings, [r.getMessage() for r in warnings]
