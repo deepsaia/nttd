@@ -801,3 +801,69 @@ for the rest. Rail last.
 6. **`trace_route` and OpenTTD's own train pathfinder disagree.** Not filed yet, and the most
    consequential of the open ones: it means a route can pass every build-time check nttd offers
    and still never move a train. See section 4.
+7. **`start_vehicle` was a toggle, so it stopped the vehicles it was asked to start.** Fixed. It
+   called `GSVehicle.StartStopVehicle`, which flips the state, so a dispatch that started a
+   vehicle followed by an explicit `start_vehicle` left it parked, and the action answered
+   `success` either way. It cost two rail runs and most of a water run: sixteen trains and ships
+   sat beside their depots for a full game year, with correct orders, on lines that traced end to
+   end, while every station they served filled up and nothing was delivered.
+
+   The first repair was wrong in an instructive way. Guarding on `GetState() != VS_STOPPED` looks
+   right and breaks the opposite case: a vehicle sitting in a depot reads `VS_IN_DEPOT`, not
+   `VS_STOPPED`, so four freshly bought aircraft were declared already running and never left the
+   hangar. Both tests are needed, `IsStoppedInDepot` OR `VS_STOPPED`, because "halted" has two
+   distinct spellings and each one alone is the bug.
+
+8. **The world dropped fields the GameScript reported.** Fixed, twice, and it is one mistake with
+   two faces. `WorldState` copies a whitelist of keys out of each GS reply. `cargo_delivered_total`
+   was missing from the company list, so `total_cargo` scored 0 on every result ever written no
+   matter what the game sent, and `lost`/`idle_reason` were missing from the vehicle list, so the
+   diagnosis added for exactly this situation never reached an observation: a train wandering the
+   far corner of the map reported `lost=None`. Anything scored or diagnosed has to be on the list;
+   there is now a test that reads the scoring code and asserts it.
+
+9. **`connect_rail` reaches for a tunnel where the crossing needs a bridge.** Not filed yet. Every
+   water crossing on a rail corridor fails as `ERR_TUNNEL_CANNOT_BUILD_ON_WATER`, and it defeated
+   five of six routes on one map. The report is good enough to act on, naming the tile and the
+   error, but the caller then has to build the bridge by hand, match the two heads to the same
+   height, and re-run the connect.
+
+10. **`find_water_depot_spots` returns spots that cannot reach the dock they were searched from.**
+    Not filed yet, and it is the water counterpart of the rail depot stub. Asked for spots near a
+    dock, it answered four, all of them in a pool cut off from that dock. Ships built there sail
+    in circles: measured with a ship ordered to one dock two tiles away, still not arrived after
+    twenty days, while that dock held 123 waiting passengers. There is no query that answers
+    "which water is this dock on", and the terrain flags did not help either, reporting no water
+    within ten tiles of a dock where ships were visibly floating.
+
+11. **`plan_route` for water answers from whatever terrain happens to be cached.** Not filed yet.
+    On a cold cache the search gave up after 388 tiles and said no route; after capturing the map
+    it searched 34,419 for the same pair. Worse, it is wrong in both directions: it called a pair
+    unconnected that a ship then served profitably, and called pairs connected whose ships never
+    arrived. Treat it as a hint, never as a gate. The authority is whether the vehicle moves,
+    which is the same conclusion section 4 reached for rail.
+
+## 8. What eight replayed runs say about the modes
+
+Played hand, one T1 run each, same tier and settings, seeds random.
+
+| mode     | rating | cargo | what decided it |
+|----------|-------:|------:|-----------------|
+| air      |    173 |  4975 | four big-plane-safe airports, long legs |
+| combined |    144 |  4377 | air for revenue, buses for early cash |
+| combined |    120 |  3016 | same shape, shorter legs |
+| air      |    118 |  3491 | one endpoint was a 348 person village |
+| water    |     73 |  3485 | one hub dock both big towns could reach |
+| rail     |     17 |   720 | one line of six built; five hit water |
+| rail      |     1 |     0 | start_vehicle toggle, before it was found |
+| water     |     0 |     0 | every depot spot was in a cut-off pool |
+
+The spread is not about the vehicles. Air wins because an aircraft needs no infrastructure between
+its endpoints, so the only decisions that matter are ones nttd answers well: which town, which
+airport type, is the site within coverage. Rail and water lose because both depend on a junction
+between a depot and a line, and that junction is exactly what nttd cannot confirm: `connect_depot`
+answered `already_connected` for depots that reached five tiles of a seventy tile line, and
+`find_water_depot_spots` answered with pools that reach nothing.
+
+The single highest-value fix is therefore not a new action. It is making the existing connectivity
+answers mean something, for the depot junction first.
