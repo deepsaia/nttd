@@ -16,7 +16,9 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+from tests.conftest import REPO_ROOT
+
+_REPO_ROOT = REPO_ROOT
 _SEARCH_ROOTS = ("src", "tests", "agents", "examples", "scripts")
 
 

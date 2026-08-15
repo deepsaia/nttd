@@ -16,11 +16,12 @@ route over existing infrastructure.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 
-_GAMESCRIPT = Path(__file__).parent.parent / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+from tests.conftest import REPO_ROOT
+
+_GAMESCRIPT = REPO_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut"
 
 
 @pytest.fixture(scope="module")

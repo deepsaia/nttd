@@ -20,8 +20,9 @@ import pytest
 from nttd.actions.gs_reply import result_from_reply
 from nttd.config import error_codes
 from nttd.schemas.action_result import ActionStatus
+from tests.conftest import REPO_ROOT
 
-_GAMESCRIPT = Path(__file__).parent.parent / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+_GAMESCRIPT = REPO_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut"
 
 
 class TestTheNamesComeFromTheBuild:

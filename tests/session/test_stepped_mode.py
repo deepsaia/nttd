@@ -27,6 +27,7 @@ from nttd.api import control_routes
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.schemas.game import RuntimeMode
 from nttd.schemas.step_result import StepRequest, StepResult
+from tests.conftest import REPO_ROOT
 
 
 def _code_only(source: str) -> str:
@@ -305,7 +306,7 @@ def test_the_step_size_reaches_the_runtime() -> None:
 
     settings = scenario_to_settings(
         load(
-            __import__("pathlib").Path(__file__).parent.parent
+            REPO_ROOT
             / "config/benchmark/t2_256_flat_1001_stepped.conf",
         ),
         strict=True,

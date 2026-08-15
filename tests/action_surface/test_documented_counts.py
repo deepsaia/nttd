@@ -22,14 +22,14 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
 import pytest
 
 from nttd.config.action_manifest import MANIFEST_PATH
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS, READ_ONLY_GS_ACTIONS
+from tests.conftest import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = REPO_ROOT
 
 # The hand-written docs that describe the action surface in prose.
 _HAND_WRITTEN = ("docs/cli_guide.md", "docs/mcp_guide.md", "README.md")

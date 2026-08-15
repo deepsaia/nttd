@@ -25,7 +25,9 @@ from typing import Any
 
 import pytest
 
-_ROOT = Path(__file__).parent.parent
+from tests.conftest import REPO_ROOT
+
+_ROOT = REPO_ROOT
 _MANIFEST = _ROOT / "config" / "actions" / "manifest.json"
 _GENERATOR = _ROOT / "scripts" / "generate_action_manifest.py"
 

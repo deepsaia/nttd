@@ -1,6 +1,33 @@
-"""Shared pytest fixtures and configuration."""
+"""Shared fixtures, and the one path every test needs.
+
+Tests live in subject directories under `tests/`, so a file two levels down was deriving the
+repository root by counting parents. Moving a file then changed the count, and the failure was
+`FileNotFoundError` on a path assembled from a wrong root: 26 files broke that way in one move,
+which is a poor reason to break a test.
+
+`REPO_ROOT` is found by walking up to the directory holding `pyproject.toml`, so it does not
+care where the file asking is.
+"""
+
+from pathlib import Path
 
 import pytest
+
+
+def _find_root() -> Path:
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    raise RuntimeError("no pyproject.toml above tests/, so the repository root is unknown")
+
+
+REPO_ROOT = _find_root()
+
+
+@pytest.fixture(scope="session")
+def repo_root() -> Path:
+    """The repository root, for tests reading source or config files."""
+    return REPO_ROOT
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

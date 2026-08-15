@@ -13,12 +13,12 @@ maintained by hand, so the test that matters is the one checking it against main
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from nttd.constants import KNOWN_ACTIONS, TICK_DEPENDENT_ACTIONS
 from nttd.runtime.orchestrator import _needs_game_ticks
+from tests.conftest import REPO_ROOT
 
-GAMESCRIPT = Path(__file__).resolve().parents[1] / "ottd_config/game/nttd-gs/main.nut"
+GAMESCRIPT = REPO_ROOT / "ottd_config/game/nttd-gs/main.nut"
 
 
 def _yielding_handlers() -> set[str]:

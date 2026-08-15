@@ -21,6 +21,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from nttd.analysis import business_metrics
+from tests.conftest import REPO_ROOT
 
 
 def _snapshot(
@@ -260,7 +261,7 @@ class TestAgainstRealRecordedSessions:
     the recorder actually writes, which is the part a fixture cannot tell me."""
 
     def _sessions(self) -> list[Path]:
-        root = Path(__file__).parent.parent / "logs" / "sessions"
+        root = REPO_ROOT / "logs" / "sessions"
         if not root.exists():
             return []
         return [d for d in sorted(root.iterdir()) if (d / "snapshots.parquet").exists()]

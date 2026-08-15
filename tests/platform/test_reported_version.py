@@ -12,12 +12,12 @@ string somebody typed.
 from __future__ import annotations
 
 from importlib import metadata
-from pathlib import Path
 
 from nttd.api.app import app
 from nttd.version import UNKNOWN, version
+from tests.conftest import REPO_ROOT
 
-_APP_SOURCE = Path(__file__).resolve().parents[1] / "src" / "nttd" / "api" / "app.py"
+_APP_SOURCE = REPO_ROOT / "src" / "nttd" / "api" / "app.py"
 
 
 def test_the_openapi_schema_reports_the_installed_version() -> None:

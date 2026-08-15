@@ -27,6 +27,7 @@ import pytest
 
 from nttd.rl.env import NttdEnv
 from nttd.schemas.company import Company
+from tests.conftest import REPO_ROOT
 
 # The keys the GameScript's CmdGetCompanies emits, plus the two apply_gs_company_finance fills
 # from get_company_finance. Taken from main.nut and state/world.py rather than invented, since
@@ -74,9 +75,8 @@ def test_the_encoder_reads_no_field_a_company_does_not_have() -> None:
     Every key the encoder pulls from a company must be either in the Company schema or in the
     set the GameScript emits. A read of anything else silently yields the default forever.
     """
-    from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[1] / "src" / "nttd" / "rl" / "env.py").read_text()
+    source = (REPO_ROOT / "src" / "nttd" / "rl" / "env.py").read_text()
     encode = source.split("def _encode(")[1]
 
     # company.get("<name>"...) inside _encode

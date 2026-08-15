@@ -19,8 +19,9 @@ from pathlib import Path
 
 from nttd.config.scenario_config import load, scenario_to_settings
 from nttd.runtime.config_builder import _snapshot_scenario
+from tests.conftest import REPO_ROOT
 
-_BENCHMARK_DIR = Path(__file__).parent.parent / "config" / "benchmark"
+_BENCHMARK_DIR = REPO_ROOT / "config" / "benchmark"
 
 
 def test_a_snapshot_of_an_including_scenario_stands_alone(tmp_path: Path) -> None:

@@ -18,9 +18,10 @@ constants.py for its tier and descriptions.json for its prose.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
+from tests.conftest import REPO_ROOT
+
+_ROOT = REPO_ROOT
 _GS = (_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut").read_text()
 _ACTIONS = json.loads((_ROOT / "config" / "actions" / "manifest.json").read_text())["actions"]
 

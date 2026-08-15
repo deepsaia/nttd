@@ -18,9 +18,10 @@ from __future__ import annotations
 import ast
 import sys
 import tomllib
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
+from tests.conftest import REPO_ROOT
+
+_ROOT = REPO_ROOT
 _SRC = _ROOT / "src"
 
 # Import name to distribution name, where they differ.

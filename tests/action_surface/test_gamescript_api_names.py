@@ -28,7 +28,9 @@ from pathlib import Path
 
 import pytest
 
-GAMESCRIPT = Path(__file__).resolve().parents[1] / "ottd_config/game/nttd-gs/main.nut"
+from tests.conftest import REPO_ROOT
+
+GAMESCRIPT = REPO_ROOT / "ottd_config/game/nttd-gs/main.nut"
 
 # Calls whose names are not method symbols in the binary, and why that is expected.
 #

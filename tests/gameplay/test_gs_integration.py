@@ -1033,7 +1033,7 @@ def _participant_headers(session_id: str) -> dict[str, str]:
     session directory.
     """
     issued = (
-        pathlib.Path(__file__).resolve().parents[1]
+        pathlib.REPO_ROOT
         / "logs" / "sessions" / session_id / "participants.json"
     )
     if not issued.exists():

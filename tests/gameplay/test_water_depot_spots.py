@@ -14,9 +14,10 @@ one leaves the caller guessing, and guessing wrong is a refusal that reads like 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
+from tests.conftest import REPO_ROOT
+
+_ROOT = REPO_ROOT
 _GS = _ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut"
 
 

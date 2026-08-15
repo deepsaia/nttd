@@ -19,7 +19,6 @@ Run with: uv run pytest tests/test_action_vocabulary.py -v
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from nttd.constants import (
     ACTION_CATEGORIES,
@@ -27,8 +26,9 @@ from nttd.constants import (
     OPERATOR_ACTION_CATEGORIES,
     OPERATOR_ACTIONS,
 )
+from tests.conftest import REPO_ROOT
 
-_GAMESCRIPT = Path(__file__).resolve().parents[1] / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+_GAMESCRIPT = REPO_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut"
 
 # Read-only commands have their own observation surface, so they are not expected
 # in the action vocabulary.

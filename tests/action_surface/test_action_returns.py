@@ -15,12 +15,13 @@ drift the way the prose in #108 did.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-_MANIFEST = Path(__file__).resolve().parents[1] / "config" / "actions" / "manifest.json"
+from tests.conftest import REPO_ROOT
+
+_MANIFEST = REPO_ROOT / "config" / "actions" / "manifest.json"
 
 
 @pytest.fixture(scope="module")

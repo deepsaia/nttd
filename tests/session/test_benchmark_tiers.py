@@ -22,8 +22,9 @@ from pathlib import Path
 import pytest
 
 from nttd.config.scenario_config import load
+from tests.conftest import REPO_ROOT
 
-_BENCHMARKS = Path(__file__).resolve().parents[1] / "config" / "benchmark"
+_BENCHMARKS = REPO_ROOT / "config" / "benchmark"
 
 # The span each tier means, in game days, and the quarters that span closes.
 _TIERS = {"t1": (366, 4), "t2": (731, 8), "t3": (1827, 20), "t4": (3653, 40)}

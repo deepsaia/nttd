@@ -6,9 +6,9 @@ against the GameScript source because the rules live in Squirrel.
 
 from __future__ import annotations
 
-from pathlib import Path
+from tests.conftest import REPO_ROOT
 
-GAMESCRIPT = Path(__file__).resolve().parents[1] / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+GAMESCRIPT = REPO_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut"
 
 
 def _function_body(name: str) -> str:

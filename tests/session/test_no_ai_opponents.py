@@ -21,8 +21,9 @@ import pytest
 
 from nttd.constants import IDLE_AI_NAME
 from nttd.runtime.config_builder import _assert_only_the_idle_ai
+from tests.conftest import REPO_ROOT
 
-_ROOT = Path(__file__).parent.parent
+_ROOT = REPO_ROOT
 _BASE_CFG = _ROOT / "ottd_config" / "openttd.cfg"
 _AI_DIR = _ROOT / "ottd_config" / "ai"
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from nttd.analysis.score import rank_companies, score_company
 from nttd.schemas.company import Company
+from tests.conftest import REPO_ROOT
 
 
 def _company(cid: int, **kwargs: object) -> Company:
@@ -113,9 +114,8 @@ class TestTheRatingComesFromACompletedQuarter:
     """
 
     def _snapshot_block(self) -> str:
-        from pathlib import Path
 
-        source = Path(__file__).parent.parent / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+        source = REPO_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut"
         text = source.read_text()
         start = text.index("performance_rating = GSCompany.GetQuarterlyPerformanceRating")
         return text[start:start + 120]
@@ -130,9 +130,8 @@ class TestTheRatingComesFromACompletedQuarter:
         """Deliberately different, and the reason is easy to lose. Company value is not
         a rating: the current quarter answers it correctly, and the same live probe that
         returned -1 for the rating returned 1 for the value."""
-        from pathlib import Path
 
-        source = Path(__file__).parent.parent / "ottd_config" / "game" / "nttd-gs" / "main.nut"
+        source = REPO_ROOT / "ottd_config" / "game" / "nttd-gs" / "main.nut"
         assert "GetQuarterlyCompanyValue(cid, 0)" in source.read_text()
 
     def test_there_is_no_score_version_to_carry(self) -> None:

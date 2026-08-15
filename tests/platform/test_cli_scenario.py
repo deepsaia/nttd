@@ -17,9 +17,10 @@ import pytest
 from typer.testing import CliRunner
 
 from nttd.cli.app import app
+from tests.conftest import REPO_ROOT
 
 runner = CliRunner()
-_REPO = Path(__file__).parent.parent
+_REPO = REPO_ROOT
 
 
 # ---------------------------------------------------------------------------

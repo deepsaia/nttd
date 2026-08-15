@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from nttd import resources
+from tests.conftest import REPO_ROOT
 
 
 def test_the_data_directory_exists_and_holds_the_gamescript() -> None:
@@ -75,7 +76,7 @@ def test_pyproject_declares_the_version_dynamic() -> None:
     """A literal version here would be the duplication that broke the 0.0.2 release."""
     import tomllib
 
-    root = Path(__file__).resolve().parents[1]
+    root = REPO_ROOT
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
 
     assert "version" in project.get("dynamic", [])

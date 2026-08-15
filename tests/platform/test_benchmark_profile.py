@@ -31,8 +31,9 @@ from nttd.config.scenario_config import (
     load,
     scenario_to_settings,
 )
+from tests.conftest import REPO_ROOT
 
-_BENCHMARK_DIR = Path(__file__).parent.parent / "config" / "benchmark"
+_BENCHMARK_DIR = REPO_ROOT / "config" / "benchmark"
 _EXAMPLES = ("t2_256_flat_1001_realtime", "t3_512_hilly_2001_realtime")
 
 
