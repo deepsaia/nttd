@@ -104,8 +104,8 @@ async def get_situation(session_id: str, company_id: int = 0) -> dict[str, Any]:
     ).report()
 
 
-@router.get("/path")
-async def check_path(
+@router.get("/plan_route")
+async def plan_route(
     session_id: str,
     from_x: int,
     from_y: int,
@@ -116,7 +116,13 @@ async def check_path(
     max_iterations: int = 50_000,
     company_id: int = 0,
 ) -> dict[str, Any]:
-    """Whether two points can be joined, before paying to find out.
+    """What it would take to BUILD a route between two points, before paying to find out.
+
+    Named for the question it answers. It was `check_connection` on `/state/path`, which reads
+    as "is there a connection", and that is a different question entirely: this plans a build
+    and returns the work it would need, while `trace_route` walks track that already exists.
+    Reaching for this one as a connectivity test is exactly the mistake the old name invited,
+    and on water it answered zero tiles for routes that were being sailed at the time.
 
     Every other build decision has a dry run behind it. The find_* family exists precisely
     so an agent need not guess whether a station fits, and it answers by dry running the

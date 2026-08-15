@@ -1051,11 +1051,27 @@ class NttdGS extends GSController {
         if (kind == "road") {
           joined = GSRoad.IsRoadTile(next) && GSRoad.AreRoadTilesConnected(node.tile, next);
         } else {
-          local prev = GSMap.GetTileIndex(cx - dir_dx[node.dir], cy - dir_dy[node.dir]);
-          if (!GSMap.IsValidTile(prev)) prev = node.tile;
-          joined = (GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
-                    || GSRail.IsRailDepotTile(next))
-                   && GSRail.AreTilesConnected(prev, node.tile, next);
+          local is_track = GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
+                           || GSRail.IsRailDepotTile(next);
+          if (node.tile == start) {
+            // THE FIRST HOP HAS NO INCOMING DIRECTION. AreTilesConnected asks about a triple,
+            // from-through-to, and at the start there is no "from": the code used to invent one
+            // by stepping backwards from a seeded direction, which produced a tile that often
+            // held no track at all. The game then answered false for an illegal triple and the
+            // walk could not leave the start tile, reporting tiles_reachable 1.
+            //
+            // Measured: a depot the game itself reported connected, and whose train then ran the
+            // route at 107 km/h, traced as line_exists false. Every route starting at a depot, a
+            // platform end or a buffer was affected, because none of them has track on all sides.
+            //
+            // Adjacency only for this one hop, then the triple test from the second tile on,
+            // where a real incoming direction exists.
+            joined = is_track;
+          } else {
+            local prev = GSMap.GetTileIndex(cx - dir_dx[node.dir], cy - dir_dy[node.dir]);
+            if (!GSMap.IsValidTile(prev)) prev = node.tile;
+            joined = is_track && GSRail.AreTilesConnected(prev, node.tile, next);
+          }
         }
         if (!joined) continue;
         seen[key] <- true;

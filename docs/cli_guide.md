@@ -430,10 +430,10 @@ the read path uses fragments until they are merged.
 Two read-only additions worth knowing about, both free and both usable while a stepped
 world is paused.
 
-`GET /state/path` says whether two points can be joined, before any money is spent:
+`GET /state/plan_route` says what it would take to BUILD a route between two points, before any money is spent. It plans a build; `trace_route` walks track that already exists, which is a different question:
 
 ```
-GET /state/path?from_x=76&from_y=184&to_x=73&to_y=155&transport_type=rail
+GET /state/plan_route?from_x=76&from_y=184&to_x=73&to_y=155&transport_type=rail
   -> {"connected": true, "tiles": 34, "bridges": 1, "tunnels": 0,
       "work": {"build_rail": 31, "build_bridge": 1}}
 ```

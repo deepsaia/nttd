@@ -197,6 +197,66 @@ class TestTheTerrainSeparatesTrackFromPlatform:
         assert "2048 depot" in described
 
 
+class TestThePreFlightChecksAnswerTheQuestionAsked:
+    """Two checks an agent makes before spending, both of which lied.
+
+    trace_route walks existing track. Its TRACK geometry was always right: each step asks the
+    game whether a vehicle can come from the previous tile, through this one, to the next, so a
+    curve that does not join is rejected. What it got wrong was the very first hop, where there
+    is no previous tile and it invented one.
+
+    plan_route plans a BUILD. It was called check_connection, which is a different question, and
+    the name is why it was reached for as a connectivity test and answered zero on water.
+    """
+
+    def test_the_first_hop_no_longer_invents_an_approach(self) -> None:
+        """The measured failure: a depot the game reported connected, whose train then ran at
+        107 km/h, traced as line_exists false with tiles_reachable 1."""
+        assert "if (node.tile == start) {" in _GS
+        walk = _GS[_GS.index("function CmdTraceRoute"):]
+        walk = walk[:walk.index("local reachable = 0")]
+        # Adjacency for the first hop, the full triple test after it.
+        assert "joined = is_track;" in walk
+        assert "GSRail.AreTilesConnected(prev, node.tile, next)" in walk
+
+    def test_it_says_what_it_does_not_model(self) -> None:
+        """A check that cannot be exact has to say so, or it gets trusted as if it were."""
+        described = _ACTIONS["trace_route"]["description"]
+        for limit in ("platform", "reverse", "signals"):
+            assert limit in described, limit
+        assert "lost" in described, "points at the one exact answer there is"
+
+    def test_the_build_planner_is_named_for_what_it_plans(self) -> None:
+        from nttd.api import observation_routes
+
+        assert hasattr(observation_routes, "plan_route")
+        assert not hasattr(observation_routes, "check_path")
+
+    def test_a_dock_is_seeded_from_the_water_beside_it(self) -> None:
+        """A dock occupies a station tile and the water walker crosses only water, so both
+        endpoints were rejected: dock to dock gave 0 tiles for routes being sailed."""
+        from nttd.pathfinding.service import _water_beside
+
+        class _Tile:
+            def __init__(self, water: bool) -> None:
+                self.water = water
+
+        class _Cache:
+            def __init__(self, water: set[tuple[int, int]]) -> None:
+                self._water = water
+
+            def get(self, x: int, y: int) -> _Tile | None:
+                return _Tile((x, y) in self._water)
+
+        # A dock at (10,10) with water to its east.
+        cache = _Cache({(11, 10)})
+        assert _water_beside(cache, 10, 10) == (11, 10)
+        # Open water is returned untouched, so a caller passing water is unaffected.
+        assert _water_beside(cache, 11, 10) == (11, 10)
+        # Nothing adjacent is water: unchanged rather than guessed.
+        assert _water_beside(_Cache(set()), 10, 10) == (10, 10)
+
+
 def test_no_http_or_mcp_change_was_needed_for_any_of_these() -> None:
     """All of the above are return fields or widened parameters, and both layers are generic:
     HTTP passes the GameScript reply through, and MCP builds its enums from the manifest. This

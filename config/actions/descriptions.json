@@ -1041,7 +1041,7 @@
       "category": "query"
     },
     "trace_route": {
-      "description": "Whether a vehicle can travel from one tile to another over track that already exists. This is not the same question as the feasibility check in /state/path, which plans a NEW line and routes around occupied tiles, so it reports no path once a line is standing. Answered by walking the game's own connectivity, so it is the authority on whether a built route will actually carry anything. Rail and road only: a ship travels over open water.",
+      "description": "Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal.",
       "parameters": {
         "transport_type": {
           "description": "rail or road. Defaults to rail."
