@@ -99,3 +99,30 @@ def test_every_scored_company_field_survives_the_world_refresh() -> None:
     refresh = inspect.getsource(WorldState.apply_gs_companies)
     for field in sorted(scored):
         assert f'"{field}"' in refresh, f"{field} is scored but the world drops it"
+
+
+def test_the_cargo_bank_travels_in_the_savegame() -> None:
+    """A score is only worth what a verifier can recompute from the artifacts.
+
+    cargo_delivered_total is accumulated in the GameScript's own memory as each quarter
+    ends, because the game answers 0 for every quarter but the one in progress. Script
+    memory does not reach a savegame on its own, so a board reloading final.sav started a
+    fresh script with an empty bank: measured, every bundle failed score_recomputed with
+    "save gives 0 cargo, result claims 4975" and no run could earn better than unverified.
+
+    Load runs BEFORE Start, so Start must not overwrite what Load restored.
+    """
+    source = (resources.gamescript_dir() / "game" / "nttd-gs" / "main.nut").read_text()
+
+    save = source.split("function Save()")[1].split("function ")[0]
+    assert "_cargo_banked" in save and "_cargo_last_q0" in save
+
+    load = source.split("function Load(")[1].split("function ")[0]
+    assert "_cargo_banked" in load and "_cargo_last_q0" in load
+
+    start = source.split("function Start()")[1].split("function ")[0]
+    for slot in ("_cargo_banked", "_cargo_last_q0"):
+        assigned = f"this.{slot} = {{}}"
+        guarded = f"if (this.{slot} == null) this.{slot} = {{}}"
+        assert guarded in start, f"{slot} must only be initialised when Load left it unset"
+        assert start.count(assigned) == start.count(guarded), slot

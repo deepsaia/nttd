@@ -36,8 +36,11 @@ class NttdGS extends GSController {
     GSLog.Info("nttd GameScript v1 started");
     this._pathfind_queue = [];
     this._lost_vehicles = {};
-    this._cargo_banked = {};
-    this._cargo_last_q0 = {};
+    // Only when Load did not already restore them. Load runs BEFORE Start, so assigning
+    // a fresh table here unconditionally would throw away the bank that was just read
+    // out of the savegame, which is the whole reason it is saved.
+    if (this._cargo_banked == null) this._cargo_banked = {};
+    if (this._cargo_last_q0 == null) this._cargo_last_q0 = {};
     this._event_names = {};
     this._event_names[GSEvent.ET_VEHICLE_CRASHED]       <- "vehicle_crashed";
     this._event_names[GSEvent.ET_VEHICLE_LOST]          <- "vehicle_lost";
@@ -84,8 +87,24 @@ class NttdGS extends GSController {
     }
   }
 
-  function Save() { return {}; }
-  function Load(version, data) {}
+  // The cargo bank goes INTO the savegame, because the score is only worth what a
+  // verifier can recompute from the artifacts.
+  //
+  // cargo_delivered_total is accumulated in this script's own memory as each quarter
+  // ends, since the game answers 0 for every quarter but the one in progress. That
+  // memory does not survive into a savegame by itself, so a board reloading final.sav
+  // started a fresh script with an empty bank and recomputed 0 cargo against a result
+  // claiming 4,975. Measured: every bundle failed score_recomputed and no run could earn
+  // a verdict better than unverified.
+  function Save() {
+    return { cargo_banked = this._cargo_banked, cargo_last_q0 = this._cargo_last_q0 };
+  }
+
+  function Load(version, data) {
+    if (data == null) return;
+    if ("cargo_banked" in data) this._cargo_banked = data.cargo_banked;
+    if ("cargo_last_q0" in data) this._cargo_last_q0 = data.cargo_last_q0;
+  }
 
   // ---------------------------------------------------------------------------
   // Event loop
