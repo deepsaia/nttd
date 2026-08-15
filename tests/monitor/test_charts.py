@@ -6,6 +6,7 @@ looking at the finished picture: a wrong tick is still a plausible looking plot.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from nttd.monitor.charts import esc, line_chart, mix_bars, number, panel, table
@@ -128,3 +129,38 @@ def test_large_figures_are_abbreviated() -> None:
     assert number(1_500_000) == "1.50M"
     assert number(28_200) == "28.2k"
     assert number(30) == "30"
+
+
+def test_series_on_one_panel_never_share_a_colour() -> None:
+    """A legend of three entries where two are the same green explains nothing.
+
+    Orders and routes drew routes on palette 1 and idle vehicles on palette 6, which are
+    #35d0a5 and #06d6a0: two greens. Checked across every multi-series panel rather than
+    that one, because the next panel added is the one that repeats the mistake.
+    """
+    from nttd.monitor import page
+
+    steps = [{"step": index, "v": index} for index in range(3)]
+    for chunk in page._charts(steps):
+        colours = re.findall(r'stroke="(#[0-9a-f]{6})"', chunk)
+        assert len(colours) == len(set(colours)), chunk[:120]
+
+
+def test_the_fleet_panel_is_drawn_as_bands() -> None:
+    """Counts by type read better stacked as areas than as four crossing lines."""
+    from nttd.monitor import page
+
+    steps = [{"step": index, "vehicles": index, "vehicles_train": index} for index in range(3)]
+    fleet = [chunk for chunk in page._charts(steps) if 'data-cid="cfleet"' in chunk]
+    assert fleet, "the fleet panel is missing"
+    assert "<polygon" in fleet[0] and "fill-opacity" in fleet[0]
+
+
+def test_cargo_waiting_is_charted_against_cargo_delivered() -> None:
+    """Waiting climbing while delivered stays flat is a network that does not move."""
+    from nttd.monitor import page
+
+    steps = [{"step": i, "cargo_waiting": i, "cargo_delivered": i * 2} for i in range(3)]
+    cargo = [chunk for chunk in page._charts(steps) if 'data-cid="ccargo"' in chunk]
+    assert cargo, "the cargo panel is missing"
+    assert "waiting at stations" in cargo[0] and "delivered" in cargo[0]

@@ -267,7 +267,26 @@ LIVE_BODY_JS = r"""
   if(!window.EventSource) return;
   var es = new EventSource('/live');
   var timer = null, quiet = 0;
-  var reload = function(){ window.location.reload(); };
+  // Where the reader was, kept across the reload.
+  //
+  // A reload resets scroll to the top, so reading the actions or events table meant being
+  // thrown back up the page every time the session wrote, and scrolling down again to find
+  // the row you were on. The position is stashed before the reload and restored after it,
+  // and the browser is told not to do its own restoration, which fights this one.
+  var SCROLL_KEY = 'nttd-scroll-' + window.location.search;
+  if(window.history && 'scrollRestoration' in window.history){
+    window.history.scrollRestoration = 'manual';
+  }
+  var restore = function(){
+    var saved = sessionStorage.getItem(SCROLL_KEY);
+    if(saved !== null) window.scrollTo(0, parseInt(saved, 10));
+  };
+  restore();
+  window.addEventListener('load', restore);
+  var reload = function(){
+    sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+    window.location.reload();
+  };
   // A running session writes many times a second, and a reload per write meant a click on a
   // session in the sidebar never survived long enough to navigate: the page went out from
   // under the pointer. Writes are coalesced into one reload, and any interaction holds it off
@@ -284,7 +303,10 @@ LIVE_BODY_JS = r"""
     }, delay);
   };
   var hold = function(){ quiet = Date.now() + HOLD_MS; };
-  ['mousedown','keydown','touchstart','wheel'].forEach(function(name){
+  // scroll is in this list deliberately. Somebody reading a table is scrolling, and a
+  // reader mid-table is exactly who a reload interrupts, so reading holds it off for as
+  // long as it continues.
+  ['mousedown','keydown','touchstart','wheel','scroll'].forEach(function(name){
     window.addEventListener(name, hold, {passive: true});
   });
   es.addEventListener('data', function(){ schedule(COALESCE_MS); });
@@ -366,7 +388,7 @@ JS = r"""
         var p=nearest(s.data,xv);
         return '<span style="color:'+s.color+'">'+fmt(p[1])+'</span>'; })
         .filter(function(t){ return t; });
-      if(ro) ro.innerHTML='step '+xv+' &middot; '+parts.join(' / ');
+      if(ro) ro.innerHTML='day '+xv+' &middot; '+parts.join(' / ');
     });
     hit.addEventListener('mouseleave', function(){
       if(xh) xh.setAttribute('opacity','0'); if(ro) ro.innerHTML=''; });
@@ -420,7 +442,7 @@ JS = r"""
     });
     // 1-based, so the scrubber agrees with the step COUNT shown in the sidebar,
     // the cards and the index table. Zero-based here read as one step fewer.
-    if(out) out.textContent='step '+(i+1)+(f.d?' ('+f.d+')':'');
+    if(out) out.textContent='day '+(i+1)+(f.d?' ('+f.d+')':'');
     if(slider) slider.value=i;
   }
   function setLive(on){

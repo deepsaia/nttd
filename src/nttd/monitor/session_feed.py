@@ -167,6 +167,11 @@ class SessionFeed:
                 "stations": len(snapshot.get("stations") or []),
                 "vehicles": len(snapshot.get("vehicles") or []),
                 "cargo_waiting": self._cargo_waiting(snapshot),
+                # What the company has actually carried, banked across the quarter resets
+                # by the GameScript. Read against cargo_waiting on the same plot: waiting
+                # climbing while delivered stays flat is a network that collects and does
+                # not move, which is the failure mode a stalled fleet produces.
+                "cargo_delivered": company.get("cargo_delivered_total"),
                 "actions": attempted,
                 "refused": refused,
             }

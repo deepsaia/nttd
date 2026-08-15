@@ -44,7 +44,15 @@ _SINGLE_CHARTS = (
     ("value", "Company value"),
     ("income", "Income (this quarter, resets each quarter)"),
     ("fleet_profit_total", "Fleet profit, cumulative (live)"),
-    ("cargo_waiting", "Cargo waiting at stations"),
+)
+
+# Two series on one panel: what is sitting at stations, and what has actually been carried.
+# Apart they answer half a question each. Together, waiting climbing while delivered stays
+# flat is a network that collects and does not move, which is what a stalled fleet looks
+# like from outside.
+_CARGO_CHART = (
+    ("cargo_waiting", "waiting at stations", 0),
+    ("cargo_delivered", "delivered, cumulative", 2),
 )
 
 
@@ -169,7 +177,7 @@ def _sidebar(entries: list[dict[str, Any]], active: str | None) -> str:
             f'href="{_session_link(meta["session_id"])}">'
             f'<span class="ndot" style="background:{colour(index)}"></span>'
             f'<span class="meta"><span class="name">{dot}{esc(meta["name"])}</span>'
-            f'<span class="stat">step {meta["steps"]} &middot; rating '
+            f'<span class="stat">day {meta["steps"]} &middot; rating '
             f'{number(meta["rating"])}</span></span></a>'
             f'{_delete_control(meta)}'
             f'</div>'
@@ -208,7 +216,7 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
         '<span class="hint">open one in the sidebar for its charts and map</span></div>'
     )
     listing = table(
-        ["state", "name", "scenario", "seed", "steps", "rating", "value", "stations",
+        ["state", "name", "scenario", "seed", "days", "rating", "value", "stations",
          "vehicles", "actions", "wall (hh:mm:ss)", "health"],
         rows,
         "Sessions, newest first",
@@ -367,7 +375,9 @@ def _session_cards(meta: dict[str, Any]) -> str:
         ("balance", number(meta["balance"]), ""),
         ("stations", meta["stations"], ""),
         ("vehicles", meta["vehicles"], "good" if meta["vehicles"] else "bad"),
-        ("steps", meta["steps"], ""),
+        # Days, not steps. A step is one heartbeat in stepped mode and means nothing in
+        # realtime, while a game day is the same unit in both, so one monitor reads both.
+        ("days", meta["steps"], ""),
         ("actions", f"{meta['actions']} / {meta['refused']} refused", ""),
         ("wall time (hh:mm:ss)", _clock(meta["minutes"]), ""),
     ])
@@ -418,6 +428,11 @@ def _charts(steps: list[dict[str, Any]]) -> list[str]:
             line_chart(f"c{index}", [_series(title, colour(index), steps, field)], title, "v")
         )
     out.append(line_chart(
+        "ccargo",
+        [_series(label, colour(tone), steps, field) for field, label, tone in _CARGO_CHART],
+        "Cargo waiting and delivered", "v",
+    ))
+    out.append(line_chart(
         "cmoney",
         [_series("balance", colour(0), steps, "balance"),
          _series("loan", colour(5), steps, "loan")],
@@ -432,17 +447,22 @@ def _charts(steps: list[dict[str, Any]]) -> list[str]:
     ))
     out.append(line_chart(
         "corders",
-        [_series("routes", colour(1), steps, "routes_distinct"),
-         _series("orders", colour(4), steps, "orders_total"),
-         _series("vehicles with no orders", colour(6), steps, "vehicles_idle")],
+        # 0, 2 and 5: blue, orange, pink. It used to be 1, 4 and 6, and 1 and 6 are
+        # #35d0a5 and #06d6a0, two greens a reader cannot tell apart in a legend.
+        [_series("routes", colour(0), steps, "routes_distinct"),
+         _series("orders", colour(2), steps, "orders_total"),
+         _series("vehicles with no orders", colour(5), steps, "vehicles_idle")],
         "Orders and routes", "v",
     ))
     out.append(line_chart(
         "cfleet",
-        [_series("total", colour(2), steps, "vehicles"),
-         *(_series(kind, colour(3 + index), steps, f"vehicles_{kind}")
+        # Total first so it is the widest band, then one per kind. Each kind takes a
+        # colour two apart in the palette rather than adjacent, because adjacent entries
+        # include two greens and two warm oranges.
+        [_series("total", colour(0), steps, "vehicles"),
+         *(_series(kind, colour(2 + index * 2), steps, f"vehicles_{kind}")
            for index, kind in enumerate(VEHICLE_KINDS))],
-        "Vehicles owned, by type", "v",
+        "Vehicles owned, by type", "v", filled=True,
     ))
     out.append(line_chart(
         "cinfra",

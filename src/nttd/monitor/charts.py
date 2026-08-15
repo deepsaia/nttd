@@ -90,7 +90,13 @@ def panel(
     )
 
 
-def line_chart(cid: str, series: list[dict[str, Any]], title: str, field: str) -> str:
+def line_chart(
+    cid: str,
+    series: list[dict[str, Any]],
+    title: str,
+    field: str,
+    filled: bool = False,
+) -> str:
     """One panel plotting ``field`` for each series against its step.
 
     ``series`` entries are ``{label, colour, rows}``. A point is plotted only when both
@@ -123,7 +129,7 @@ def line_chart(cid: str, series: list[dict[str, Any]], title: str, field: str) -
     )
     embedded: list[dict[str, Any]] = []
     for index, entry in enumerate(series):
-        drawn, values = _polyline(entry, field, scale, index)
+        drawn, values = _polyline(entry, field, scale, index, filled=filled)
         out.append(drawn)
         embedded.append({
             "label": entry["label"], "color": entry["colour"], "data": values,
@@ -267,6 +273,7 @@ def _polyline(
     field: str,
     scale: Scale,
     index: int,
+    filled: bool = False,
 ) -> tuple[str, list[list[float]]]:
     pixels: list[str] = []
     values: list[list[float]] = []
@@ -281,6 +288,19 @@ def _polyline(
             f'<polyline class="ser s{index}" fill="none" stroke="{entry["colour"]}" '
             f'stroke-width="2" points="{" ".join(pixels)}"/>'
         )
+        if filled:
+            # Translucent, and drawn UNDER its own line, so overlapping bands stay legible
+            # rather than the last one painted hiding the ones before it. Closed down to the
+            # baseline at both ends, which is what makes it read as an area rather than a
+            # thick line.
+            floor = scale.y(scale.y_min)
+            first_x = pixels[0].split(",")[0]
+            last_x = pixels[-1].split(",")[0]
+            area = f"{first_x},{floor:.1f} " + " ".join(pixels) + f" {last_x},{floor:.1f}"
+            drawn = (
+                f'<polygon class="ser s{index} band" fill="{entry["colour"]}" '
+                f'fill-opacity="0.18" stroke="none" points="{area}"/>' + drawn
+            )
     elif len(pixels) == 1:
         cx, cy = pixels[0].split(",")
         drawn = (
