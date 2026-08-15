@@ -25,3 +25,15 @@ class GameState(BaseModel):
     map_height: int = 0
     landscape: str = ""
     snapshot_id: str = ""
+    # How long the run is, and how much of it is left.
+    #
+    # A contestant cannot plan without these. Whether to buy a vehicle depends on whether
+    # there is time for it to pay for itself, and a run that hides its own horizon forces
+    # that decision to be made blind: an aircraft bought with sixty days to go is cash
+    # converted into a depreciating asset. This is a fact about the task, not privileged
+    # information, so it is on the public status beside the date.
+    #
+    # Zero when the run is not bounded by days at all, which is a different thing from
+    # having none left.
+    game_days_total: int = 0
+    game_days_remaining: int = 0

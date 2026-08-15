@@ -69,6 +69,22 @@ class EndConditionChecker:
     def start_game_date(self) -> int | None:
         return self._start_game_date
 
+    @property
+    def game_days_total(self) -> int:
+        """How many days this run is bounded to, or 0 when it is not bounded by days."""
+        cfg = self._config
+        if not cfg.max_heartbeats.enabled:
+            return 0
+        return int(cfg.max_heartbeats.count or 0)
+
+    @property
+    def game_days_remaining(self) -> int:
+        """What is left of that budget. A contestant plans against this, so it is public."""
+        total = self.game_days_total
+        if not total:
+            return 0
+        return max(0, total - int(self._heartbeat_count or 0))
+
     def reset(self) -> None:
         self._start_time = None
         self._start_game_date = None
@@ -79,6 +95,13 @@ class EndConditionChecker:
     def check(self, snapshot: StateSnapshot) -> EndResult:
         """Return EndResult(triggered=True, reason=...) if any/all conditions are met."""
         self._heartbeat_count += 1
+        # Written onto the world as it is counted, so everything that reads game state sees
+        # the same horizon: the status route, the full observation an agent reads, and the
+        # snapshots the monitor draws from. Setting it in one route instead would leave the
+        # observation an agent actually plans against saying nothing about how long it has.
+        if snapshot is not None and getattr(snapshot, "game", None) is not None:
+            snapshot.game.game_days_total = self.game_days_total
+            snapshot.game.game_days_remaining = self.game_days_remaining
         results = self._evaluate_all(snapshot)
         triggered = [r for r in results if r.triggered]
 
