@@ -83,3 +83,35 @@ def test_the_stream_route_exists_and_is_not_the_delete_route() -> None:
     assert request_handler.LIVE_PATH != request_handler.DELETE_PATH
     # A stream that never says anything looks identical to a hung server, so it beats.
     assert request_handler.KEEPALIVE_SECONDS > request_handler.WATCH_INTERVAL_SECONDS
+
+
+def test_a_reload_yields_to_a_click_instead_of_racing_it() -> None:
+    """Live updates must not make the page unusable.
+
+    A running session writes many times a second and each write reloaded the page, so a click
+    on a session in the sidebar was cancelled by a reload before it could navigate: the view
+    could not be opened at all. Writes are coalesced, and an interaction holds the reload off
+    long enough for the click to win.
+    """
+    from nttd.monitor.assets import LIVE_BODY_JS
+
+    assert "mousedown" in LIVE_BODY_JS, "an interaction has to hold the reload off"
+    assert "clearTimeout" in LIVE_BODY_JS, "writes are coalesced, not reloaded one by one"
+    assert "es.close()" in LIVE_BODY_JS, "leaving closes the stream rather than resetting it"
+
+
+def test_a_reader_closing_the_page_is_not_logged_as_a_server_error() -> None:
+    """Every navigation drops the /live socket, and the base class prints a traceback per drop.
+
+    Measured: a session view left open filled the console with ConnectionResetError stacks,
+    which is noise that hides anything real.
+    """
+    import sys
+    from unittest.mock import patch
+
+    from nttd.monitor.server import MonitorServer
+
+    with patch.object(sys, "exc_info", return_value=(ConnectionResetError, ConnectionResetError(54), None)), \
+         patch("http.server.ThreadingHTTPServer.handle_error") as base:
+        MonitorServer.handle_error(None, object(), ("127.0.0.1", 5000))  # type: ignore[arg-type]
+    base.assert_not_called()

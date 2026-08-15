@@ -266,11 +266,33 @@ LIVE_BODY_JS = r"""
 (function(){
   if(!window.EventSource) return;
   var es = new EventSource('/live');
+  var timer = null, quiet = 0;
   var reload = function(){ window.location.reload(); };
-  es.addEventListener('data', reload);
+  // A running session writes many times a second, and a reload per write meant a click on a
+  // session in the sidebar never survived long enough to navigate: the page went out from
+  // under the pointer. Writes are coalesced into one reload, and any interaction holds it off
+  // so the click wins. Each abandoned reload also reset the /live socket mid-stream, which is
+  // where the ConnectionResetError tracebacks in the console came from.
+  var HOLD_MS = 5000, COALESCE_MS = 1500;
+  var schedule = function(delay){
+    if(timer) clearTimeout(timer);
+    timer = setTimeout(function(){
+      timer = null;
+      var left = quiet - Date.now();
+      if(left > 0){ schedule(left); return; }
+      reload();
+    }, delay);
+  };
+  var hold = function(){ quiet = Date.now() + HOLD_MS; };
+  ['mousedown','keydown','touchstart','wheel'].forEach(function(name){
+    window.addEventListener(name, hold, {passive: true});
+  });
+  es.addEventListener('data', function(){ schedule(COALESCE_MS); });
   // A source edit restarts the server, so wait for it to come back before reloading, or the
   // browser races the exec and shows a connection error instead of the new page.
-  es.addEventListener('code', function(){ setTimeout(reload, 700); });
+  es.addEventListener('code', function(){ schedule(700); });
+  // Leaving the page closes the stream politely rather than letting the socket reset.
+  window.addEventListener('pagehide', function(){ es.close(); });
 })();
 """
 
