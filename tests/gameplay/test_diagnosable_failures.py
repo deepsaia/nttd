@@ -339,8 +339,10 @@ def test_starting_a_running_vehicle_does_not_stop_it() -> None:
     depots for a whole game year while trace_route confirmed the lines were continuous. The
     symptom was a fleet that existed, had correct orders, and delivered nothing.
 
-    The guard reads GetState, not IsStoppedInDepot: a vehicle halted on the line is stopped
-    and not in a depot, which is the state those runs were actually in.
+    The guard needs BOTH tests. A vehicle halted on the line reads VS_STOPPED and is not in a
+    depot; a vehicle sitting in a depot reads VS_IN_DEPOT and NOT VS_STOPPED. Guarding on
+    VS_STOPPED alone declared four freshly built aircraft already running and left them in
+    their hangar for sixty days.
     """
     source = (resources.gamescript_dir() / "game" / "nttd-gs" / "main.nut").read_text()
 
@@ -348,11 +350,8 @@ def test_starting_a_running_vehicle_does_not_stop_it() -> None:
         text = source.split(f"function {name}")[1].split("function ")[0]
         return [line for line in text.splitlines() if not line.lstrip().startswith("//")]
 
-    start = body("CmdStartVehicle")
-    assert any("VS_STOPPED" in line for line in start), "check the state before toggling"
-    assert any("already_running" in line for line in start), "say when there was nothing to do"
-    assert not any("IsStoppedInDepot" in line for line in start), "misses a stop on the line"
-
-    stop = body("CmdStopVehicle")
-    assert any("VS_STOPPED" in line for line in stop)
-    assert not any("IsStoppedInDepot" in line for line in stop)
+    for name in ("CmdStartVehicle", "CmdStopVehicle"):
+        code = body(name)
+        assert any("VS_STOPPED" in line for line in code), f"{name} misses a stop on the line"
+        assert any("IsStoppedInDepot" in line for line in code), f"{name} misses a stop in depot"
+    assert any("already_running" in line for line in body("CmdStartVehicle"))

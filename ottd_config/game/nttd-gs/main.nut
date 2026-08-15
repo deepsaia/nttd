@@ -4507,11 +4507,15 @@ class NttdGS extends GSController {
     // twice, once by the dispatch and once explicitly, leaving all of them parked beside
     // their depots for the rest of the year while the lines they sat on traced end to end.
     //
-    // IsStoppedInDepot is not the test to use here. A vehicle halted ON THE LINE is stopped
-    // and not in a depot, which is exactly the state those runs were stuck in, so the guard
-    // has to read the state itself.
+    // BOTH tests are needed, and neither alone is enough. A vehicle halted ON THE LINE reads
+    // VS_STOPPED and is not in a depot. A vehicle sitting in a depot reads VS_IN_DEPOT and NOT
+    // VS_STOPPED, so a guard on VS_STOPPED alone declares a freshly built vehicle already
+    // running and never starts it: measured as four aircraft that stayed in their hangar for
+    // sixty days while start_vehicle answered already_running.
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.GetState(p.vehicle_id) != GSVehicle.VS_STOPPED) {
+    local halted = GSVehicle.IsStoppedInDepot(p.vehicle_id)
+                   || GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED;
+    if (!halted) {
       return { success = true, result = { running = true, already_running = true } };
     }
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) {
@@ -4522,7 +4526,8 @@ class NttdGS extends GSController {
 
   function CmdStopVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED) {
+    if (GSVehicle.IsStoppedInDepot(p.vehicle_id)
+        || GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED) {
       return { success = true, result = { already_stopped = true } };
     }
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) return { success = true, result = {} };
