@@ -24,6 +24,7 @@ Commands:
   nttd result                Show the scored result record for a session
   nttd submit                Package a session into a submission bundle
   nttd verify                Self-check a submission bundle
+  nttd publish               File a bundle on the board as a pull request
   nttd analyze               Generate session analysis reports
   nttd monitor               Watch sessions in a browser while they run
 """
@@ -35,6 +36,7 @@ from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
 from nttd.cli.mcp_command import mcp
 from nttd.cli.monitor_command import monitor
+from nttd.cli.publish_command import publish
 from nttd.cli.result_command import result
 from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
@@ -54,6 +56,7 @@ app.command()(server)
 app.command()(benchmark)
 app.command()(result)
 app.command()(submit)
+app.command()(publish)
 app.command()(verify)
 app.command()(analyze)
 app.command()(actions)

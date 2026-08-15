@@ -61,6 +61,13 @@ dependencies = [
     "ruff>=0.8.0",
 ]
 
+[project.optional-dependencies]
+# `nttd publish` only. Filing a bundle is the last step a contestant owns, and most
+# people who install nttd never do it, so the Hub client is not a base dependency.
+publish = [
+    "huggingface_hub>=0.34",
+]
+
 [project.scripts]
 nttd = "nttd.cli.app:main"
 

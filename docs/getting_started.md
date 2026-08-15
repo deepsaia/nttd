@@ -121,8 +121,17 @@ uv run nttd verify <session dir>/submission  # your own check first
 it ran on your machine, from code you could have changed. The verdict that counts is
 computed by whoever ingests the bundle.
 
-Then file the bundle at `submissions/<entrant>/<submission id>/` on the submissions dataset
-by pull request. `docs/submitting.md` in nttd-examples covers that side in full.
+Then file it. One command, and the pull request is yours: the token is your own HuggingFace
+one, and nobody needs write access to the board.
+
+```bash
+uv sync --extra publish                                   # once
+export HF_TOKEN=...                                       # your token, write scope
+uv run nttd publish -s <session> --entrant <your name>
+```
+
+Add `--dry-run` first to see exactly what would be filed and where. `docs/submitting.md` in
+nttd-examples covers the contestant path in full.
 
 ### If you are running the board yourself
 

@@ -50,9 +50,18 @@ _NOT_IMPORTED_ON_PURPOSE = {
 
 
 def _declared() -> set[str]:
+    """Everything pyproject declares, base and extras alike.
+
+    An optional extra is still a declaration: `nttd publish` imports huggingface_hub, which
+    is under the `publish` extra because most installs never file a bundle. What this test
+    is for is an import nothing declares ANYWHERE, which is a working install by luck.
+    """
     project = tomllib.loads((_ROOT / "pyproject.toml").read_text())["project"]
+    requirements = list(project["dependencies"])
+    for extra in project.get("optional-dependencies", {}).values():
+        requirements.extend(extra)
     names = set()
-    for requirement in project["dependencies"]:
+    for requirement in requirements:
         head = requirement.split("[")[0]
         for separator in (">=", "<=", "==", "~=", ">", "<", "!="):
             head = head.split(separator)[0]
