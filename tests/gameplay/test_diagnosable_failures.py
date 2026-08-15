@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 
+from nttd import resources
 from tests.conftest import REPO_ROOT
 
 _ROOT = REPO_ROOT
@@ -327,3 +328,31 @@ def test_a_lost_vehicle_says_so_in_the_observation() -> None:
     vehicle = world.vehicles[21]
     assert vehicle.lost is True
     assert vehicle.idle_reason == "no_path"
+
+
+def test_starting_a_running_vehicle_does_not_stop_it() -> None:
+    """start_vehicle must start, and stop_vehicle must stop. Neither may toggle.
+
+    Both called GSVehicle.StartStopVehicle, which is OpenTTD's toggle, so a second start
+    stopped the vehicle and still answered success. It cost three runs: every train and ship
+    was started once by the dispatch and once explicitly, so all of them sat beside their
+    depots for a whole game year while trace_route confirmed the lines were continuous. The
+    symptom was a fleet that existed, had correct orders, and delivered nothing.
+
+    The guard reads GetState, not IsStoppedInDepot: a vehicle halted on the line is stopped
+    and not in a depot, which is the state those runs were actually in.
+    """
+    source = (resources.gamescript_dir() / "game" / "nttd-gs" / "main.nut").read_text()
+
+    def body(name: str) -> list[str]:
+        text = source.split(f"function {name}")[1].split("function ")[0]
+        return [line for line in text.splitlines() if not line.lstrip().startswith("//")]
+
+    start = body("CmdStartVehicle")
+    assert any("VS_STOPPED" in line for line in start), "check the state before toggling"
+    assert any("already_running" in line for line in start), "say when there was nothing to do"
+    assert not any("IsStoppedInDepot" in line for line in start), "misses a stop on the line"
+
+    stop = body("CmdStopVehicle")
+    assert any("VS_STOPPED" in line for line in stop)
+    assert not any("IsStoppedInDepot" in line for line in stop)

@@ -4501,16 +4501,30 @@ class NttdGS extends GSController {
   }
 
   function CmdStartVehicle(p) {
+    // GSVehicle.StartStopVehicle TOGGLES, so calling this on a vehicle that was already
+    // running stopped it, and answered success with running reported off the wrong state.
+    // Measured: three whole runs scored zero cargo because every train and ship was started
+    // twice, once by the dispatch and once explicitly, leaving all of them parked beside
+    // their depots for the rest of the year while the lines they sat on traced end to end.
+    //
+    // IsStoppedInDepot is not the test to use here. A vehicle halted ON THE LINE is stopped
+    // and not in a depot, which is exactly the state those runs were stuck in, so the guard
+    // has to read the state itself.
     local company_mode = GSCompanyMode(p.company_id);
+    if (GSVehicle.GetState(p.vehicle_id) != GSVehicle.VS_STOPPED) {
+      return { success = true, result = { running = true, already_running = true } };
+    }
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) {
-      return { success = true, result = { running = !GSVehicle.IsStoppedInDepot(p.vehicle_id) } };
+      return { success = true, result = { running = GSVehicle.GetState(p.vehicle_id) != GSVehicle.VS_STOPPED } };
     }
     return this._Refused();
   }
 
   function CmdStopVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.IsStoppedInDepot(p.vehicle_id)) return { success = true, result = { already_stopped = true } };
+    if (GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED) {
+      return { success = true, result = { already_stopped = true } };
+    }
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) return { success = true, result = {} };
     return this._Refused();
   }
