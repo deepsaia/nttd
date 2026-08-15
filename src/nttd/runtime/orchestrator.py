@@ -137,6 +137,21 @@ class Orchestrator:
         # the running game, then remembered. See _can_flush_paused.
         self._paused_flush_ok: bool | None = None
 
+    def _publish_horizon(self) -> None:
+        """Put how much of the run is left onto the world, where everything reads it.
+
+        On world.game rather than on the snapshot handed to the end checker: a full
+        observation is built fresh from the world each time it is asked for, so a value set
+        on that transient snapshot is gone before an agent can read it. That was the first
+        attempt and every observation reported a horizon of zero.
+
+        A contestant plans against this. Whether to buy a vehicle depends on whether there
+        is time for it to pay for itself, and a run that hides its own length forces that
+        decision to be made blind.
+        """
+        self.world.game.game_days_total = self._end_checker.game_days_total
+        self.world.game.game_days_remaining = self._end_checker.game_days_remaining
+
     def _on_game_event(self, data: dict[str, Any]) -> None:
         """Handle unsolicited GS game events: refresh what moved, then record it."""
         event_type = str(data.get("event_type", "unknown"))
@@ -744,6 +759,7 @@ class Orchestrator:
             self.recorder.record_snapshot(snapshot)
 
         end_result = self._end_checker.check(snapshot)
+        self._publish_horizon()
         if end_result.triggered:
             logger.info("Simulation ended at step %d: %s", self._step_count, end_result.reason)
             self._running = False
@@ -911,6 +927,7 @@ class Orchestrator:
 
             # 4b. Check end conditions (after observers see the snapshot, before acting)
             end_result = self._end_checker.check(snapshot)
+            self._publish_horizon()
             if end_result.triggered:
                 logger.info("Simulation ended: %s", end_result.reason)
                 for cb in self.on_end:
@@ -1010,6 +1027,7 @@ class Orchestrator:
 
             # Check end conditions (wall-clock, game date, revenue, cargo)
             end_result = self._end_checker.check(snapshot)
+            self._publish_horizon()
             if end_result.triggered:
                 logger.info("Async real-time simulation ended: %s", end_result.reason)
                 # Final screenshot only. The final SAVE is captured by

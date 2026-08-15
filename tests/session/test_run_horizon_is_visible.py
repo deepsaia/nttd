@@ -43,9 +43,22 @@ def test_what_is_left_falls_as_the_run_proceeds() -> None:
         checker.check(snapshot)
 
     assert checker.game_days_remaining == 7
-    # And the world carries it, which is where an agent reads it from.
-    assert snapshot.game.game_days_remaining == 7
-    assert snapshot.game.game_days_total == 10
+
+
+def test_the_world_carries_it_where_an_agent_reads_it() -> None:
+    """On world.game, not on the snapshot handed to the checker.
+
+    A full observation is built fresh from the world each time it is asked for, so a value
+    set on that transient snapshot is gone by the time an agent reads it. That was the first
+    attempt, and every observation reported a horizon of zero.
+    """
+    import inspect
+
+    from nttd.runtime.orchestrator import Orchestrator
+
+    source = inspect.getsource(Orchestrator._publish_horizon)
+    assert "self.world.game.game_days_remaining" in source
+    assert "self.world.game.game_days_total" in source
 
 
 def test_a_run_not_bounded_by_days_reports_zero_rather_than_a_guess() -> None:

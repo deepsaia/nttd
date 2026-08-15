@@ -95,13 +95,7 @@ class EndConditionChecker:
     def check(self, snapshot: StateSnapshot) -> EndResult:
         """Return EndResult(triggered=True, reason=...) if any/all conditions are met."""
         self._heartbeat_count += 1
-        # Written onto the world as it is counted, so everything that reads game state sees
-        # the same horizon: the status route, the full observation an agent reads, and the
-        # snapshots the monitor draws from. Setting it in one route instead would leave the
-        # observation an agent actually plans against saying nothing about how long it has.
-        if snapshot is not None and getattr(snapshot, "game", None) is not None:
-            snapshot.game.game_days_total = self.game_days_total
-            snapshot.game.game_days_remaining = self.game_days_remaining
+
         results = self._evaluate_all(snapshot)
         triggered = [r for r in results if r.triggered]
 
