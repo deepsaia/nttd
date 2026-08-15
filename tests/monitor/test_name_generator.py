@@ -66,12 +66,11 @@ def test_a_session_id_leads_with_the_date_and_ends_with_the_words() -> None:
     moment apart, so their timestamps disagreed by a second. The id is now both.
 
     Date first so a directory listing is in time order, words last so there is something
-    to say out loud, and no timezone: that belongs to the machine that recorded the run,
-    not to the run.
+    to say out loud, and the timezone attached to the time it qualifies rather than
+    trailing the whole name.
     """
     session_id = generate_session_id()
-    assert re.match(r"^\d{8}-\d{6}-[a-z]+-[a-z]+$", session_id), session_id
-    assert not session_id.endswith(("ist", "utc", "pdt"))
+    assert re.match(r"^\d{8}-\d{6}[a-z]+-[a-z]+-[a-z]+$", session_id), session_id
 
 
 def test_the_words_can_be_read_back_out_for_a_heading() -> None:

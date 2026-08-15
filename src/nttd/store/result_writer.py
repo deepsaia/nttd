@@ -117,11 +117,11 @@ _SCHEMA = pa.schema([
     ("recorded_at", pa.timestamp("us")),
     # When the run STARTED, with its offset, as an ISO string.
     #
-    # recorded_at is when this file was written and carries no timezone, so neither it nor
-    # the session id says what clock a run was on. The id used to end in "ist", which put
-    # the recording machine's timezone inside the identity of the run and made two ids
-    # from different machines incomparable. The offset lives here instead, where it reads
-    # as a time rather than as three letters to parse out of a name.
+    # recorded_at is when this file was WRITTEN and carries no timezone. The session id
+    # says roughly when a run started and in which zone, as 20260815-132431ist, but a
+    # timezone abbreviation is ambiguous: IST is Indian, Irish and Israel standard time at
+    # once. This is the unambiguous one, offset included, and it is the start rather than
+    # the write.
     ("started_at", pa.string()),
 ])
 

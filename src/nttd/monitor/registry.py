@@ -149,12 +149,12 @@ def _started_at(session_dir: Path) -> tuple[float, str]:
     a newer one sits idle, put the wrong row on top. A reader looking for the run they just
     started wants it first, and the id already says when it started.
 
-    Ids look like ses_20260813_180523_b29b4b54. Anything that does not parse sorts LAST, not
-    by file activity: a directory whose start time is unknown must not be able to claim it is
+    Ids look like 20260815-132431ist-quiet-pickle. Anything that does not parse sorts LAST,
+    not by file activity: a directory whose start time is unknown must not be able to claim it is
     the newest. Falling back to activity was tried and did exactly that, because a directory
     created just now carries a modification time later than any real session's start.
     """
-    # Two shapes, because both are on disk. Current ids are 20260815-073255-dandy-willow,
+    # Two shapes, because both are on disk. Current ids are 20260815-132431ist-quiet-pickle,
     # date first. The eight runs published as reference rows predate that and are
     # ses_20260815_073254_060e426f, so reading only the new one would sort every published
     # run last, which is the failure this function exists to avoid.
@@ -162,8 +162,10 @@ def _started_at(session_dir: Path) -> tuple[float, str]:
     for stamp in (name.split("-")[:2], name.split("_")[1:3]):
         if len(stamp) != 2:
             continue
+        # The time carries its timezone, as 132431ist, and only the digits are the clock.
+        digits = "".join(char for char in stamp[1] if char.isdigit())
         try:
-            started = datetime.strptime(f"{stamp[0]}{stamp[1]}", "%Y%m%d%H%M%S")
+            started = datetime.strptime(f"{stamp[0]}{digits}", "%Y%m%d%H%M%S")
         except ValueError:
             continue
         return (started.timestamp(), name)

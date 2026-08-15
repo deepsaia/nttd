@@ -1,9 +1,9 @@
 """Human-readable name generators for sessions and companies.
 
-One shape for both, <adj>-<noun>-<date>-<time><tz>:
+Two shapes, because they are read in different places:
 
-    session   crimson-falcon-06apr2026-160734pdt
-    company   jade-heron-06apr2026-160734pdt
+    session   20260815-132431ist-quiet-pickle   date first, so a listing sorts by time
+    company   jade-heron-20260813-160734pdt     words first, and capped in length
 
 A company name is additionally capped, because OpenTTD refuses an over-long one and a
 refused rename leaves the company called "Unnamed", which makes a leaderboard row unable to
@@ -77,26 +77,28 @@ def generate_session_id() -> str:
     loud, and it is what keeps two runs minted in the same second apart: the eight hex
     characters it replaces did that job and told a reader nothing else.
 
-    No timezone in the id. It used to end in "ist", which bakes the recording machine's
-    clock into the identity of the run and makes two ids incomparable across machines.
-    The offset is carried explicitly by `started_at` on the result instead, where it can
-    be read as a time rather than parsed out of a name.
+    The timezone rides with the time it qualifies, as 132431ist, so a reader can tell at a
+    glance which clock a run was on without opening the result. It is an abbreviation and
+    abbreviations are ambiguous, IST being Indian, Irish and Israel standard time at once,
+    so the unambiguous offset is still recorded as `started_at` on the result. The id says
+    roughly when; the result says exactly.
     """
     adj = random.choice(_ADJECTIVES)
     noun = random.choice(_NOUNS)
     now = datetime.now().astimezone()
-    return f"{now.strftime('%Y%m%d')}-{now.strftime('%H%M%S')}-{adj}-{noun}"
+    zone = (now.strftime("%Z") or "utc").lower()
+    return f"{now.strftime('%Y%m%d')}-{now.strftime('%H%M%S')}{zone}-{adj}-{noun}"
 
 
 def readable_part(session_id: str) -> str:
     """The words out of an id, for a heading that does not need to repeat the date.
 
-    '20260815-073255-dandy-willow' reads back as 'dandy-willow'. An id from before the two
-    names were collapsed, or any id that does not carry a word pair, is returned whole
+    '20260815-073255ist-dandy-willow' reads back as 'dandy-willow'. An id from before the
+    two names were collapsed, or any id that does not carry a word pair, is returned whole
     rather than mangled into a guess.
     """
     parts = session_id.split("-")
-    if len(parts) >= 4 and parts[0].isdigit() and parts[1].isdigit():
+    if len(parts) >= 4 and parts[0].isdigit() and parts[1][:6].isdigit():
         return "-".join(parts[2:])
     return session_id
 
