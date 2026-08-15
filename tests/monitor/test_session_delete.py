@@ -132,3 +132,63 @@ def test_a_live_session_shows_a_disabled_control_with_the_reason() -> None:
     row = page._delete_control({"session_id": "ses_x", "name": "n", "live": True})
     assert "<form" not in row, "a running session must not be submittable"
     assert "still running" in row
+
+
+def test_a_running_session_is_refused_as_a_conflict_not_a_server_fault() -> None:
+    """"Still running" is an answer, not a failure.
+
+    It used to raise a bare RuntimeError, fall through to the catch-all, and answer 500
+    "could not delete the session", which reads as a broken monitor rather than as a run
+    that has not finished. The reply now says what to do about it.
+    """
+    import inspect
+
+    from nttd.monitor import request_handler
+
+    source = inspect.getsource(request_handler)
+    assert "class SessionIsRunningError" in source
+    assert "409" in source
+    assert "nttd session stop" in source, "say how to make it deletable"
+    assert 'raise RuntimeError(f"{session_id} is still running")' not in source
+
+
+class TestStoppingARun:
+    """The companion to delete: a running session cannot be deleted, so it must be endable.
+
+    Stopping is the one thing the monitor cannot do from disk alone, so it reaches the API.
+    That is a deliberate exception to the monitor needing nothing from the running game, and
+    it is kept narrow: the button appears only while there is something to stop, and a
+    failure to reach the API says so rather than pretending the run ended.
+    """
+
+    def test_a_live_session_gets_a_stop_button(self) -> None:
+        from nttd.monitor.page import _stop_control
+
+        rendered = _stop_control(
+            {"live": True, "session_id": "20260815-164803ist-shiny-wombat", "name": "wombat"}
+        )
+        assert 'action="/stop"' in rendered
+        assert "20260815-164803ist-shiny-wombat" in rendered
+
+    def test_a_finished_session_gets_nothing(self) -> None:
+        """There is no process to end, and a dead control on every ended run is noise."""
+        from nttd.monitor.page import _stop_control
+
+        assert _stop_control({"live": False, "session_id": "x", "name": "y"}) == ""
+
+    def test_an_unreachable_api_is_reported_rather_than_assumed(self) -> None:
+        import inspect
+
+        from nttd.monitor import request_handler
+
+        source = inspect.getsource(request_handler.MonitorHandler._answer_stop)
+        assert "502" in source
+        assert "Is `nttd server` running?" in source
+
+    def test_stopping_asks_the_operator_route(self) -> None:
+        import inspect
+
+        from nttd.monitor import request_handler
+
+        source = inspect.getsource(request_handler.MonitorHandler._stop)
+        assert "/v1/operator/admin/sessions/" in source

@@ -31,6 +31,14 @@ TERRAIN_PATH = "/terrain.png"
 # The only route that mutates anything, and the only one that accepts POST.
 DELETE_PATH = "/delete"
 
+# Stopping needs the API, which is the one thing the monitor otherwise does without. It
+# reads session directories from disk, so it works on a finished run, on a run whose server
+# has already exited, and on a copy of a directory from another machine. That property is
+# kept: the button only appears for a session that is still live, and if the API cannot be
+# reached the reply says so rather than pretending the run was stopped.
+STOP_PATH = "/stop"
+API_URL = os.environ.get("NTTD_API_URL", "http://127.0.0.1:8000")
+
 # The event stream the page listens on instead of reloading on a timer.
 LIVE_PATH = "/live"
 
@@ -40,6 +48,10 @@ WATCH_INTERVAL_SECONDS = 0.5
 
 # A comment sent down an idle stream so a proxy or a sleeping laptop does not drop it.
 KEEPALIVE_SECONDS = 20.0
+
+
+class SessionIsRunningError(RuntimeError):
+    """Deleting a session that is still being written to would strand its recorder."""
 
 
 class MonitorHandler(BaseHTTPRequestHandler):
@@ -87,7 +99,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
         recording, and it answers with a redirect so the browser reloads the list rather than
         leaving a resubmittable form in the history.
         """
-        if urlparse(self.path).path != DELETE_PATH:
+        route = urlparse(self.path).path
+        if route not in (DELETE_PATH, STOP_PATH):
             self.send_error(404)
             return
 
@@ -95,11 +108,25 @@ class MonitorHandler(BaseHTTPRequestHandler):
         form = parse_qs(self.rfile.read(length).decode("utf-8")) if length else {}
         session_id = (form.get("session") or [""])[0]
 
+        if route == STOP_PATH:
+            self._answer_stop(session_id)
+            return
+
         try:
             self._delete(session_id)
         except session_paths.InvalidSessionIdError:
             logger.warning("Refused to delete %r: not a session id", session_id)
             self.send_error(400, "not a session id")
+            return
+        except SessionIsRunningError:
+            # Its own answer, because "still running" is not a fault. This used to fall
+            # through to the 500 below and read as a broken monitor rather than as a run
+            # that has not finished.
+            logger.info("Refused to delete %s: still running", session_id)
+            self.send_error(
+                409,
+                "still running: stop it first with `nttd session stop -s <session>`",
+            )
             return
         except Exception:
             logger.exception("Failed to delete session %s", session_id)
@@ -110,6 +137,42 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Location", "/")
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def _answer_stop(self, session_id: str) -> None:
+        """Ask the API to end a running session, and report honestly if it cannot."""
+        try:
+            session_paths.validate_session_id(session_id)
+        except session_paths.InvalidSessionIdError:
+            self.send_error(400, "not a session id")
+            return
+
+        try:
+            self._stop(session_id)
+        except Exception as failure:
+            logger.warning("Could not stop %s: %r", session_id, failure)
+            self.send_error(
+                502,
+                f"could not reach nttd at {API_URL} to stop it. Is `nttd server` running?",
+            )
+            return
+
+        self.send_response(303)
+        self.send_header("Location", f"/?session={session_id}")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _stop(self, session_id: str) -> None:
+        """End the run through the operator route, which is what owns the game process."""
+        import urllib.request  # noqa: PLC0415
+
+        request = urllib.request.Request(
+            f"{API_URL}/v1/operator/admin/sessions/{session_id}/stop",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=120) as reply:  # noqa: S310
+            reply.read()
 
     def _delete(self, session_id: str) -> None:
         """Remove one session, refusing while it is still being written.
@@ -125,7 +188,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # running" instead of a 400 "not a session id".
         session_paths.validate_session_id(session_id)
         if self.server.registry.is_live(session_id):
-            raise RuntimeError(f"{session_id} is still running")
+            raise SessionIsRunningError(session_id)
         session_remover.remove_session(session_id, self.server.registry.root)
 
     def _serve_live(self) -> None:

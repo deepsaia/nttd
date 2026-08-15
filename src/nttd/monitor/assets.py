@@ -45,6 +45,10 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
    reads as a list until you reach for it. It is not display:none when hidden, because a
    keyboard user tabbing through needs to be able to focus it. */
 .navrow{position:relative;}
+.stopform{margin:0 0 0 auto;}
+.stopbtn{font-size:11px;font-weight:600;padding:4px 10px;border-radius:7px;cursor:pointer;
+ background:var(--panel2);color:var(--muted);border:1px solid var(--line);}
+.stopbtn:hover{color:var(--bad);border-color:var(--bad);}
 .delform{position:absolute;top:0;right:0;height:calc(100% - 5px);margin:0;display:flex;
  align-items:center;}
 .delbtn{display:flex;align-items:center;justify-content:center;width:26px;height:26px;
@@ -245,6 +249,14 @@ TRASH_ICON = (
 # and the whole risk is deleting the neighbour of the one intended.
 DELETE_BODY_JS = r"""
 (function(){
+  document.querySelectorAll('form.stopform').forEach(function(f){
+    f.addEventListener('submit', function(e){
+      var name = f.getAttribute('data-name') || 'this run';
+      if(!confirm('Stop ' + name + ' now?\nIt writes its result and cannot be resumed.')){
+        e.preventDefault();
+      }
+    });
+  });
   document.querySelectorAll('form.delform').forEach(function(f){
     f.addEventListener('submit', function(e){
       var name = f.getAttribute('data-name') || 'this session';

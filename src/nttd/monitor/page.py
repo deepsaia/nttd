@@ -339,6 +339,27 @@ def _delete_control(meta: dict[str, Any]) -> str:
     )
 
 
+def _stop_control(meta: dict[str, Any]) -> str:
+    """A stop button, only while there is something to stop.
+
+    Offered on the session's own page rather than the sidebar, because stopping is a
+    deliberate act on a run you are looking at, not something to reach for while scanning a
+    list. A finished session gets nothing: there is no process to end, and a disabled
+    control on every ended run would be noise on the majority of the page's uses.
+    """
+    if not meta.get("live"):
+        return ""
+    session_id = esc(meta["session_id"])
+    name = esc(meta["name"])
+    return (
+        f'<form class="stopform" method="post" action="/stop" data-name="{name}">'
+        f'<input type="hidden" name="session" value="{session_id}">'
+        f'<button class="stopbtn" type="submit" '
+        f'title="end this run now: it writes its result and can then be deleted">'
+        f'stop run</button></form>'
+    )
+
+
 def _session_header(meta: dict[str, Any]) -> str:
     live = '<span class="livedot"></span>' if meta["live"] else ""
     ended = "" if meta["live"] else f" &middot; ended: {esc(meta['end_reason'] or 'no reason recorded')}"
@@ -349,7 +370,8 @@ def _session_header(meta: dict[str, Any]) -> str:
     return (
         f'<div class="tabs"><a class="tab" href="/">&lsaquo; all sessions</a>'
         f'<span class="tab on">{live}{esc(meta["name"])}</span>{intent}'
-        f'<span class="hint">{esc(meta["session_id"])}{ended}</span></div>'
+        f'<span class="hint">{esc(meta["session_id"])}{ended}</span>'
+        f'{_stop_control(meta)}</div>'
     )
 
 
