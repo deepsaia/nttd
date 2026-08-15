@@ -293,7 +293,7 @@ artifact with its sha256, and states what the bundle cannot prove about itself.
 | File | Read by a check | Why it is there |
 |---|---|---|
 | `manifest.json` | yes | integrity: a sha256 per artifact, plus the map digest |
-| `result.parquet` | yes | **the claim**: score, provenance, business metrics |
+| `result.parquet` | yes | **the claim**: score and provenance |
 | `final.sav` | yes | the savegame. The score is recomputed from this |
 | `snapshots.parquet` | no | the series. How the run got where it got |
 | `actions.parquet` | yes | what the contestant did |
@@ -306,8 +306,11 @@ Every file does one of three jobs, and nothing does none of them.
 **Evidence** cannot be derived from anything else: the savegame, the series, the action
 log, the terrain scan, the events, the scenario. This is what a verifier checks against.
 
-**The claim** is `result.parquet`. The score and the twenty-seven business metrics are
-derived, and verification means recomputing them from the evidence and comparing.
+**The claim** is `result.parquet`: what the game reported and where it came from, and
+nothing derived. Verification means recomputing the score from the evidence and comparing.
+The cargo total is part of that, which is why the count is banked into the savegame as each
+quarter closes rather than left in memory: a verifier reloading the save has to be able to
+arrive at the same number.
 
 **Integrity** is `manifest.json`, so tampering with either shows.
 
