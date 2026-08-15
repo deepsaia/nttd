@@ -90,6 +90,26 @@ def _write_fragments(root: Path) -> str:
     return "ses_x"
 
 
+def _feed_with_vehicles(vehicles: list[dict[str, Any]]) -> SessionFeed:
+    """A feed whose newest snapshot holds these vehicles and nothing else."""
+    from nttd.analysis.loader import SessionData
+
+    snapshot = {"game": {"game_date": 737790}, "companies": [{"name": "c"}],
+                "stations": [], "vehicles": vehicles}
+    frame = pl.DataFrame({"snapshot_json": [json.dumps(snapshot)]})
+    return SessionFeed(SessionData(session_id="s", session_dir=Path("/tmp/s"), snapshots=frame))
+
+
+def _feed_with_actions(actions: list[dict[str, Any]]) -> SessionFeed:
+    from nttd.analysis.loader import SessionData
+
+    frame = pl.DataFrame({
+        "action_type": [a["action_type"] for a in actions],
+        "status": [a["status"] for a in actions],
+    })
+    return SessionFeed(SessionData(session_id="s", session_dir=Path("/tmp/s"), actions=frame))
+
+
 def _feed(root: Path, session_id: str) -> SessionFeed:
     return SessionFeed(load_session(session_id, sessions_dir=root))
 
@@ -232,3 +252,64 @@ def test_an_unreadable_snapshot_row_is_skipped_rather_than_raising(tmp_path: Pat
     broken.write_parquet(session / "snapshots.parquet")
     feed = _feed(tmp_path, "ses_x")
     assert len(feed.steps()) == 2
+
+
+class TestTheFleetTable:
+    """The one question the monitor could not answer while a run was going wrong.
+
+    Every failure across eight hand-played runs was a single vehicle failing quietly: a
+    train wandering the far corner for 130 days, four aircraft parked in a hangar for
+    sixty, ships circling the pool their depot sat in. From outside, each looked like a
+    fleet of nine and a flat profit line.
+    """
+
+    def test_a_stopped_vehicle_says_it_is_not_moving(self) -> None:
+        feed = _feed_with_vehicles([
+            {"id": 3, "type": "train", "current_speed": 0, "orders": [{}, {}],
+             "profit_this_year": 0, "x": 39, "y": 40},
+        ])
+        assert feed.fleet()[0]["problem"] == "not moving"
+
+    def test_the_games_own_reason_wins_over_the_guess(self) -> None:
+        """lost and idle_reason come from the GameScript, which knows."""
+        feed = _feed_with_vehicles([
+            {"id": 3, "type": "train", "current_speed": 0, "orders": [{}],
+             "lost": True, "profit_this_year": 0},
+        ])
+        assert feed.fleet()[0]["problem"] == "lost"
+
+    def test_a_vehicle_with_no_orders_says_so(self) -> None:
+        feed = _feed_with_vehicles([
+            {"id": 4, "type": "road", "current_speed": 0, "orders": [],
+             "profit_this_year": 0},
+        ])
+        assert feed.fleet()[0]["problem"] == "no orders"
+
+    def test_the_worst_earner_is_the_first_row(self) -> None:
+        """Thirty vehicles and one in trouble: it has to be the row you read first."""
+        feed = _feed_with_vehicles([
+            {"id": 1, "type": "train", "profit_this_year": 5000, "orders": [{}],
+             "current_speed": 40},
+            {"id": 2, "type": "train", "profit_this_year": -900, "orders": [{}],
+             "current_speed": 40},
+        ])
+        assert [row["id"] for row in feed.fleet()] == [2, 1]
+
+
+class TestActionsByType:
+    def test_a_recipe_that_always_fails_is_separated_from_one_that_sometimes_does(self) -> None:
+        """41 actions and 3 refused does not say whether one call failed three times.
+
+        Taken from a measured run: connect_rail was refused 16 times out of 22 while
+        every other action succeeded, which is the whole diagnosis in one row.
+        """
+        feed = _feed_with_actions(
+            [{"action_type": "connect_rail", "status": "failed"}] * 16
+            + [{"action_type": "connect_rail", "status": "success"}] * 6
+            + [{"action_type": "build_rail_station", "status": "success"}] * 12,
+        )
+        rows = feed.action_types()
+        assert rows[0]["action"] == "connect_rail", "most refused first"
+        assert rows[0]["total"] == 22
+        assert rows[0]["refused"] == 16
+        assert [r["refused"] for r in rows if r["action"] == "build_rail_station"] == [0]

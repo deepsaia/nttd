@@ -31,8 +31,13 @@ def _meta(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def _steps(count: int) -> list[dict[str, Any]]:
-    return [{"step": i} for i in range(count)]
+def _steps(count: int) -> int:
+    """How far into the run, which is all any rule here asks.
+
+    Health used to take the step ROWS and immediately call len() on them. Building the list
+    meant the index had to decode every snapshot of every session to produce one number.
+    """
+    return count
 
 
 def _rules(health: Health) -> list[str]:

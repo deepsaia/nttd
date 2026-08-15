@@ -51,7 +51,7 @@ def _session(root: Path, live: bool, stations: int = 2, vehicles: int = 1) -> Se
 
 def _entry(feed: SessionFeed) -> dict[str, Any]:
     meta = feed.meta()
-    health = Health(meta, feed.steps(), feed.actions())
+    health = Health(meta, feed.step_count(), feed.actions())
     return {
         "meta": meta,
         "health": {"level": health.level(), "summary": health.summary()},

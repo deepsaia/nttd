@@ -143,6 +143,8 @@ def session_page(
     body.append("</div></div>")
 
     body.append('<div class="grid pair">')
+    body.append(_fleet_table(feed))
+    body.append(_action_type_table(feed))
     body.append(_action_table(feed))
     body.append(_event_table(feed))
     body.append("</div>")
@@ -496,6 +498,31 @@ def _series(
         "colour": line_colour,
         "rows": [{"step": row["step"], "v": row.get(field)} for row in steps],
     }
+
+
+def _fleet_table(feed: SessionFeed) -> str:
+    """Every vehicle and what is wrong with it, worst earner first."""
+    rows = [
+        [str(v["id"]), v["type"], number(v["profit"]), str(v["orders"]),
+         number(v["speed"]), v["where"], v["problem"]]
+        for v in feed.fleet()[:120]
+    ]
+    return table(
+        ["id", "type", "profit", "orders", "speed", "at", "problem"], rows,
+        "Fleet, worst earner first", "no vehicles bought", span="one",
+    )
+
+
+def _action_type_table(feed: SessionFeed) -> str:
+    """One row per action name, most refused first."""
+    rows = [
+        [a["action"], str(a["total"]), str(a["refused"]), f"{a['rate'] * 100:.0f}%"]
+        for a in feed.action_types()
+    ]
+    return table(
+        ["action", "submitted", "refused", "success"], rows,
+        "Actions by type", "nothing submitted yet", span="one",
+    )
 
 
 def _action_table(feed: SessionFeed) -> str:

@@ -92,7 +92,7 @@ class SessionFeed:
             "live": data.is_in_progress,
             "end_reason": data.end_reason,
             "minutes": round(data.duration_minutes, 1),
-            "steps": self._snapshot_count(),
+            "steps": self.step_count(),
             "game_date": game.get("game_date"),
             "mode": game.get("mode"),
             "map": f"{game.get('map_width', '?')}x{game.get('map_height', '?')}",
@@ -261,6 +261,58 @@ class SessionFeed:
         rows.reverse()
         return rows
 
+    def fleet(self) -> list[dict[str, Any]]:
+        """Every vehicle as it stands now, worst earner first.
+
+        The table this feeds is the one thing the monitor could not answer while a run was
+        going wrong. Every failure measured across eight hand-played runs was a SINGLE
+        vehicle failing quietly: a train wandering the far corner of the map for 130 days,
+        four aircraft parked in a hangar for sixty, ships circling the pool their depot sat
+        in. From outside, all of it looked like a fleet of nine and a flat profit line.
+
+        Sorted by profit ascending so the vehicle in trouble is the first row rather than
+        somewhere in a list of thirty.
+        """
+        vehicles = self._latest().get("vehicles") or []
+        rows = [
+            {
+                "id": v.get("id"),
+                "type": v.get("type") or "",
+                "profit": v.get("profit_this_year"),
+                "orders": len(v.get("orders") or []) or v.get("order_count") or 0,
+                "speed": v.get("current_speed"),
+                "where": f"{v.get('x')},{v.get('y')}",
+                "problem": _vehicle_problem(v),
+            }
+            for v in vehicles
+        ]
+        rows.sort(key=lambda r: (r["profit"] is None, r["profit"] or 0))
+        return rows
+
+    def action_types(self) -> list[dict[str, Any]]:
+        """One row per action name: how many were submitted and how many were refused.
+
+        The totals alone say 41 actions and 3 refused, which does not say whether one call
+        failed three times or three calls failed once. A recipe that is refused every time
+        is a different problem from an occasional refusal, and only the breakdown separates
+        them.
+        """
+        counts: dict[str, list[int]] = {}
+        for action in self.actions():
+            name = action.get("action_type") or ""
+            tally = counts.setdefault(name, [0, 0])
+            tally[0] += 1
+            if action.get("status") != "success":
+                tally[1] += 1
+        rows = [
+            {"action": name, "total": total, "refused": bad,
+             "rate": (total - bad) / total if total else 0.0}
+            for name, (total, bad) in counts.items()
+        ]
+        # Most refused first: that is the row worth reading.
+        rows.sort(key=lambda r: (-r["refused"], -r["total"]))
+        return rows
+
     def events(self) -> list[dict[str, Any]]:
         """The game's own event timeline, newest first."""
         frame = self._data.events
@@ -330,15 +382,25 @@ class SessionFeed:
             return []
         return [raw for raw in frame["snapshot_json"].to_list() if raw]
 
-    def _snapshot_count(self) -> int:
-        """How many steps this session has, counted ONCE for the whole page.
+    def step_count(self) -> int:
+        """How many steps this session has, without decoding any of them.
 
-        Counts parsed snapshots, not raw rows. The two differ when a fragment is torn, which
-        happens while another process is writing, and the map scrubber has always built its
-        frames from the parsed list. Counting raw rows here made the sidebar, the cards and
-        the index table disagree with the scrubber by however many rows were unreadable.
+        Rows, not parsed snapshots. Parsing to count cost a full JSON decode of every
+        snapshot in every session listed, which is what made the index take over a second
+        and a click during a live run feel unresponsive.
+
+        A torn row is still excluded, because four places on the page show this number and
+        they have to agree. A torn row is a half-written one, so it is recognised by shape
+        rather than by parsing it: a complete snapshot is a JSON object and ends with its
+        closing brace. That is a string comparison per row instead of a full decode, and it
+        rejects the truncation that actually happens when a fragment is read mid-write.
+
+        When the snapshots have been parsed anyway, for the charts and the scrubber, that
+        count is authoritative and is used instead.
         """
-        return len(self._snapshots())
+        if self._parsed is not None:
+            return len(self._parsed)
+        return sum(1 for raw in self._raw_snapshots() if _looks_complete(raw))
 
     def _company(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         """The contestant company. A session holds exactly one, so this is the first."""
@@ -379,6 +441,39 @@ class SessionFeed:
         if frame.is_empty() or "status" not in frame.columns:
             return 0
         return sum(1 for s in frame["status"].to_list() if s != "success")
+
+
+def _vehicle_problem(vehicle: dict[str, Any]) -> str:
+    """Why this vehicle is earning nothing, in the game's own words where it has them.
+
+    lost and idle_reason come from the GameScript. They were reported by it and then
+    dropped by the world model for months, so a lost vehicle arrived here indistinguishable
+    from a working one; both are now carried through.
+    """
+    if vehicle.get("lost"):
+        return "lost"
+    reason = vehicle.get("idle_reason")
+    if reason:
+        return str(reason)
+    if not (vehicle.get("orders") or vehicle.get("order_count")):
+        return "no orders"
+    if vehicle.get("in_depot"):
+        return "in depot"
+    if not vehicle.get("current_speed"):
+        return "not moving"
+    return ""
+
+
+def _looks_complete(raw: str) -> bool:
+    """Whether a snapshot row is a whole JSON object, without decoding it.
+
+    Cheap stand-in for a parse, used only for counting. The failure it has to catch is a
+    fragment read while it was being written, which truncates: the row then lacks its
+    closing brace. Decoding every row to find those cost 0.7 seconds on an index of 34
+    sessions.
+    """
+    text = raw.strip()
+    return text.startswith("{") and text.endswith("}")
 
 
 def _decode(raw: str) -> dict[str, Any] | None:

@@ -55,11 +55,16 @@ class Health:
     def __init__(
         self,
         meta: dict[str, Any],
-        steps: list[dict[str, Any]],
+        steps: int,
         actions: list[dict[str, Any]],
         age_seconds: int | None = None,
     ) -> None:
         self._meta = meta
+        # A COUNT, not the rows. Every rule here asks how far in the run is, and none reads
+        # a step's contents, but taking the list meant the caller had to build it: the index
+        # JSON-decoded every snapshot of every session to produce this number, 9,004 decodes
+        # and 0.7 of the 1.3 seconds a page took, which is why clicking a session while a run
+        # was in progress felt dead.
         self._steps = steps
         self._actions = actions
         self._age = age_seconds
@@ -124,7 +129,7 @@ class Health:
         }
 
     def _barren(self) -> dict[str, str] | None:
-        steps = len(self._steps)
+        steps = self._steps
         if steps < BARREN_STEPS or self._meta.get("stations"):
             return None
         return {
@@ -138,7 +143,7 @@ class Health:
 
     def _idle_fleet(self) -> dict[str, str] | None:
         """Built something, bought nothing. The most expensive way to score nothing."""
-        steps = len(self._steps)
+        steps = self._steps
         stations = self._meta.get("stations") or 0
         vehicles = self._meta.get("vehicles") or 0
         if steps < IDLE_FLEET_STEPS or not stations or vehicles:
@@ -159,7 +164,7 @@ class Health:
         vehicles = self._meta.get("vehicles") or 0
         if stations < 2 or vehicles:
             return None
-        if len(self._steps) < BARREN_STEPS:
+        if self._steps < BARREN_STEPS:
             return None
         return {
             "level": _WARN,
@@ -172,7 +177,7 @@ class Health:
         }
 
     def _not_acting(self) -> dict[str, str] | None:
-        steps = len(self._steps)
+        steps = self._steps
         if steps < BARREN_STEPS:
             return None
         attempted = self._meta.get("actions") or 0

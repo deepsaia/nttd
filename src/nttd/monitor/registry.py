@@ -126,7 +126,7 @@ class SessionRegistry:
     def health(self, feed: SessionFeed, meta: dict[str, Any]) -> Health:
         return Health(
             meta=meta,
-            steps=feed.steps(),
+            steps=feed.step_count(),
             actions=feed.actions(),
             age_seconds=self.age_seconds(meta["session_id"]),
         )
