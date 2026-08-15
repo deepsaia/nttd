@@ -334,13 +334,22 @@ Three cloned buses sat in the depot at exactly 0 profit for 45 days, each with a
 two-order list, while the original earned 222. Nothing reports it: they are parked, not failed.
 Every clone needs a `start_vehicle` behind it.
 
-**`build_path` does not build bridges, but the work plan asks for them.** `check_connection`
-returned `work: {move: 12, build_road: 14, build_bridge: 1}` for a 29 tile corridor. build_path
-built the roads, skipped the bridge, and the corridor did not verify. The work plan is therefore
-a build LIST, not a promise: any entry other than move and build_road has to be issued
-separately. Screening candidate pairs on `build_bridge == 0` costs nothing, because
-check_connection is a free read, and it is much cheaper than discovering the gap after paying
-for stops.
+**A corridor needing a bridge did not verify, and I blamed the wrong thing.** `plan_route`
+(then called `check_connection`) returned `work: {move: 12, build_road: 14, build_bridge: 1}` for
+a 29 tile corridor; the roads went in, the crossing did not, and the route was dead. I recorded
+this as "build_path does not build bridges". **That was wrong.** Reading the handler afterwards:
+build_path has always had a `build_bridge` branch, it reports every failed step in `failed`, and
+it returns `status: "partial"` with `success: false` when any step fails.
+
+Two real faults, neither the one I wrote down. The first is mine: my builder called build_path,
+ignored the reply entirely, and inferred the failure from a later connectivity check. The answer
+was in the response I threw away. The second is nttd's: the bridge branch hardcoded **bridge type
+0**, and bridge availability depends on span and year, so on a wide crossing no bridge could be
+built at all. Now fixed to ask `GSBridgeList_Length` which types span the gap and try them in
+turn, reporting the span and how many were tried when none works.
+
+The lesson that survives is smaller and sharper than the one I recorded: **read the reply**. A
+build that reports `partial` has told you exactly which step failed and why.
 
 **Population over distance is the right pair ranking for road**, and it inverts rail's. Road
 income per unit barely moves with distance while trip time does, so short and dense wins. The
@@ -574,10 +583,9 @@ reported as connected. `check_connection` for water returns no path between any 
 because a dock is a station tile and the walker only crosses water. Both are the documented
 pre-flight check. Filed as #95 and #96.
 
-**The work plan is a list, not a promise.** `check_connection` answers
-`work: {move, build_road, build_bridge}`, and `build_path` builds the roads and skips the bridge,
-leaving a corridor that does not verify. `connect_rail` then re-plans from scratch and will not
-use a bridge built for it, hitting water two tiles away instead.
+**`connect_rail` re-plans from scratch and will not use a bridge built for it**, hitting water
+two tiles away instead. (The neighbouring claim I made here, that `build_path` skips bridges, was
+wrong and is corrected in section 4d: it builds them, and it reports what failed.)
 
 **Three things expire or change without warning.** Engine availability retires mid-run
 (ERR_PRECONDITION_FAILED on an id bought 200 days earlier). Airport type 0 does not exist in

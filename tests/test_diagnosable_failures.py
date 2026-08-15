@@ -257,6 +257,44 @@ class TestThePreFlightChecksAnswerTheQuestionAsked:
         assert _water_beside(_Cache(set()), 10, 10) == (10, 10)
 
 
+class TestABridgeIsBuiltWithATypeThatFits:
+    """A 29 tile corridor whose plan asked for one bridge lost its crossing and the route died.
+
+    I recorded that as "build_path does not build bridges". It was wrong: the handler has always
+    had a build_bridge branch, reports every failed step in `failed`, and returns status
+    "partial" with success false. My builder ignored the reply and inferred the failure from a
+    later connectivity check.
+
+    The real fault was narrower. The branch hardcoded bridge type 0, and bridge availability
+    depends on span and on year, so where type 0 cannot span the gap no bridge is built at all.
+    """
+
+    def test_the_type_is_chosen_by_the_span_rather_than_hardcoded(self) -> None:
+        branch = _GS[_GS.index('if (action == "build_bridge") {'):]
+        branch = branch[:branch.index('if (action == "build_tunnel")')]
+        assert "GSBridgeList_Length(span)" in branch
+        assert "local bt = 0;" not in branch, "the hardcoded type is gone"
+
+    def test_an_explicit_type_still_wins(self) -> None:
+        """A caller wanting a fast bridge rather than a cheap one must still be able to say so."""
+        branch = _GS[_GS.index('if (action == "build_bridge") {'):]
+        branch = branch[:branch.index('if (action == "build_tunnel")')]
+        assert '("bridge_type" in step)' in branch
+
+    def test_a_failure_reports_the_span_it_could_not_cross(self) -> None:
+        """"Could not build" is not actionable; "nothing spans 5 tiles" is."""
+        branch = _GS[_GS.index('if (action == "build_bridge") {'):]
+        branch = branch[:branch.index('if (action == "build_tunnel")')]
+        assert "span = span" in branch
+        assert "types_tried" in branch
+
+    def test_the_build_already_refused_to_claim_success(self) -> None:
+        """Worth pinning, because I misread this as a silent failure once and it is not: a
+        partial build says so, and names every step that failed."""
+        assert "status = complete ? \"complete\" : \"partial\"" in _GS
+        assert "success = complete," in _GS
+
+
 def test_no_http_or_mcp_change_was_needed_for_any_of_these() -> None:
     """All of the above are return fields or widened parameters, and both layers are generic:
     HTTP passes the GameScript reply through, and MCP builds its enums from the manifest. This

@@ -4126,14 +4126,37 @@ class NttdGS extends GSController {
         local start_tile = GSMap.GetTileIndex(bfx, bfy);
         local end_tile = GSMap.GetTileIndex(sx, sy);
         local vt = is_rail ? GSVehicle.VT_RAIL : GSVehicle.VT_ROAD;
-        // Pick cheapest available bridge type
-        local bt = 0;
-        if (GSBridge.BuildBridge(vt, bt, start_tile, end_tile)) {
+        // A bridge type has to be able to SPAN the gap, and type 0 was hardcoded here. Bridge
+        // availability is by length and by year, so on a wide crossing, or early in the game,
+        // type 0 simply cannot be built and the whole route loses its one crossing. The step
+        // was reported as failed, correctly, but the plan had already been paid for.
+        //
+        // Ask the game which types span this length and take the first that builds. An explicit
+        // bridge_type on the step still wins, so a caller that wants a fast bridge can say so.
+        local span = GSMap.DistanceManhattan(start_tile, end_tile) + 1;
+        local wanted = ("bridge_type" in step) ? [step.bridge_type] : [];
+        if (wanted.len() == 0) {
+          local usable = GSBridgeList_Length(span);
+          for (local bid = usable.Begin(); !usable.IsEnd(); bid = usable.Next()) {
+            wanted.append(bid);
+          }
+        }
+        local placed = false;
+        local last_err = "no bridge type spans " + span + " tiles";
+        foreach (bt in wanted) {
+          if (GSBridge.BuildBridge(vt, bt, start_tile, end_tile)) { placed = true; break; }
+          last_err = GSError.GetLastErrorString();
+          if (last_err == "ERR_ALREADY_BUILT") break;
+        }
+        if (placed) {
           built++;
+        } else if (last_err == "ERR_ALREADY_BUILT") {
+          existing++;
         } else {
-          local err = GSError.GetLastErrorString();
-          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() });
-          else existing++;
+          failed.append({ x = sx, y = sy, action = action, error = last_err,
+                          span = span, types_tried = wanted.len(),
+                          error_code = GSError.GetLastError(),
+                          error_category = GSError.GetErrorCategory() });
         }
         continue;
       }
