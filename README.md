@@ -131,11 +131,11 @@ If you would rather drive the lifecycle yourself:
 
 ```bash
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
-uv run nttd session start -s ses_... --agent-companies 1
-uv run nttd session attach ses_...     # prints the token and the routes
+uv run nttd session start -s <session> --agent-companies 1
+uv run nttd session attach <session>     # prints the token and the routes
 # ... your runner plays ...
-uv run nttd session stop -s ses_...
-uv run nttd result -s ses_...
+uv run nttd session stop -s <session>
+uv run nttd result -s <session>
 ```
 
 Validate a scenario before committing to a long run:
@@ -161,7 +161,7 @@ decides, and submits whenever it is ready.
 ```python
 import requests
 
-BASE, SID, TOKEN = "http://localhost:8000", "ses_...", "pt_..."
+BASE, SID, TOKEN = "http://localhost:8000", "<session>", "pt_..."
 P = f"{BASE}/v1/participant/sessions/{SID}"
 H = {"X-Participant-Token": TOKEN}
 
@@ -255,7 +255,7 @@ Real-time punishes a slow policy for being slow. Stepped mode does not: the game
 ```python
 from nttd.rl.env import NttdEnv
 
-env = NttdEnv(session_id="ses_...", token="pt_...")
+env = NttdEnv(session_id="<session>", token="pt_...")
 obs, info = env.reset()
 for _ in range(61):
     obs, reward, terminated, truncated, info = env.step(my_policy(obs))

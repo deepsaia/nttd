@@ -309,11 +309,11 @@ uv run nttd scenario profile                                      # the rules in
 uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf     # check before running
 
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
-uv run nttd session start -s ses_... --agent-companies 1
-uv run nttd session attach ses_...                                # token and routes
+uv run nttd session start -s <session> --agent-companies 1
+uv run nttd session attach <session>                                # token and routes
 # ... your runner plays ...
-uv run nttd session stop -s ses_...
-uv run nttd result -s ses_...
+uv run nttd session stop -s <session>
+uv run nttd result -s <session>
 ```
 
 Shipped examples, all scored on their own merits rather than because they say so. Four tiers in

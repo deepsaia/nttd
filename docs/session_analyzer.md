@@ -78,29 +78,29 @@ game year has elapsed.
 
 ```bash
 # Print all reports to terminal (default -- no files saved)
-nttd analyze ses_abc123
+nttd analyze 20260815-132431ist-quiet-pickle
 
 # Print specific reports
-nttd analyze ses_abc123 --reports session_summary,financial
+nttd analyze 20260815-132431ist-quiet-pickle --reports session_summary,financial
 
 # Print as JSON
-nttd analyze ses_abc123 --json
+nttd analyze 20260815-132431ist-quiet-pickle --json
 
 # Save to files
-nttd analyze ses_abc123 --save markdown,png
-nttd analyze ses_abc123 --save markdown,png,json,html
+nttd analyze 20260815-132431ist-quiet-pickle --save markdown,png
+nttd analyze 20260815-132431ist-quiet-pickle --save markdown,png,json,html
 
 # Custom output directory
-nttd analyze ses_abc123 --save png --output-dir results/
+nttd analyze 20260815-132431ist-quiet-pickle --save png --output-dir results/
 
 # Generate video timelapse
-nttd analyze ses_abc123 --save png --video
+nttd analyze 20260815-132431ist-quiet-pickle --save png --video
 
 # Compare multiple sessions
-nttd analyze ses_abc123 --compare ses_def456,ses_ghi789
+nttd analyze 20260815-132431ist-quiet-pickle --compare 20260815-141207ist-brisk-otter,20260815-152244ist-jade-heron
 
 # Open saved report in browser
-nttd analyze ses_abc123 --save markdown --open
+nttd analyze 20260815-132431ist-quiet-pickle --save markdown --open
 ```
 
 ## API Endpoints
@@ -113,11 +113,11 @@ GET /analysis/{session_id}/reports
 
 GET /analysis/{session_id}/report/{report_name}
     Returns: {"name": "...", "title": "...", "data": {...}, "figures": [...], "markdown": "..."}
-    Query: ?compare=ses_other1,ses_other2
+    Query: ?compare=20260815-141207ist-brisk-otter,20260815-152244ist-jade-heron
 
 GET /analysis/{session_id}/report/{report_name}/plot/{plot_name}
     Returns: PNG image (or HTML with ?fmt=html)
-    Query: ?compare=ses_other1,ses_other2
+    Query: ?compare=20260815-141207ist-brisk-otter,20260815-152244ist-jade-heron
 ```
 
 ## Adding a New Report

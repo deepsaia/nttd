@@ -16,14 +16,14 @@ One server is one seat: a single session, a single participant token, one compan
 tool takes a session argument, so no client can address a game it was not given.
 
 ```bash
-nttd session attach ses_abc          # prints the participant token
-nttd mcp ses_abc --token tok_123     # stdio
+nttd session attach 20260815-132431ist-quiet-pickle          # prints the participant token
+nttd mcp 20260815-132431ist-quiet-pickle --token tok_123     # stdio
 ```
 
 For a framework that connects to a server already running rather than launching one:
 
 ```bash
-nttd mcp ses_abc --token tok_123 --transport http --port 8100
+nttd mcp 20260815-132431ist-quiet-pickle --token tok_123 --transport http --port 8100
 ```
 
 Both transports exist because both kinds of client are real here. An agent that spawns

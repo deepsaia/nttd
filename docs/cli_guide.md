@@ -119,11 +119,11 @@ For driving the lifecycle yourself.
 
 ```bash
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
-uv run nttd session start -s ses_... --agent-companies 1
-uv run nttd session attach ses_...
+uv run nttd session start -s <session> --agent-companies 1
+uv run nttd session attach <session>
 uv run nttd session list
-uv run nttd session status -s ses_...
-uv run nttd session stop -s ses_...
+uv run nttd session status -s <session>
+uv run nttd session stop -s <session>
 ```
 
 **`create`** registers the session and resolves the scenario. Pass only the config; the
@@ -245,9 +245,9 @@ validator was rejected by the game.
 ### `nttd result`
 
 ```bash
-uv run nttd result -s ses_...
-uv run nttd result -s ses_... --business      # how the company was run
-uv run nttd result -s ses_... --json > entry.json
+uv run nttd result -s <session>
+uv run nttd result -s <session> --business      # how the company was run
+uv run nttd result -s <session> --json > entry.json
 ```
 
 Shows the score, the task identity, code provenance, per-model reported spend, and an
@@ -283,8 +283,8 @@ Two readings worth knowing:
 ### `nttd submit`
 
 ```bash
-uv run nttd submit -s ses_...
-uv run nttd submit -s ses_... --no-archive
+uv run nttd submit -s <session>
+uv run nttd submit -s <session> --no-archive
 ```
 
 Packages the session into `logs/sessions/<id>/submission/` plus a `.tar.gz`, prints every
@@ -355,7 +355,7 @@ a result can be reproduced rather than taken on trust. The seed was already in t
 twice for that reason; nothing was added to make it publishable.
 
 ```bash
-uv run nttd result -s ses_... --json | jq '{map_seed, map_size_x, map_size_y, terrain_type}'
+uv run nttd result -s <session> --json | jq '{map_seed, map_size_x, map_size_y, terrain_type}'
 ```
 
 ---
@@ -363,8 +363,8 @@ uv run nttd result -s ses_... --json | jq '{map_seed, map_size_x, map_size_y, te
 ### `nttd verify`
 
 ```bash
-uv run nttd verify -s ses_...                 # seconds
-uv run nttd verify -s ses_... --regenerate    # ~15s, and the only route to 'verified'
+uv run nttd verify -s <session>                 # seconds
+uv run nttd verify -s <session> --regenerate    # ~15s, and the only route to 'verified'
 uv run nttd verify <bundle-path> --json
 ```
 
@@ -412,9 +412,9 @@ Exits non-zero only on `unverified`, so it works as a gate in a script without t
 ### `nttd analyze`
 
 ```bash
-uv run nttd analyze -s ses_...
-uv run nttd analyze -s ses_... --reports financial,cargo_delivery
-uv run nttd analyze -s ses_... --compare ses_other --open
+uv run nttd analyze -s <session>
+uv run nttd analyze -s <session> --reports financial,cargo_delivery
+uv run nttd analyze -s <session> --compare 20260815-141207ist-brisk-otter --open
 ```
 
 Generates reports from the session's Parquet files. See
@@ -626,7 +626,7 @@ uv run ruff check src/ tests/
 GameScript integration tests need a live session and are skipped otherwise:
 
 ```bash
-uv run pytest tests/test_gs_integration.py --session-id ses_...
+uv run pytest tests/test_gs_integration.py --session-id <session>
 ```
 
 ---
