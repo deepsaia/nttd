@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -445,6 +446,11 @@ class SessionManager:
             capability=runtime.scored_lock.summary(),
             dimensions=runtime.dimensions,
             final_save=final_save,
+            # With its offset, because the session id no longer carries one.
+            started_at=(
+                datetime.fromtimestamp(runtime.started_at).astimezone().isoformat()
+                if runtime.started_at else ""
+            ),
         )
 
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:

@@ -115,6 +115,14 @@ _SCHEMA = pa.schema([
     # computed for the monitor from the same artifacts, so nothing is lost by leaving them out
     # of the record a leaderboard reads.
     ("recorded_at", pa.timestamp("us")),
+    # When the run STARTED, with its offset, as an ISO string.
+    #
+    # recorded_at is when this file was written and carries no timezone, so neither it nor
+    # the session id says what clock a run was on. The id used to end in "ist", which put
+    # the recording machine's timezone inside the identity of the run and made two ids
+    # from different machines incomparable. The offset lives here instead, where it reads
+    # as a time rather than as three letters to parse out of a name.
+    ("started_at", pa.string()),
 ])
 
 
@@ -192,6 +200,7 @@ class ResultWriter:
         openttd_binary: str = "",
         capability: dict[str, Any] | None = None,
         dimensions: dict[str, str] | None = None,
+        started_at: str = "",
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
 
@@ -284,6 +293,7 @@ class ResultWriter:
                 "final_save_bytes": save_bytes,
                 "openttd_version": version,
                 "recorded_at": now,
+                "started_at": started_at,
             })
 
         self.session_dir.mkdir(parents=True, exist_ok=True)

@@ -21,6 +21,7 @@ from typing import Any
 
 from nttd.analysis.date_utils import game_date_to_ymd
 from nttd.analysis.loader import SessionData
+from nttd.utils.name_generator import readable_part
 
 # The NETWORK pieces a company owns: the things a vehicle travels along. Named here rather
 # than discovered from the data so a mode that built none of something still gets a labelled
@@ -75,7 +76,10 @@ class SessionFeed:
             # session's name is the scenario slot it filled, and four concurrent runs of
             # one scenario all carry the same one.
             "name": company.get("name") or data.name or data.session_id,
-            "session_name": data.name or data.session_id,
+            # The words out of the id. A session is now named once, as
+            # 20260815-073255-dandy-willow, and a sidebar that repeats the date on every
+            # row beside a Date column spends its width saying the same thing twice.
+            "session_name": readable_part(data.name or data.session_id),
             "scenario": data.config_name,
             "description": data.description,
             "model": data.model,

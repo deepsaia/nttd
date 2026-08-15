@@ -154,15 +154,20 @@ def _started_at(session_dir: Path) -> tuple[float, str]:
     the newest. Falling back to activity was tried and did exactly that, because a directory
     created just now carries a modification time later than any real session's start.
     """
-    parts = session_dir.name.split("_")
-    if len(parts) >= 3:
+    # Two shapes, because both are on disk. Current ids are 20260815-073255-dandy-willow,
+    # date first. The eight runs published as reference rows predate that and are
+    # ses_20260815_073254_060e426f, so reading only the new one would sort every published
+    # run last, which is the failure this function exists to avoid.
+    name = session_dir.name
+    for stamp in (name.split("-")[:2], name.split("_")[1:3]):
+        if len(stamp) != 2:
+            continue
         try:
-            started = datetime.strptime(f"{parts[1]}{parts[2]}", "%Y%m%d%H%M%S")
+            started = datetime.strptime(f"{stamp[0]}{stamp[1]}", "%Y%m%d%H%M%S")
         except ValueError:
-            pass
-        else:
-            return (started.timestamp(), session_dir.name)
-    return (0.0, session_dir.name)
+            continue
+        return (started.timestamp(), name)
+    return (0.0, name)
 
 
 def _activity(session_dir: Path) -> float:

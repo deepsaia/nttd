@@ -64,14 +64,41 @@ def generate_timestamp() -> str:
     return f"{date_str}-{time_str}{tz_str}"
 
 
-def generate_session_name() -> str:
-    """Generate a human-readable session name with timestamp.
+def generate_session_id() -> str:
+    """The one name a session has, like '20260815-073255-dandy-willow'.
 
-    Format: <adj>-<noun>-06apr2026-160734pdt
+    There used to be two, and they disagreed. A session was minted as
+    ses_20260815_073254_060e426f on disk and shown as dandy-willow-20260815-073255ist in
+    the monitor, generated a moment apart, so the same run carried two identities whose
+    timestamps were off by a second.
+
+    Date and time first, because these are directory names and a lexical sort is then a
+    chronological one. The word pair last, because that is the part a person says out
+    loud, and it is what keeps two runs minted in the same second apart: the eight hex
+    characters it replaces did that job and told a reader nothing else.
+
+    No timezone in the id. It used to end in "ist", which bakes the recording machine's
+    clock into the identity of the run and makes two ids incomparable across machines.
+    The offset is carried explicitly by `started_at` on the result instead, where it can
+    be read as a time rather than parsed out of a name.
     """
     adj = random.choice(_ADJECTIVES)
     noun = random.choice(_NOUNS)
-    return f"{adj}-{noun}-{generate_timestamp()}"
+    now = datetime.now().astimezone()
+    return f"{now.strftime('%Y%m%d')}-{now.strftime('%H%M%S')}-{adj}-{noun}"
+
+
+def readable_part(session_id: str) -> str:
+    """The words out of an id, for a heading that does not need to repeat the date.
+
+    '20260815-073255-dandy-willow' reads back as 'dandy-willow'. An id from before the two
+    names were collapsed, or any id that does not carry a word pair, is returned whole
+    rather than mangled into a guess.
+    """
+    parts = session_id.split("-")
+    if len(parts) >= 4 and parts[0].isdigit() and parts[1].isdigit():
+        return "-".join(parts[2:])
+    return session_id
 
 
 def generate_company_name() -> str:

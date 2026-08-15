@@ -5,8 +5,6 @@ stopping it kills the process. All operations target a specific session's runtim
 """
 
 import logging
-import uuid
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -16,7 +14,8 @@ import nttd.api.dependencies as deps
 from nttd.api.scored_guard import require_unscored
 from nttd.constants import MAX_CONTESTANT_COMPANIES
 from nttd.store.repositories import session_repo
-from nttd.utils.name_generator import generate_session_name
+from nttd.store.session_paths import validate_session_id
+from nttd.utils.name_generator import generate_session_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -150,9 +149,13 @@ def _reject_protected_settings(settings: dict[str, str]) -> None:
 
 @router.post("/sessions/new")
 async def create_session(request: CreateSessionRequest) -> dict[str, Any]:
-    name = request.name or generate_session_name()
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    session_id = f"ses_{ts}_{uuid.uuid4().hex[:8]}"
+    # One identity, not two. The id IS the readable name: see generate_session_id.
+    #
+    # Validated here because a supplied name now becomes a directory name rather than
+    # only a label, so the check that keeps an id to one path component has to run at the
+    # point it is minted, not only where it is later read back.
+    session_id = validate_session_id(request.name) if request.name else generate_session_id()
+    name = session_id
 
     # If config_path provided, load and convert to settings
     _reject_protected_settings(request.settings)

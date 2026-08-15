@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import re
 
-from nttd.utils.name_generator import MAX_COMPANY_NAME, generate_company_name, generate_session_name
+from nttd.utils.name_generator import (
+    MAX_COMPANY_NAME,
+    generate_company_name,
+    generate_session_id,
+    readable_part,
+)
 
 # One shape for a session and a company alike: <adj>-<noun>-<date>-<time><tz>.
 _COMPANY_PATTERN = re.compile(r"^[a-z]+-[a-z]+-\d{8}-\d{6}[a-z]+$")
@@ -53,14 +58,33 @@ def test_company_name_has_no_whitespace_or_quotes() -> None:
         assert '"' not in name and "'" not in name
 
 
-def test_session_name_still_carries_a_timestamp() -> None:
-    """Guards against the company generator disturbing the session format."""
-    name = generate_session_name()
-    # Two words then the stamp, which is the documented format and what the function has
-    # always produced: <adj>-<noun>-13aug2026-125834ist. The pattern asked for three words
-    # and so could never match: measured at 0 of 20 generated names. It was asserting the
-    # company format, which does have a third part, against the session generator.
-    assert re.match(r"^[a-z]+-[a-z]+-\d{8}-\d{6}[a-z]+$", name), name
+def test_a_session_id_leads_with_the_date_and_ends_with_the_words() -> None:
+    """One identity per session, and it sorts.
+
+    A session used to be minted as ses_20260815_073254_060e426f on disk and shown as
+    dandy-willow-20260815-073255ist in the monitor: two names for one run, generated a
+    moment apart, so their timestamps disagreed by a second. The id is now both.
+
+    Date first so a directory listing is in time order, words last so there is something
+    to say out loud, and no timezone: that belongs to the machine that recorded the run,
+    not to the run.
+    """
+    session_id = generate_session_id()
+    assert re.match(r"^\d{8}-\d{6}-[a-z]+-[a-z]+$", session_id), session_id
+    assert not session_id.endswith(("ist", "utc", "pdt"))
+
+
+def test_the_words_can_be_read_back_out_for_a_heading() -> None:
+    session_id = generate_session_id()
+    words = readable_part(session_id)
+    assert words == "-".join(session_id.split("-")[2:])
+    assert not any(char.isdigit() for char in words)
+
+
+def test_an_id_without_a_word_pair_is_returned_whole() -> None:
+    """The eight published reference runs carry the old shape, and a heading that showed
+    a mangled guess would be worse than showing the id."""
+    assert readable_part("ses_20260815_071144_a6c94052") == "ses_20260815_071144_a6c94052"
 
 
 def test_names_sort_chronologically_as_plain_strings() -> None:
