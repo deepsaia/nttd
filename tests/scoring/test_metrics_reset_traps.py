@@ -18,7 +18,11 @@ it answers is whether the company ran a fleet that paid for itself.
 
 from __future__ import annotations
 
+import inspect
+
+from nttd import resources
 from nttd.analysis.business_metrics import _last_complete_index
+from nttd.state.world import WorldState
 
 
 def test_the_last_complete_quarter_is_the_value_before_the_reset() -> None:
@@ -54,3 +58,44 @@ def test_the_margin_is_taken_from_the_completed_quarter() -> None:
     _profitability(metrics, series)
     # The completed quarter: (10_000 - 2_000) / 10_000. The partial one would give -3.1667.
     assert metrics.operating_margin_final == 0.8
+
+
+def test_the_scored_cargo_total_is_banked_by_the_gamescript_not_read_back() -> None:
+    """The same reset trap, one layer down, and the only one that reached the leaderboard.
+
+    total_cargo reads cargo_delivered_total, which used to sum GetQuarterlyCargoDelivered over
+    the quarters the game keeps. Measured at 1960-12-15, three quarter ends into a run: quarter
+    0 gave 1232 and quarters 1 upwards all gave 0, so the sum was 0 and a session that carried
+    thousands scored no cargo at all. Quarter 0 is the only one the game answers for cargo,
+    which is the reverse of GetQuarterlyPerformanceRating, so the GameScript banks quarter 0
+    itself at each drop.
+    """
+    source = (resources.gamescript_dir() / "game" / "nttd-gs" / "main.nut").read_text()
+
+    body = source.split("function _CargoDeliveredTotal")[1].split("function ")[0]
+    code = [line for line in body.splitlines() if not line.lstrip().startswith("//")]
+    assert "_cargo_banked" in body and "_cargo_last_q0" in body
+    assert not any("GetQuarterlyCargoDelivered" in line for line in code), "the history read 0"
+    # Declared on the class, or Squirrel refuses to create the slot and the script dies.
+    for slot in ("_cargo_banked = null;", "_cargo_last_q0 = null;"):
+        assert slot in source, slot
+
+
+def test_every_scored_company_field_survives_the_world_refresh() -> None:
+    """The second half of the same bug, and on its own it was enough to score 0.
+
+    WorldState.apply_gs_companies copies a whitelist of keys out of the GameScript reply.
+    cargo_delivered_total was missing from it, so the Company kept the model default of 0 and
+    the result row read 0 no matter what the game sent. Fixing the GameScript alone changed
+    nothing. Anything the score reads has to be on that list.
+    """
+    from nttd.analysis.score import score_company
+
+    scoring = inspect.getsource(score_company)
+    scored = {name for name in ("performance_rating", "cargo_delivered_total")
+              if f"company.{name}" in scoring}
+    assert scored == {"performance_rating", "cargo_delivered_total"}, scoring
+
+    refresh = inspect.getsource(WorldState.apply_gs_companies)
+    for field in sorted(scored):
+        assert f'"{field}"' in refresh, f"{field} is scored but the world drops it"

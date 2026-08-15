@@ -27,11 +27,17 @@ class NttdGS extends GSController {
   // Vehicles the game has reported lost, against the tile they were on when reported. Declared
   // on the class because Squirrel will not create a new instance slot with plain assignment.
   _lost_vehicles = null;
+  // Cargo delivered in quarters that have already ended, per company, and the last quarter 0
+  // reading we banked it from. See _CargoDeliveredTotal for why the game cannot be asked.
+  _cargo_banked = null;
+  _cargo_last_q0 = null;
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
     this._pathfind_queue = [];
     this._lost_vehicles = {};
+    this._cargo_banked = {};
+    this._cargo_last_q0 = {};
     this._event_names = {};
     this._event_names[GSEvent.ET_VEHICLE_CRASHED]       <- "vehicle_crashed";
     this._event_names[GSEvent.ET_VEHICLE_LOST]          <- "vehicle_lost";
@@ -1299,6 +1305,7 @@ class NttdGS extends GSController {
       if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID) continue;
       local cm = GSCompanyMode(cid);
       local hq = GSCompany.GetCompanyHQ(cid);
+      local quarter_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 0);
       companies.append({
         id = cid, name = GSCompany.GetName(cid),
         money = GSCompany.GetBankBalance(cid),
@@ -1319,17 +1326,11 @@ class NttdGS extends GSController {
         company_value = GSCompany.GetQuarterlyCompanyValue(cid, 0),
         q0_income = GSCompany.GetQuarterlyIncome(cid, 0),
         q0_expenses = GSCompany.GetQuarterlyExpenses(cid, 0),
-        q0_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 0),
         // Quarter 0 is the quarter IN PROGRESS and OpenTTD resets it to zero at every
-        // boundary, so q0_cargo is a sawtooth. A 366 day run ends on 1 January, which is a
-        // boundary, so the final snapshot always read 0: one measured run carried 3,526 units
-        // and reported none, in the scored tiebreak and in every cargo column.
-        //
-        // q1_cargo is the last COMPLETE quarter, and cargo_delivered_total sums the quarters
-        // the game still remembers. OpenTTD keeps 24 of them, so the total covers six game
-        // years, which is longer than any tier here.
-        q1_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 1),
-        cargo_delivered_total = this._CargoDeliveredTotal(cid),
+        // boundary, so q0_cargo is a sawtooth and the last snapshot of a 366 day run reads 0.
+        // Score against cargo_delivered_total, which banks each quarter as it ends.
+        q0_cargo = quarter_cargo,
+        cargo_delivered_total = this._CargoDeliveredTotal(cid, quarter_cargo),
       });
     }
     return { success = true, result = companies };
@@ -4892,15 +4893,29 @@ class NttdGS extends GSController {
     return "halted";
   }
 
-  function _CargoDeliveredTotal(cid) {
-    // Every completed quarter the game still remembers, summed. Starts at 1 because 0 is the
-    // quarter in progress and would be double counted as it grows.
-    local total = 0;
-    for (local q = 1; q <= GSCompany.EARLIEST_QUARTER; q++) {
-      local delivered = GSCompany.GetQuarterlyCargoDelivered(cid, q);
-      if (delivered > 0) total += delivered;
+  function _CargoDeliveredTotal(cid, q0) {
+    // Cargo delivered since the run began, banked from quarter 0 rather than read back out
+    // of the game's quarterly history.
+    //
+    // Asking the game does not work. GetQuarterlyCargoDelivered answers quarter 0, the
+    // quarter in progress, and answers 0 for every quarter before it: measured at
+    // 1960-12-15, three quarter ends into a run, quarter 0 gave 1232 and quarters 1 upwards
+    // all gave 0. Summing them scored 0 cargo for a session that had carried thousands.
+    // That is the reverse of GetQuarterlyPerformanceRating, which answers quarter 1 and
+    // refuses quarter 0, so neither one rule covers both.
+    //
+    // Quarter 0 is a sawtooth: it climbs through a quarter and drops to 0 at the boundary.
+    // Every drop is a completed quarter, so banking the reading from just before it and
+    // adding the quarter in progress gives the running total. A 366 day run ends on 1
+    // January, itself a boundary, and the banking is what carries the final quarter across
+    // it: without this the last snapshot of every T1 run reported 0.
+    if (!(cid in this._cargo_banked)) {
+      this._cargo_banked[cid] <- 0;
+      this._cargo_last_q0[cid] <- 0;
     }
-    return total;
+    if (q0 < this._cargo_last_q0[cid]) this._cargo_banked[cid] += this._cargo_last_q0[cid];
+    this._cargo_last_q0[cid] = q0;
+    return this._cargo_banked[cid] + q0;
   }
 
   function _GetAdjacentTile(tile, direction) {

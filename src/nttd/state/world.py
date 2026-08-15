@@ -272,6 +272,9 @@ class WorldState:
                 ("q0_income", ("q0_income",)),
                 ("q0_expenses", ("q0_expenses",)),
                 ("q0_cargo", ("q0_cargo",)),
+                # The scored one. Absent from this list it kept the model default of 0, so
+                # every result row reported no cargo however much the GameScript had sent.
+                ("cargo_delivered_total", ("cargo_delivered_total",)),
             ):
                 for key in keys:
                     if key in r and r[key] is not None:
