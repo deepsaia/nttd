@@ -31,7 +31,7 @@ def _get_raw(cfg: Any, path: str, default: Any = None) -> Any:
 
 
 def _print_attach_instructions(
-    url: str, session_id: str, participants: list[dict[str, Any]],
+    url: str, session_id: str, participants: list[dict[str, Any]], stepped: bool = False,
 ) -> None:
     """Show a contestant how to attach its own loop to this session.
 
@@ -55,10 +55,22 @@ def _print_attach_instructions(
     console.print(table)
 
     first = participants[0]
+    # The loop differs by mode, and printing the wrong one leaves a runner that submits
+    # actions into a world that never advances. A stepped session is held paused until
+    # something asks for a step; a realtime one runs on a clock and takes actions as they
+    # arrive.
+    act = (
+        f"  POST {url}/v1/participant/sessions/{session_id}/step\n"
+        "[dim]  Stepped: the world is paused and advances one step per call. Submit your\n"
+        "  actions in the body as {\"actions\": [...]}; an empty list just lets time pass.[/]\n"
+        if stepped else
+        f"  POST {url}/v1/participant/sessions/{session_id}/actions/submit\n"
+        "[dim]  Realtime: the clock runs whether or not you act.[/]\n"
+    )
     console.print(
         "\n[bold]Your loop observes and acts over these routes:[/]\n"
         f"  GET  {url}/v1/participant/sessions/{session_id}/state/full\n"
-        f"  POST {url}/v1/participant/sessions/{session_id}/actions/submit\n"
+        f"{act}"
         f"  header: X-Participant-Token: {first.get('token', '')}\n"
         "[dim]The company is derived from the token, so a company_id in the body is "
         "ignored.[/]\n"
@@ -160,7 +172,11 @@ def benchmark(
     resp = requests.post(
         f"{url}/v1/operator/admin/sessions/new",
         json={
-            "name": f"benchmark_{cfg.name}",
+            # No name. A supplied name IS the session id now, and passing the config name
+            # here minted ids like benchmark_benchmark-t1-256-flat-1001-stepped: not the
+            # date-first shape everything else uses, and not sortable by when it ran. The
+            # scenario is already recorded on the session, so the id does not have to
+            # carry it.
             "settings": overrides,
             "config_path": config,
         },
@@ -188,11 +204,17 @@ def benchmark(
         f"pid={start_data.get('pid')}"
     )
 
+    # Which loop the contestant needs depends on the mode: a stepped world is paused and
+    # advances one step per call, a realtime one runs on a clock.
+    is_stepped = str(cfg.runtime.mode).lower() == "stepped"
+
     # The contestant's loop runs elsewhere, so print what it needs to attach.
     # Without this the token exists only in participants.json, which is a
     # discoverability problem rather than a security one -- the file sits beside the
     # runner anyway.
-    _print_attach_instructions(url, session_id, start_data.get("participants") or [])
+    _print_attach_instructions(
+        url, session_id, start_data.get("participants") or [], stepped=is_stepped,
+    )
 
     # 4. Set end conditions (must be after start -- runtime must exist)
     ec_payload = build_end_conditions_payload(cfg.end_conditions)
@@ -225,7 +247,9 @@ def benchmark(
     console.print("[dim]Press Ctrl+C to stop early[/]\n")
 
     try:
-        _monitor_loop(url, session_id)
+        _monitor_loop(
+            url, session_id, day_budget=_day_budget(cfg), scenario=cfg.name,
+        )
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted -- stopping session...[/]")
 
@@ -237,12 +261,39 @@ def benchmark(
     console.print(f"\n[green]Benchmark complete.[/] Session {session_id} archived.")
 
 
-def _monitor_loop(base_url: str, session_id: str) -> None:
-    """Poll session status until it ends or is interrupted."""
+def _day_budget(cfg: object) -> int:
+    """How many game days this tier runs for, or 0 when it is not bounded that way."""
+    try:
+        heartbeats = cfg.end_conditions.max_heartbeats  # type: ignore[attr-defined]
+        return int(heartbeats.count or 0) if heartbeats.enabled else 0
+    except Exception:
+        return 0
+
+
+def _readable(game_date: object) -> str:
+    """A game date as a date, because 737790 places nothing in time."""
+    try:
+        from nttd.analysis.date_utils import game_date_to_dmy  # noqa: PLC0415
+
+        return game_date_to_dmy(int(game_date))  # type: ignore[arg-type]
+    except Exception:
+        return str(game_date)
+
+
+def _monitor_loop(
+    base_url: str, session_id: str, day_budget: int = 0, scenario: str = "",
+) -> None:
+    """Poll session status until it ends or is interrupted.
+
+    Reports GAME days, not polls. This used to count its own polling cycles and label them
+    "cycle", which reads as progress: a stepped session correctly held at day one showed
+    "cycle 3" and looked like it had advanced three days. A poll counter measures how long
+    this loop has been watching, which is not a fact about the run.
+    """
     import requests
     from rich.live import Live
 
-    cycle = 0
+    first_date: int | None = None
     with Live(console=console, refresh_per_second=1) as live:
         while True:
             time.sleep(3.0)
@@ -261,15 +312,32 @@ def _monitor_loop(base_url: str, session_id: str) -> None:
                 game_resp = requests.get(f"{base_url}/v1/public/sessions/{session_id}/status", timeout=5)
                 game = game_resp.json() if game_resp.ok else {}
 
-                table = Table(title=f"Benchmark -- cycle {cycle}")
+                today = game.get("game_date")
+                if first_date is None and isinstance(today, int):
+                    first_date = today
+                elapsed = (today - first_date) if isinstance(today, int) and first_date else 0
+                progress = f"{elapsed} of {day_budget}" if day_budget else str(elapsed)
+                paused = bool(game.get("paused"))
+
+                table = Table(title="Benchmark")
                 table.add_column("Metric")
                 table.add_column("Value")
                 table.add_row("Session", session_id)
+                # The scenario is shown, not baked into the id. It used to be both, which
+                # gave ids like benchmark_benchmark-t1-256-flat-1001-stepped: the word
+                # twice, the run's own identity nowhere, and nothing that sorts by time.
+                if scenario:
+                    table.add_row("Scenario", scenario)
                 table.add_row("Status", f"[green]{status}[/]")
-                table.add_row("Game date", str(game.get("game_date", "?")))
-                table.add_row("Paused", str(game.get("paused", "?")))
+                table.add_row("Game days played", progress)
+                table.add_row("Game date", _readable(today))
+                # Said plainly, because a paused stepped session waiting for its runner
+                # looks identical to a stalled one.
+                table.add_row(
+                    "Waiting for your runner" if paused else "Running",
+                    "yes, nothing advances until it calls /step" if paused else "on the clock",
+                )
                 live.update(table)
-                cycle += 1
 
             except requests.ConnectionError:
                 live.update("[red]Server unreachable[/]")
