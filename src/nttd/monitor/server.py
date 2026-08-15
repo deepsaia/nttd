@@ -16,6 +16,7 @@ has no authentication, so it is not something to expose without meaning to.
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +26,7 @@ from nttd.monitor.registry import SessionRegistry
 from nttd.monitor.request_handler import MonitorHandler
 from nttd.monitor.sentry import Sentry
 from nttd.monitor.terrain_png import TerrainPng
+from nttd.monitor.watcher import Watcher
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,23 @@ class MonitorServer(ThreadingHTTPServer):
         super().__init__(address, MonitorHandler)
         self.registry = registry
         self.session_limit = session_limit
+        # What the /live stream watches: session writes, and edits to the monitor's own source.
+        self.watcher = Watcher(registry.root)
         self._terrain: dict[str, tuple[int, Any]] = {}
         self._terrain_lock = threading.Lock()
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """A reader closing the page is not a server error.
+
+        Every navigation away from a page holding the /live stream drops that socket, and the
+        base class prints a full traceback per drop. A session view left open printed one for
+        each reload, which buried anything real in the console.
+        """
+        error = sys.exc_info()[1]
+        if isinstance(error, ConnectionResetError | BrokenPipeError):
+            logger.debug("Client %s went away: %r", client_address, error)
+            return
+        super().handle_error(request, client_address)
 
     def terrain(self, session_id: str) -> tuple[bytes, int, int, int, int] | None:
         """The session's terrain raster, encoded once and kept.

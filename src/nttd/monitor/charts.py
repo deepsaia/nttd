@@ -63,23 +63,40 @@ def panel(
     cid: str = "",
     data: str = "",
     span: str = "one",
+    expandable: bool = False,
 ) -> str:
     """One titled panel. ``span`` is how many grid columns it takes: one, two or full.
 
     A named span rather than a boolean because there are three real cases and the third
     is not "more wide": a table of twelve columns must have the whole row or its last
     columns are simply cut off, which is what happened to the health column.
+
+    ``expandable`` adds a toggle to the title bar. The panel then has two sizes and the grid
+    reflows around it, which is what the map needs: one column is enough to see that a route
+    exists and too small to see where it goes.
     """
     geom = f' data-geom="{data}"' if data else ""
     css = "plot" if span == "one" else f"plot {span}"
+    # Unicode rather than an icon font, so the control survives with no network and no assets.
+    toggle = (
+        f'<button class="pexp" type="button" data-expand="{esc(cid)}" '
+        f'title="Expand or collapse" aria-label="Expand or collapse">\u2922</button>'
+        if expandable else ""
+    )
     return (
         f'<div class="{css}" data-cid="{esc(cid)}"{geom}>'
         f'<div class="ptitle">{esc(title)}'
-        f'<span class="readout" id="ro-{esc(cid)}"></span></div>{inner}</div>'
+        f'<span class="readout" id="ro-{esc(cid)}"></span>{toggle}</div>{inner}</div>'
     )
 
 
-def line_chart(cid: str, series: list[dict[str, Any]], title: str, field: str) -> str:
+def line_chart(
+    cid: str,
+    series: list[dict[str, Any]],
+    title: str,
+    field: str,
+    filled: bool = False,
+) -> str:
     """One panel plotting ``field`` for each series against its step.
 
     ``series`` entries are ``{label, colour, rows}``. A point is plotted only when both
@@ -112,7 +129,7 @@ def line_chart(cid: str, series: list[dict[str, Any]], title: str, field: str) -
     )
     embedded: list[dict[str, Any]] = []
     for index, entry in enumerate(series):
-        drawn, values = _polyline(entry, field, scale, index)
+        drawn, values = _polyline(entry, field, scale, index, filled=filled)
         out.append(drawn)
         embedded.append({
             "label": entry["label"], "color": entry["colour"], "data": values,
@@ -256,6 +273,7 @@ def _polyline(
     field: str,
     scale: Scale,
     index: int,
+    filled: bool = False,
 ) -> tuple[str, list[list[float]]]:
     pixels: list[str] = []
     values: list[list[float]] = []
@@ -270,6 +288,19 @@ def _polyline(
             f'<polyline class="ser s{index}" fill="none" stroke="{entry["colour"]}" '
             f'stroke-width="2" points="{" ".join(pixels)}"/>'
         )
+        if filled:
+            # Translucent, and drawn UNDER its own line, so overlapping bands stay legible
+            # rather than the last one painted hiding the ones before it. Closed down to the
+            # baseline at both ends, which is what makes it read as an area rather than a
+            # thick line.
+            floor = scale.y(scale.y_min)
+            first_x = pixels[0].split(",")[0]
+            last_x = pixels[-1].split(",")[0]
+            area = f"{first_x},{floor:.1f} " + " ".join(pixels) + f" {last_x},{floor:.1f}"
+            drawn = (
+                f'<polygon class="ser s{index} band" fill="{entry["colour"]}" '
+                f'fill-opacity="0.18" stroke="none" points="{area}"/>' + drawn
+            )
     elif len(pixels) == 1:
         cx, cy = pixels[0].split(",")
         drawn = (

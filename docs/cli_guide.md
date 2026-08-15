@@ -119,11 +119,11 @@ For driving the lifecycle yourself.
 
 ```bash
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
-uv run nttd session start -s ses_... --agent-companies 1
-uv run nttd session attach ses_...
+uv run nttd session start -s <session> --agent-companies 1
+uv run nttd session attach <session>
 uv run nttd session list
-uv run nttd session status -s ses_...
-uv run nttd session stop -s ses_...
+uv run nttd session status -s <session>
+uv run nttd session stop -s <session>
 ```
 
 **`create`** registers the session and resolves the scenario. Pass only the config; the
@@ -179,11 +179,13 @@ uv run nttd actions --playable --json     # what a contestant may submit, as JSO
 
 What nttd can do, and what each action takes. **Generated from the GameScript**, not
 hand-written, so it cannot describe an action the game does not implement or miss one it
-does. 132 actions, 393 parameters, all described.
+does. Every action and every parameter is described.
 
 The listing splits on what running something does, because that is the first thing worth
-knowing: 46 observations that read the world and cost nothing, 77 actions that change it,
-and 9 operator powers refused during scored play.
+knowing: observations that read the world and cost nothing, actions that change it, and
+operator powers refused during scored play. Run the command, or read
+[docs/actions/index.md](actions/index.md), for the current tally of each; a count written
+into this sentence would be wrong the next time an action is added.
 
 Each entry gives every parameter with its type, whether it is required, its default, and
 what it means. Where a parameter takes a named constant the accepted values are listed
@@ -243,9 +245,9 @@ validator was rejected by the game.
 ### `nttd result`
 
 ```bash
-uv run nttd result -s ses_...
-uv run nttd result -s ses_... --business      # how the company was run
-uv run nttd result -s ses_... --json > entry.json
+uv run nttd result -s <session>
+uv run nttd result -s <session> --business      # how the company was run
+uv run nttd result -s <session> --json > entry.json
 ```
 
 Shows the score, the task identity, code provenance, per-model reported spend, and an
@@ -281,8 +283,8 @@ Two readings worth knowing:
 ### `nttd submit`
 
 ```bash
-uv run nttd submit -s ses_...
-uv run nttd submit -s ses_... --no-archive
+uv run nttd submit -s <session>
+uv run nttd submit -s <session> --no-archive
 ```
 
 Packages the session into `logs/sessions/<id>/submission/` plus a `.tar.gz`, prints every
@@ -291,7 +293,7 @@ artifact with its sha256, and states what the bundle cannot prove about itself.
 | File | Read by a check | Why it is there |
 |---|---|---|
 | `manifest.json` | yes | integrity: a sha256 per artifact, plus the map digest |
-| `result.parquet` | yes | **the claim**: score, provenance, business metrics |
+| `result.parquet` | yes | **the claim**: score and provenance |
 | `final.sav` | yes | the savegame. The score is recomputed from this |
 | `snapshots.parquet` | no | the series. How the run got where it got |
 | `actions.parquet` | yes | what the contestant did |
@@ -304,8 +306,11 @@ Every file does one of three jobs, and nothing does none of them.
 **Evidence** cannot be derived from anything else: the savegame, the series, the action
 log, the terrain scan, the events, the scenario. This is what a verifier checks against.
 
-**The claim** is `result.parquet`. The score and the twenty-seven business metrics are
-derived, and verification means recomputing them from the evidence and comparing.
+**The claim** is `result.parquet`: what the game reported and where it came from, and
+nothing derived. Verification means recomputing the score from the evidence and comparing.
+The cargo total is part of that, which is why the count is banked into the savegame as each
+quarter closes rather than left in memory: a verifier reloading the save has to be able to
+arrive at the same number.
 
 **Integrity** is `manifest.json`, so tampering with either shows.
 
@@ -353,7 +358,7 @@ a result can be reproduced rather than taken on trust. The seed was already in t
 twice for that reason; nothing was added to make it publishable.
 
 ```bash
-uv run nttd result -s ses_... --json | jq '{map_seed, map_size_x, map_size_y, terrain_type}'
+uv run nttd result -s <session> --json | jq '{map_seed, map_size_x, map_size_y, terrain_type}'
 ```
 
 ---
@@ -361,8 +366,8 @@ uv run nttd result -s ses_... --json | jq '{map_seed, map_size_x, map_size_y, te
 ### `nttd verify`
 
 ```bash
-uv run nttd verify -s ses_...                 # seconds
-uv run nttd verify -s ses_... --regenerate    # ~15s, and the only route to 'verified'
+uv run nttd verify -s <session>                 # seconds
+uv run nttd verify -s <session> --regenerate    # ~15s, and the only route to 'verified'
 uv run nttd verify <bundle-path> --json
 ```
 
@@ -410,9 +415,9 @@ Exits non-zero only on `unverified`, so it works as a gate in a script without t
 ### `nttd analyze`
 
 ```bash
-uv run nttd analyze -s ses_...
-uv run nttd analyze -s ses_... --reports financial,cargo_delivery
-uv run nttd analyze -s ses_... --compare ses_other --open
+uv run nttd analyze -s <session>
+uv run nttd analyze -s <session> --reports financial,cargo_delivery
+uv run nttd analyze -s <session> --compare 20260815-141207ist-brisk-otter --open
 ```
 
 Generates reports from the session's Parquet files. See
@@ -428,10 +433,10 @@ the read path uses fragments until they are merged.
 Two read-only additions worth knowing about, both free and both usable while a stepped
 world is paused.
 
-`GET /state/path` says whether two points can be joined, before any money is spent:
+`GET /state/plan_route` says what it would take to BUILD a route between two points, before any money is spent. It plans a build; `trace_route` walks track that already exists, which is a different question:
 
 ```
-GET /state/path?from_x=76&from_y=184&to_x=73&to_y=155&transport_type=rail
+GET /state/plan_route?from_x=76&from_y=184&to_x=73&to_y=155&transport_type=rail
   -> {"connected": true, "tiles": 34, "bridges": 1, "tunnels": 0,
       "work": {"build_rail": 31, "build_bridge": 1}}
 ```
@@ -572,7 +577,7 @@ rather than letting it look reasonable.
 ### Tiers
 
 The economy clock is fixed at 1 wall-minute per economy month, so wall-minutes *are* the
-economy horizon: T1 15 min (~1.25 yr), T2 30 min (~2.5 yr), T3 60 min (~5 yr), T4
+economy horizon: T1 12 min (1 yr), T2 24 min (2 yr), T3 60 min (5 yr), T4
 120 min (~10 yr).
 
 There is no `game_speed`. OpenTTD 15.3 has no such setting; nttd's `/speed` endpoint
@@ -624,7 +629,7 @@ uv run ruff check src/ tests/
 GameScript integration tests need a live session and are skipped otherwise:
 
 ```bash
-uv run pytest tests/test_gs_integration.py --session-id ses_...
+uv run pytest tests/test_gs_integration.py --session-id <session>
 ```
 
 ---

@@ -11,6 +11,7 @@ files per request is cheaper than being wrong.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,7 @@ class SessionRegistry:
         if not self._root.exists():
             return []
         dirs = [d for d in self._root.iterdir() if d.is_dir()]
-        dirs.sort(key=_activity, reverse=True)
+        dirs.sort(key=_started_at, reverse=True)
         return [d.name for d in dirs[:limit]]
 
     def entries(self, limit: int = 40) -> list[dict[str, Any]]:
@@ -108,10 +109,24 @@ class SessionRegistry:
         meta["live"] = state == "running"
         meta["age_seconds"] = self.age_seconds(meta["session_id"])
 
+    def is_live(self, session_id: str) -> bool:
+        """Whether something is still writing to this session.
+
+        Asked before deleting a session, so it errs towards "live": a session it cannot read
+        is reported as live, because refusing to delete something is recoverable and deleting
+        a running recording's directory is not.
+        """
+        try:
+            meta = self.feed(session_id).meta()
+        except Exception:
+            logger.warning("Cannot read %s to check liveness; treating as live", session_id)
+            return True
+        return self.state_of(meta) == "running"
+
     def health(self, feed: SessionFeed, meta: dict[str, Any]) -> Health:
         return Health(
             meta=meta,
-            steps=feed.steps(),
+            steps=feed.step_count(),
             actions=feed.actions(),
             age_seconds=self.age_seconds(meta["session_id"]),
         )
@@ -124,6 +139,37 @@ class SessionRegistry:
         if not newest:
             return None
         return int(time.time() - newest)
+
+
+def _started_at(session_dir: Path) -> tuple[float, str]:
+    """When a session began, from the timestamp its id carries.
+
+    The index used to sort by newest data file, which answers "most recently active" and is
+    a different question. Touching an old session's files, or a long run still writing while
+    a newer one sits idle, put the wrong row on top. A reader looking for the run they just
+    started wants it first, and the id already says when it started.
+
+    Ids look like 20260815-132431ist-quiet-pickle. Anything that does not parse sorts LAST,
+    not by file activity: a directory whose start time is unknown must not be able to claim it is
+    the newest. Falling back to activity was tried and did exactly that, because a directory
+    created just now carries a modification time later than any real session's start.
+    """
+    # Two shapes, because both are on disk. Current ids are 20260815-132431ist-quiet-pickle,
+    # date first. The eight runs published as reference rows predate that and are
+    # ses_20260815_073254_060e426f, so reading only the new one would sort every published
+    # run last, which is the failure this function exists to avoid.
+    name = session_dir.name
+    for stamp in (name.split("-")[:2], name.split("_")[1:3]):
+        if len(stamp) != 2:
+            continue
+        # The time carries its timezone, as 132431ist, and only the digits are the clock.
+        digits = "".join(char for char in stamp[1] if char.isdigit())
+        try:
+            started = datetime.strptime(f"{stamp[0]}{digits}", "%Y%m%d%H%M%S")
+        except ValueError:
+            continue
+        return (started.timestamp(), name)
+    return (0.0, name)
 
 
 def _activity(session_dir: Path) -> float:

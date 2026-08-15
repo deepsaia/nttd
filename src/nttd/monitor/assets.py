@@ -28,8 +28,11 @@ CSS = """
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
  background:var(--bg);color:var(--ink);font-size:13px;}
 .app{display:flex;height:100vh;overflow:hidden;}
-.sidebar{width:260px;flex:0 0 260px;background:var(--panel);border-right:1px solid var(--line);
- padding:14px 12px;overflow-y:auto;}
+/* 260px plus four characters. Written as calc rather than as a rounded pixel count so the
+   four is literal: a session name is now adj-noun-yyyymmdd-hhmmsstz, up to 31 characters, and
+   the list was clipping the timestamp that tells one run from another. */
+.sidebar{width:calc(260px + 4ch);flex:0 0 calc(260px + 4ch);background:var(--panel);
+ border-right:1px solid var(--line);padding:14px 12px;overflow-y:auto;}
 .sbhead{display:flex;align-items:center;justify-content:space-between;}
 .sidebar h1{font-size:15px;margin:0;}
 .navlabel{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.6px;
@@ -38,6 +41,20 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
  color:var(--ink);border:1px solid transparent;border-radius:9px;margin-bottom:5px;
  background:var(--panel2);}
 .nav:hover{border-color:var(--line);}
+/* The delete control overlays the row's right edge and only appears on hover, so the list
+   reads as a list until you reach for it. It is not display:none when hidden, because a
+   keyboard user tabbing through needs to be able to focus it. */
+.navrow{position:relative;}
+.delform{position:absolute;top:0;right:0;height:calc(100% - 5px);margin:0;display:flex;
+ align-items:center;}
+.delbtn{display:flex;align-items:center;justify-content:center;width:26px;height:26px;
+ margin-right:5px;padding:0;border:1px solid transparent;border-radius:7px;cursor:pointer;
+ background:var(--panel2);color:var(--muted);opacity:0;transition:opacity .12s,color .12s;}
+.navrow:hover .delbtn,.delbtn:focus-visible{opacity:1;}
+.delbtn:hover{color:var(--bad);border-color:var(--bad);}
+.delbtn.off{cursor:not-allowed;position:absolute;top:50%;right:5px;transform:translateY(-50%);
+ opacity:0;}
+.navrow:hover .delbtn.off{opacity:.35;}
 .nav.on{border-color:var(--accent);}
 .nav .meta{min-width:0;flex:1 1 auto;}
 .nav .name{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;
@@ -52,6 +69,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .tab{font-size:14px;font-weight:600;color:var(--muted);text-decoration:none;padding:4px 0;}
 .tab.on{color:var(--ink);border-bottom:2px solid var(--accent);}
 .hint{color:var(--muted);font-size:11px;margin-left:auto;}
+.aim{color:var(--muted);font-size:12px;font-style:italic;padding-left:8px;}
 .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
  padding:9px 14px;min-width:112px;}
@@ -119,6 +137,33 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
  text-overflow:ellipsis;white-space:nowrap;}
 /* the top down map */
 .wmap{width:100%;height:auto;display:block;border-radius:8px;}
+
+/* The expand toggle, and the two sizes it switches between.
+   Collapsed is the original one-column panel. Expanded takes two columns and three rows, so
+   the grid reflows the other panels around it rather than the map overlaying them: one column
+   is enough to see that a route exists and too small to see where it goes. */
+.pexp{margin-left:auto;background:none;border:1px solid var(--line);color:var(--muted);
+ border-radius:6px;cursor:pointer;font-size:12px;line-height:1;padding:2px 6px;}
+.pexp:hover{color:var(--ink);border-color:var(--accent);}
+.plot.wexp{grid-column:span 2;grid-row:span 3;}
+/* The map does not live in .grid: it sits in the fixed 360px .rail column of .split, so a
+   grid-column span there does nothing. Two columns wide means DOUBLING that column, plus the
+   gap between them, not taking the whole row. Collapsing .split to one column was tried and
+   gave the map all four columns, which is not what two columns means.
+   Three rows high is three times the collapsed panel, so the charts beside it narrow and the
+   verdicts below it move down: everything adjusts, nothing overlaps. */
+.split.wexpanded{grid-template-columns:minmax(0,1fr) calc(360px * 2 + 12px);}
+/* Keep TWO chart columns to the left of the expanded map, not one stretched one. The chart
+   grid is auto-fill from a 330px minimum, so narrowing its column collapsed it to a single
+   column and the first two plots, the rating and the company value, stacked instead of
+   sitting side by side. Pinned to two and allowed to shrink below the auto-fill minimum. */
+.split.wexpanded .grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+.split.wexpanded .plot[data-cid="wmap"] .wmap{max-height:calc(360px * 3);
+ width:auto;margin:0 auto;}
+/* Below this the two columns no longer fit side by side, so the rail stacks as it already
+   does at 1080px and the map simply takes the width it is given. */
+@media (max-width:1400px){ .split.wexpanded{grid-template-columns:minmax(0,1fr);} }
+@media (max-width:760px){ .plot.wexp{grid-column:span 1;grid-row:span 2;} }
 .wmap .wbg{fill:var(--panel2);}
 /* crisp-edges so a 256 pixel terrain raster scaled up stays a tile grid rather than a
    blur; the map is data, not a photograph. */
@@ -140,6 +185,9 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .tbl th{text-align:left;color:var(--muted);font-weight:600;font-size:10.5px;
  text-transform:uppercase;letter-spacing:.4px;padding:4px 6px;position:sticky;top:0;
  background:var(--panel);}
+/* The first column of every table is a date or a state: short, fixed, and the one thing you
+   scan down. Wrapping "05-Jan-1950" onto two lines doubled every row's height. */
+.tbl th:first-child,.tbl td:first-child{white-space:nowrap;width:1%;padding-right:12px;}
 .tbl td{padding:4px 6px;border-top:1px solid var(--line);
  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 .tbl tr:hover td{background:var(--panel2);}
@@ -157,6 +205,15 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
  margin-right:5px;animation:pulse 1.6s infinite;}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(53,208,165,.5);}
  70%{box-shadow:0 0 0 6px rgba(53,208,165,0);}100%{box-shadow:0 0 0 0 rgba(53,208,165,0);}}
+/* The scored metrics: six groups of label-and-number, dense enough to read at a glance and
+   wide enough that a money figure does not wrap. */
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 18px;}
+.mgroup{min-width:0;}
+.mgt{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;
+ margin:2px 0 5px;border-bottom:1px solid var(--line);padding-bottom:3px;}
+.mrow{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-size:11.5px;}
+.mk{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mv{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .err{color:var(--bad);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 code{background:var(--panel2);padding:2px 6px;border-radius:5px;}
 """
@@ -175,6 +232,92 @@ THEME_ICONS = (
     '<path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8z"/></svg>'
 )
 
+TRASH_ICON = (
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
+    'stroke-width="2" stroke-linecap="round"><path d="M4 7h16"/>'
+    '<path d="M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1z"/>'
+    '<path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>'
+    '<path d="M10 11v7M14 11v7"/></svg>'
+)
+
+# Deleting a session is not undoable, so the confirm names the session being removed rather
+# than asking "are you sure": the button lives in a list of near-identical generated names,
+# and the whole risk is deleting the neighbour of the one intended.
+DELETE_BODY_JS = r"""
+(function(){
+  document.querySelectorAll('form.delform').forEach(function(f){
+    f.addEventListener('submit', function(e){
+      var name = f.getAttribute('data-name') || 'this session';
+      if(!confirm('Delete ' + name + ' and every file it wrote to disk?\nThis cannot be undone.')){
+        e.preventDefault();
+      }
+    });
+  });
+})();
+"""
+
+# The page updates when the server says something changed, rather than on a timer. One request
+# that then waits, so an idle dashboard is idle, and a written snapshot shows up at once.
+#
+# Reload rather than patch the DOM: the whole page is rendered server side, so a reload is the
+# same code path as the first paint and cannot drift from it. The scrubber position survives
+# because it is kept in sessionStorage.
+LIVE_BODY_JS = r"""
+(function(){
+  if(!window.EventSource) return;
+  var es = new EventSource('/live');
+  var timer = null, quiet = 0;
+  // Where the reader was, kept across the reload.
+  //
+  // A reload resets scroll to the top, so reading the actions or events table meant being
+  // thrown back up the page every time the session wrote, and scrolling down again to find
+  // the row you were on. The position is stashed before the reload and restored after it,
+  // and the browser is told not to do its own restoration, which fights this one.
+  var SCROLL_KEY = 'nttd-scroll-' + window.location.search;
+  if(window.history && 'scrollRestoration' in window.history){
+    window.history.scrollRestoration = 'manual';
+  }
+  var restore = function(){
+    var saved = sessionStorage.getItem(SCROLL_KEY);
+    if(saved !== null) window.scrollTo(0, parseInt(saved, 10));
+  };
+  restore();
+  window.addEventListener('load', restore);
+  var reload = function(){
+    sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+    window.location.reload();
+  };
+  // A running session writes many times a second, and a reload per write meant a click on a
+  // session in the sidebar never survived long enough to navigate: the page went out from
+  // under the pointer. Writes are coalesced into one reload, and any interaction holds it off
+  // so the click wins. Each abandoned reload also reset the /live socket mid-stream, which is
+  // where the ConnectionResetError tracebacks in the console came from.
+  var HOLD_MS = 5000, COALESCE_MS = 1500;
+  var schedule = function(delay){
+    if(timer) clearTimeout(timer);
+    timer = setTimeout(function(){
+      timer = null;
+      var left = quiet - Date.now();
+      if(left > 0){ schedule(left); return; }
+      reload();
+    }, delay);
+  };
+  var hold = function(){ quiet = Date.now() + HOLD_MS; };
+  // scroll is in this list deliberately. Somebody reading a table is scrolling, and a
+  // reader mid-table is exactly who a reload interrupts, so reading holds it off for as
+  // long as it continues.
+  ['mousedown','keydown','touchstart','wheel','scroll'].forEach(function(name){
+    window.addEventListener(name, hold, {passive: true});
+  });
+  es.addEventListener('data', function(){ schedule(COALESCE_MS); });
+  // A source edit restarts the server, so wait for it to come back before reloading, or the
+  // browser races the exec and shows a connection error instead of the new page.
+  es.addEventListener('code', function(){ schedule(700); });
+  // Leaving the page closes the stream politely rather than letting the socket reset.
+  window.addEventListener('pagehide', function(){ es.close(); });
+})();
+"""
+
 # Applied before first paint so there is no flash of the wrong theme.
 THEME_HEAD_JS = r"""
 (function(){ try{ var t=localStorage.getItem('nttd-theme');
@@ -184,6 +327,27 @@ THEME_HEAD_JS = r"""
 
 THEME_BODY_JS = r"""
 (function(){ var b=document.getElementById('themebtn'); if(!b) return;
+ // The world map's two sizes. Remembered per browser, because a reader who wants the big map
+ // wants it after the ten second refresh too, and the page is re-rendered server side.
+ function applyWorld(on){
+  var panel=document.querySelector('.plot[data-cid="wmap"]');
+  if(!panel) return;
+  var split=panel.closest('.split');
+  panel.classList.toggle('wexp', on);
+  if(split) split.classList.toggle('wexpanded', on);
+  var b=panel.querySelector('.pexp');
+  if(b){ b.textContent = on ? '\u2921' : '\u2922';
+         b.setAttribute('aria-expanded', on ? 'true' : 'false'); }
+ }
+ try{ applyWorld(localStorage.getItem('nttdWorldExpanded')==='1'); }catch(e){}
+ document.addEventListener('click', function(ev){
+  var b=ev.target.closest && ev.target.closest('.pexp');
+  if(!b) return;
+  var panel=document.querySelector('.plot[data-cid="wmap"]');
+  var on=!(panel && panel.classList.contains('wexp'));
+  applyWorld(on);
+  try{ localStorage.setItem('nttdWorldExpanded', on ? '1' : '0'); }catch(e){}
+ });
  function cur(){ return document.documentElement.getAttribute('data-theme')||'system'; }
  b.title='theme: '+cur()+' (click to switch)';
  b.addEventListener('click', function(){ var order=['system','light','dark'];
@@ -224,7 +388,7 @@ JS = r"""
         var p=nearest(s.data,xv);
         return '<span style="color:'+s.color+'">'+fmt(p[1])+'</span>'; })
         .filter(function(t){ return t; });
-      if(ro) ro.innerHTML='step '+xv+' &middot; '+parts.join(' / ');
+      if(ro) ro.innerHTML='day '+xv+' &middot; '+parts.join(' / ');
     });
     hit.addEventListener('mouseleave', function(){
       if(xh) xh.setAttribute('opacity','0'); if(ro) ro.innerHTML=''; });
@@ -276,7 +440,9 @@ JS = r"""
       c.setAttribute('fill', vehicleColours[v[2]]||'#e6ebf5');
       group.appendChild(c);
     });
-    if(out) out.textContent='step '+i+(f.d?' ('+f.d+')':'');
+    // 1-based, so the scrubber agrees with the step COUNT shown in the sidebar,
+    // the cards and the index table. Zero-based here read as one step fewer.
+    if(out) out.textContent='day '+(i+1)+(f.d?' ('+f.d+')':'');
     if(slider) slider.value=i;
   }
   function setLive(on){

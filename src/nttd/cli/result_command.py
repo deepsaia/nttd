@@ -56,7 +56,7 @@ def _sessions_dir() -> Path:
     return session_paths.sessions_dir()
 
 
-def _print_business_metrics(rows: list[dict]) -> None:
+def _print_business_metrics(rows: list[dict], session_dir: Path) -> None:
     """How the company was run, grouped so the families read as families.
 
     The score says how well it did. These say how it got there, which is the part a
@@ -105,28 +105,38 @@ def _print_business_metrics(rows: list[dict]) -> None:
         ]),
     ]
 
-    for row in rows:
-        # A result written before these existed reads back as zeros, and zeros are a
-        # claim: "days to first profit: 0" says profitable immediately, when the truth
-        # is that nobody measured. The version is empty exactly then, so say so.
-        if not row.get("metrics_version"):
-            console.print(
-                f"\n[yellow]No business metrics for "
-                f"{row['company_name'] or row['company_id']}.[/] "
-                f"[dim]This result was recorded before they were computed. "
-                f"Replaying the session would produce them.[/]"
-            )
-            continue
+    # Recomputed here rather than read from the result: business metrics are deliberately not
+    # part of the leaderboard record, because they are derived and still being refined. They come
+    # from the same artifacts either way, so nothing about them is less checkable for it.
+    from nttd.analysis import business_metrics
 
+    # Zeros are a claim: "days to first profit: 0" says profitable immediately, when the truth
+    # may be that nobody measured. A session with no recorded series produces zeros for every
+    # metric, so say there are none rather than print them.
+    if not business_metrics.has_series(session_dir):
+        console.print(
+            "\n[yellow]No business metrics for this session.[/] "
+            "[dim]It recorded no snapshot series, so there is nothing to derive them from. "
+            "Replaying the session would produce them.[/]"
+        )
+        return
+
+    for row in rows:
+        computed = business_metrics.compute(
+            session_dir,
+            int(row["company_id"]),
+            total_cost_usd=float(row.get("total_cost_usd") or 0.0),
+            total_actions=int(row.get("total_actions") or 0),
+            successful_actions=int(row.get("successful_actions") or 0),
+        ).as_row()
         table = Table(
-            title=f"How it was run: {row['company_name'] or row['company_id']} "
-                  f"({row['metrics_version']})",
+            title=f"How it was run: {row['company_name'] or row['company_id']}",
             show_header=False,
         )
         for heading, fields in groups:
             table.add_row(f"[bold]{heading}[/]", "")
             for key, label, kind in fields:
-                table.add_row(f"  {label}", _format_metric(row.get(key), kind))
+                table.add_row(f"  {label}", _format_metric(computed.get(key), kind))
         console.print(table)
 
 
@@ -184,7 +194,7 @@ def result(
         return
 
     first = rows[0]
-    table = Table(title=f"Result: {session} ({first['score_version']})")
+    table = Table(title=f"Result: {session}")
     table.add_column("Rank", justify="right")
     table.add_column("Company")
     table.add_column("Score", justify="right")
@@ -200,8 +210,9 @@ def result(
         table.add_row(
             str(rank),
             row["company_name"] or str(row["company_id"]),
-            str(row["primary_score"]) if row["rating_available"] else "[yellow]unrated[/]",
-            f"{row['tiebreak_cargo']:,}",
+            str(row["performance_rating"]) if row["performance_rating"] >= 0
+            else "[yellow]unrated[/]",
+            f"{row['total_cargo']:,}",
             f"{row['company_value']:,}",
             f"{ok}/{actions}" if actions else "-",
             row["model"] or "-",
@@ -268,7 +279,7 @@ def result(
     # Behind a flag: the score and provenance are what most readers came for, and
     # twenty-eight more numbers by default would bury them.
     if business:
-        _print_business_metrics(rows)
+        _print_business_metrics(rows, session_dir)
 
     # Flag what would block verification, so gaps are visible before submission.
     # Derived in store/verification_gaps.py so a submission bundle records the same

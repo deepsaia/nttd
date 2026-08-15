@@ -108,16 +108,19 @@ async def score_recomputed(
         if score is None:
             problems.append(f"company {company_id} is absent from the reloaded save")
             continue
+        # No version to reconcile: there is one definition of every column, everywhere. What
+        # the code was when a bundle was written is pinned by nttd_git_sha and
+        # gamescript_digest, which say it far more precisely than a hand-typed version string.
         checked += 1
-        if score.primary != row.get("primary_score"):
+        if score.performance_rating != row.get("performance_rating"):
             problems.append(
-                f"company {company_id}: save gives {score.primary}, "
-                f"result claims {row.get('primary_score')}"
+                f"company {company_id}: save rates {score.performance_rating}, "
+                f"result claims {row.get('performance_rating')}"
             )
-        if score.tiebreak != row.get("tiebreak_cargo"):
+        if score.total_cargo != row.get("total_cargo"):
             problems.append(
-                f"company {company_id}: save gives {score.tiebreak} cargo, "
-                f"result claims {row.get('tiebreak_cargo')}"
+                f"company {company_id}: save gives {score.total_cargo} cargo, "
+                f"result claims {row.get('total_cargo')}"
             )
 
     if problems:

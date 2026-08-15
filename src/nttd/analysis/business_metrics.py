@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Bumped when a formula changes, so a board can tell which rows are comparable. The
 # score has its own version; this is a separate thing that can move independently.
-METRICS_VERSION = "v1"
+METRICS_VERSION = "v2"
 
 @dataclass
 class BusinessMetrics:
@@ -198,6 +198,15 @@ def _from_series(
     )
 
 
+def has_series(session_dir: Path) -> bool:
+    """Whether this session recorded a snapshot series to derive metrics from.
+
+    Asked before printing metrics, because every metric defaults to zero and a zero reads as a
+    measurement. "Days to first profit: 0" claims the company was profitable on day one.
+    """
+    return (session_dir / "snapshots.parquet").exists()
+
+
 def _read_series(session_dir: Path, company_id: int) -> _CompanySeries | None:
     """Pull one company out of every snapshot.
 
@@ -240,6 +249,12 @@ def _read_series(session_dir: Path, company_id: int) -> _CompanySeries | None:
         series.max_loan.append(int(company.get("max_loan") or 0))
         series.income.append(int(company.get("q0_income") or 0))
         series.expenses.append(int(company.get("q0_expenses") or 0))
+        # q0_cargo is the quarter IN PROGRESS and RESETS at every quarter boundary. Stored
+        # raw here; _cumulative_cargo turns it into a running total, which is what every
+        # consumer actually wants. Sampling the raw counter is how a run that delivered 3,526
+        # units over its year reported 0: the 25, 50 and 75 percent checkpoints of a 366 day
+        # run land within a day or two of the quarter boundaries, where the counter has just
+        # gone back to zero.
         series.cargo.append(int(company.get("q0_cargo") or 0))
         series.maintenance.append(_maintenance(snapshot, company_id))
 
@@ -270,6 +285,24 @@ def _maintenance(snapshot: dict[str, Any], company_id: int) -> int:
     return total
 
 
+def _last_complete_index(income: list[int]) -> int:
+    """The index of the last snapshot of the last COMPLETE quarter.
+
+    Quarterly income is an accumulator the game resets at each boundary, so the series climbs
+    and drops. The final snapshot of a run is therefore a partial quarter a day or two old:
+    measured, a run ended with quarterly income of 12 against maintenance of hundreds, and
+    maintenance_burden_final came out at -21.39 where the ratio can only sensibly be 0 to 1.
+
+    The value just before the last drop is the last quarter that actually finished.
+    """
+    if not income:
+        return -1
+    for index in range(len(income) - 1, 0, -1):
+        if income[index] < income[index - 1]:
+            return index - 1
+    return len(income) - 1
+
+
 def _profitability(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     """Margin and how much of revenue upkeep eats.
 
@@ -279,12 +312,19 @@ def _profitability(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     """
     margins = [
         (income + expense) / income
-        for income, expense in zip(series.income, series.expenses)
+        for income, expense in zip(series.income, series.expenses, strict=False)
         if income > 0
     ]
     if margins:
-        metrics.operating_margin_final = round(margins[-1], 4)
         metrics.operating_margin_mean = round(sum(margins) / len(margins), 4)
+
+    # "Final" means the last quarter that COMPLETED, not the last snapshot recorded. See
+    # _last_complete_index: the last snapshot lands inside a fresh quarter.
+    settled = _last_complete_index(series.income)
+    if settled >= 0 and series.income[settled] > 0:
+        metrics.operating_margin_final = round(
+            (series.income[settled] + series.expenses[settled]) / series.income[settled], 4,
+        )
 
     earning = [
         index for index, income in enumerate(series.income) if income > 0
@@ -297,12 +337,15 @@ def _profitability(metrics: BusinessMetrics, series: _CompanySeries) -> None:
 
     burdens = [
         upkeep / income
-        for upkeep, income in zip(series.maintenance, series.income)
+        for upkeep, income in zip(series.maintenance, series.income, strict=False)
         if income > 0 and upkeep > 0
     ]
     if burdens:
-        metrics.maintenance_burden_final = round(burdens[-1], 4)
         metrics.maintenance_burden_mean = round(sum(burdens) / len(burdens), 4)
+    if settled >= 0 and series.income[settled] > 0 and series.maintenance[settled] > 0:
+        metrics.maintenance_burden_final = round(
+            series.maintenance[settled] / series.income[settled], 4,
+        )
 
 
 def _capital(metrics: BusinessMetrics, series: _CompanySeries) -> None:
@@ -321,9 +364,32 @@ def _capital(metrics: BusinessMetrics, series: _CompanySeries) -> None:
         metrics.return_on_capital = round(gained / peak, 4)
 
 
+def _cumulative_cargo(quarterly: list[int]) -> list[int]:
+    """A running total of cargo delivered, from a counter that resets each quarter.
+
+    OpenTTD reports GetQuarterlyCargoDelivered for the quarter in progress, so the series
+    sawtooths: it climbs through a quarter and drops to zero at the boundary. A fall therefore
+    means a quarter closed, and the value just before the fall is that quarter's total.
+
+    Measured on a real 366 day run: per-quarter peaks of 370, 885, 1216 and 1055, so 3,526 for
+    the year. Every point sample of the raw counter reported 0, because the sample points and
+    the resets coincide.
+    """
+    running: list[int] = []
+    banked = 0
+    previous = 0
+    for current in quarterly:
+        if current < previous:
+            banked += previous
+        running.append(banked + current)
+        previous = current
+    return running
+
+
 def _growth(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     """The shape of the run, not just where it ended."""
     count = len(series)
+    delivered = _cumulative_cargo(series.cargo)
     for fraction, value_field, cargo_field in (
         (0.25, "value_at_25pct", "cargo_at_25pct"),
         (0.50, "value_at_50pct", "cargo_at_50pct"),
@@ -331,7 +397,7 @@ def _growth(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     ):
         index = min(int(count * fraction), count - 1)
         setattr(metrics, value_field, series.value[index])
-        setattr(metrics, cargo_field, series.cargo[index])
+        setattr(metrics, cargo_field, delivered[index])
 
     for index, (income, expense) in enumerate(zip(series.income, series.expenses)):
         if income > 0 and income + expense > 0:
@@ -368,14 +434,23 @@ def _operations(metrics: BusinessMetrics, series: _CompanySeries) -> None:
     metrics.stations_final = series.stations[-1] if series.stations else 0
 
     if metrics.vehicles_final:
-        metrics.profitable_vehicle_share = round(
-            series.profitable_vehicles[-1] / metrics.vehicles_final, 4,
+        # The PEAK share, not the final one. profit_this_year resets on 1 January and a 366 day
+        # run ends on 1 January, so the last snapshot has every vehicle back at zero and the
+        # final share read 0.00 for all eleven measured sessions, including ones whose aircraft
+        # each earned close to 50,000. The peak answers the question the metric is for: did this
+        # company run a fleet that paid for itself.
+        best = max(
+            (count / owned) if owned else 0.0
+            for count, owned in zip(series.profitable_vehicles, series.vehicles, strict=False)
         )
+        metrics.profitable_vehicle_share = round(best, 4)
         metrics.idle_vehicle_share = round(
             series.idle_vehicles[-1] / metrics.vehicles_final, 4,
         )
 
-    delivered = series.cargo[-1] if series.cargo else 0
+    # The cumulative total, not the last raw reading: a run ending on a quarter boundary reads
+    # zero from the in-progress counter however much it carried all year.
+    delivered = _cumulative_cargo(series.cargo)[-1] if series.cargo else 0
     if metrics.vehicles_final:
         metrics.cargo_per_vehicle = round(delivered / metrics.vehicles_final, 2)
     if metrics.stations_final:

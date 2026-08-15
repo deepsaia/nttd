@@ -23,8 +23,8 @@ What is checked, and what breaks if it stops holding:
      and the leaderboard compares nothing.
 
   2. ECONOMY CLOCK RATE. Fixed at 1 wall-minute per economy month, roughly 1.97s per
-     game-day. The tier definitions are derived from it: T2 is 30 minutes BECAUSE
-     that is 2.5 game years.
+     game-day. The tier definitions are derived from it: T3 is 60 minutes BECAUSE
+     that is 5 game years, 1827 days at 1.97s each.
 
   3. ENGINE AVAILABILITY at the profile's start year. A start year with no buildable
      vehicles for some mode would make that mode unplayable without any error.

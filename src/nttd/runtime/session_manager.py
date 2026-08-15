@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -348,6 +349,15 @@ class SessionManager:
             # lives at this single point rather than in the real-time loop.
             final_save = await self._capture_final_save(session_id, runtime)
 
+            # Finish the traces BEFORE scoring. The business metrics read the recorded
+            # series out of snapshots.parquet, and that file is only written when the
+            # recorder merges its fragments. Scoring first meant every metric in every
+            # result ever written was zero, because the file it reads did not exist yet.
+            try:
+                await runtime.recorder.stop()
+            except Exception:
+                logger.exception("Session %s: failed to finalize traces", session_id)
+
             # Score before shutting down -- the world state is needed, and a
             # failure here must not prevent the process from being stopped.
             try:
@@ -436,6 +446,11 @@ class SessionManager:
             capability=runtime.scored_lock.summary(),
             dimensions=runtime.dimensions,
             final_save=final_save,
+            # With its offset, because the session id no longer carries one.
+            started_at=(
+                datetime.fromtimestamp(runtime.started_at).astimezone().isoformat()
+                if runtime.started_at else ""
+            ),
         )
 
     def _cleanup_config_artifacts(self, session_dir: Path) -> None:

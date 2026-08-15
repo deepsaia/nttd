@@ -24,10 +24,23 @@ class NttdGS extends GSController {
   _DEFAULT_TRANSIT_DAYS = 20;
   _pathfind_queue = null;
   _event_names = null;
+  // Vehicles the game has reported lost, against the tile they were on when reported. Declared
+  // on the class because Squirrel will not create a new instance slot with plain assignment.
+  _lost_vehicles = null;
+  // Cargo delivered in quarters that have already ended, per company, and the last quarter 0
+  // reading we banked it from. See _CargoDeliveredTotal for why the game cannot be asked.
+  _cargo_banked = null;
+  _cargo_last_q0 = null;
 
   function Start() {
     GSLog.Info("nttd GameScript v1 started");
     this._pathfind_queue = [];
+    this._lost_vehicles = {};
+    // Only when Load did not already restore them. Load runs BEFORE Start, so assigning
+    // a fresh table here unconditionally would throw away the bank that was just read
+    // out of the savegame, which is the whole reason it is saved.
+    if (this._cargo_banked == null) this._cargo_banked = {};
+    if (this._cargo_last_q0 == null) this._cargo_last_q0 = {};
     this._event_names = {};
     this._event_names[GSEvent.ET_VEHICLE_CRASHED]       <- "vehicle_crashed";
     this._event_names[GSEvent.ET_VEHICLE_LOST]          <- "vehicle_lost";
@@ -74,8 +87,24 @@ class NttdGS extends GSController {
     }
   }
 
-  function Save() { return {}; }
-  function Load(version, data) {}
+  // The cargo bank goes INTO the savegame, because the score is only worth what a
+  // verifier can recompute from the artifacts.
+  //
+  // cargo_delivered_total is accumulated in this script's own memory as each quarter
+  // ends, since the game answers 0 for every quarter but the one in progress. That
+  // memory does not survive into a savegame by itself, so a board reloading final.sav
+  // started a fresh script with an empty bank and recomputed 0 cargo against a result
+  // claiming 4,975. Measured: every bundle failed score_recomputed and no run could earn
+  // a verdict better than unverified.
+  function Save() {
+    return { cargo_banked = this._cargo_banked, cargo_last_q0 = this._cargo_last_q0 };
+  }
+
+  function Load(version, data) {
+    if (data == null) return;
+    if ("cargo_banked" in data) this._cargo_banked = data.cargo_banked;
+    if ("cargo_last_q0" in data) this._cargo_last_q0 = data.cargo_last_q0;
+  }
 
   // ---------------------------------------------------------------------------
   // Event loop
@@ -326,7 +355,22 @@ class NttdGS extends GSController {
           break;
       }
     } catch (e) {
-      GSLog.Warning("nttd: could not process event type " + et + ": " + e);
+      // Say so in the payload, not only in a log nobody reads. A getter that throws used to
+      // leave the event with no fields at all: three aircraft were destroyed and the recorded
+      // events said only "vehicle_crashed", with no vehicle and no place, because the extraction
+      // failed here and the failure was swallowed. GSLog.Warning does not reach openttd.log at
+      // the default level either, so the loss was invisible twice over.
+      payload.rawset("extract_error", "" + e);
+      GSLog.Error("nttd: could not process event type " + et + ": " + e);
+    }
+
+    // A vehicle the GAME says is lost. This is the only authoritative signal that a vehicle has
+    // no path: queried directly, a lost vehicle reports state running and speed 0, which is
+    // indistinguishable from one waiting at a signal. Remembered with the tile it was on, so
+    // the flag can be cleared once it moves again.
+    if (et == GSEvent.ET_VEHICLE_LOST && ("vehicle_id" in payload)) {
+      local vid = payload.vehicle_id;
+      this._lost_vehicles[vid] <- GSVehicle.GetLocation(vid);
     }
 
     GSAdmin.Send(payload);
@@ -639,6 +683,7 @@ class NttdGS extends GSController {
         case "remove_rail_station": return this.CmdRemoveRailStation(p);
         case "convert_rail":        return this.CmdConvertRail(p);
         case "connect_rail":        return this.CmdConnectRail(p);
+        case "connect_depot":       return this.CmdConnectDepot(p);
 
         // ---- BUILDING: MARINE ----------------------------------------------
         case "build_canal":        return this.CmdBuildCanal(p);
@@ -915,6 +960,18 @@ class NttdGS extends GSController {
           if (GSTile.HasTreeOnTile(tile)) flags = flags | 64;
           if (GSBridge.IsBridgeTile(tile)) flags = flags | 128;
           if (GSTunnel.IsTunnelTile(tile)) flags = flags | 256;
+          // RUNNING LINE, as distinct from a station platform. A platform sets the rail bit
+          // too, so flags 40 is rail|station and "where is the track" cannot be answered with
+          // flags & 8: a depot placed against a platform can never be joined, and every curve
+          // attempted there returns ERR_AREA_NOT_CLEAR without saying why. Bits 512 and 1024
+          // are track a vehicle can run along and nothing else.
+          if ((flags & 8) && !(flags & 32)) flags = flags | 512;
+          if ((flags & 16) && !(flags & 32)) flags = flags | 1024;
+          // A depot is neither a station nor plain track, and nothing else in the surface
+          // reports one: OpenTTD does not treat it as a station, so an agent that loses track
+          // of where it built one has no way to ask.
+          if (GSRail.IsRailDepotTile(tile) || GSRoad.IsRoadDepotTile(tile)
+              || GSMarine.IsWaterDepotTile(tile)) flags = flags | 2048;
           owner = GSTile.GetOwner(tile);
         }
         row_tiles.append([GSTile.GetMaxHeight(tile), GSTile.GetSlope(tile), flags, owner]);
@@ -1019,11 +1076,27 @@ class NttdGS extends GSController {
         if (kind == "road") {
           joined = GSRoad.IsRoadTile(next) && GSRoad.AreRoadTilesConnected(node.tile, next);
         } else {
-          local prev = GSMap.GetTileIndex(cx - dir_dx[node.dir], cy - dir_dy[node.dir]);
-          if (!GSMap.IsValidTile(prev)) prev = node.tile;
-          joined = (GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
-                    || GSRail.IsRailDepotTile(next))
-                   && GSRail.AreTilesConnected(prev, node.tile, next);
+          local is_track = GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
+                           || GSRail.IsRailDepotTile(next);
+          if (node.tile == start) {
+            // THE FIRST HOP HAS NO INCOMING DIRECTION. AreTilesConnected asks about a triple,
+            // from-through-to, and at the start there is no "from": the code used to invent one
+            // by stepping backwards from a seeded direction, which produced a tile that often
+            // held no track at all. The game then answered false for an illegal triple and the
+            // walk could not leave the start tile, reporting tiles_reachable 1.
+            //
+            // Measured: a depot the game itself reported connected, and whose train then ran the
+            // route at 107 km/h, traced as line_exists false. Every route starting at a depot, a
+            // platform end or a buffer was affected, because none of them has track on all sides.
+            //
+            // Adjacency only for this one hop, then the triple test from the second tile on,
+            // where a real incoming direction exists.
+            joined = is_track;
+          } else {
+            local prev = GSMap.GetTileIndex(cx - dir_dx[node.dir], cy - dir_dy[node.dir]);
+            if (!GSMap.IsValidTile(prev)) prev = node.tile;
+            joined = is_track && GSRail.AreTilesConnected(prev, node.tile, next);
+          }
         }
         if (!joined) continue;
         seen[key] <- true;
@@ -1141,6 +1214,25 @@ class NttdGS extends GSController {
           });
         }
       }
+      // What this KIND of industry produces and takes, regardless of whether it has yet.
+      //
+      // production above is last month's figures, and it is empty on day one because
+      // GetLastMonthProduction is 0 before anything has run. So this list was the only way to
+      // pair a supplier with a consumer at the start of a game, and it was missing here while
+      // get_industry_info had it: pairing 42 industries meant 42 extra round trips, one per
+      // industry, to learn something the list could have carried.
+      local produces_types = [];
+      foreach (cargo_id, _ in GSIndustryType.GetProducedCargo(itype)) {
+        produces_types.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+        });
+      }
+      local accepts_types = [];
+      foreach (cargo_id, _ in GSIndustryType.GetAcceptedCargo(itype)) {
+        accepts_types.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+        });
+      }
       industries.append({
         id = id, name = GSIndustry.GetName(id),
         type_id = itype, type_name = GSIndustryType.GetName(itype),
@@ -1149,6 +1241,15 @@ class NttdGS extends GSController {
         is_processing = GSIndustryType.IsProcessingIndustry(itype),
         production = produced,
         accepted = accepted_list,
+        produces_cargo = produces_types,
+        // Which of the company's stations is close enough to collect here, and how many are.
+        // An industry delivers to ONE station and not necessarily the nearest or newest: a
+        // leftover station four tiles away silently took 422 units of wood for 120 days while
+        // the station the train actually served showed nothing waiting. More than one in range
+        // is the warning; the failure is otherwise only visible by noticing cargo piling up
+        // somewhere you did not build.
+        served_by = this._ServingStations(loc),
+        accepts_cargo = accepts_types,
       });
     }
     return { success = true, result = industries };
@@ -1223,6 +1324,7 @@ class NttdGS extends GSController {
       if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID) continue;
       local cm = GSCompanyMode(cid);
       local hq = GSCompany.GetCompanyHQ(cid);
+      local quarter_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 0);
       companies.append({
         id = cid, name = GSCompany.GetName(cid),
         money = GSCompany.GetBankBalance(cid),
@@ -1243,7 +1345,11 @@ class NttdGS extends GSController {
         company_value = GSCompany.GetQuarterlyCompanyValue(cid, 0),
         q0_income = GSCompany.GetQuarterlyIncome(cid, 0),
         q0_expenses = GSCompany.GetQuarterlyExpenses(cid, 0),
-        q0_cargo = GSCompany.GetQuarterlyCargoDelivered(cid, 0),
+        // Quarter 0 is the quarter IN PROGRESS and OpenTTD resets it to zero at every
+        // boundary, so q0_cargo is a sawtooth and the last snapshot of a 366 day run reads 0.
+        // Score against cargo_delivered_total, which banks each quarter as it ends.
+        q0_cargo = quarter_cargo,
+        cargo_delivered_total = this._CargoDeliveredTotal(cid, quarter_cargo),
       });
     }
     return { success = true, result = companies };
@@ -1467,6 +1573,14 @@ class NttdGS extends GSController {
       age_left = GSVehicle.GetAgeLeft(vid),
       profit_this_year = GSVehicle.GetProfitThisYear(vid),
       profit_last_year = GSVehicle.GetProfitLastYear(vid),
+      // Whether the GAME says this vehicle has no path. Without it, a halted vehicle is
+      // indistinguishable from one waiting at a signal or loading: both answer state 0 and
+      // speed 0. Detecting it otherwise means polling position across several steps, which
+      // spends the steps a contestant is scored on.
+      lost = this._IsLost(vid),
+      // Why it is not moving, when it is not. A stopped vehicle, one sitting in a depot and one
+      // with nowhere to go need three different fixes, and the raw state does not separate them.
+      idle_reason = this._IdleReason(vid),
       current_speed = GSVehicle.GetCurrentSpeed(vid),
       state = GSVehicle.GetState(vid),
       in_depot = GSVehicle.IsStoppedInDepot(vid),
@@ -1510,7 +1624,11 @@ class NttdGS extends GSController {
         weight = GSEngine.GetWeight(id),
         reliability = GSEngine.GetReliability(id),
         is_wagon = GSEngine.IsWagon(id),
-        rail_type = rt
+        rail_type = rt,
+        // Aircraft only: 0 helicopter, 1 small plane, 3 big plane. A big plane has a crash
+        // chance on every landing at a small airport, so this is the difference between a
+        // fleet and a sequence of write-offs. -1 for everything that does not fly.
+        plane_type = (vt == GSVehicle.VT_AIR) ? GSEngine.GetPlaneType(id) : -1
       });
     }
     return { success = true, result = engines };
@@ -1827,6 +1945,16 @@ class NttdGS extends GSController {
   }
 
   function CmdFindRailDepotSpot(p) {
+    // Accept town_id or x,y as well as tile. Every sibling finder takes those, and demanding a
+    // tile index here answered a bare "tile parameter required" that reads like there being
+    // nowhere to put a depot.
+    if (!("tile" in p)) {
+      if ("town_id" in p && GSTown.IsValidTown(p.town_id)) {
+        p.tile <- GSTown.GetLocation(p.town_id);
+      } else if ("x" in p && "y" in p) {
+        p.tile <- GSMap.GetTileIndex(p.x, p.y);
+      }
+    }
     if (!("tile" in p)) return { success = false, error = "tile parameter required" };
     local company_id = ("company_id" in p) ? p.company_id : 0;
     local radius = ("radius" in p) ? p.radius : 10;
@@ -1897,8 +2025,15 @@ class NttdGS extends GSController {
           if (!GSAirport.BuildAirport(tile, airport_type, GSStation.STATION_NEW)) continue;
         }
         local cargo_info = this._GetTileCargoInfo(tile, aw, ah, 4);
+        // Coverage is the number that decides whether an air route earns anything, and it was
+        // not in the reply that chooses the site. Measured: airports 16 to 28 tiles from their
+        // town earned nothing at all, one town of 4,379 people offering a single passenger,
+        // because a commuter airport reaches 4 tiles. `distance` is to the town centre, so
+        // `within_coverage` answers directly whether this spot will see the town.
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
-          width = aw, height = ah, cargo_acceptance = cargo_info });
+          width = aw, height = ah, cargo_acceptance = cargo_info,
+          coverage = GSAirport.GetAirportCoverageRadius(airport_type),
+          within_coverage = (abs(dx) + abs(dy)) <= GSAirport.GetAirportCoverageRadius(airport_type) });
       }
     }
     // Sort by cargo acceptance count (desc), then distance (asc)
@@ -2172,13 +2307,24 @@ class NttdGS extends GSController {
         local tile = GSMap.GetTileIndex(x, y);
         if (!GSMap.IsValidTile(tile)) continue;
         if (!GSTile.IsWaterTile(tile)) continue;
-        // Dry-run: test if BuildWaterDepot would actually succeed here
-        {
+        // A ship depot occupies TWO tiles, so the orientation has to be searched, not
+        // assumed. This tested only (tile, tile + 1), the eastern neighbour, which rejects
+        // every stretch of water running north to south. On one measured 256x256 map with
+        // thirteen coastal towns it found a single spot in the whole world, and water mode
+        // was unplayable because there was nowhere to build a ship. Try all four, and report
+        // WHICH one worked so the caller can pass it to build_water_depot: that action takes
+        // a direction, and a spot without one is a spot the caller has to guess about.
+        local found_dir = -1;
+        for (local dir = 0; dir < 4 && found_dir < 0; dir++) {
+          local partner = this._GetAdjacentTile(tile, dir);
+          if (!GSMap.IsValidTile(partner)) continue;
           local company_mode = GSCompanyMode(company_id);
           local test_mode = GSTestMode();
-          if (!GSMarine.BuildWaterDepot(tile, tile + 1)) continue;
+          if (GSMarine.BuildWaterDepot(tile, partner)) found_dir = dir;
         }
-        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy) });
+        if (found_dir < 0) continue;
+        spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
+                       depot_direction = found_dir });
       }
     }
     this._SortByDistance(spots);
@@ -3123,6 +3269,63 @@ class NttdGS extends GSController {
     return this._Refused({ tile = tile, wants = "land", company = p.company_id });
   }
 
+  function CmdConnectDepot(p) {
+    // Join a depot to the line beside it. Pure mechanism, and it took three attempts to get
+    // right by hand: find the neighbour carrying running line, then add the curve piece that
+    // touches the depot's edge. connect_rail cannot do this job at all, because it lays rail on
+    // both endpoints and so fails ERR_AREA_NOT_CLEAR against the very depot it is aiming at.
+    //
+    // The direction bits are the part nobody should have to rediscover: x+ is SW, x- is NE,
+    // y+ is SE, y- is NW, so a depot reached from the SW needs its neighbour to carry
+    // RAILTRACK_NW_SW or RAILTRACK_SW_SE.
+    local company_mode = GSCompanyMode(p.company_id);
+    local tile = ("tile" in p && p.tile != null)
+      ? p.tile : GSMap.GetTileIndex(p.x, p.y);
+    if (!GSRail.IsRailDepotTile(tile)) {
+      return { success = false, error = "not a rail depot: nothing to connect" };
+    }
+    // Which neighbour holds running line, tried in the order a depot is usually built against.
+    local curves = {};
+    curves[0] <- [16, 8];    // line to the SW of the depot
+    curves[2] <- [4, 32];    // to the NE
+    curves[1] <- [8, 32];    // to the SE
+    curves[3] <- [4, 16];    // to the NW
+    local tried = [];
+    foreach (dir, pieces in curves) {
+      local neighbour = this._GetAdjacentTile(tile, dir);
+      if (!GSMap.IsValidTile(neighbour)) continue;
+      if (!GSRail.IsRailTile(neighbour)) continue;
+      // A platform sets the rail bit too, and no track piece can ever be added to one.
+      if (GSStation.GetStationID(neighbour) != GSStation.STATION_INVALID) {
+        tried.append({ x = GSMap.GetTileX(neighbour), y = GSMap.GetTileY(neighbour),
+                       error = "that neighbour is a station platform, not running line" });
+        continue;
+      }
+      foreach (piece in pieces) {
+        if (GSRail.BuildRailTrack(neighbour, piece)) {
+          return { success = true, result = {
+            tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
+            joined_at = [GSMap.GetTileX(neighbour), GSMap.GetTileY(neighbour)],
+            track = piece, already_connected = false
+          }};
+        }
+        local err = GSError.GetLastErrorString();
+        if (err == "ERR_ALREADY_BUILT") {
+          return { success = true, result = {
+            tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
+            joined_at = [GSMap.GetTileX(neighbour), GSMap.GetTileY(neighbour)],
+            track = piece, already_connected = true
+          }};
+        }
+        tried.append({ x = GSMap.GetTileX(neighbour), y = GSMap.GetTileY(neighbour),
+                       track = piece, error = err });
+      }
+    }
+    return { success = false,
+             error = "no neighbouring running line would take a curve into this depot",
+             result = { tried = tried } };
+  }
+
   function CmdBuildRailDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;
@@ -3883,8 +4086,42 @@ class NttdGS extends GSController {
       local action = ("action" in step) ? step.action : "move";
       local sx = step.x, sy = step.y;
 
-      // Skip start/end markers and plain movement on existing infra
+      // Skip start/end markers and plain movement on existing infra.
+      //
+      // EXCEPT for road, where "the tile already has road" and "a vehicle can drive from the
+      // last tile onto this one" are different claims. A road tile carries direction bits, and
+      // two adjacent road tiles are connected only if their bits face each other. A town's
+      // street grid has bits for its own streets, so a path that crosses it and turns off it
+      // walks over real road tiles that are not joined in the direction the path needs.
+      //
+      // Skipping every move step is what made a planned road route unusable. Measured: a
+      // 30 tile route from (179,223) to (199,228) built its 6 build_road steps, every tile on
+      // the path reported is_road true, the planner then reported 28 moves and nothing left to
+      // build, and trace_route still answered line_exists false. Nothing was missing; the
+      // tiles were simply not joined.
+      //
+      // BuildRoad between the two tiles fixes the bits and is free when they are already
+      // joined, which it reports as ERR_ALREADY_BUILT. Rail is deliberately left alone: a rail
+      // move step would need the three tile context to place a piece, and adding track an
+      // agent did not ask for is worse than the gap. Water needs nothing, since open water is
+      // navigable.
       if (action == "start" || action == "end" || action == "move") {
+        if (action == "move" && !is_rail && !is_water && i > 0) {
+          local from_tile = GSMap.GetTileIndex(steps[i - 1].x, steps[i - 1].y);
+          local onto_tile = GSMap.GetTileIndex(sx, sy);
+          if (GSRoad.BuildRoad(from_tile, onto_tile)) {
+            built++;
+            continue;
+          }
+          local jerr = GSError.GetLastErrorString();
+          if (jerr == "ERR_ALREADY_BUILT") { existing++; continue; }
+          // A join that cannot be made is reported rather than swallowed: it is the difference
+          // between a route and a route-shaped set of tiles.
+          failed.append({ x = sx, y = sy, action = "join_road", error = jerr,
+                          error_code = GSError.GetLastError(),
+                          error_category = GSError.GetErrorCategory() });
+          continue;
+        }
         skipped++;
         continue;
       }
@@ -3909,14 +4146,37 @@ class NttdGS extends GSController {
         local start_tile = GSMap.GetTileIndex(bfx, bfy);
         local end_tile = GSMap.GetTileIndex(sx, sy);
         local vt = is_rail ? GSVehicle.VT_RAIL : GSVehicle.VT_ROAD;
-        // Pick cheapest available bridge type
-        local bt = 0;
-        if (GSBridge.BuildBridge(vt, bt, start_tile, end_tile)) {
+        // A bridge type has to be able to SPAN the gap, and type 0 was hardcoded here. Bridge
+        // availability is by length and by year, so on a wide crossing, or early in the game,
+        // type 0 simply cannot be built and the whole route loses its one crossing. The step
+        // was reported as failed, correctly, but the plan had already been paid for.
+        //
+        // Ask the game which types span this length and take the first that builds. An explicit
+        // bridge_type on the step still wins, so a caller that wants a fast bridge can say so.
+        local span = GSMap.DistanceManhattan(start_tile, end_tile) + 1;
+        local wanted = ("bridge_type" in step) ? [step.bridge_type] : [];
+        if (wanted.len() == 0) {
+          local usable = GSBridgeList_Length(span);
+          for (local bid = usable.Begin(); !usable.IsEnd(); bid = usable.Next()) {
+            wanted.append(bid);
+          }
+        }
+        local placed = false;
+        local last_err = "no bridge type spans " + span + " tiles";
+        foreach (bt in wanted) {
+          if (GSBridge.BuildBridge(vt, bt, start_tile, end_tile)) { placed = true; break; }
+          last_err = GSError.GetLastErrorString();
+          if (last_err == "ERR_ALREADY_BUILT") break;
+        }
+        if (placed) {
           built++;
+        } else if (last_err == "ERR_ALREADY_BUILT") {
+          existing++;
         } else {
-          local err = GSError.GetLastErrorString();
-          if (err != "ERR_ALREADY_BUILT") failed.append({ x = sx, y = sy, action = action, error = err, error_code = GSError.GetLastError(), error_category = GSError.GetErrorCategory() });
-          else existing++;
+          failed.append({ x = sx, y = sy, action = action, error = last_err,
+                          span = span, types_tried = wanted.len(),
+                          error_code = GSError.GetLastError(),
+                          error_category = GSError.GetErrorCategory() });
         }
         continue;
       }
@@ -4209,10 +4469,27 @@ class NttdGS extends GSController {
     if ("cargo_id" in p && p.cargo_id != null) {
       refitted = GSVehicle.RefitVehicle(vid, p.cargo_id) ? true : false;
     }
+    // Report what the assembled consist actually carries, not what was asked for. A refit
+    // skips any vehicle that cannot take the cargo, so an engine with its own hold plus
+    // wagons that refuse the refit leaves a train carrying TWO cargo types. That is not
+    // cosmetic: an OF_FULL_LOAD order then waits for every type to fill, and a station
+    // that only ever produces one of them parks the train forever. Returning the real
+    // capacities is what makes that visible at build time instead of ten steps later.
+    local capacities = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      local capacity = GSVehicle.GetCapacity(vid, cargo_id);
+      if (capacity > 0) {
+        capacities.append({
+          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          capacity = capacity
+        });
+      }
+    }
     return { success = true, result = {
       vehicle_id = vid, name = GSVehicle.GetName(vid),
       wagons_attached = wagons_attached, wagons_failed = wagons_failed,
-      refitted = refitted
+      refitted = refitted, capacity_by_cargo = capacities,
+      carries_one_cargo = capacities.len() <= 1
     }};
   }
 
@@ -4243,16 +4520,35 @@ class NttdGS extends GSController {
   }
 
   function CmdStartVehicle(p) {
+    // GSVehicle.StartStopVehicle TOGGLES, so calling this on a vehicle that was already
+    // running stopped it, and answered success with running reported off the wrong state.
+    // Measured: three whole runs scored zero cargo because every train and ship was started
+    // twice, once by the dispatch and once explicitly, leaving all of them parked beside
+    // their depots for the rest of the year while the lines they sat on traced end to end.
+    //
+    // BOTH tests are needed, and neither alone is enough. A vehicle halted ON THE LINE reads
+    // VS_STOPPED and is not in a depot. A vehicle sitting in a depot reads VS_IN_DEPOT and NOT
+    // VS_STOPPED, so a guard on VS_STOPPED alone declares a freshly built vehicle already
+    // running and never starts it: measured as four aircraft that stayed in their hangar for
+    // sixty days while start_vehicle answered already_running.
     local company_mode = GSCompanyMode(p.company_id);
+    local halted = GSVehicle.IsStoppedInDepot(p.vehicle_id)
+                   || GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED;
+    if (!halted) {
+      return { success = true, result = { running = true, already_running = true } };
+    }
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) {
-      return { success = true, result = { running = !GSVehicle.IsStoppedInDepot(p.vehicle_id) } };
+      return { success = true, result = { running = GSVehicle.GetState(p.vehicle_id) != GSVehicle.VS_STOPPED } };
     }
     return this._Refused();
   }
 
   function CmdStopVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    if (GSVehicle.IsStoppedInDepot(p.vehicle_id)) return { success = true, result = { already_stopped = true } };
+    if (GSVehicle.IsStoppedInDepot(p.vehicle_id)
+        || GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED) {
+      return { success = true, result = { already_stopped = true } };
+    }
     if (GSVehicle.StartStopVehicle(p.vehicle_id)) return { success = true, result = {} };
     return this._Refused();
   }
@@ -4271,7 +4567,18 @@ class NttdGS extends GSController {
 
   function CmdCloneVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
-    local depot = GSVehicle.GetLocation(p.vehicle_id);
+    // The depot to build the copy in. GSVehicle.GetLocation is the vehicle's CURRENT tile,
+    // which is a depot only while the vehicle is parked in one, so taking it unconditionally
+    // made this action work solely on a vehicle that had never been started. Growing a fleet
+    // is the whole point of cloning, and a fleet worth growing is already out on the road.
+    local depot = null;
+    if ("depot_tile" in p && p.depot_tile != null) {
+      depot = p.depot_tile;
+    } else if ("depot_x" in p && p.depot_x != null && "depot_y" in p && p.depot_y != null) {
+      depot = GSMap.GetTileIndex(p.depot_x, p.depot_y);
+    } else {
+      depot = GSVehicle.GetLocation(p.vehicle_id);
+    }
     local share = ("share_orders" in p) ? p.share_orders : true;
     local cid = GSVehicle.CloneVehicle(depot, p.vehicle_id, share);
     if (GSVehicle.IsValidVehicle(cid)) {
@@ -4574,6 +4881,79 @@ class NttdGS extends GSController {
     }
     if (from_r == null || to_r == null) return null;
     return { from = from_r, to = to_r };
+  }
+
+  function _ServingStations(loc) {
+    // The company's stations near enough to be collecting here, nearest first.
+    //
+    // Inside a company mode, because GSStationList is EMPTY outside one, exactly as
+    // GSVehicleList is. Reports distance rather than asserting which one wins: catchment differs
+    // by station type, and the useful signal is "more than one of yours is in range", which is
+    // the situation that silently starves the route you just built.
+    local company_mode = GSCompanyMode(0);
+    local found = [];
+    foreach (sid, _ in GSStationList(GSStation.STATION_ANY)) {
+      local stile = GSStation.GetLocation(sid);
+      local distance = GSMap.DistanceManhattan(loc, stile);
+      if (distance > 10) continue;
+      found.append({
+        station_id = sid, name = GSStation.GetName(sid),
+        x = GSMap.GetTileX(stile), y = GSMap.GetTileY(stile),
+        distance = distance
+      });
+    }
+    return found;
+  }
+
+  function _IsLost(vid) {
+    // Reported lost by the game, and not moved since. The lost flag has no "found" event, so it
+    // is cleared the moment the vehicle is somewhere else than where it was when reported.
+    if (!(vid in this._lost_vehicles)) return false;
+    if (GSVehicle.GetLocation(vid) != this._lost_vehicles[vid]) {
+      delete this._lost_vehicles[vid];
+      return false;
+    }
+    return true;
+  }
+
+  function _IdleReason(vid) {
+    // Empty when the vehicle is moving. Anything else names what to do about it: a stopped
+    // vehicle needs starting, one in a depot needs sending out, a lost one needs track or
+    // orders, and one at a station waiting on a full load needs its order flags changed.
+    if (GSVehicle.GetCurrentSpeed(vid) > 0) return "";
+    local state = GSVehicle.GetState(vid);
+    if (state == GSVehicle.VS_STOPPED) return "stopped";
+    if (state == GSVehicle.VS_IN_DEPOT) return "in_depot";
+    if (state == GSVehicle.VS_BROKEN) return "broken_down";
+    if (state == GSVehicle.VS_CRASHED) return "crashed";
+    if (this._IsLost(vid)) return "no_path";
+    if (state == GSVehicle.VS_AT_STATION) return "at_station";
+    return "halted";
+  }
+
+  function _CargoDeliveredTotal(cid, q0) {
+    // Cargo delivered since the run began, banked from quarter 0 rather than read back out
+    // of the game's quarterly history.
+    //
+    // Asking the game does not work. GetQuarterlyCargoDelivered answers quarter 0, the
+    // quarter in progress, and answers 0 for every quarter before it: measured at
+    // 1960-12-15, three quarter ends into a run, quarter 0 gave 1232 and quarters 1 upwards
+    // all gave 0. Summing them scored 0 cargo for a session that had carried thousands.
+    // That is the reverse of GetQuarterlyPerformanceRating, which answers quarter 1 and
+    // refuses quarter 0, so neither one rule covers both.
+    //
+    // Quarter 0 is a sawtooth: it climbs through a quarter and drops to 0 at the boundary.
+    // Every drop is a completed quarter, so banking the reading from just before it and
+    // adding the quarter in progress gives the running total. A 366 day run ends on 1
+    // January, itself a boundary, and the banking is what carries the final quarter across
+    // it: without this the last snapshot of every T1 run reported 0.
+    if (!(cid in this._cargo_banked)) {
+      this._cargo_banked[cid] <- 0;
+      this._cargo_last_q0[cid] <- 0;
+    }
+    if (q0 < this._cargo_last_q0[cid]) this._cargo_banked[cid] += this._cargo_last_q0[cid];
+    this._cargo_last_q0[cid] = q0;
+    return this._cargo_banked[cid] + q0;
   }
 
   function _GetAdjacentTile(tile, direction) {
@@ -5138,10 +5518,21 @@ class NttdGS extends GSController {
     if (!GSEngine.IsValidEngine(eid))
       return { success = false, error = "Invalid engine ID" };
 
+    // Which class of aircraft this is, because it decides whether the plane will CRASH.
+    // A big plane landing at a small airport has a crash chance on every landing, and
+    // nothing else in the reply hints at it: two aircraft lost 98,000 of hulls on commuter
+    // airports before the cause was found in the event log rather than in any query.
+    // -1 for anything that is not an aircraft.
+    local plane_type = -1;
+    if (GSEngine.GetVehicleType(eid) == GSVehicle.VT_AIR) {
+      plane_type = GSEngine.GetPlaneType(eid);
+    }
+
     return { success = true, result = {
       engine_id = eid,
       name = GSEngine.GetName(eid),
       vehicle_type = this._VehicleTypeName(GSEngine.GetVehicleType(eid)),
+      plane_type = plane_type,
       cargo_type = GSEngine.GetCargoType(eid),
       capacity = GSEngine.GetCapacity(eid),
       max_speed = GSEngine.GetMaxSpeed(eid),

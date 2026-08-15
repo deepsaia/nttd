@@ -80,6 +80,13 @@ async def pathfind(
         )
     elif transport_type == "water":
         cost_fn = WaterCostFunction(cache)
+        # A DOCK IS NOT WATER. It occupies a station tile, and the water walker only crosses
+        # water, so both endpoints were rejected and every dock-to-dock plan came back with no
+        # path. Measured between two docks a hovercraft was actively sailing: dock to dock gave
+        # 0 tiles, water to water beside the same pair gave 48. Seven pairs tested, all zero,
+        # three of them in service. So start from the water beside a dock rather than refusing.
+        from_x, from_y = _water_beside(cache, from_x, from_y)
+        to_x, to_y = _water_beside(cache, to_x, to_y)
     else:
         return {"found": False, "error": f"Unknown transport_type: {transport_type}"}
 
@@ -103,3 +110,20 @@ async def pathfind(
         "iterations": result.iterations,
         "estimated_time_ms": round(elapsed_ms, 1),
     }
+
+
+def _water_beside(cache: Any, x: int, y: int) -> tuple[int, int]:
+    """The given tile, or the water next to it when it is a dock.
+
+    Returned unchanged when the tile is already water, so a caller passing open water is
+    unaffected. Only the four orthogonal neighbours are considered, because a ship leaves a dock
+    across an edge and not a corner.
+    """
+    tile = cache.get(x, y)
+    if tile is not None and tile.water:
+        return x, y
+    for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+        neighbour = cache.get(x + dx, y + dy)
+        if neighbour is not None and neighbour.water:
+            return x + dx, y + dy
+    return x, y

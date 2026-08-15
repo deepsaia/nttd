@@ -7,7 +7,7 @@ Read the world. These cost nothing, change nothing, and can be repeated freely.
 The distinction is worth reading once rather than discovering. An agent that submitted `get_hangars` as an action spent two of its five actions on it, never found its hangar, and could then not buy the aircraft it was for.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 46 of 132 actions.
+Part of the [action reference](../action_reference.md). 46 of 133 actions.
 
 ## Contents
 
@@ -28,7 +28,7 @@ Search near a town for places an airport of the given type would fit.
 
 `airport_type` accepts (GSAirport): `AT_COMMUTER` = 5, `AT_HELIDEPOT` = 6, `AT_HELIPORT` = 2, `AT_HELISTATION` = 8, `AT_INTERCON` = 7, `AT_INTERNATIONAL` = 4, `AT_LARGE` = 1, `AT_METROPOLITAN` = 3, `AT_SMALL` = 0
 
-Returns a list of `cargo_acceptance`, `distance`, `height`, `tile`, `width`, `x`, `y`.
+Returns a list of `cargo_acceptance`, `coverage`, `distance`, `height`, `tile`, `width`, `within_coverage`, `x`, `y`.
 
 ### `find_bus_stop_spots`
 
@@ -86,10 +86,15 @@ Returns a list of `cargo_acceptance`, `distance`, `max_height`, `tile`, `x`, `y`
 
 Find a tile near the given one where a rail depot would fit.
 
+Supply one of: `tile` or `x` and `y`.
+
 - `max_results` (integer, default 5) How many results to return at most.
 - `radius` (integer, default 10) How far from the centre tile to search, in tiles.
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
-- `tile` (integer, required) Tile index. Takes precedence over x and y when both are given.
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `town_id` (integer, optional) Which town.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
 
 Returns a list of `adjacent_track_x`, `adjacent_track_y`, `depot_direction`, `distance`, `tile`, `x`, `y`.
 
@@ -121,7 +126,7 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
-Returns a list of `distance`, `tile`, `x`, `y`.
+Returns a list of `depot_direction`, `distance`, `tile`, `x`, `y`.
 
 ### `get_airport_types`
 
@@ -179,7 +184,7 @@ List the companies in the game, with their names, values and performance ratings
 
 Takes no parameters.
 
-Returns a list of `company_value`, `hq_x`, `hq_y`, `id`, `loan`, `max_loan`, `money`, `name`, `performance_rating`, `q0_cargo`, `q0_expenses`, `q0_income`.
+Returns a list of `cargo_delivered_total`, `company_value`, `hq_x`, `hq_y`, `id`, `loan`, `max_loan`, `money`, `name`, `performance_rating`, `q0_cargo`, `q0_expenses`, `q0_income`.
 
 ### `get_company_finance`
 
@@ -203,7 +208,7 @@ Report everything about one engine model: capacity, speed, power, running cost, 
 
 - `engine_id` (integer, required) Which engine model to build. Numbered by the running game and gated by year, so ask get_engines.
 
-Returns `can_refit`, `capacity`, `cargo_type`, `engine_id`, `max_age`, `max_speed`, `max_tractive_effort`, `name`, `power`, `price`, `rail_type`, `reliability`, `road_type`, `running_cost`, `vehicle_type`, `weight`.
+Returns `can_refit`, `capacity`, `cargo_type`, `engine_id`, `max_age`, `max_speed`, `max_tractive_effort`, `name`, `plane_type`, `power`, `price`, `rail_type`, `reliability`, `road_type`, `running_cost`, `vehicle_type`, `weight`.
 
 ### `get_engines`
 
@@ -211,7 +216,7 @@ List engine models that can be bought now. What is available changes with the ye
 
 - `vehicle_type` (string, default "train") One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.
 
-Returns a list of `capacity`, `cargo_label`, `cargo_type`, `id`, `is_wagon`, `max_speed`, `name`, `power`, `price`, `rail_type`, `reliability`, `running_cost`, `weight`.
+Returns a list of `capacity`, `cargo_label`, `cargo_type`, `id`, `is_wagon`, `max_speed`, `name`, `plane_type`, `power`, `price`, `rail_type`, `reliability`, `running_cost`, `weight`.
 
 ### `get_expense_breakdown`
 
@@ -253,7 +258,7 @@ List the industries on the map, with their locations, types and production.
 
 Takes no parameters.
 
-Returns a list of `accepted`, `id`, `is_processing`, `is_raw`, `name`, `production`, `type_id`, `type_name`, `x`, `y`.
+Returns a list of `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `produces_cargo`, `production`, `served_by`, `type_id`, `type_name`, `x`, `y`.
 
 ### `get_industry_info`
 
@@ -283,7 +288,7 @@ Returns `max_x`, `max_y`, `size_x`, `size_y`.
 
 ### `get_map_terrain`
 
-Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume, so a band that did not fit is never mistaken for the whole answer. Reading a whole map is not a reasonable request: 256x256 is over half a megabyte. Where something will actually fit is better asked of the find_ family, which dry-runs the real build inside the game.
+Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable. Bounded by max_tiles at every map size, and the reply says whether it was cut short and where to resume. With occupancy, each tile's flags also carry what is built on it, as bits: 1 water, 2 coast, 4 buildable, 8 rail, 16 road, 32 station, 64 trees, 128 bridge, 256 tunnel, 512 rail RUNNING LINE, 1024 road running line, 2048 depot. A station platform sets the rail or road bit too, so 8 and 16 answer "is there track here" with yes for a platform; 512 and 1024 are track a vehicle can run along and nothing else, which is what a depot has to be joined to.
 
 - `from_y` (integer, default 1) Y coordinate of the starting tile.
 - `max_tiles` (integer, default 4000) How many tiles to report at most. Guards against asking for more than a reply can carry.
@@ -409,7 +414,7 @@ Report one vehicle in detail: where it is, what it carries, its orders, age, rel
 
 - `vehicle_id` (integer, required) Which vehicle.
 
-Returns `age`, `age_left`, `cargo`, `current_speed`, `engine_id`, `has_shared_orders`, `id`, `in_depot`, `is_articulated`, `length`, `max_age`, `name`, `orders`, `profit_last_year`, `profit_this_year`, `state`, `type`, `x`, `y`.
+Returns `age`, `age_left`, `cargo`, `current_speed`, `engine_id`, `has_shared_orders`, `id`, `idle_reason`, `in_depot`, `is_articulated`, `length`, `lost`, `max_age`, `name`, `orders`, `profit_last_year`, `profit_this_year`, `state`, `type`, `x`, `y`.
 
 Each `orders` carries `destination`, `flags`, `index`, `is_conditional`, `is_goto_depot`, `is_goto_station`, `is_goto_waypoint`.
 
@@ -451,7 +456,7 @@ Each `water` carries `x`, `y`.
 
 ### `trace_route`
 
-Whether a vehicle can travel from one tile to another over track that already exists. This is not the same question as the feasibility check in /state/path, which plans a NEW line and routes around occupied tiles, so it reports no path once a line is standing. Answered by walking the game's own connectivity, so it is the authority on whether a built route will actually carry anything. Rail and road only: a ship travels over open water.
+Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal.
 
 Supply one of: `tile_from` or `from_x` and `from_y`.
 

@@ -2,12 +2,30 @@
 
 Working notes for the five neuro-san networks: one per transport mode, plus a combined one.
 
-**Status, stated plainly.** One session was played on seed 581017999 (T1 stepped, 256x256 flat),
-and it did not reach a running train. The nine remaining sessions have not been played. What is
-below is what the attempt taught, and the findings are the point: every trap here is one an
-agent network has to survive, and each was found by hitting it rather than by reading code.
+**Status.** Three sessions played to completion or near it, on three different worlds. Road now
+earns reliably; rail builds, verifies and loads but stalls; air and water are untested. Seven
+sessions remain. Every finding below was hit rather than read.
 
-Two nttd bugs were found and one is already fixed. See "Bugs found while playing".
+    road, rule-based baseline   seed 19566827   score 58   value 28,326   41 actions
+    road, hand-played           seed 19566827   score 52   value 60,377  115 actions
+    rail, hand-played           seed 1780227570 line verified, train loaded, then stalled
+
+Four nttd bugs were found and three are fixed. See "Bugs found while playing".
+
+## 0. The result that changed the strategy
+
+Hand-playing road MORE THAN DOUBLED company value, 28,326 to 60,377, and the score went DOWN,
+58 to 52. That is worth stating plainly because it inverts the obvious plan.
+
+Why, from the rating's own weights: 40 percent is ANNUAL CARGO DELIVERED, and buses on 20 to 37
+tile routes deliver slowly however many you buy. Drawing the full loan forfeits the 5 percent
+"no loan" component outright. Thirty vehicles dilute the 10 percent "profitable vehicles" share
+while the newest are still paying themselves off.
+
+**So the objective for every network is cargo UNITS DELIVERED, not fleet size and not company
+value.** That favours short dense routes, high capacity per vehicle, and cargo that regenerates
+fast. It is why rail on a 12 tile oil run is a better shape than road on a 37 tile passenger run,
+even though road is far easier to build.
 
 ---
 
@@ -63,6 +81,8 @@ These are the ones that cost time. Every one belongs in a coded_tool so no agent
 | Occupancy is opt-in | Without `occupancy: true`, flags carry only water/coast/buildable. Decoding with rail/road/station bits reads **trees as rail** | Always pass `occupancy: true` when asking where track is |
 | Row width | Rows are **254** wide on a 256 map, with no `from_x` | x = index + 1. The void edges are excluded |
 | Step response key | `action_results`, not `results` | Reading the wrong key hid a partial build entirely: the step looked silent and successful |
+| `order_flags: 64` | `OF_FULL_LOAD` means full load of **every** cargo the consist can carry. A train that can hold two cargo types at a station producing one waits forever | Use `96` (`OF_FULL_LOAD_ANY`) or `0`. Only use 64 when the consist carries exactly one cargo |
+| `build_train` refits the engine | A refit skips any vehicle that cannot take the cargo, so a mismatched `cargo_id` silently leaves a **mixed consist** | `build_train` now returns `capacity_by_cargo` and `carries_one_cargo`. Assert `carries_one_cargo` before ordering with a full-load flag |
 
 ---
 
@@ -98,9 +118,506 @@ route I intend to build arrive at a usable end". Those are different questions a
 them.
 
 **Always verify with `trace_route` after connecting.** `connect_rail` returning `partial` is
-informative, but a `success` is not proof a train can run: `trace_route` walks the game's own
-connectivity and is the authority. `check_connection` answers a different question again, whether
-a NEW line could be built, and reports no path once a line stands.
+informative, but a `success` is not proof a train can run. `check_connection` answers a different
+question again, whether a NEW line could be built, and reports no path once a line stands.
+
+**But `trace_route` is necessary, not sufficient, for rail.** I wrote in an earlier pass that it
+"is the authority". A live session disproved that. Station to station, `trace_route` returned
+`line_exists: true` over 16 reachable tiles, and the train still left its platform, ran three
+tiles, and stopped dead: `state: 0` (running), `current_speed: 0`, unmoved across twelve stepped
+days, profit sliding from -176 to -222 on running costs alone. Tracing from the tile the train
+actually stood on returned `line_exists: false, tiles_reachable: 1`.
+
+So the two walkers disagree, and OpenTTD's train pathfinder is the one that decides whether the
+company earns. The operational rule that follows:
+
+    verify with trace_route BEFORE buying, then verify the train MOVED after starting it.
+    A vehicle whose position is unchanged across several steps is a failed route, not a slow one.
+
+That second check is cheap, it is a read, and no amount of build-time verification replaces it.
+Every network needs it as a standing watch, not a one-off assertion.
+
+---
+
+## 4b. The rail session, played move by move
+
+Seed 677471231, T1 stepped, 256x256 flat. Three routes built and running by day ~180. Every
+number here was measured in that session.
+
+**Choose the route on revenue, not distance.** The five candidate pairs, priced with
+`get_cargo_income` at their own distance against the source's `last_month` production:
+
+| pair | dist | production | income/unit | revenue/month |
+| --- | --- | --- | --- | --- |
+| Forest -> Sawmill | 40 | 128 | 24 | **3,072** |
+| Farm -> Factory (GRAI) | 27 | 80 | 15 | 1,200 |
+| Farm -> Factory (LVST) | 27 | 72 | 13 | 936 |
+| Forest -> Sawmill | 24 | 64 | 14 | 896 |
+| Farm -> Factory (GRAI) | 24 | 56 | 13 | 728 |
+
+The shortest pair was worth a quarter of the longest. Income per unit rises with distance, so
+the road builder's rule that short beats long is a ROAD rule and inverts for rail. Picking the
+nearest pair, which is what the mode builder used to do, throws away most of the map's value.
+
+**Every steel mill showed production 0.** Processing industries produce nothing until something
+feeds them, so a pair ranker that reads only "produces this cargo" will confidently choose a
+route with no cargo on it. Filter on `last_month > 0`.
+
+**Only one locomotive exists at rail type 0 in 2020,** the 'Dash' diesel, and it carries 80
+passengers of its own. So the mixed consist that deadlocked the earlier session is not an
+unlucky choice, it is the DEFAULT: any wood or grain train built with this engine has a
+passenger hold unless the whole consist is refitted. Passing `cargo_id` to `build_train` refits
+the engine too, and `carries_one_cargo: true` in the reply proves it at build time. Capacity
+came out 140: 20 in the refitted engine plus 4 wagons at 30.
+
+**A rail depot needs a junction piece, and the finder will not give you one.** Three depots,
+same recipe each time:
+
+    find flat ground (slope 0) beside the line -> build_rail_depot facing it
+      -> build_rail_track on the NEIGHBOUR with the curve that touches the depot's edge
+      -> the build reply's own `connected` flag tells you whether it worked
+
+`connect_rail` cannot do this job: it lays rail on both endpoints, so aimed at a depot tile it
+returns ERR_AREA_NOT_CLEAR against the depot it is trying to reach. The direction bits matter,
+and the mapping is worth writing down once: **x+ is SW, x- is NE, y+ is SE, y- is NW**. A depot
+on the far side of a tile in the x+ direction needs that tile to carry `RAILTRACK_NW_SW` (16)
+or `RAILTRACK_SW_SE` (8). Building one of the pair usually reports the other ALREADY_BUILT,
+which is fine.
+
+**`find_rail_depot_spot` searches a radius and does not care which line it finds.** Asked for a
+depot near the grain station at (145,116) with radius 8, it returned ground beside the WOOD
+line at (144,125). The depot built, reported `connected: true`, the train built and started, and
+then sat still forever: it was on the wrong network and had no path to its own stations. It cost
+21,000 and could not even be sold, because selling requires the vehicle to be in a depot and it
+could not reach one. `send_to_depot` answered ERR_UNKNOWN. **Verify the depot reaches the
+route's own two stations before buying anything to put in it.**
+
+**Full load is a throughput decision, and it goes both ways.** Measured on the same day:
+
+- Wood route, production 128/month against capacity 140. Partial loads carried 44 per trip and
+  delivered 88 in 50 days, with 66 units piling up at the station. Switching order 0 to
+  `OF_FULL_LOAD_ANY` (96) made every trip carry a full 140. Train profit went 1,987 -> 11,725.
+- Grain route, production 56/month against the same capacity 140. The same flag starved it: the
+  train sat at the farm absorbing grain as it appeared, waiting for a full load it would need
+  two and a half months to reach, and showed profit **-231**. Dropping to flags 0 turned it to
+  **+1,132** within 25 days.
+
+So the rule is not "use full load". It is: **full load pays when the source fills the train
+within one round trip, and starves the route when it cannot.** Compare `last_month` production
+against consist capacity and the cycle time before choosing.
+
+**Single track caps a route at one train.** Unsignalled track has no protection, so scaling rail
+is more ROUTES, not more vehicles on a route. That inverts the road lesson again, where cloning
+a proven bus onto a proven route is the cheapest possible growth.
+
+**Water breaks corridors, and `connect_rail` will not use a bridge you built for it.** The first
+grain pair failed on ERR_TUNNEL_CANNOT_BUILD_ON_WATER at (186,194). `build_bridge` spanned the
+three water tiles successfully, and the next `connect_rail` re-planned from scratch, ignored the
+bridge, and hit water two tiles away at (188,195). Connecting each leg to a bridge end instead
+failed the other way, because a bridge ramp is not clear ground. Abandoning that pair for an
+inland one cost less than fighting it, and that is the general lesson: a corridor that needs
+water works is worth a lot less than its revenue table suggests.
+
+**Drawing the loan destroys reported company value.** Value is assets minus debt, so taking
+300,000 to fund routes took value to **1** while the rating climbed. Both are scored, and the
+rating charges 5 percent for carrying a loan. The plan that follows is to borrow early, spend
+it on cargo capacity, and repay what cash allows before the run ends.
+
+---
+
+## 4c. The second rail session: ranking routes properly, and four ways a depot fails
+
+Seed 1716811708. The route ranker from session 4b was wrong, and fixing it changed everything.
+
+**Revenue per month is the wrong ranking.** Priced naively, this map's best pairs were 189, 272
+and 225 tiles long at 135 to 176 per unit, showing 18,000 to 20,000 a month. All fantasy: at a
+measured **3.3 tiles per game day**, a 189 tile route is a 114 day round trip, so it completes
+three trips a year and delivers 420 units. Ranking by what can actually be carried:
+
+    cycle_days   = 2 * distance / 3.3 + 6      (6 days of loading and unloading, measured)
+    trips_a_year = 366 / cycle_days
+    deliverable  = min(production_a_month * 12, consist_capacity * trips_a_year)
+
+That reordered the board completely. The top pair became a 31 tile wood run at 1,824 units a
+year, and the best long candidate fell to 420. **Distance raises income per unit and lowers
+throughput, and throughput wins**, because cargo delivered is 40 percent of the rating and the
+leaderboard tiebreak is cargo. The naive ranking would have bought a 272 tile oil route.
+
+**A station platform sets the RAIL bit.** Flags 40 is rail|station. Treating "bit 8 is set" as
+"this is running line" put a depot against a platform, where no track piece can ever be added:
+every curve answered ERR_AREA_NOT_CLEAR, the depot never joined, and the train sat in it. Test
+`flags & 8 and not flags & 32`.
+
+**Speed is not movement.** The train in that unjoined depot reported `current_speed` cycling
+0, 39, 21, 0, 36 across eight days while `x,y` never left (95,188). It was rocking inside the
+depot. A movement check that samples speed passes this; one that samples POSITION catches it.
+That is the check worth wiring into every network.
+
+**Ground beside a line is not necessarily buildable.** Tree tiles report flags 0, and
+`build_rail_depot` answers "this tile is not buildable, so it must be cleared or levelled
+first". They are still usable, at the cost of a `demolish_tile` first, so they belong in a
+fallback tier rather than being filtered out: requiring the BUILDABLE bit reported "nowhere
+flat beside a line within 20 tiles" while the line had level ground on both sides.
+
+**Do not re-issue a build to re-read its status.** `build_rail_depot` returns a `connected`
+flag, but issuing it a second time answers ERR_ALREADY_BUILT with no flag, so a helper that
+re-built to confirm never saw success and walked on to build a second, third and fourth depot.
+
+**Failed actions cost what successful ones cost.** 15 of this session's first 38 actions failed,
+14 of them one helper firing both candidate curve pieces at six candidate spots. A helper must
+read the state and commit, not spray attempts: the action budget is scored, and a run that
+spends 40 percent of it on predictable refusals has thrown that much away.
+
+**Two stations on one industry: the older one takes everything.** The clearest single finding of
+the session, and the reason the wood route earned nothing for 120 days. A first, abandoned
+attempt had built a station at (94,189); the retry built another at (93,190), one tile away, and
+the train served the second. At day 738019:
+
+    station 0 (94,189)  WOOD waiting 422, rating 27     <- nobody served it
+    station 2 (93,190)  nothing waiting                 <- the train's actual stop
+
+An industry delivers to ONE station, and it is not necessarily the newest or nearest. The train
+ran its route correctly, at speed, on a verified line, with a correct consist and a sensible load
+flag, and carried nothing, because the cargo was accumulating four tiles away. Re-pointing the
+orders at station 0 fixed it.
+
+Two consequences for the networks. First, a failed build attempt must be CLEANED UP, not
+abandoned in place: leftover stations poach the cargo of the route that replaces them. Second,
+the health check every network needs is not "is the vehicle moving" but **"is the station my
+vehicle serves accumulating cargo"**. Three distinct failure modes now, each invisible to the
+one before it:
+
+    line verified        -> says nothing about whether a vehicle can path it
+    vehicle moved        -> says nothing about whether it is carrying anything
+    station accumulating -> says nothing about whether MY vehicle is the one collecting
+
+**The result: better analysis, worse score.** Session 4b scored 35 on 4 vehicles with 324 units
+per vehicle. Session 4c, with the corrected route ranker, scored **18** on 5 vehicles with 112
+units per vehicle. The ranking was right and the execution was not: the largest route was
+starved by the duplicate station for the first 120 days, and two trains sat dead. Analysis buys
+nothing that execution does not deliver, which is the argument for making the three health
+checks above automatic rather than remembered.
+
+Final shape: three routes running (wood 31t, oil 50t, iron ore 33t), one abandoned when its
+train failed the movement check. Only the oil route earned from the start, at 7,663 by day 120;
+the other two were each losing money for a diagnosable reason rather than a mysterious one.
+Abandoning the dead route cost one train; not checking would have cost the train AND the rest
+of the run's attention.
+
+---
+
+## 4d. Road, measured properly: saturation is the whole story
+
+Two earlier bus sessions plus a third on a fresh seed. The two earlier ones scored 58 and 52,
+the best of any mode, and their recovered cargo figures explain why: **1,573 and 3,526 units**
+delivered against rail's best of 1,297. Buses on short town pairs are the strongest mode for the
+metric that carries 40 percent of the rating.
+
+Note on those two: they share seed 19566827, so they are two runs of ONE world, not two worlds.
+Useful for comparing strategies, useless for showing a strategy generalises, which is why a
+third was played on a fresh seed.
+
+**A two stop town pair saturates at three or four buses.** The sharpest number in the session.
+Ten buses on Gretown (3,552) to Gonthill (715), 31 tiles:
+
+    profits after 50 days: -155 -155 -110 -105 -77 -77 -43 | 376 529 679
+    stops drained to 3 and 8 waiting passengers, ratings 74 and 78
+
+Seven of ten lost money. They were not broken; there was simply nothing left to carry. High
+station ratings are the tell: a rating of 78 with 8 passengers waiting means the service is
+faster than the town produces. So the growth lever for road is the same as for rail, more ROUTES,
+and the counter-intuitive part is that adding buses to a good route actively lowers the score by
+dragging the profitable-vehicles share down.
+
+**A clone arrives stopped.** `clone_vehicle` copies the order list but not the running state.
+Three cloned buses sat in the depot at exactly 0 profit for 45 days, each with a correct
+two-order list, while the original earned 222. Nothing reports it: they are parked, not failed.
+Every clone needs a `start_vehicle` behind it.
+
+**A corridor needing a bridge did not verify, and I blamed the wrong thing.** `plan_route`
+(then called `check_connection`) returned `work: {move: 12, build_road: 14, build_bridge: 1}` for
+a 29 tile corridor; the roads went in, the crossing did not, and the route was dead. I recorded
+this as "build_path does not build bridges". **That was wrong.** Reading the handler afterwards:
+build_path has always had a `build_bridge` branch, it reports every failed step in `failed`, and
+it returns `status: "partial"` with `success: false` when any step fails.
+
+Two real faults, neither the one I wrote down. The first is mine: my builder called build_path,
+ignored the reply entirely, and inferred the failure from a later connectivity check. The answer
+was in the response I threw away. The second is nttd's: the bridge branch hardcoded **bridge type
+0**, and bridge availability depends on span and year, so on a wide crossing no bridge could be
+built at all. Now fixed to ask `GSBridgeList_Length` which types span the gap and try them in
+turn, reporting the span and how many were tried when none works.
+
+The lesson that survives is smaller and sharper than the one I recorded: **read the reply**. A
+build that reports `partial` has told you exactly which step failed and why.
+
+**Population over distance is the right pair ranking for road**, and it inverts rail's. Road
+income per unit barely moves with distance while trip time does, so short and dense wins. The
+same map's best rail route was 31 tiles and its best road route 31 tiles for opposite reasons.
+
+---
+
+## 4e. Water, twice: the mode with the fewest failure modes and the sharpest economics
+
+Two sessions, seeds 1526769347 and 1560904169, scoring **38** and **29**. The first is the best
+of any single-mode run so far, and both finished with **every action succeeding** (55/55 and
+57/57) because water needs no track, no depot junction, and no station orientation.
+
+**SPEED BEATS CAPACITY, and it is not close.** The finding of the programme. Same map, same
+routes, same day:
+
+    hovercraft  100 capacity, 112 km/h, 28,183 to buy, 3,117/yr to run   +3,358 and +2,923
+    ferry       130 capacity,  64 km/h, 21,328 to buy, 1,312/yr to run   +658 down to -389
+
+Payment decays with transit time, so trips per year dominates load size. Buying two hovercraft
+took the rating 19 -> 32 on their own. The second session then found the limit: **twelve
+hovercraft at 3,117 a year is 37,000 of running cost**, which pinned cash near 20,000 for the
+last 150 days and made further growth impossible. Speed is worth paying for per vehicle and
+ruinous per fleet, so the count has to be sized against income, not against ambition.
+
+**A HUB REUSES ONE DOCK; IT DOES NOT BUILD A SECOND.** The anti-poaching lesson from rail,
+applied deliberately: the second route out of Slarnway used the EXISTING dock as its origin
+rather than building another one at the same town. One depot, one hub, many spokes. No station
+ever competed with another for the same town's passengers.
+
+**There are separate seas, and nothing tells you except a plan.** Session two had seven docks
+that looked like one network. The sailability matrix, built from water-to-water plans:
+
+    docks 0,1,2,3  interconnect,  46 to 131 tiles,  0 canal tiles
+    docks 4,5,6    interconnect,  12 to  60 tiles,  0 canal tiles
+    0..3 <-> 4..6  17 to 18 canal tiles required   -> NOT sailable
+
+A ship built in the eastern depot and ordered to a western dock left its depot, reported
+`current_speed` above zero, passed the movement check, and could never arrive. **The movement
+check does not prove reachability across disconnected water.** Serving the west needed its own
+depot in the western sea, which is why only 10 of 14 towns having a depot spot matters so much.
+
+**`check_connection` for water cannot be called dock to dock.** Measured on a route that had a
+hovercraft earning 924 on it:
+
+    dock  -> dock    tiles 0,  work {}
+    water -> water   tiles 46, work {move: 46}, can_build true
+
+A dock is a STATION tile and the water cost function walks water tiles, so both endpoints are
+rejected. Seven pairs tested, all zero, three of them being actively sailed. Filed as #96. The
+rule for the networks: **plan between the water tiles ADJACENT to the docks, never between the
+docks.** And since the water planner will route through land by costing canals, "a path exists"
+is not "sailable": require `work` to contain no canal, lock or terraform entry.
+
+**Only one town on a 256x256 map had a ship depot spot, and that was nttd's bug, not the map's.**
+`find_water_depot_spots` dry-ran `BuildWaterDepot(tile, tile + 1)` only, the eastern neighbour,
+so every north-south stretch of water was rejected. A depot occupies two tiles and the
+orientation has to be searched. Fixed to try all four and to return `depot_direction`, since
+`build_water_depot` takes one: **1 of 16 towns before, 10 of 14 after**, with the working
+orientation a mix of 0 and 1. Water mode was close to unplayable on maps whose channels happen
+to run the wrong way, and it would have looked like bad luck with the seed.
+
+**Redeploying beats scrapping.** Two ships losing 1,657 and 688 on weak spokes were re-ordered
+onto the strongest route rather than sold: quarterly income went 3,337 -> 9,277. A vehicle is
+capital that is already paid for, and an order list is free to rewrite.
+
+---
+
+## 4f. Air, the dominant mode, and the one measurement that decides it
+
+Seed 1404719626. **Score 153**, against a previous best of 58 across every other mode, on 5
+aircraft and 12 airports, delivering roughly 3,596 units. Rating peaked at 146 where no other
+session exceeded 38. Air is not marginally better; it is a different order of result.
+
+**AIRPORT COVERAGE IS TINY, AND THAT IS THE WHOLE GAME.** A commuter airport has coverage 4.
+`find_airport_spots` searched with radius 18 and returned spots 16 to 28 tiles from the town
+centre, which are outside their own catchment. Measured after 105 days on four such airports:
+
+    Flarnfield  population 4,379  airport 16 tiles out   1 passenger waiting
+    Invedingstone       3,385     airport 28 tiles out   nothing
+    Ponston             1,937     airport  3 tiles out   28 waiting   <- the only one working
+    quarterly income 25, cargo delivered 3, all four aircraft losing 1,000 to 2,300
+
+Rebuilding the same airports close in, searching radius 3 to 7 instead of 18:
+
+    Flarnfield close-in airport, 7 tiles out:  358 passengers and 150 mail waiting
+    quarterly income 25 -> 38,467 -> 131,740   cargo 3 -> 395 -> 1,413
+
+So the rule is not "find somewhere an airport fits". It is **site inside the coverage radius, and
+prefer a bigger airport type only when nothing fits close**. Distance to the town centre is the
+single number that decides whether an air route earns anything at all, and the finder will not
+rank by it: it sorts by cargo acceptance first, so a large radius buries the useful answer.
+
+**The hangar is not the airport tile.** `buy_vehicle` at the airport's own reported x,y fails
+ERR_UNKNOWN, four times in a row, with nothing pointing at the cause. Aircraft are built in a
+hangar, which sits elsewhere inside the footprint: for a 5x4 commuter airport reported at
+(38,210), the hangar is at (42,210). `get_hangars` returns the mapping for every airport owned,
+and is the only way to learn it.
+
+**Airport type 0 does not exist in 2020.** The game offers ids 1 to 8, and `find_airport_spots`
+defaults to 0, so the default search dry-runs an unavailable airport at every tile and reports
+nothing. Only {1, 3, 4, 5, 7} take aeroplanes; 2, 6 and 8 are helipads, so building one and then
+buying a plane leaves the plane with nowhere to land.
+
+**Air rewards distance, inverting road and matching nothing else.** There is no per-tile
+infrastructure, so a 427 tile route costs exactly what a 40 tile route costs to build, while
+payment per unit rises with distance and a 236 km/h aircraft still completes many trips. The
+best routes here were 350 and 427 tiles. Compare: road wants short and dense, rail wants a
+middle distance sized to its production, water wants short because ships are slow.
+
+**One aircraft carries two cargoes.** The Dinger 200 holds 400 passengers AND 80 mail, so every
+route contributes to cargo diversity without any extra vehicle. Nothing else in the game gives
+that for free.
+
+**The vehicle choice is not close.** Ranked by capacity per unit of running cost:
+
+    Dinger 200    400 cap, 236 km/h, 49,218, run 6,975   -> 0.057
+    AirTaxi        75 cap, 236 km/h, 32,812, run 3,656   -> 0.021
+    Dinger 1000   130 cap, 579 km/h, 164,062, run 7,059  -> 0.018
+
+The fastest aircraft is the worst buy. This is the opposite of the water finding, and the
+reconciliation is that speed matters until trips stop being the constraint: a ship at 64 km/h is
+trip-limited, an aircraft at 236 km/h is not, so capacity takes over.
+
+**Air is capital-hungry and can bankrupt you mid-build.** Minimum cash across the run was
+**2,129**, with five aircraft each costing 6,975 a year to run. The danger window is exactly the
+period when airports are built and aircraft bought but routes have not yet returned a full
+delivery cycle. Every other mode has a gentler failure curve.
+
+**Air, second run (seed 1544821107): score 111, and the siting rule transfers.** Every airport
+was sited close-in from the start, ranking candidates by population divided by distance to the
+town centre rather than by whether one fitted. The difference that made:
+
+    session 1  four airports 16-28 tiles out, then rebuilt close   score 153, min cash  2,129
+    session 2  six airports sited close from the start             score 111, min cash 27,686
+
+Session 2 scored lower and was never in danger. Session 1 scored higher because rebuilding gave
+it twelve airports against six, so more towns were served, but it spent 105 days earning nothing
+and came within 2,129 of bankruptcy. **35 of 36 actions succeeded**, the cleanest run of the
+programme, because no build was speculative.
+
+Air still ramps slowly: 60 days of loaded flights before the first quarter of real income, and
+both runs showed the same curve of income near zero, then tens of thousands, then over a hundred
+thousand a quarter. A network that judges a route in its first 50 days will kill every air route
+it builds.
+
+---
+
+## 4g. Both combined runs, and the trap that cost three aircraft
+
+Seeds 662166489 and 362700556, scoring **92** and **130**. The second is the highest cargo total
+of the whole programme, 4,952 units, and the second highest score.
+
+**BIG PLANES CRASH AT SMALL AIRPORTS, and nothing in the surface said so.** The most expensive
+finding here. Combined run 1 lost **three Dinger 200s**, roughly 150,000 of hulls, to bare
+`vehicle_crashed` events with no detail. OpenTTD gives a big plane a crash chance on every
+landing at a small airport, and the commuter airport is small. `get_engine_details` returned
+capacity, speed, price and running cost, and no field describing the plane's class at all, so
+the trap sits exactly where the optimiser lands: the Dinger 200 IS the best aircraft by capacity
+per running cost, and the commuter IS the cheapest airport that fits.
+
+Fixed by exposing `plane_type` on `get_engines` and `get_engine_details` (0 helicopter, 1 small,
+3 big, -1 for the rest); `GSAirport` already published `PT_BIG_PLANE` and `AT_COMMUTER` in
+enums.json, so only the per-engine field was missing. Filed as #97 for the remaining half: the
+crash event should name what died and where.
+
+**The plane class choice is a real trade, and catchment breaks the tie.** With the field visible,
+run 2 could reason about it:
+
+    big plane   eff 0.057 capacity per running cost, needs a LARGE class airport
+    small plane eff 0.023, safe at a commuter airport
+
+On that map a LARGE airport fitted no closer to Plonhill than a commuter one, 11 tiles either
+way, so going large would have cost nothing in catchment and gained safety. It was a coin flip,
+and I took small planes at close commuter airports. Result: **11 vehicles alive at the end, zero
+crashes**, against run 1's three write-offs, and a higher score despite one third the capacity
+per plane. The lesson generalises as: match the plane class to the airport class deliberately,
+and when the two airport classes site equally far out, the large one is free safety.
+
+**ENGINE AVAILABILITY EXPIRES MID-RUN.** Five aircraft were bought on day one with engine 237.
+Two hundred days later the same call answered "this engine cannot be bought in the current year"
+(ERR_PRECONDITION_FAILED), and two growth waves bought nothing at all before I read the error
+rather than the count. A T1 run crosses a year boundary and models retire on it. **Re-query
+`get_engines` at every purchase; never cache an engine id across a run.** This is invisible if
+a builder checks only whether the fleet grew, which is what mine did.
+
+**The mode order that worked.** Air is the revenue backbone and everything else is support:
+
+    air    the earner, but 60 to 140 days before the first real quarter of income
+    water  cheap, safe, immediate, and the only leg earning during air's ramp
+    road   fast to revenue when towns are close, worthless when they are not
+    rail   the most work per unit delivered; last, if at all
+
+Run 1 nearly died of this: 197,000 on aircraft plus 30,000 on airports plus a hovercraft took
+cash to **2,805** while air had not yet ramped. It recovered to 56,709 within 35 days and both
+planes went from -2,561 to +49,950. **The water leg is what kept it solvent**, and on a combined
+run that is its job: not the biggest earner, the one that pays during the gap.
+
+---
+
+## 4h. What nttd still cannot tell an agent
+
+Eleven sessions produced a list of gaps that are not strategy problems. Each one cost real money
+or real days, and each is invisible from inside the surface.
+
+**THE BIGGEST GAP: nothing says a vehicle is stuck.** A vehicle with no path halts. Queried, it
+reports `state: 0` (running) and `current_speed: 0`, which is identical to one waiting at a
+signal or loading. Worse, a train rocking inside an unjoined depot reported speeds of 0, 39, 21
+and 36 across eight days while never leaving its tile. The only detection available is polling
+position across several steps and inferring, which costs steps and is what a contestant is
+scored on. OpenTTD knows a vehicle is lost. The surface should say so.
+
+**Nothing says which station serves an industry.** An industry delivers to exactly one station,
+and it is not necessarily the nearest or newest. A leftover station four tiles away silently took
+422 units of wood while the served station showed nothing, for 120 days. There is no query for
+"which station collects here", so the failure is only visible by noticing that cargo accumulates
+somewhere you did not build.
+
+**The finders are inconsistent, and two of them actively mislead.**
+
+| finder | problem |
+| --- | --- |
+| `find_rail_depot_spot` | demands `tile`; every sibling takes `town_id` or x/y. Returns spots beside a DIFFERENT line, with no way to ask for the line serving two given stations. Cost 21,000 and an unsellable train |
+| `find_airport_spots` | sorts by cargo acceptance, so a wide radius buries the close-in spot that decides everything. Reports no coverage radius, and defaults to airport type 0, which does not exist after 1950 |
+| `find_water_depot_spots` | tested one orientation of two, so 1 of 16 towns had a spot where 10 of 14 do. Fixed |
+| `find_dock_spots` | fine, but the docks it returns cannot be passed to `check_connection` |
+
+**Two "verify before you spend" checks do not verify.** `trace_route` gives false positives AND
+false negatives on rail: it passed a route no train could run, and failed a depot the game itself
+reported as connected. `check_connection` for water returns no path between any two docks,
+because a dock is a station tile and the walker only crosses water. Both are the documented
+pre-flight check. Filed as #95 and #96.
+
+**`connect_rail` re-plans from scratch and will not use a bridge built for it**, hitting water
+two tiles away instead. (The neighbouring claim I made here, that `build_path` skips bridges, was
+wrong and is corrected in section 4d: it builds them, and it reports what failed.)
+
+**Three things expire or change without warning.** Engine availability retires mid-run
+(ERR_PRECONDITION_FAILED on an id bought 200 days earlier). Airport type 0 does not exist in
+2020. Only one locomotive exists at rail type 0, and it carries passengers, so every freight
+train is a mixed consist unless the whole thing is refitted.
+
+**A crash is reported as nothing.** `vehicle_crashed` carries no vehicle, no location, no cause.
+Three aircraft and roughly 150,000 disappeared behind two such events, and the reason (a big
+plane landing at a small airport) was not discoverable from any query until `plane_type` was
+added. Filed as #97.
+
+**Terrain flags conflate a station with track.** Flags 40 is rail|station, so "where is the
+running line" cannot be answered with `flags & 8`. A depot placed against a platform can never
+be joined, and every attempt returns ERR_AREA_NOT_CLEAR without saying why.
+
+**Depots are not reported at all.** OpenTTD does not treat a depot as a station, so nothing in
+the snapshot lists them. An agent that loses track of where it built one cannot ask.
+
+### The actions worth adding
+
+Ranked by what they would have saved across these eleven runs:
+
+1. **`get_vehicle_status`, or a `lost` flag on `get_vehicle_info`.** The single highest value
+   addition. It converts the most expensive failure mode from "poll and infer" into one read.
+2. **`get_industry_station`, or `served_by` on `get_industries`.** Removes the whole
+   station-poaching class of failure.
+3. **`connect_depot`.** The depot junction recipe is four actions, a direction-bit mapping and
+   a slope check, and it is pure mechanism. It belongs in the game, not in every agent.
+4. **Coverage on the airport and station finders.** The number that decides an air route's
+   income is not in the reply that chooses the site.
+5. **A rollback for a failed build.** Abandoning a half-built route leaves stations that poach
+   cargo from the route that replaces them, so "undo what I just tried" is a real need.
 
 ---
 
@@ -127,10 +644,30 @@ abandoning is a real option, because a partial line blocks the corridor.
 
 ### Road network
 
-Untested. Expected to be far more forgiving: bus and truck stops are single tiles, so there is no
-platform orientation problem and no curve continuity problem, which are precisely the two things
-that defeated rail. Likely the fastest mode to first revenue and therefore the right first
-network to build.
+Played, and it earned nothing. The prediction that road would be forgiving was HALF right and
+the wrong half mattered.
+
+What went right, and it is a real advantage: `check_connection` reported 25 tiles of which only
+**6 needed building**, because towns arrive with roads. Two stops plus a depot plus the road cost
+about 16,000 of the opening 100,000, and every build returned `success`.
+
+What went wrong: after 60 game days the bus had carried nothing. `q0_income` 0, expenses -522,
+vehicle profit -188, both stations `rated: False` with 17 and 7 passengers waiting. The cause,
+found with `trace_route` from the stop tile: **`tiles_reachable: 1`**. The stop was connected to
+nothing. The bus sat at the depot tile burning running costs.
+
+So the lesson generalises past rail, and it is the single most important one for every network:
+
+**A `success` from a build action is not a route. `connect_road` and `build_road_stop` both
+succeeded while leaving a stop the vehicle could not reach.** Verify with `trace_route` and
+require `tiles_reachable` greater than 1 before buying a vehicle, in EVERY mode. Rail failed
+visibly, with a partial and a discontinuity message; road failed silently, which is worse.
+
+Still unresolved on this route: why the stop is isolated when `find_bus_stop_spots` reported
+`adjacent_road_count: 1` at (179,223) and `connect_road` then reported success along that tile.
+Candidates are the bay's facing, the depot at (180,222) taking the access tile, or the connect
+having routed elsewhere. Worth resolving before the road network is designed, because it decides
+whether the tool must place the stop before or after the road.
 
 ### Air network
 
@@ -195,6 +732,42 @@ would assume.
 
 ---
 
+## 6b. What the second and third sessions added
+
+**Roads work end to end now.** Three routes verified out of five attempted on one map, so expect
+around 50 percent attrition on road corridors and plan surplus candidates. The two that failed
+cost nothing but a plan and a build_path, because the verify gate ran before any vehicle spend.
+
+**The map dictates the strategy, so no distance rule survives contact.** Seed 19566827 had NO
+town pair closer than 20 tiles, so "prefer 6 to 14 tiles" selected nothing and had to widen on
+the spot. A pair ranker must adapt its band to the world rather than carry a constant.
+
+**Idle cash is a real cost.** Borrowing the full 300,000 early left 150,000 sitting for about a
+hundred game days paying interest against nothing. Borrow late, deploy immediately, and only
+against a route already carrying.
+
+**Rail siting by approach works.** Deriving the axis from the planned corridor and then asking
+for a spot whose valid_directions contains it produced a line that verified FIRST TRY, where
+siting by distance had failed three separate ways. Of 14 spots offered at each end, 8 and 7
+respectively faced the needed axis, so the constraint is cheap to satisfy once it is asked for.
+
+**Rolling stock is gated by rail type, and the default is wrong.** In 2020 the engine list is
+dominated by maglev and monorail: of 40 train engines, only 12 are rail_type 0, which is what
+connect_rail builds by default. The only conventional loco is the Dash at 120 km/h. An agent that
+picks the fastest engine gets a maglev that cannot run on the track it just built. Either choose
+the engine first and build that rail type, or filter engines by the rail type actually laid.
+
+**build_train exists and is the right tool.** Buying a loco and then wagons separately half
+worked: the loco and one wagon appeared, three more wagons failed, and nothing was attached.
+build_train takes engine_id, wagon_id, num_wagons and cargo_id and assembles the whole thing.
+
+**Unresolved, and the next thing to fix.** The oil train loaded 150 units and then stopped dead
+two tiles past its own station at speed 0, profit negative. So loading works and the line
+verified, but the train will not run the route. Suspects, in order: the order flag I passed as 64
+for full load may be holding it, the train may have left by the far platform end and be unable to
+turn, or a train needs a signal or a second platform to reverse. Resolve this before the rail
+network is designed, because it is the last thing between rail and revenue.
+
 ## 7. Sessions still to play
 
 Nine. Seed 581017999 for the eight single-mode runs, 1847172264 for the two combined. Both
@@ -217,3 +790,80 @@ for the rest. Rail last.
    industry. Not filed yet; worth filing, since every agent that plans cargo hits it.
 3. **An unknown action name on the query endpoint returns 403 "not a read-only query"** rather
    than "unknown action", which sends the reader looking for a permission problem. Not filed yet.
+4. **Cargo delivered was read off a counter that resets every quarter.** Fixed. The game reports
+   the quarter IN PROGRESS, so the series sawtooths, and the growth checkpoints at 25/50/75
+   percent of a 366 day run land on the resets. A run that carried 3,526 units reported 0.
+5. **Every business metric in every result ever written was zero.** Fixed, and the worse of the
+   two. The result was scored BEFORE the recorder merged its fragments into `snapshots.parquet`,
+   so the metrics read a file that did not exist yet and silently returned an empty record.
+   Recomputing one finished session from disk afterwards gave 30 vehicles, 6 stations, 37,909
+   value at the halfway mark, against 0 for all of them in the file. Nothing raised.
+6. **`trace_route` and OpenTTD's own train pathfinder disagree.** Not filed yet, and the most
+   consequential of the open ones: it means a route can pass every build-time check nttd offers
+   and still never move a train. See section 4.
+7. **`start_vehicle` was a toggle, so it stopped the vehicles it was asked to start.** Fixed. It
+   called `GSVehicle.StartStopVehicle`, which flips the state, so a dispatch that started a
+   vehicle followed by an explicit `start_vehicle` left it parked, and the action answered
+   `success` either way. It cost two rail runs and most of a water run: sixteen trains and ships
+   sat beside their depots for a full game year, with correct orders, on lines that traced end to
+   end, while every station they served filled up and nothing was delivered.
+
+   The first repair was wrong in an instructive way. Guarding on `GetState() != VS_STOPPED` looks
+   right and breaks the opposite case: a vehicle sitting in a depot reads `VS_IN_DEPOT`, not
+   `VS_STOPPED`, so four freshly bought aircraft were declared already running and never left the
+   hangar. Both tests are needed, `IsStoppedInDepot` OR `VS_STOPPED`, because "halted" has two
+   distinct spellings and each one alone is the bug.
+
+8. **The world dropped fields the GameScript reported.** Fixed, twice, and it is one mistake with
+   two faces. `WorldState` copies a whitelist of keys out of each GS reply. `cargo_delivered_total`
+   was missing from the company list, so `total_cargo` scored 0 on every result ever written no
+   matter what the game sent, and `lost`/`idle_reason` were missing from the vehicle list, so the
+   diagnosis added for exactly this situation never reached an observation: a train wandering the
+   far corner of the map reported `lost=None`. Anything scored or diagnosed has to be on the list;
+   there is now a test that reads the scoring code and asserts it.
+
+9. **`connect_rail` reaches for a tunnel where the crossing needs a bridge.** Not filed yet. Every
+   water crossing on a rail corridor fails as `ERR_TUNNEL_CANNOT_BUILD_ON_WATER`, and it defeated
+   five of six routes on one map. The report is good enough to act on, naming the tile and the
+   error, but the caller then has to build the bridge by hand, match the two heads to the same
+   height, and re-run the connect.
+
+10. **`find_water_depot_spots` returns spots that cannot reach the dock they were searched from.**
+    Not filed yet, and it is the water counterpart of the rail depot stub. Asked for spots near a
+    dock, it answered four, all of them in a pool cut off from that dock. Ships built there sail
+    in circles: measured with a ship ordered to one dock two tiles away, still not arrived after
+    twenty days, while that dock held 123 waiting passengers. There is no query that answers
+    "which water is this dock on", and the terrain flags did not help either, reporting no water
+    within ten tiles of a dock where ships were visibly floating.
+
+11. **`plan_route` for water answers from whatever terrain happens to be cached.** Not filed yet.
+    On a cold cache the search gave up after 388 tiles and said no route; after capturing the map
+    it searched 34,419 for the same pair. Worse, it is wrong in both directions: it called a pair
+    unconnected that a ship then served profitably, and called pairs connected whose ships never
+    arrived. Treat it as a hint, never as a gate. The authority is whether the vehicle moves,
+    which is the same conclusion section 4 reached for rail.
+
+## 8. What eight replayed runs say about the modes
+
+Played hand, one T1 run each, same tier and settings, seeds random.
+
+| mode     | rating | cargo | what decided it |
+|----------|-------:|------:|-----------------|
+| air      |    173 |  4975 | four big-plane-safe airports, long legs |
+| combined |    144 |  4377 | air for revenue, buses for early cash |
+| combined |    120 |  3016 | same shape, shorter legs |
+| air      |    118 |  3491 | one endpoint was a 348 person village |
+| water    |     73 |  3485 | one hub dock both big towns could reach |
+| rail     |     17 |   720 | one line of six built; five hit water |
+| rail      |     1 |     0 | start_vehicle toggle, before it was found |
+| water     |     0 |     0 | every depot spot was in a cut-off pool |
+
+The spread is not about the vehicles. Air wins because an aircraft needs no infrastructure between
+its endpoints, so the only decisions that matter are ones nttd answers well: which town, which
+airport type, is the site within coverage. Rail and water lose because both depend on a junction
+between a depot and a line, and that junction is exactly what nttd cannot confirm: `connect_depot`
+answered `already_connected` for depots that reached five tiles of a seventy tile line, and
+`find_water_depot_spots` answered with pools that reach nothing.
+
+The single highest-value fix is therefore not a new action. It is making the existing connectivity
+answers mean something, for the depot junction first.

@@ -96,7 +96,7 @@ def world_panel(
     )
     body.append(_scrubber(frames))
     body.append(f'<div class="wdata" data-frames="{esc(payload)}"></div>')
-    return panel(title, "".join(body), cid="wmap", span="one")
+    return panel(title, "".join(body), cid="wmap", span="one", expandable=True)
 
 
 def _terrain(terrain: dict[str, Any] | None) -> str:
@@ -234,5 +234,5 @@ def _scrubber(frames: list[dict[str, Any]]) -> str:
         '<span class="livedot"></span>LIVE</button>'
         f'<input type="range" class="wslider" min="0" max="{last}" value="{last}" '
         f'step="1" aria-label="step"/>'
-        f'<span class="wstep">step {last}</span></div>'
+        f'<span class="wstep">step {last + 1}</span></div>'
     ) + legend_row()

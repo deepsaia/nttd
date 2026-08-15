@@ -16,21 +16,21 @@ One server is one seat: a single session, a single participant token, one compan
 tool takes a session argument, so no client can address a game it was not given.
 
 ```bash
-nttd session attach ses_abc          # prints the participant token
-nttd mcp ses_abc --token tok_123     # stdio
+nttd session attach 20260815-132431ist-quiet-pickle          # prints the participant token
+nttd mcp 20260815-132431ist-quiet-pickle --token tok_123     # stdio
 ```
 
 For a framework that connects to a server already running rather than launching one:
 
 ```bash
-nttd mcp ses_abc --token tok_123 --transport http --port 8100
+nttd mcp 20260815-132431ist-quiet-pickle --token tok_123 --transport http --port 8100
 ```
 
 Both transports exist because both kinds of client are real here. An agent that spawns
 its tools as a subprocess wants stdio. A multi-agent system with its own process model
 wants an address to connect to.
 
-## Where the 132 actions are
+## Where the actions are
 
 The obvious objection to five tools is that the actions have been hidden inside one of
 them. They have not.

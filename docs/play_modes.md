@@ -183,10 +183,10 @@ economy horizon:
 
 | Tier | Real time | Economy horizon | |
 |---|---|---|---|
-| T1 | 15 min | ~1.25 game years | build-skill tier, largely pre-revenue |
-| T2 | 30 min | ~2.5 game years | |
-| T3 | 60 min | ~5 game years | economic performance becomes measurable |
-| T4 | 120 min | ~10 game years | longer-running businesses |
+| T1 | 12 min | 1 game year | a route has time to earn, not only to stand |
+| T2 | 24 min | 2 game years | |
+| T3 | 60 min | 5 game years | economic performance becomes measurable |
+| T4 | 120 min | 10 game years | longer-running businesses |
 
 ---
 
@@ -230,10 +230,10 @@ contestant makes that unreachable rather than guarded against.
 
 ## 5. Scoring
 
-`primary_score` is OpenTTD's own quarterly **performance rating**, 0–1000: a composite of
-eight components, of which annual cargo delivered is the largest at 40%. `tiebreak_cargo`
-breaks ties. `company_value` is recorded for display and does **not** affect rank, because
-it rises simply by drawing a loan.
+`performance_rating` is OpenTTD's own quarterly rating, 0 to 1000, taken from the game
+unchanged. It is nine capped components, and cargo delivered over the last four quarters is
+by far the largest at 400 of the 1000 points. `total_cargo`, every unit the run delivered,
+breaks ties. `company_value` is recorded for display and does **not** affect rank.
 
 Using the game's own rating rather than an nttd invention matters: it is the number the
 game itself considers success, it is not tuned to any strategy nttd happens to favour, and
@@ -241,12 +241,24 @@ it cannot drift as nttd changes.
 
 Two details a reader of a row needs:
 
-- **`rating_available`**. OpenTTD reports -1 until a company has a full quarter of
-  history. An unavailable rating is recorded as 0 rather than -1, so a company that never
-  earned one ranks below a company that did instead of above everything. The flag says
-  which case a 0 is. This matters most at T1, which is largely pre-revenue.
-- **`score_version`**. Bumped whenever the derivation changes, so a board can tell which
-  entries are comparable instead of silently mixing definitions.
+- **An unrated company reports -1.** OpenTTD does not rate a company until it has a full
+  quarter of history, and that value is carried through as the game gave it rather than
+  being flattened to 0, so a run that was never rated is distinguishable from one that was
+  rated badly. This matters most at T1, which is largely pre-revenue.
+- **`total_cargo` is banked, not read back.** The counter the game exposes covers the
+  quarter in progress and resets at every boundary. A 366 day run ends on 1 January, which
+  is a boundary, so reading it at the end returns 0 however much the run carried. Each
+  quarter is banked as it closes, and that total travels in the savegame so a verifier can
+  recompute it.
+
+There are no version columns on either the score or the metrics. Both ranked figures come
+from the game, so a change to either is a bug fix rather than a change to what winning
+means.
+
+Company value does **not** rise by drawing a loan. It is assets minus the loan plus cash,
+floored at 1, so borrowing converts one term into another and nets to zero until the money
+buys something that earns. A company value of exactly 1 is a company that owes more than it
+owns. See `docs/gameplay_guide.md` for the full derivation and the measured evidence.
 
 One row per scored company in `result.parquet`, written when the session stops.
 
@@ -274,14 +286,12 @@ log.
 
 ### What makes two rows comparable
 
-Same `task_id`, `profile_version`, `score_version`, and `runtime_mode`. All four are
-recorded, so a reader can check rather than assume:
+Same `task_id`, `profile_version` and `runtime_mode`. All three are recorded, so a reader
+can check rather than assume:
 
 - **`task_id`** means the same world, including the seed.
 - **`profile_version`** means the same admission rules. It is a digest of the rules
   themselves, not a hand-written number, so it changes exactly when they do.
-- **`score_version`** means the same scoring. Two rows under different versions are not
-  the same measurement even on the same world.
 - **`runtime_mode`** matters because real time scores speed and stepped does not.
   Comparing across them compares two different things.
 
@@ -299,11 +309,11 @@ uv run nttd scenario profile                                      # the rules in
 uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf     # check before running
 
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
-uv run nttd session start -s ses_... --agent-companies 1
-uv run nttd session attach ses_...                                # token and routes
+uv run nttd session start -s <session> --agent-companies 1
+uv run nttd session attach <session>                                # token and routes
 # ... your runner plays ...
-uv run nttd session stop -s ses_...
-uv run nttd result -s ses_...
+uv run nttd session stop -s <session>
+uv run nttd result -s <session>
 ```
 
 Shipped examples, all scored on their own merits rather than because they say so. Four tiers in
@@ -311,10 +321,10 @@ both modes, and `config/benchmark/README.md` explains the day counts:
 
 | Tier | Game span | Quarters | Stepped | Real time | World |
 |---|---|---|---|---|---|
-| T1 | 182 days | 2 | 182 steps of 1 day | 6 min | 256×256 flat 1001 |
-| T2 | 366 days | 4 | 366 steps of 1 day | 12 min | 256×256 flat 1001 |
-| T3 | 731 days | 8 | 731 steps of 1 day | 24 min | 512×512 hilly 2001 |
-| T4 | 1827 days | 20 | 1827 steps of 1 day | 60 min | 512×512 hilly 2001 |
+| T1 | 366 days | 4 | 366 steps of 1 day | 12 min | 256×256 flat 1001 |
+| T2 | 731 days | 8 | 731 steps of 1 day | 24 min | 256×256 flat 1001 |
+| T3 | 1827 days | 20 | 1827 steps of 1 day | 60 min | 512×512 hilly 2001 |
+| T4 | 3653 days | 40 | 3653 steps of 1 day | 120 min | 512×512 hilly 2001 |
 
 A tier is a span of game time, so both modes cover the same span: stepped counts steps, real
 time uses the wall clock that produces those days at the fixed economy rate. The counts end

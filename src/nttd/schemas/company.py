@@ -31,3 +31,7 @@ class Company(BaseModel):
     q0_income: int = 0
     q0_expenses: int = 0
     q0_cargo: int = 0
+    # The quarter in progress resets to zero at every boundary, and a run ends on one, so
+    # q0_cargo is not a total. This is: the GameScript banks each quarter as it ends. Score
+    # against it, never against q0_cargo.
+    cargo_delivered_total: int = 0

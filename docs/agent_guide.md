@@ -13,7 +13,7 @@ For the reasoning behind these boundaries rather than the mechanics, see
 Three things, all printed by `nttd session attach`:
 
 ```bash
-uv run nttd session attach ses_20260805_120000_abcd1234
+uv run nttd session attach 20260815-132431ist-quiet-pickle
 ```
 
 | | |
@@ -34,7 +34,7 @@ overwrites anything you put in the request body. Two companies means two tokens.
 import requests
 
 BASE  = "http://localhost:8000"
-SID   = "ses_20260805_120000_abcd1234"
+SID   = "20260815-132431ist-quiet-pickle"
 TOKEN = "pt_1a70defa19f34e9eb..."
 
 P = f"{BASE}/v1/participant/sessions/{SID}"
@@ -431,7 +431,7 @@ names what was attempted.
 ## Reading the outcome
 
 ```bash
-uv run nttd result -s ses_...
+uv run nttd result -s <session>
 ```
 
 Shows the score, the task identity, code provenance, per-model spend, and an explicit

@@ -12,7 +12,7 @@ from nttd.api.participant_auth import (
     apply_company_scope,
     extract_token,
 )
-from nttd.constants import READ_ONLY_GS_ACTIONS
+from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS, READ_ONLY_GS_ACTIONS
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
     CompactRecentAction,
@@ -104,8 +104,8 @@ async def get_situation(session_id: str, company_id: int = 0) -> dict[str, Any]:
     ).report()
 
 
-@router.get("/path")
-async def check_path(
+@router.get("/plan_route")
+async def plan_route(
     session_id: str,
     from_x: int,
     from_y: int,
@@ -116,7 +116,13 @@ async def check_path(
     max_iterations: int = 50_000,
     company_id: int = 0,
 ) -> dict[str, Any]:
-    """Whether two points can be joined, before paying to find out.
+    """What it would take to BUILD a route between two points, before paying to find out.
+
+    Named for the question it answers. It was `check_connection` on `/state/path`, which reads
+    as "is there a connection", and that is a different question entirely: this plans a build
+    and returns the work it would need, while `trace_route` walks track that already exists.
+    Reaching for this one as a connectivity test is exactly the mistake the old name invited,
+    and on water it answered zero tiles for routes that were being sailed at the time.
 
     Every other build decision has a dry run behind it. The find_* family exists precisely
     so an agent need not guess whether a station fits, and it answers by dry running the
@@ -578,6 +584,24 @@ async def gs_query(
     runtime = deps.get_runtime(session_id)
 
     if action not in READ_ONLY_GS_ACTIONS:
+        # An action nttd has never heard of is told apart from a real one asked for in the
+        # wrong place. Both used to answer 403 "is not a read-only query", which sends the
+        # reader looking for a permission they need rather than the typo they made: measured
+        # on `find_station_spots`, where the action is `find_station_spot` and the plural cost
+        # a detour into whether the tier was wrong.
+        if action not in KNOWN_ACTIONS and action not in OPERATOR_ACTIONS:
+            near = sorted(
+                name for name in READ_ONLY_GS_ACTIONS
+                if name.startswith(action[:6]) or action.startswith(name[:6])
+            )
+            suggestion = f" Did you mean: {', '.join(near[:4])}?" if near else ""
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{action} is not an action nttd knows. The full list is at "
+                    f"/v1/public/actions.{suggestion}"
+                ),
+            )
         raise HTTPException(
             status_code=403,
             detail=(

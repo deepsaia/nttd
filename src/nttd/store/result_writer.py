@@ -26,8 +26,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from nttd.analysis import business_metrics
-from nttd.analysis.score import SCORE_VERSION, CompanyScore
+from nttd.analysis.score import CompanyScore
 from nttd.config.task_instance import TaskInstance, file_digest
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
 
@@ -40,11 +39,16 @@ _SCHEMA = pa.schema([
     ("session_id", pa.string()),
     ("company_id", pa.int16()),
     ("company_name", pa.string()),
-    # Score
-    ("score_version", pa.string()),
-    ("primary_score", pa.int32()),
-    ("tiebreak_cargo", pa.int64()),
-    ("rating_available", pa.bool_()),
+    # Score. One definition, so no version column: nttd_git_sha and gamescript_digest below
+    # pin what produced these far more precisely than a hand-typed string ever did.
+    #
+    # performance_rating is RAW, including the game's -1 for a quarter it could not rate. It
+    # used to be a clamped primary_score beside a rating_available flag, which recorded one
+    # fact twice, the flag existing only to restore what the clamp destroyed.
+    ("performance_rating", pa.int32()),
+    # The run's delivered cargo, and what breaks a tie on equal ratings. One column: a
+    # tiebreak_cargo beside an identical total_cargo is the same number under two names.
+    ("total_cargo", pa.int64()),
     ("company_value", pa.int64()),
     ("final_balance", pa.int64()),
     ("final_loan", pa.int64()),
@@ -106,39 +110,19 @@ _SCHEMA = pa.schema([
     ("final_save_digest", pa.string()),
     ("final_save_bytes", pa.int64()),
     ("openttd_version", pa.string()),
-    # Business metrics, derived from the snapshot series and the action log.
-    # The score says how well the company did; these say how it was run. Every one
-    # is recomputable from the artifacts in the bundle, so a verifier can check
-    # them rather than take them on trust. See analysis/business_metrics.py.
-    ("metrics_version", pa.string()),
-    ("operating_margin_final", pa.float64()),
-    ("operating_margin_mean", pa.float64()),
-    ("profitable_quarters_share", pa.float64()),
-    ("maintenance_burden_final", pa.float64()),
-    ("maintenance_burden_mean", pa.float64()),
-    ("return_on_capital", pa.float64()),
-    ("peak_capital_deployed", pa.int64()),
-    ("value_at_25pct", pa.int64()),
-    ("value_at_50pct", pa.int64()),
-    ("value_at_75pct", pa.int64()),
-    ("cargo_at_25pct", pa.int64()),
-    ("cargo_at_50pct", pa.int64()),
-    ("cargo_at_75pct", pa.int64()),
-    ("days_to_first_profit", pa.int64()),
-    ("peak_credit_used", pa.float64()),
-    ("final_credit_used", pa.float64()),
-    ("min_cash", pa.int64()),
-    ("ended_in_debt", pa.bool_()),
-    ("profitable_vehicle_share", pa.float64()),
-    ("idle_vehicle_share", pa.float64()),
-    ("vehicles_final", pa.int64()),
-    ("stations_final", pa.int64()),
-    ("cargo_per_vehicle", pa.float64()),
-    ("cargo_per_station", pa.float64()),
-    ("action_success_rate", pa.float64()),
-    ("value_per_action", pa.float64()),
-    ("usd_per_score_point", pa.float64()),
+    # Business metrics are deliberately NOT here. They are derived, still being refined, and
+    # a public board should not be sorted on numbers whose definition is in flux. They are
+    # computed for the monitor from the same artifacts, so nothing is lost by leaving them out
+    # of the record a leaderboard reads.
     ("recorded_at", pa.timestamp("us")),
+    # When the run STARTED, with its offset, as an ISO string.
+    #
+    # recorded_at is when this file was WRITTEN and carries no timezone. The session id
+    # says roughly when a run started and in which zone, as 20260815-132431ist, but a
+    # timezone abbreviation is ambiguous: IST is Indian, Irish and Israel standard time at
+    # once. This is the unambiguous one, offset included, and it is the start rather than
+    # the write.
+    ("started_at", pa.string()),
 ])
 
 
@@ -216,6 +200,7 @@ class ResultWriter:
         openttd_binary: str = "",
         capability: dict[str, Any] | None = None,
         dimensions: dict[str, str] | None = None,
+        started_at: str = "",
     ) -> Path | None:
         """Write result.parquet. Returns the path, or None if there is nothing to record.
 
@@ -260,10 +245,8 @@ class ResultWriter:
                 "session_id": session_id,
                 "company_id": score.company_id,
                 "company_name": score.company_name,
-                "score_version": score.score_version,
-                "primary_score": score.primary,
-                "tiebreak_cargo": score.tiebreak,
-                "rating_available": score.rating_available,
+                "performance_rating": score.performance_rating,
+                "total_cargo": score.total_cargo,
                 "company_value": score.company_value,
                 "final_balance": score.balance,
                 "final_loan": score.loan,
@@ -310,16 +293,7 @@ class ResultWriter:
                 "final_save_bytes": save_bytes,
                 "openttd_version": version,
                 "recorded_at": now,
-                # Derived from this session's own traces rather than reported by the
-                # contestant, so the verifier can recompute and compare.
-                **business_metrics.compute(
-                    self.session_dir,
-                    score.company_id,
-                    primary_score=score.primary,
-                    total_cost_usd=float(who.get("total_cost", 0.0)),
-                    total_actions=int(who.get("total_actions", 0)),
-                    successful_actions=int(who.get("successful_actions", 0)),
-                ).as_row(),
+                "started_at": started_at,
             })
 
         self.session_dir.mkdir(parents=True, exist_ok=True)
@@ -327,8 +301,8 @@ class ResultWriter:
         table = pa.Table.from_pylist(rows, schema=_SCHEMA)
         pq.write_table(table, path, compression="zstd")
         logger.info(
-            "Session %s: wrote %s (%d row(s), score_version=%s, task_id=%s)",
-            session_id, path, len(rows), SCORE_VERSION, task.task_id if task else "none",
+            "Session %s: wrote %s (%d row(s), task_id=%s)",
+            session_id, path, len(rows), task.task_id if task else "none",
         )
         return path
 

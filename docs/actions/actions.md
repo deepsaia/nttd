@@ -5,7 +5,7 @@ Change the world. These cost money, take effect in the game, and are recorded ag
 **These are submitted as actions**, through `POST /actions/submit` in real-time play or in a step's batch. Anything on the [observations page](observations.md) is a query instead, asked a different way.
 
 **Generated. Do not edit.** Run `uv run python scripts/generate_action_manifest.py`.
-Part of the [action reference](../action_reference.md). 77 of 132 actions.
+Part of the [action reference](../action_reference.md). 78 of 133 actions.
 
 ## Contents
 
@@ -16,7 +16,7 @@ Part of the [action reference](../action_reference.md). 77 of 132 actions.
 - **marine**: `build_buoy`, `build_canal`, `build_lock`, `build_path`, `build_water_depot`, `remove_buoy`, `remove_canal`, `remove_lock`, `remove_water_depot`
 - **order**: `add_order`, `copy_orders`, `insert_order`, `move_order`, `remove_order`, `set_order_compare_function`, `set_order_compare_value`, `set_order_condition`, `set_order_flags`, `set_stop_location`, `share_orders`, `skip_to_order`
 - **planning**: `estimate_cost`
-- **rail**: `build_rail_depot`, `build_rail_signal`, `build_rail_station`, `build_rail_track`, `build_rail_waypoint`, `connect_rail`, `convert_rail`, `remove_rail`, `remove_rail_station`, `remove_rail_track`, `remove_signal`
+- **rail**: `build_rail_depot`, `build_rail_signal`, `build_rail_station`, `build_rail_track`, `build_rail_waypoint`, `connect_depot`, `connect_rail`, `convert_rail`, `remove_rail`, `remove_rail_station`, `remove_rail_track`, `remove_signal`
 - **road**: `build_one_way_road`, `build_one_way_road_full`, `build_road_depot`, `build_road_stop`, `connect_road`, `convert_road_type`, `remove_road`, `remove_road_depot`, `remove_road_stop`
 - **sign**: `build_sign`, `remove_sign`
 - **town**: `perform_town_action`
@@ -601,6 +601,20 @@ Supply one of: `tile` or `x` and `y`.
 
 Returns `tile`.
 
+### `connect_depot`
+
+Join a rail depot to the running line beside it. A depot is not connected by building it: the neighbouring track needs a curve piece facing the depot's entrance, and connect_rail cannot supply one because it lays rail on both endpoints and so fails against the depot itself. Reports which tile it joined to and whether the connection already existed. Refuses when the only neighbouring rail is a station platform, which can never take a track piece.
+
+Supply one of: `tile` or `x` and `y`.
+
+- `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
+- `x` (integer, optional) X coordinate on the map, counting from 0.
+- `y` (integer, optional) Y coordinate on the map, counting from 0.
+
+Returns `already_connected`, `joined_at`, `tile`, `track`, `tried`.
+
+Each `tried` carries `error`, `x`, `y`.
+
 ### `connect_rail`
 
 Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working line.
@@ -893,7 +907,7 @@ Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 - `num_wagons` (integer, default 1) How many wagons to build and couple on.
 - `wagon_id` (integer, optional) Which wagon model to build and couple on.
 
-Returns `name`, `refitted`, `vehicle_id`, `wagons_attached`, `wagons_failed`.
+Returns `capacity_by_cargo`, `carries_one_cargo`, `name`, `refitted`, `vehicle_id`, `wagons_attached`, `wagons_failed`.
 
 ### `buy_vehicle`
 
@@ -912,8 +926,13 @@ Returns `name`, `vehicle_id`.
 
 ### `clone_vehicle`
 
-Build a copy of an existing vehicle in its depot, optionally sharing the original's orders.
+Build a copy of an existing vehicle, optionally sharing the original's orders. Give depot_tile or depot_x and depot_y to say which depot builds the copy; without them the vehicle's current tile is used, which only works while it is parked in a depot.
 
+Supply one of: `depot_tile` or `depot_x` and `depot_y`.
+
+- `depot_tile` (integer, optional) Tile index of the depot the vehicle is built in.
+- `depot_x` (integer, optional) X coordinate of the depot the vehicle is built in.
+- `depot_y` (integer, optional) Y coordinate of the depot the vehicle is built in.
 - `share_orders` (boolean, default true) Share the original's order list rather than taking a copy. Shared orders change together afterwards.
 - `vehicle_id` (integer, required) Which vehicle.
 
@@ -1000,7 +1019,7 @@ Start a stopped vehicle. A newly built vehicle is stopped until this is called.
 
 - `vehicle_id` (integer, required) Which vehicle.
 
-Returns `running`.
+Returns `already_running`, `running`.
 
 ### `stop_vehicle`
 

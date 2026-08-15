@@ -172,6 +172,14 @@ def read_fragments(
     for path in sorted(fragments_dir.glob(f"{name}_*.parquet")):
         try:
             tables.append(pq.read_table(path, columns=columns))
+        except (FileNotFoundError, OSError):
+            # The session finished between the glob and the read, and finalising merges every
+            # fragment into one file and removes the directory. A reader that started just
+            # before that logged one warning per fragment, so the end of a run produced
+            # hundreds of them. The merged file holds the same rows, so there is nothing lost
+            # and nothing to warn about.
+            logger.debug("Fragment %s was merged away while reading", path.name)
+            return None
         except Exception:
             logger.warning("Failed to read fragment %s, skipping", path)
 

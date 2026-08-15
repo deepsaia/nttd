@@ -1,4 +1,4 @@
-"""The HTTP handler: two routes, both returning a whole page.
+"""The HTTP handler: two GET routes returning a whole page, and one POST that deletes.
 
 A top level class rather than one defined inside the serve function, so it can be
 imported and exercised directly. It reads its configuration from ``self.server``, which
@@ -12,17 +12,34 @@ have nothing to do with this code, and the next refresh usually succeeds.
 from __future__ import annotations
 
 import logging
+import os
+import sys
+import time
 from http.server import BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from nttd.monitor import page
+from nttd.store import session_paths, session_remover
 
 logger = logging.getLogger(__name__)
 
 # The map's base image lives on its own route so the browser caches it across the page's
 # ten second refresh. Terrain is captured once at session start and barely changes.
 TERRAIN_PATH = "/terrain.png"
+
+# The only route that mutates anything, and the only one that accepts POST.
+DELETE_PATH = "/delete"
+
+# The event stream the page listens on instead of reloading on a timer.
+LIVE_PATH = "/live"
+
+# How often the stream checks the fingerprints. Fast enough to feel immediate on a file save,
+# and each check is a handful of scandir calls rather than any parsing.
+WATCH_INTERVAL_SECONDS = 0.5
+
+# A comment sent down an idle stream so a proxy or a sleeping laptop does not drop it.
+KEEPALIVE_SECONDS = 20.0
 
 
 class MonitorHandler(BaseHTTPRequestHandler):
@@ -43,6 +60,9 @@ class MonitorHandler(BaseHTTPRequestHandler):
         if parsed.path == TERRAIN_PATH:
             self._serve_terrain(session_id)
             return
+        if parsed.path == LIVE_PATH:
+            self._serve_live()
+            return
         if parsed.path not in ("/", "/index.html"):
             self.send_error(404)
             return
@@ -59,6 +79,123 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802 - the name is fixed by the base class
+        """The one route that changes anything: deleting a session's files.
+
+        POST rather than a link, so no prefetch, crawler or accidental refresh can destroy a
+        recording, and it answers with a redirect so the browser reloads the list rather than
+        leaving a resubmittable form in the history.
+        """
+        if urlparse(self.path).path != DELETE_PATH:
+            self.send_error(404)
+            return
+
+        length = int(self.headers.get("Content-Length") or 0)
+        form = parse_qs(self.rfile.read(length).decode("utf-8")) if length else {}
+        session_id = (form.get("session") or [""])[0]
+
+        try:
+            self._delete(session_id)
+        except session_paths.InvalidSessionIdError:
+            logger.warning("Refused to delete %r: not a session id", session_id)
+            self.send_error(400, "not a session id")
+            return
+        except Exception:
+            logger.exception("Failed to delete session %s", session_id)
+            self.send_error(500, "could not delete the session")
+            return
+
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _delete(self, session_id: str) -> None:
+        """Remove one session, refusing while it is still being written.
+
+        The liveness check is here rather than in the remover because only the registry knows
+        how recently a session wrote. Deleting the directory under a running recorder would
+        leave the server flushing into a path that no longer exists.
+        """
+        if not session_id:
+            raise session_paths.InvalidSessionIdError("no session given")
+        # Validate BEFORE asking whether it is live. is_live cannot read a nonsense id, and it
+        # errs towards "live", so checking it first turned "../escape" into a 500 "still
+        # running" instead of a 400 "not a session id".
+        session_paths.validate_session_id(session_id)
+        if self.server.registry.is_live(session_id):
+            raise RuntimeError(f"{session_id} is still running")
+        session_remover.remove_session(session_id, self.server.registry.root)
+
+    def _serve_live(self) -> None:
+        """Hold the connection open and say when something has actually changed.
+
+        Server-sent events rather than a meta refresh. The browser makes one request and then
+        waits, so an idle dashboard costs nothing and a written snapshot appears at once instead
+        of up to a refresh interval later.
+
+        A code edit is answered by re-executing the process. The page is rendered from these
+        modules, so reloading the browser against a server still running the old import shows
+        the old page, which reads as the edit not working. Reloading modules in place cannot be
+        done honestly here either: the running server holds this handler CLASS, so a reloaded
+        module would not be the one serving requests.
+        """
+        watcher = self.server.watcher
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            self._push("hello", "connected")
+        except OSError:
+            return
+
+        data = watcher.data_revision()
+        code = watcher.code_revision()
+        last_beat = time.monotonic()
+        while True:
+            time.sleep(WATCH_INTERVAL_SECONDS)
+            fresh_code = watcher.code_revision()
+            if fresh_code != code:
+                logger.info("Monitor source changed; restarting to serve the new code")
+                self._push("code", "reloading")
+                self._restart()
+                return
+            fresh_data = watcher.data_revision()
+            now = time.monotonic()
+            if fresh_data != data:
+                data = fresh_data
+                if not self._push("data", "changed"):
+                    return
+                last_beat = now
+            elif now - last_beat >= KEEPALIVE_SECONDS:
+                if not self._push("beat", "."):
+                    return
+                last_beat = now
+
+    def _push(self, event: str, payload: str) -> bool:
+        """Send one event. False once the browser has gone, which is not an error."""
+        try:
+            self.wfile.write(f"event: {event}\ndata: {payload}\n\n".encode())
+            self.wfile.flush()
+        except OSError:
+            return False
+        return True
+
+    def _restart(self) -> None:
+        """Re-exec this process so an edited module is actually imported.
+
+        os.execv replaces the process, so there is nothing to tear down and no second server
+        racing for the port. Open streams die with it; every page reconnects, because an
+        EventSource retries on its own.
+        """
+        try:
+            self.wfile.flush()
+        except OSError:
+            pass
+        os.execv(sys.executable, [sys.executable, *sys.argv])
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         """Quiet by default. One line per browser refresh, every ten seconds, for every
@@ -99,7 +236,12 @@ class MonitorHandler(BaseHTTPRequestHandler):
             try:
                 entries = [registry.entry(session_id), *entries]
             except Exception:
-                return page.error_page(f"No session {session_id} under {registry.root}")
+                # Fall back to the index rather than an error page. A stale link, a bookmark
+                # from a deleted session, or a refresh after a cleanup all landed on a dead
+                # end that offered nowhere to go; the list of what does exist is both more
+                # useful and what the reader wanted anyway.
+                logger.debug("No session %s; showing the index", session_id, exc_info=True)
+                return page.index_page(entries)
 
         feed = registry.feed(session_id)
         meta = feed.meta()
