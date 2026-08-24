@@ -27,6 +27,7 @@ Commands:
   nttd publish               File a bundle on the board as a pull request
   nttd analyze               Generate session analysis reports
   nttd monitor               Watch sessions in a browser while they run
+  nttd runex                 Run an experiment against a live session
 """
 
 import typer
@@ -38,6 +39,7 @@ from nttd.cli.mcp_command import mcp
 from nttd.cli.monitor_command import monitor
 from nttd.cli.publish_command import publish
 from nttd.cli.result_command import result
+from nttd.cli.runex_command import runex
 from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
 from nttd.cli.session_commands import session_app
@@ -61,6 +63,13 @@ app.command()(verify)
 app.command()(analyze)
 app.command()(actions)
 app.command()(mcp)
+app.command(
+    # Everything after the command name belongs to the launcher, not to typer here, and that
+    # includes --help: intercepting it would print this doorway's help for a question about
+    # the thing behind it.
+    add_help_option=False,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)(runex)
 app.command()(monitor)
 
 
