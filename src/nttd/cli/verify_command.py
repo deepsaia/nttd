@@ -107,7 +107,7 @@ def _resolve(bundle: str | None, session: str | None) -> Path | None:
     if not session:
         console.print(
             "[red]Give a bundle path or --session.[/] "
-            "Build one first with [cyan]nttd submit -s <session>[/]."
+            "Build one first with [cyan]nttd package -s <session>[/]."
         )
         return None
 
@@ -115,7 +115,7 @@ def _resolve(bundle: str | None, session: str | None) -> Path | None:
     if not (path / "manifest.json").exists():
         console.print(
             f"[red]No bundle for {session}.[/] "
-            f"Build one with [cyan]nttd submit -s {session}[/]."
+            f"Build one with [cyan]nttd package -s {session}[/]."
         )
         return None
     return path

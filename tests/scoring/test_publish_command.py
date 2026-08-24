@@ -26,16 +26,45 @@ def _bundle(tmp_path: Path) -> Path:
 
 
 def test_a_directory_without_a_manifest_is_refused(tmp_path: Path) -> None:
-    """Assembling a bundle by hand is the mistake this catches: `nttd submit` builds one."""
+    """Assembling a bundle by hand is the mistake this catches: `nttd package` builds one."""
     (tmp_path / "not-a-bundle").mkdir()
     with pytest.raises(typer.Exit):
         publish_command.publish(bundle=tmp_path / "not-a-bundle", entrant="ada", dry_run=True)
 
 
-def test_an_entrant_is_required(tmp_path: Path) -> None:
-    """It is the name a row appears under, so it cannot be guessed."""
-    with pytest.raises(typer.Exit):
-        publish_command.publish(bundle=_bundle(tmp_path), entrant=None, dry_run=True)
+def test_an_entrant_is_read_from_the_token_rather_than_asked_for(monkeypatch) -> None:
+    """It is not a label, and treating it as one is how a submission gets rejected.
+
+    The board's ingest checks the diff against the account that OPENED the pull request and
+    refuses anything outside `submissions/<that account>/`. So an entrant that is not the
+    HuggingFace username is not a cosmetic mismatch: the whole submission bounces. Reading it
+    from the token is what makes it right by construction.
+    """
+    monkeypatch.setattr(publish_command, "_whoami_name", lambda token: "ada-from-hub")
+    assert publish_command._entrant(None, "hf_sometoken") == "ada-from-hub"
+
+
+def test_a_named_entrant_wins_over_the_token() -> None:
+    """One account may file under an organisation it can write to."""
+    assert publish_command._entrant("some-org", "hf_sometoken") == "some-org"
+
+
+def test_an_entrant_with_no_token_falls_back_rather_than_refusing(monkeypatch) -> None:
+    """Reached only by --dry-run, which does not read the token.
+
+    A dry run exists to show the shape of what would be filed, and refusing to show it for
+    want of a credential nothing is going to use defeats the point.
+    """
+    assert publish_command._entrant(None, None) == publish_command.UNKNOWN_ENTRANT
+
+
+def test_an_unreadable_token_falls_back_rather_than_crashing(monkeypatch) -> None:
+    """The hub being unreachable must not look like a bug in the bundle."""
+    def explode(token: str) -> str:
+        raise OSError("no network")
+
+    monkeypatch.setattr(publish_command, "_whoami_name", explode)
+    assert publish_command._entrant(None, "hf_sometoken") == publish_command.UNKNOWN_ENTRANT
 
 
 def test_a_dry_run_uploads_nothing(tmp_path: Path, monkeypatch) -> None:

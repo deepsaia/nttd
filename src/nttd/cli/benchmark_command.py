@@ -15,6 +15,7 @@ from nttd.cli.helpers import (
     console,
     format_end_conditions_brief,
     get_base_url,
+    labelled,
 )
 
 
@@ -151,12 +152,13 @@ def benchmark(
         )
 
     console.print(Panel(
-        f"[bold]Config:[/]       {config}\n"
-        f"[bold]Map:[/]          {map_x}x{map_y}\n"
-        f"[bold]Seed:[/]         "
-        + (f"[cyan]{effective_seed}[/]" if effective_seed else "[yellow]random[/]") + "\n"
-        f"[bold]Idle slots:[/] {ai_count}\n"
-        + format_end_conditions_brief(cfg.end_conditions),
+        labelled([
+            ("Config", str(config)),
+            ("Map", f"{map_x}x{map_y}"),
+            ("Seed", f"[cyan]{effective_seed}[/]" if effective_seed else "[yellow]random[/]"),
+            ("Idle slots", str(ai_count)),
+            ("End", format_end_conditions_brief(cfg.end_conditions)),
+        ]),
         title="Benchmark configuration",
     ))
 

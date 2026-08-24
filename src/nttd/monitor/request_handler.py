@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from nttd.monitor import page
+from nttd.monitor import assets, page
 from nttd.store import session_paths, session_remover
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # The map's base image lives on its own route so the browser caches it across the page's
 # ten second refresh. Terrain is captured once at session start and barely changes.
 TERRAIN_PATH = "/terrain.png"
+FAVICON_PATH = "/favicon.svg"
 
 # The only route that mutates anything, and the only one that accepts POST.
 DELETE_PATH = "/delete"
@@ -61,9 +62,11 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - the name is fixed by the base class
         parsed = urlparse(self.path)
-        if parsed.path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
+        if parsed.path in (FAVICON_PATH, "/favicon.ico"):
+            # Both paths, because the page asks for the .svg and a browser asks for the .ico
+            # on its own whether or not it was told to. Answering the same SVG to both beats
+            # answering 204 to one of them and having the tab fall back to a blank sheet.
+            self._serve_favicon()
             return
 
         query = parse_qs(parsed.query)
@@ -283,6 +286,20 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # Immutable for the life of the page: the session's scan does not change, and
         # re-encoding it on every ten second refresh would be pure waste.
         self.send_header("Cache-Control", "max-age=300")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_favicon(self) -> None:
+        """The tab icon, inline from assets rather than off disk.
+
+        Cached hard: it is a constant, and the page reloads every ten seconds while a run is
+        live, so a revalidation per reload would be a request per icon for nothing.
+        """
+        body = assets.FAVICON_SVG.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "image/svg+xml")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
         self.end_headers()
         self.wfile.write(body)
 

@@ -429,6 +429,9 @@ JS = r"""
   var out=document.querySelector('.wstep');
   var live=document.querySelector('.wlivebtn');
   var last=frames.length-1;
+  // The date the run opened on, so every frame can say how far into the run it is.
+  var day0=(frames[0]||{}).d;
+  function gameDay(f){ return (f.d!=null&&day0!=null)?(f.d-day0):0; }
   var NS='http://www.w3.org/2000/svg';
   var stationColours=payload.station_colours||{};
   var vehicleColours=payload.vehicle_colours||{};
@@ -453,9 +456,11 @@ JS = r"""
       c.setAttribute('fill', vehicleColours[v[2]]||'#e6ebf5');
       group.appendChild(c);
     });
-    // 1-based, so the scrubber agrees with the step COUNT shown in the sidebar,
-    // the cards and the index table. Zero-based here read as one step fewer.
-    if(out) out.textContent='day '+(i+1)+(f.d?' ('+f.d+')':'');
+    // The GAME day, from the game's own clock, so this agrees with the sidebar, the cards,
+    // the index table and the scored result record. It used to be the frame index plus one,
+    // which is a count of snapshots: a day the runner acted on twice is captured twice, so a
+    // measured 366 day run read "day 378" here while its result said 366.
+    if(out) out.textContent='day '+gameDay(f)+(f.d?' ('+f.d+')':'');
     if(slider) slider.value=i;
   }
   function setLive(on){
@@ -478,3 +483,31 @@ JS = r"""
     setLive(true); try{ sessionStorage.removeItem('wstep'); }catch(e){} paint(last); });
 })();
 """
+
+# The tab icon: a route with three stations on it, which is the shortest drawing of what a
+# session is. Everything a run produces is stations joined by vehicles carrying cargo.
+#
+# An SVG rather than a .ico because it is the same string the page already inlines everything
+# else as: no binary asset, no build step, no file to keep in step with the palette below.
+#
+# Drawn for 16 pixels, which is the size that actually gets used. That budget is the reason
+# for every choice here: three nodes and two segments, one accent colour on a dark rounded
+# square, a stroke wide enough to survive being scaled down, and no text. The dark square is
+# deliberate rather than transparent, so the glyph reads on a light tab bar and a dark one
+# without the icon needing to know which it is on.
+#
+# The middle station sits off the line between the other two, so the route bends. A straight
+# line of three dots reads as a decoration; a bend reads as a network.
+FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    '<rect width="32" height="32" rx="8" fill="#0f1420"/>'
+    # The corridor, under the stations so the joins are hidden by them.
+    '<path d="M7 23 L15 12 L25 9" fill="none" stroke="#4f8cff" stroke-width="3"'
+    ' stroke-linecap="round" stroke-linejoin="round"/>'
+    # Two ends and the junction between them. The junction is the accent colour filled in,
+    # the ends are hollow, which is how the eye tells a terminus from a through station.
+    '<circle cx="7" cy="23" r="3.6" fill="#0f1420" stroke="#4f8cff" stroke-width="2.6"/>'
+    '<circle cx="25" cy="9" r="3.6" fill="#0f1420" stroke="#4f8cff" stroke-width="2.6"/>'
+    '<circle cx="15" cy="12" r="2.6" fill="#35d0a5"/>'
+    '</svg>'
+)

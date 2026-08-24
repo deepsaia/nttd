@@ -246,7 +246,7 @@ class TestBundleContents:
     def test_a_missing_savegame_does_not_block_the_bundle(
         self, session_dir: Path,
     ) -> None:
-        """A weaker submission is still a submission, and `nttd submit` says what is
+        """A weaker submission is still a submission, and `nttd package` says what is
         missing. The gap is advice to the contestant, not a field in the bundle."""
         (session_dir / "save" / "final.sav").unlink()
         _write_result(session_dir, final_save_digest="", final_save_name="")
@@ -402,7 +402,7 @@ class TestTheArchive:
         assert not any("/" in name for name in names), "paths should be flat"
 
 
-class TestTheSubmitCommandRuns:
+class TestThePackageCommandRuns:
     """It broke once when the manifest was thinned and the summary still read the old
     shape. The crash was hidden because the command had been run with its output
     suppressed and its exit code unchecked."""
@@ -410,8 +410,8 @@ class TestTheSubmitCommandRuns:
     def test_it_prints_a_summary_without_raising(
         self, session_dir: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from nttd.cli.submit_command import submit
+        from nttd.cli.package_command import package
         from nttd.store import session_paths
 
         monkeypatch.setenv(session_paths.ENV_VAR, str(session_dir.parent))
-        submit(session=session_dir.name, no_archive=True)
+        package(session=session_dir.name, no_archive=True)

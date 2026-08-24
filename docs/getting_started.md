@@ -138,7 +138,7 @@ reading before trying to improve it.
 ## 7. Submit it
 
 ```bash
-uv run nttd submit -s <session>              # writes <session dir>/submission
+uv run nttd package -s <session>             # writes <session dir>/submission
 uv run nttd verify <session dir>/submission  # your own check first
 ```
 

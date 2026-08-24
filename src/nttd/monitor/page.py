@@ -76,6 +76,8 @@ def shell(inner: str, refresh: int = 0) -> str:
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">{meta_refresh}'
         f'<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>nttd monitor</title>"
+        f'<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+        f'<meta name="theme-color" content="#0f1420">'
         f"<script>{assets.THEME_HEAD_JS}</script><style>{assets.CSS}</style></head>"
         f'<body><div class="app">{inner}</div>'
         f"<script>{assets.JS}</script><script>{assets.THEME_BODY_JS}</script>"
@@ -179,7 +181,7 @@ def _sidebar(entries: list[dict[str, Any]], active: str | None) -> str:
             f'href="{_session_link(meta["session_id"])}">'
             f'<span class="ndot" style="background:{colour(index)}"></span>'
             f'<span class="meta"><span class="name">{dot}{esc(meta["name"])}</span>'
-            f'<span class="stat">day {meta["steps"]} &middot; rating '
+            f'<span class="stat">day {meta["days"]} &middot; rating '
             f'{number(meta["rating"])}</span></span></a>'
             f'{_delete_control(meta)}'
             f'</div>'
@@ -206,7 +208,7 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
             meta["session_id"],
             meta["scenario"] or "-",
             meta["seed"] or "-",
-            str(meta["steps"]),
+            str(meta["days"]),
             number(meta["rating"]),
             number(meta["value"]),
             str(meta["stations"]),
@@ -409,7 +411,7 @@ def _session_cards(meta: dict[str, Any]) -> str:
         ("vehicles", meta["vehicles"], "good" if meta["vehicles"] else "bad"),
         # Days, not steps. A step is one heartbeat in stepped mode and means nothing in
         # realtime, while a game day is the same unit in both, so one monitor reads both.
-        ("days", meta["steps"], ""),
+        ("days", meta["days"], ""),
         ("actions", f"{meta['actions']} / {meta['refused']} refused", ""),
         ("wall time (hh:mm:ss)", _clock(meta["minutes"]), ""),
     ])
