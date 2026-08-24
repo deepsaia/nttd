@@ -17,7 +17,7 @@ def _series(values: list[Any]) -> list[dict[str, Any]]:
     return [{
         "label": "s",
         "colour": "#4f8cff",
-        "rows": [{"step": i, "v": v} for i, v in enumerate(values)],
+        "rows": [{"day": i, "v": v} for i, v in enumerate(values)],
     }]
 
 
@@ -140,7 +140,7 @@ def test_series_on_one_panel_never_share_a_colour() -> None:
     """
     from nttd.monitor import page
 
-    steps = [{"step": index, "v": index} for index in range(3)]
+    steps = [{"day": index, "v": index} for index in range(3)]
     for chunk in page._charts(steps):
         colours = re.findall(r'stroke="(#[0-9a-f]{6})"', chunk)
         assert len(colours) == len(set(colours)), chunk[:120]
@@ -150,7 +150,7 @@ def test_the_fleet_panel_is_drawn_as_bands() -> None:
     """Counts by type read better stacked as areas than as four crossing lines."""
     from nttd.monitor import page
 
-    steps = [{"step": index, "vehicles": index, "vehicles_train": index} for index in range(3)]
+    steps = [{"day": index, "vehicles": index, "vehicles_train": index} for index in range(3)]
     fleet = [chunk for chunk in page._charts(steps) if 'data-cid="cfleet"' in chunk]
     assert fleet, "the fleet panel is missing"
     assert "<polygon" in fleet[0] and "fill-opacity" in fleet[0]
@@ -160,7 +160,7 @@ def test_cargo_waiting_is_charted_against_cargo_delivered() -> None:
     """Waiting climbing while delivered stays flat is a network that does not move."""
     from nttd.monitor import page
 
-    steps = [{"step": i, "cargo_waiting": i, "cargo_delivered": i * 2} for i in range(3)]
+    steps = [{"day": i, "cargo_waiting": i, "cargo_delivered": i * 2} for i in range(3)]
     cargo = [chunk for chunk in page._charts(steps) if 'data-cid="ccargo"' in chunk]
     assert cargo, "the cargo panel is missing"
     assert "waiting at stations" in cargo[0] and "delivered" in cargo[0]

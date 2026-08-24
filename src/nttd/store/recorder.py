@@ -8,6 +8,7 @@ Storage layout per session (under logs/sessions/<session_id>/):
   snapshots.parquet     -- full game state time-series (via ParquetWriter)
   actions.parquet       -- all actions with embedded parameters as JSON
   events.parquet        -- lifecycle + game events
+  spend.parquet         -- contestant-reported model usage, as it was reported
 
 During a session, fragments are written to _fragments/<type>_NNN.parquet
 to avoid re-reading the full file on every flush. On stop, all fragments
@@ -75,9 +76,34 @@ _EVENTS_SCHEMA = pa.schema([
     ("timestamp", pa.timestamp("us")),
 ])
 
+# Every /report a contestant sends, kept as it arrives rather than only summed.
+#
+# ParticipantReport already accumulates these in memory and writes one total into the result.
+# A total cannot be plotted: what a reader wants while a run is going is where the money went,
+# and by the time the result exists the run is over. So each report is also recorded against
+# the game date it arrived on, which is what makes a spend-over-the-run chart possible.
+#
+# Deliberately NOT in the submission bundle. It is contestant-reported and unverifiable, no
+# check reads it, and the bundle is evidence. It sits beside snapshots.parquet, which is
+# excluded for the same reason.
+#
+# total_cost_usd is nullable on purpose. A runner may know its tokens and not their price,
+# and a null says so where a zero would claim the run was free.
+_SPEND_SCHEMA = pa.schema([
+    ("game_date", pa.int32()),
+    ("company_id", pa.int16()),
+    ("model", pa.string()),
+    ("role", pa.string()),
+    ("prompt_tokens", pa.int64()),
+    ("completion_tokens", pa.int64()),
+    ("total_cost_usd", pa.float64()),
+    ("timestamp", pa.timestamp("us")),
+])
+
 _SCHEMAS: dict[str, pa.Schema] = {
     "actions": _ACTIONS_SCHEMA,
     "events": _EVENTS_SCHEMA,
+    "spend": _SPEND_SCHEMA,
 }
 
 
@@ -105,10 +131,11 @@ class SessionRecorder:
         # whatever happens to be unflushed at the end.
         self._action_counts: dict[int, dict[str, int]] = {}
         self._event_buffer: list[dict[str, Any]] = []
+        self._spend_buffer: list[dict[str, Any]] = []
 
         self._buffer_lock: asyncio.Lock = asyncio.Lock()
         # Per-type fragment counters (monotonic, used for unique filenames)
-        self._fragment_seq: dict[str, int] = {"actions": 0, "events": 0}
+        self._fragment_seq: dict[str, int] = {"actions": 0, "events": 0, "spend": 0}
 
         self._flush_task: asyncio.Task[None] | None = None
         self._running: bool = False
@@ -173,8 +200,10 @@ class SessionRecorder:
         async with self._buffer_lock:
             actions = self._action_buffer
             events = self._event_buffer
+            spend = self._spend_buffer
             self._action_buffer = []
             self._event_buffer = []
+            self._spend_buffer = []
 
         t0 = time.monotonic()
 
@@ -188,6 +217,10 @@ class SessionRecorder:
         if events:
             tasks.append(asyncio.ensure_future(asyncio.to_thread(
                 self._write_fragment, "events", events,
+            )))
+        if spend:
+            tasks.append(asyncio.ensure_future(asyncio.to_thread(
+                self._write_fragment, "spend", spend,
             )))
 
         # Also flush snapshot ParquetWriter buffer if it has data
@@ -276,7 +309,9 @@ class SessionRecorder:
         self._snapshot_count += 1
         self._parquet.append(snapshot)
 
-        buf_size = len(self._action_buffer) + len(self._event_buffer)
+        buf_size = (
+            len(self._action_buffer) + len(self._event_buffer) + len(self._spend_buffer)
+        )
         if buf_size >= _MAX_BUFFER_SIZE:
             asyncio.create_task(self._flush_once())
 
@@ -383,6 +418,37 @@ class SessionRecorder:
             "event_type": event_type,
             "company_id": company_id or 0,
             "detail": detail or "",
+            "timestamp": datetime.now(timezone.utc),
+        })
+
+    def record_spend(
+        self,
+        game_date: int,
+        company_id: int,
+        model: str,
+        role: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_cost_usd: float | None,
+    ) -> None:
+        """One model's usage, as a contestant reported it, against the day it arrived.
+
+        Reported and unverifiable, like everything else a contestant declares about itself:
+        nttd runs no model and cannot observe any of this. Recorded per report rather than
+        only summed, because a total says what a run cost and a series says where it went,
+        and the second is the one worth watching while a run is still going.
+
+        A null cost is not zero. It means the tokens are known and the price is not, which is
+        what a framework produces when a model is missing from its price table.
+        """
+        self._spend_buffer.append({
+            "game_date": game_date,
+            "company_id": company_id,
+            "model": model,
+            "role": role,
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "total_cost_usd": total_cost_usd,
             "timestamp": datetime.now(timezone.utc),
         })
 

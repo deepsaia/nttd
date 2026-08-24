@@ -107,7 +107,9 @@ def _print_summary(manifest: dict, bundle_dir: Path, rows: list[dict]) -> None:
         artifacts.add_row(name, f"{meta['bytes'] / 1024:.0f} KB", meta["sha256"] or "?")
     console.print(artifacts)
     console.print(f"Bundle: [cyan]{bundle_dir}[/]")
+    # What is NOT in it, and why, since the artifact table above only says what is.
     console.print(
-        "[dim]The full snapshot series is not bundled: no check reads it and it "
-        "dominates a long run. Keep your own and link to them.[/]"
+        "[dim]Reported spend is not bundled. It is the contestant's claim about itself, "
+        "nttd never observed it, and no check can recheck it; the totals travel in "
+        "result.parquet, and the series stays in the session directory for the monitor.[/]"
     )

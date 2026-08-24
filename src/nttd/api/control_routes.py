@@ -158,10 +158,27 @@ async def report_spend(
     token = extract_token(x_participant_token, authorization)
     company_id = resolve_company_id(runtime, token)
 
-    runtime.participant_report.declare(
-        company_id,
-        **{key: value for key, value in report.model_dump().items() if value},
-    )
+    declared = {key: value for key, value in report.model_dump().items() if value}
+    runtime.participant_report.declare(company_id, **declared)
+
+    # Also kept as a series, against the game date it arrived on. The report above only
+    # accumulates a total, and a total cannot be plotted: what a reader wants while a run is
+    # going is where the spend went, and by the time the result exists the run is over.
+    for entry in declared.get("models") or []:
+        raw = entry if isinstance(entry, dict) else entry.model_dump()
+        model = str(raw.get("model") or "").strip()
+        if not model:
+            continue
+        runtime.recorder.record_spend(
+            game_date=runtime.world.game.game_date,
+            company_id=company_id,
+            model=model,
+            role=str(raw.get("role") or ""),
+            prompt_tokens=int(raw.get("prompt_tokens") or 0),
+            completion_tokens=int(raw.get("completion_tokens") or 0),
+            total_cost_usd=raw.get("total_cost_usd"),
+        )
+
     return {"company_id": company_id, "recorded": "reported"}
 
 
