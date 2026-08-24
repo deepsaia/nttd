@@ -429,6 +429,9 @@ JS = r"""
   var out=document.querySelector('.wstep');
   var live=document.querySelector('.wlivebtn');
   var last=frames.length-1;
+  // The date the run opened on, so every frame can say how far into the run it is.
+  var day0=(frames[0]||{}).d;
+  function gameDay(f){ return (f.d!=null&&day0!=null)?(f.d-day0):0; }
   var NS='http://www.w3.org/2000/svg';
   var stationColours=payload.station_colours||{};
   var vehicleColours=payload.vehicle_colours||{};
@@ -453,9 +456,11 @@ JS = r"""
       c.setAttribute('fill', vehicleColours[v[2]]||'#e6ebf5');
       group.appendChild(c);
     });
-    // 1-based, so the scrubber agrees with the step COUNT shown in the sidebar,
-    // the cards and the index table. Zero-based here read as one step fewer.
-    if(out) out.textContent='day '+(i+1)+(f.d?' ('+f.d+')':'');
+    // The GAME day, from the game's own clock, so this agrees with the sidebar, the cards,
+    // the index table and the scored result record. It used to be the frame index plus one,
+    // which is a count of snapshots: a day the runner acted on twice is captured twice, so a
+    // measured 366 day run read "day 378" here while its result said 366.
+    if(out) out.textContent='day '+gameDay(f)+(f.d?' ('+f.d+')':'');
     if(slider) slider.value=i;
   }
   function setLive(on){

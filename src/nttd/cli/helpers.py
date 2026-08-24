@@ -69,8 +69,22 @@ def check_server(base_url: str) -> None:
 
 
 
+def labelled(rows: list[tuple[str, str]]) -> str:
+    """A panel body of label and value, with the values in one column.
+
+    Computed rather than hand-spaced. The three panels that show this shape each padded their
+    own labels with literal spaces, so adding "Idle slots" to one of them put its value two
+    characters left of every other row and nothing caught it. Rich markup is added after the
+    width is measured, because the tags are not visible and must not be counted.
+    """
+    width = max((len(label) for label, _ in rows), default=0)
+    return "\n".join(
+        f"[bold]{label}:[/]{' ' * (width - len(label) + 2)}{value}" for label, value in rows
+    )
+
+
 def format_end_conditions_brief(ec: EndConditionsConfig) -> str:
-    """Format end conditions as a brief summary string."""
+    """What ends a run, as a value for `labelled`. No label of its own, so it lines up."""
     parts: list[str] = []
     if ec.time_limit.enabled:
         parts.append(f"time={ec.time_limit.wall_minutes}min")
@@ -85,8 +99,8 @@ def format_end_conditions_brief(ec: EndConditionsConfig) -> str:
     if ec.bankruptcy.enabled:
         parts.append("bankruptcy")
     if not parts:
-        return "[bold]End:[/]         [dim]none configured[/]"
-    return f"[bold]End:[/]         {', '.join(parts)} (logic={ec.logic})"
+        return "[dim]none configured[/]"
+    return f"{', '.join(parts)} (logic={ec.logic})"
 
 
 def resolve_session(value: str) -> str:

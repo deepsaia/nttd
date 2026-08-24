@@ -131,6 +131,15 @@ def _entrant(supplied: str | None, token: str | None) -> str:
 
     try:
         who = _whoami_name(token)
+    except ImportError:
+        # Distinguished from a hub failure because it is a different thing to fix, and
+        # "No module named huggingface_hub" under a heading about your token reads as a
+        # token problem. A real filing needs the extra anyway, for the upload.
+        console.print(
+            "[yellow]Cannot look up your account:[/] the publish extra is not installed.\n"
+            "[dim]  uv sync --extra publish[/]"
+        )
+        return UNKNOWN_ENTRANT
     except Exception as failure:  # noqa: BLE001 - any failure here means "could not ask"
         console.print(f"[yellow]Could not read your account from {TOKEN_VAR}:[/] {failure}")
         return UNKNOWN_ENTRANT

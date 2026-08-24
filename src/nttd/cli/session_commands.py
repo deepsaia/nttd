@@ -11,6 +11,7 @@ from nttd.cli.helpers import (
     console,
     format_end_conditions_brief,
     get_base_url,
+    labelled,
     resolve_session,
     session_option,
 )
@@ -83,14 +84,15 @@ def session_create(
     console.print(Panel(
         # No separate Name row. The id IS the name, and a row that repeated it, or sat
         # empty when nothing was passed, only invited the question of which one to use.
-        f"[bold]Session:[/]     [cyan]{session_id}[/]\n"
-        f"[bold]Config:[/]      {config or 'defaults'}\n"
-        f"[bold]Map:[/]         {map_x}x{map_y}\n"
-        f"[bold]Seed:[/]        "
-        + (f"[cyan]{seed}[/]" if seed else "[yellow]random (not reproducible)[/]") + "\n"
-        f"[bold]Idle slots:[/] {ai_count}\n"
-        f"[bold]Runtime:[/]     {cfg.runtime.mode}\n"
-        + format_end_conditions_brief(cfg.end_conditions),
+        labelled([
+            ("Session", f"[cyan]{session_id}[/]"),
+            ("Config", str(config or "defaults")),
+            ("Map", f"{map_x}x{map_y}"),
+            ("Seed", f"[cyan]{seed}[/]" if seed else "[yellow]random (not reproducible)[/]"),
+            ("Idle slots", str(ai_count)),
+            ("Runtime", str(cfg.runtime.mode)),
+            ("End", format_end_conditions_brief(cfg.end_conditions)),
+        ]),
         title="Session created",
     ))
     console.print(f"\nNext: [cyan]nttd session start -s {session_id}[/]")
