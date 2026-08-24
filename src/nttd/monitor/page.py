@@ -150,6 +150,7 @@ def session_page(
     body.append(_action_table(feed))
     body.append(_event_table(feed))
     body.append("</div>")
+    body.extend(_spend_panels(feed.spend()))
     body.append(_metrics_panel(feed.metrics()))
     body.append("</div>")
     return shell("".join(body), refresh=LIVE_REFRESH_SECONDS if meta["live"] else 0)
@@ -528,8 +529,72 @@ def _series(
     return {
         "label": label,
         "colour": line_colour,
-        "rows": [{"step": row["step"], "v": row.get(field)} for row in steps],
+        "rows": [{"day": row.get("day"), "v": row.get(field)} for row in steps],
     }
+
+
+def _spend_panels(spend: dict[str, Any]) -> list[str]:
+    """What the contestant said its models cost, if it said anything.
+
+    Returns NOTHING when nothing was reported, which is the normal state for an RL or ES
+    entry: those run a policy rather than a model and have no tokens to declare. An empty
+    chart of zeros would not be a fact about the run, it would be a fact about the absence
+    of a report, and the page already has somewhere to say that.
+
+    Every figure here is the contestant's claim about itself. nttd runs no model, so it
+    cannot observe a token or a dollar, and the panel says so rather than presenting these
+    beside the action counts it tallied itself.
+    """
+    if not spend or not spend.get("models"):
+        return []
+
+    priced = spend.get("priced", True)
+    # Withheld rather than understated. A total missing one model's price still reads as a
+    # total, which is a worse answer than declining to give one.
+    total = f"${spend['cost']:,.2f}" if priced else "not priced"
+
+    rows = [
+        [
+            model["model"],
+            model["role"] or "-",
+            number(model["prompt_tokens"]),
+            number(model["completion_tokens"]),
+            str(model["reports"]),
+            f"${model['cost']:,.4f}" if model["priced"] else "not priced",
+        ]
+        for model in spend["models"]
+    ]
+    rows.append([
+        "all models", "", number(spend["prompt_tokens"]),
+        number(spend["completion_tokens"]), str(spend["reports"]), total,
+    ])
+
+    out = [
+        line_chart(
+            "cspend",
+            [{"label": "cost so far", "colour": colour(2),
+              "rows": [{"day": p["day"], "v": p["cost"]} for p in spend["series"]]}],
+            "Reported cost over the run", "v",
+        ),
+        line_chart(
+            "ctokens",
+            [{"label": "tokens so far", "colour": colour(0),
+              "rows": [{"day": p["day"], "v": p["tokens"]} for p in spend["series"]]}],
+            "Reported tokens over the run", "v",
+        ),
+    ]
+    out.append(table(
+        ["model", "role", "prompt", "completion", "reports", "cost"],
+        rows,
+        "Reported model usage",
+        "nothing reported",
+    ))
+    out.append(
+        '<p class="note">Contestant-reported and unverifiable: nttd runs no model, so it '
+        "cannot see what you used or what it cost. A run that reports nothing, which is "
+        "every RL and ES entry, shows none of this rather than a row of zeros.</p>"
+    )
+    return ['<div class="grid pair">', *out, "</div>"]
 
 
 def _fleet_table(feed: SessionFeed) -> str:

@@ -231,7 +231,7 @@ def _collect(series: list[dict[str, Any]], field: str) -> list[tuple[float, floa
     points: list[tuple[float, float]] = []
     for entry in series:
         for row in entry["rows"]:
-            x, y = row.get("step"), row.get(field)
+            x, y = row.get("day"), row.get(field)
             if _plottable(x) and _plottable(y):
                 points.append((float(x), float(y)))
     return points
@@ -278,7 +278,7 @@ def _polyline(
     pixels: list[str] = []
     values: list[list[float]] = []
     for row in entry["rows"]:
-        x, y = row.get("step"), row.get(field)
+        x, y = row.get("day"), row.get(field)
         if not (_plottable(x) and _plottable(y)):
             continue
         pixels.append(f"{scale.x(x):.1f},{scale.y(y):.1f}")

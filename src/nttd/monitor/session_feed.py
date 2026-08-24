@@ -139,6 +139,11 @@ class SessionFeed:
         banked = 0
         previous_year: int | None = None
         previous_live = 0
+        # The date the run opened on, so every row can say how far into the run it is. The
+        # charts plot against that rather than against the row's position: a day the runner
+        # acted on twice is captured twice, so a measured 366 day run has 378 rows, and an
+        # axis of row positions labelled "day" disagrees with the scored result by twelve.
+        first_date: int | None = None
         for index, snapshot in enumerate(self._snapshots()):
             game = snapshot.get("game") or {}
             company = self._company(snapshot)
@@ -151,8 +156,14 @@ class SessionFeed:
             if previous_year is not None and year != previous_year:
                 banked += previous_live
             previous_year, previous_live = year, live_profit
+            if first_date is None and date is not None:
+                first_date = int(date)
             row = {
                 "step": index,
+                "day": (
+                    int(date) - first_date
+                    if date is not None and first_date is not None else None
+                ),
                 "game_date": date,
                 "balance": company.get("money"),
                 "loan": company.get("loan"),
@@ -411,6 +422,73 @@ class SessionFeed:
         if self._parsed is not None:
             return len(self._parsed)
         return sum(1 for raw in self._raw_snapshots() if _looks_complete(raw))
+
+    def spend(self) -> dict[str, Any]:
+        """What the contestant said its models cost, per model and over the run.
+
+        Empty when nothing was reported, which is the normal state for an RL or ES entry:
+        those run a policy rather than a model and have no tokens to declare. The page shows
+        this panel only when there is something in it, because a spend chart of zeros for a
+        policy that never called a model is not a fact about the run.
+
+        Reported and unverifiable. nttd runs no model, so every number here is the
+        contestant's claim about itself; the page says so where it shows them.
+
+        A null cost is not zero: it means the tokens are known and the price is not, which is
+        what a framework produces when a model is missing from its price table. Those rows
+        count towards tokens and are left out of the money, and `priced` says whether any were
+        left out so the page can decline to show a total that would understate.
+        """
+        frame = self._data.spend
+        if frame.is_empty():
+            return {}
+
+        rows = frame.to_dicts()
+        opened_on = min((int(r["game_date"]) for r in rows if r.get("game_date")), default=0)
+
+        per_model: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            key = str(row.get("model") or "?")
+            entry = per_model.setdefault(key, {
+                "model": key, "role": str(row.get("role") or ""),
+                "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0,
+                "reports": 0, "priced": True,
+            })
+            entry["prompt_tokens"] += int(row.get("prompt_tokens") or 0)
+            entry["completion_tokens"] += int(row.get("completion_tokens") or 0)
+            entry["reports"] += 1
+            cost = row.get("total_cost_usd")
+            if cost is None:
+                entry["priced"] = False
+            else:
+                entry["cost"] += float(cost)
+
+        # Cumulative, because that is the question: what has this run cost by now. A per
+        # report bar answers "what did that one turn cost", which the table below already says.
+        running_cost, running_tokens = 0.0, 0
+        series: list[dict[str, Any]] = []
+        for row in sorted(rows, key=lambda r: (int(r.get("game_date") or 0), r.get("timestamp"))):
+            running_cost += float(row.get("total_cost_usd") or 0.0)
+            running_tokens += int(row.get("prompt_tokens") or 0)
+            running_tokens += int(row.get("completion_tokens") or 0)
+            series.append({
+                "day": max(0, int(row.get("game_date") or opened_on) - opened_on),
+                "cost": round(running_cost, 6),
+                "tokens": running_tokens,
+            })
+
+        models = sorted(per_model.values(), key=lambda m: -m["cost"])
+        return {
+            "models": models,
+            "series": series,
+            "reports": len(rows),
+            "prompt_tokens": sum(m["prompt_tokens"] for m in models),
+            "completion_tokens": sum(m["completion_tokens"] for m in models),
+            "cost": round(sum(m["cost"] for m in models), 6),
+            # False when any model went unpriced, so the page can show the tokens and
+            # withhold a total that would be missing one of its parts.
+            "priced": all(m["priced"] for m in models),
+        }
 
     def game_days(self) -> int:
         """How many game days the run has covered, from the game's own clock.

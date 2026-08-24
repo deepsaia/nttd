@@ -13,6 +13,7 @@ know which is the lie, and the number they are being asked to trust is the score
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import polars as pl
@@ -22,9 +23,14 @@ from nttd.monitor.session_feed import SessionFeed
 
 
 def _feed(dates: list[int], **fields: object) -> SessionFeed:
+    # The date lives in two places for two readers: the parquet column, which game_days()
+    # uses because it needs no parsing, and inside the snapshot, which steps() reads because
+    # it is already decoding the whole thing for the charts.
     frame = pl.DataFrame({
         "game_date": dates,
-        "snapshot_json": ['{"game": {}}'] * len(dates),
+        "snapshot_json": [
+            json.dumps({"game": {"game_date": date}, "companies": [{}]}) for date in dates
+        ],
     })
     data = SessionData(
         session_id="a-session", session_dir=Path("/nonexistent"), snapshots=frame, **fields,
@@ -60,3 +66,32 @@ def test_an_empty_session_does_not_divide_by_anything() -> None:
     frame = pl.DataFrame({"game_date": [], "snapshot_json": []})
     data = SessionData(session_id="s", session_dir=Path("/nonexistent"), snapshots=frame)
     assert SessionFeed(data).game_days() == 0
+
+
+def test_the_charts_plot_against_the_game_day() -> None:
+    """The same defect as the sidebar's, in the one place that survived the first fix.
+
+    Every chart shares one x field. It was the snapshot index, so a run whose cargo chart
+    read "day 378" had a result record saying 366. The fix landed for the sidebar, the index
+    table, the cards and the map scrubber, and silently did not land here.
+    """
+    feed = _feed([737790, 737791, 737792, 737792, 737795])
+    days = [row["day"] for row in feed.steps()]
+    assert days == [0, 1, 2, 2, 5], "the x axis is the game day, not the row position"
+
+
+def test_a_chart_reads_the_day_field_and_not_the_row_position() -> None:
+    """Asserted on the chart itself, because the series and the chart have to agree.
+
+    Renaming one without the other draws an empty panel rather than a wrong one, which at
+    least fails loudly, but only if something looks.
+    """
+    from nttd.monitor.charts import line_chart  # noqa: PLC0415
+
+    rows = [{"day": day, "v": day} for day in (0, 10, 20)]
+    drawn = line_chart("t", [{"label": "v", "colour": "#fff", "rows": rows}], "T", "v")
+    assert "<circle" in drawn or "polyline" in drawn, "nothing was plotted"
+
+    stale = [{"step": index, "v": index} for index in range(3)]
+    empty = line_chart("t", [{"label": "v", "colour": "#fff", "rows": stale}], "T", "v")
+    assert "no data" in empty, "the chart must key on day, so a step-keyed row plots nothing"

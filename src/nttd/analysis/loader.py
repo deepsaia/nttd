@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # "result" is included so a report can reach the contestant detail and per-model
 # spend that POST /report supplies; "agent_cycles" is gone with the gameloop.
-_PARQUET_TYPES = ("actions", "events", "snapshots", "tiles", "result")
+_PARQUET_TYPES = ("actions", "events", "snapshots", "tiles", "result", "spend")
 
 
 @dataclass
@@ -52,6 +52,9 @@ class SessionData:
     actions: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     result: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     events: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
+    # Contestant-reported model usage, one row per model per report. Empty for anything that
+    # reports none, which is every RL and ES entry and any agent that declines to say.
+    spend: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     snapshots: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
     tiles: pl.DataFrame = field(default_factory=lambda: pl.DataFrame())
 
