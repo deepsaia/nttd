@@ -446,13 +446,15 @@ diversity, cash, and loan status. Cargo delivered breaks ties.
 ## Reference runners
 
 Working runners live in a separate repository,
-[deepsaia/nttd-examples](https://github.com/deepsaia/nttd-examples): a minimal HTTP
-runner, a scripted policy, LangChain and LangGraph agents, and a neuro-san multi-agent
-system whose coded tools call back into `gs/query`.
+[deepsaia/nttd-examples](https://github.com/deepsaia/nttd-examples): a scripted policy
+that needs no model, and a neuro-san multi-agent system whose coded tools call back into
+`gs/query`. One per idea rather than one per SDK, because four copies of one loop drift in
+four directions.
 
 They are contestant-side code, and none of them import the `nttd` package. That is worth
 knowing before you start: you do not need the engine installed to write an entry, and an
 entry written in another language is on equal footing.
 
 Start with `examples/minimal_runner.py`. It is the whole contract in one file and runs
-without an API key.
+without an API key. `uv run runex` there will pick it, find your open session, and attach
+it for you.

@@ -60,6 +60,20 @@ uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf   
 `benchmark` creates the session, draws the world, prints a **session id** and a
 **participant token**, and then waits. It does not play: attaching a runner is your half.
 
+That one command is the four below rolled together, and the four are there when you want to
+change something in the middle, run two sessions on one server, or start a session now and
+attach to it much later:
+
+```bash
+uv run nttd server                                                # terminal 1
+uv run nttd session create --config config/benchmark/t1_256_flat_1001_stepped.conf
+uv run nttd session start -s <session> --agent-companies 1
+uv run nttd session attach <session>   # prints the participant token
+```
+
+`--agent-companies 1` is the one to notice. Without it the session starts with no contestant
+company, so no participant token is issued and nothing can play it.
+
 A session id looks like `20260815-132431ist-quiet-pickle`, which is the date and time it
 started followed by a word pair. It is the only name the run has, and it is what ties the
 artifacts, the monitor view and the board row together.
@@ -73,6 +87,17 @@ Anything that can speak HTTP can play. The worked runners are in the examples re
 ```bash
 git clone git@github.com:deepsaia/nttd-examples.git
 cd nttd-examples && uv sync
+uv run runex
+```
+
+`runex` asks the four questions in order: which approach, which session, which token, and
+whether to start. It reads the open sessions from the running nttd server and offers the
+token that server issued, so the usual answer to all four is Enter. It is also `nttd runex`
+if you have both installed in one environment, and `python -m runex` from a checkout.
+
+Nothing depends on it. The same run starts by hand:
+
+```bash
 uv run python -m examples.minimal_runner --session <session> --token <token>
 ```
 
