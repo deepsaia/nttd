@@ -119,19 +119,39 @@ New here? [docs/getting_started.md](docs/getting_started.md) walks one whole exp
 to end: install, run a session, play it with a runner from nttd-examples, watch it in the
 monitor, read the result, and publish it through nttd-leaderboard.
 
-Every run is the same three steps: start the server, stand up a task, attach your
-runner. What differs is the *runner*.
+A whole run is four commands across two repositories. Steps 1 and 2 are here; steps 3 and 4
+are in [nttd-examples](https://github.com/deepsaia/nttd-examples), because nttd runs no agent.
 
 ```bash
-uv run nttd server                                             # terminal 1
-uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf # terminal 2
+# --- here -------------------------------------------------------------------------------
+uv run nttd server                                                              # terminal 1
+uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf    # terminal 2
+
+# --- in an nttd-examples checkout ---------------------------------------------------------
+uv run ns run                                                                   # terminal 3
+uv run runex                                                                    # terminal 4
 ```
 
-`benchmark` creates the session, generates the world, prints the participant token,
-then waits for the end condition and writes the result. It does **not** run an agent:
-attach yours to the printed session id while it waits.
+**1. `nttd server`** is the HTTP API on `:8000`. Everything talks to it and it runs no game by
+itself. Leave it up: one server serves any number of sessions.
 
-If you would rather drive the lifecycle yourself:
+**2. `nttd benchmark --config <conf>`** creates a session, generates its world, starts OpenTTD
+on it, prints the **session id** and the **participant token**, then waits for an end
+condition and writes the result. The config decides the world and how long the run lasts, and
+`t1_256_flat_1001_stepped.conf` is only an example: `ls config/benchmark/` has all four tiers
+in both modes. It does **not** run an agent.
+
+**3. `ns run`** serves the agent networks, for an entry that uses them. Not needed for a
+scripted or learned policy.
+
+**4. `runex`** asks which approach, which session and which token, reads what it can from the
+two servers already running, and starts the run. It is also `nttd runex` when both
+repositories are installed in one environment.
+
+### Or drive the lifecycle yourself
+
+`nttd benchmark` is these three rolled together. Use them separately to change something in
+between, run two sessions against one server, or open a world now and attach much later:
 
 ```bash
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
@@ -142,15 +162,25 @@ uv run nttd session stop -s <session>
 uv run nttd result -s <session>
 ```
 
-Either way, the third step is your runner. The worked ones live in
-[nttd-examples](https://github.com/deepsaia/nttd-examples), and its `runex` launcher asks
-which approach, which session and which token rather than making you carry them between
-terminals:
+`--agent-companies 1` is the part to notice: without it the session has no contestant company,
+so no token is issued and nothing can play it. Nothing here waits for the end condition, so
+you end the run yourself with `session stop`.
+
+### Then submit it for scoring
 
 ```bash
-uv run runex          # from an nttd-examples checkout
-uv run nttd runex     # or through nttd, when both are installed together
+uv run nttd submit -s <session>                          # writes <session dir>/submission
+uv run nttd verify logs/sessions/<session>/submission    # your own check, advisory
+uv sync --extra publish                                  # once
+export HF_TOKEN=...                                      # your own token, write scope
+uv run nttd publish -s <session> --entrant <you> --id <name>
 ```
+
+`verify` runs the checks the board runs and predicts a verdict, but it ran on your machine
+from code you could have changed; add `--regenerate` to rebuild the world from its seed and
+compare terrain. `publish` opens a pull request on the board's dataset using your own
+HuggingFace token, so nobody needs write access to the board. Add `--dry-run` first to see
+what would be filed and where.
 
 Validate a scenario before committing to a long run:
 
