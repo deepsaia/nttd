@@ -60,5 +60,14 @@ def verification_gaps(rows: list[dict[str, Any]]) -> list[str]:
             "no spend reported -- model, tokens, and cost are absent because nttd "
             "cannot observe them. Have your runner POST /report to include them"
         )
+    elif not any(row.get("cost_is_reported") for row in rows):
+        # Reported tokens with no price is its own state, and saying "no spend reported"
+        # over it would be wrong twice: the tokens ARE there, and the reason the cost is
+        # not is usually a model missing from the runner's price table rather than a
+        # runner that never reported.
+        gaps.append(
+            "tokens reported without a price -- what the run used is recorded, what it "
+            "cost is not, so the board's cost column stays blank"
+        )
 
     return gaps

@@ -81,13 +81,32 @@ class ParticipantReport:
             return
         key = (model, str(raw.get("role") or ""))
         bucket = self._spend.setdefault(company_id, {}).setdefault(
-            key, {"prompt_tokens": 0.0, "completion_tokens": 0.0, "total_cost_usd": 0.0},
+            key,
+            {
+                "prompt_tokens": 0.0,
+                "completion_tokens": 0.0,
+                "total_cost_usd": 0.0,
+                # Whether the price has ever been stated for this model. A contestant may
+                # know its token counts and not its cost, and adding an absent price as
+                # zero would turn "I do not know" into "it was free".
+                "priced": False,
+            },
         )
-        for field in bucket:
+        for field in ("prompt_tokens", "completion_tokens"):
             try:
                 bucket[field] += float(raw.get(field) or 0)
             except (TypeError, ValueError):
                 logger.warning("Ignoring non-numeric %s=%r", field, raw.get(field))
+
+        cost = raw.get("total_cost_usd")
+        if cost is None:
+            return
+        try:
+            bucket["total_cost_usd"] += float(cost)
+        except (TypeError, ValueError):
+            logger.warning("Ignoring non-numeric total_cost_usd=%r", cost)
+            return
+        bucket["priced"] = True
 
     def model_breakdown(self, company_id: int) -> list[dict[str, Any]]:
         """Per-model spend for a company, for the record and for a board to show."""
@@ -97,7 +116,9 @@ class ParticipantReport:
                 "role": role,
                 "prompt_tokens": int(totals["prompt_tokens"]),
                 "completion_tokens": int(totals["completion_tokens"]),
-                "total_cost_usd": round(totals["total_cost_usd"], 6),
+                "total_cost_usd": (
+                    round(totals["total_cost_usd"], 6) if totals["priced"] else None
+                ),
             }
             for (model, role), totals in sorted(self._spend.get(company_id, {}).items())
         ]
@@ -133,8 +154,13 @@ class ParticipantReport:
                 )
                 entry["prompt_tokens"] = sum(i["prompt_tokens"] for i in breakdown)
                 entry["completion_tokens"] = sum(i["completion_tokens"] for i in breakdown)
-                entry["total_cost"] = round(
-                    sum(i["total_cost_usd"] for i in breakdown), 6,
+                # A total only means anything if every model in it was priced. One model
+                # missing a price makes the sum a partial figure that still reads as a
+                # total, which is a worse answer than declining to give one.
+                priced = [i["total_cost_usd"] for i in breakdown]
+                entry["cost_is_reported"] = all(cost is not None for cost in priced)
+                entry["total_cost"] = (
+                    round(sum(priced), 6) if entry["cost_is_reported"] else 0.0
                 )
                 entry["spend_is_reported"] = True
                 entry["model_breakdown"] = breakdown
@@ -162,6 +188,9 @@ class ParticipantReport:
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_cost": 0.0,
+            # Separate from spend_is_reported, because tokens and price are separate
+            # claims: a run can be counted and unpriced.
+            "cost_is_reported": False,
             "spend_is_reported": False,
             "model_breakdown": [],
         }

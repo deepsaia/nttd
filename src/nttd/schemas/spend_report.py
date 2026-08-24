@@ -33,14 +33,23 @@ class ModelSpend(BaseModel):
             part of the key rather than a label.
         prompt_tokens: Input tokens consumed by this model.
         completion_tokens: Output tokens produced by this model.
-        total_cost_usd: What this model cost.
+        total_cost_usd: What this model cost, or None when the tokens are known and the
+            price is not. Those are different claims and one number cannot say both.
+            Omitting it means "I do not know"; sending 0.0 means "this was free", which a
+            local policy may say truthfully and a hosted model may not.
+
+            The case this exists for: a framework that counts tokens against its own price
+            table and finds no entry for the model. neuro-san logs a warning and falls back
+            to a cost of zero, so a runner passing that figure straight through would
+            publish a free run. Reporting the tokens and withholding the price is honest;
+            reporting a zero it was handed is not.
     """
 
     model: str
     role: str = ""
     prompt_tokens: int = Field(default=0, ge=0)
     completion_tokens: int = Field(default=0, ge=0)
-    total_cost_usd: float = Field(default=0.0, ge=0.0)
+    total_cost_usd: float | None = Field(default=None, ge=0.0)
 
 
 class SpendReport(BaseModel):

@@ -86,6 +86,9 @@ _SCHEMA = pa.schema([
     # (a local RL policy that genuinely cost nothing) from "told us nothing", which a
     # reader comparing them needs and a single 0.0 cannot express.
     ("spend_is_reported", pa.bool_()),
+    # Separate from spend_is_reported: a run can have its tokens counted and its price
+    # unknown, and a cost column that showed $0.00 for that would claim it was free.
+    ("cost_is_reported", pa.bool_()),
     # Per-model spend as JSON. A multi-agent system routinely uses several models --
     # neuro-san runs a front-man plus specialists, often on different ones -- so a
     # single cost figure hides the shape of the system that produced it.
@@ -276,6 +279,7 @@ class ResultWriter:
                 "completion_tokens": int(who.get("completion_tokens", 0)),
                 "total_cost_usd": float(who.get("total_cost", 0.0)),
                 "spend_is_reported": bool(who.get("spend_is_reported", False)),
+                "cost_is_reported": bool(who.get("cost_is_reported", False)),
                 "model_breakdown_json": json.dumps(
                     who.get("model_breakdown") or [], separators=(",", ":"),
                 ),

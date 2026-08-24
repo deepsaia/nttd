@@ -41,7 +41,14 @@ def _print_model_breakdown(rows: list[dict]) -> None:
                 entry.get("role", "") or "-",
                 f"{entry.get('prompt_tokens', 0):,}",
                 f"{entry.get('completion_tokens', 0):,}",
-                f"${entry.get('total_cost_usd', 0.0):.4f}",
+                # Blank when the price was never stated. A run whose tokens were counted
+                # against a table with no entry for its model knows what it used and not
+                # what it cost, and $0.0000 would answer a question nobody was asked.
+                (
+                    f"${entry['total_cost_usd']:.4f}"
+                    if entry.get("total_cost_usd") is not None
+                    else "[dim]not priced[/]"
+                ),
             )
         console.print(table)
         shown = True

@@ -168,3 +168,73 @@ def test_the_report_schema_defaults_to_empty() -> None:
     """Nothing is required: reporting is optional."""
     assert SpendReport().models == []
     assert SpendReport().nttd_framework == ""
+
+
+# --- tokens counted, price unknown ------------------------------------------------------
+
+
+class TestAPriceThatWasNeverStated:
+    """"I do not know what it cost" and "it cost nothing" are different claims.
+
+    The case this exists for: a framework counts tokens against its own price table and finds
+    no entry for the model. neuro-san logs a warning and falls back to a cost of zero, so a
+    runner passing that figure straight through would publish a free run. nttd already keeps
+    "told us zero" apart from "told us nothing" for spend as a whole; this keeps the price
+    apart from the tokens.
+    """
+
+    def test_omitting_the_cost_reports_the_tokens_and_no_price(self) -> None:
+        report = ParticipantReport()
+        report.declare(0, models=[{
+            "model": "claude-sonnet-5", "prompt_tokens": 1_000, "completion_tokens": 200,
+        }])
+        entry = report.build()[0]
+
+        assert entry["spend_is_reported"] is True, "the tokens were reported"
+        assert entry["cost_is_reported"] is False, "the price was not"
+        assert entry["prompt_tokens"] == 1_000
+        assert entry["completion_tokens"] == 200
+        assert report.model_breakdown(0)[0]["total_cost_usd"] is None
+
+    def test_a_declared_zero_is_still_a_claim_that_it_was_free(self) -> None:
+        """A local policy that genuinely cost nothing says so, and is believed."""
+        report = ParticipantReport()
+        report.declare(0, models=[{"model": "none", "total_cost_usd": 0.0}])
+        entry = report.build()[0]
+
+        assert entry["cost_is_reported"] is True
+        assert entry["total_cost"] == 0.0
+
+    def test_one_unpriced_model_withholds_the_whole_total(self) -> None:
+        """A sum missing one of its parts still reads as a total, which is worse than none."""
+        report = ParticipantReport()
+        report.declare(0, models=[
+            {"model": "priced", "prompt_tokens": 10, "total_cost_usd": 1.25},
+            {"model": "unpriced", "prompt_tokens": 90},
+        ])
+        entry = report.build()[0]
+
+        assert entry["cost_is_reported"] is False
+        assert entry["prompt_tokens"] == 100, "the tokens still add up"
+
+    def test_a_price_reported_later_is_added_to_the_tokens_already_counted(self) -> None:
+        """Spend accumulates across calls, so a runner may report per cycle."""
+        report = ParticipantReport()
+        report.declare(0, models=[{"model": "m", "prompt_tokens": 5, "total_cost_usd": 0.5}])
+        report.declare(0, models=[{"model": "m", "prompt_tokens": 5, "total_cost_usd": 0.25}])
+        entry = report.build()[0]
+
+        assert entry["prompt_tokens"] == 10
+        assert entry["total_cost"] == 0.75
+        assert entry["cost_is_reported"] is True
+
+    def test_counting_a_model_without_a_price_does_not_poison_one_reported_later(self) -> None:
+        """A runner that learns the price mid-run may say so, and is believed from then on."""
+        report = ParticipantReport()
+        report.declare(0, models=[{"model": "m", "prompt_tokens": 5}])
+        assert report.build()[0]["cost_is_reported"] is False
+
+        report.declare(0, models=[{"model": "m", "prompt_tokens": 5, "total_cost_usd": 2.0}])
+        entry = report.build()[0]
+        assert entry["cost_is_reported"] is True
+        assert entry["total_cost"] == 2.0
