@@ -478,3 +478,31 @@ JS = r"""
     setLive(true); try{ sessionStorage.removeItem('wstep'); }catch(e){} paint(last); });
 })();
 """
+
+# The tab icon: a route with three stations on it, which is the shortest drawing of what a
+# session is. Everything a run produces is stations joined by vehicles carrying cargo.
+#
+# An SVG rather than a .ico because it is the same string the page already inlines everything
+# else as: no binary asset, no build step, no file to keep in step with the palette below.
+#
+# Drawn for 16 pixels, which is the size that actually gets used. That budget is the reason
+# for every choice here: three nodes and two segments, one accent colour on a dark rounded
+# square, a stroke wide enough to survive being scaled down, and no text. The dark square is
+# deliberate rather than transparent, so the glyph reads on a light tab bar and a dark one
+# without the icon needing to know which it is on.
+#
+# The middle station sits off the line between the other two, so the route bends. A straight
+# line of three dots reads as a decoration; a bend reads as a network.
+FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    '<rect width="32" height="32" rx="8" fill="#0f1420"/>'
+    # The corridor, under the stations so the joins are hidden by them.
+    '<path d="M7 23 L15 12 L25 9" fill="none" stroke="#4f8cff" stroke-width="3"'
+    ' stroke-linecap="round" stroke-linejoin="round"/>'
+    # Two ends and the junction between them. The junction is the accent colour filled in,
+    # the ends are hollow, which is how the eye tells a terminus from a through station.
+    '<circle cx="7" cy="23" r="3.6" fill="#0f1420" stroke="#4f8cff" stroke-width="2.6"/>'
+    '<circle cx="25" cy="9" r="3.6" fill="#0f1420" stroke="#4f8cff" stroke-width="2.6"/>'
+    '<circle cx="15" cy="12" r="2.6" fill="#35d0a5"/>'
+    '</svg>'
+)

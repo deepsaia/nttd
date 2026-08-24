@@ -76,6 +76,8 @@ def shell(inner: str, refresh: int = 0) -> str:
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">{meta_refresh}'
         f'<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>nttd monitor</title>"
+        f'<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+        f'<meta name="theme-color" content="#0f1420">'
         f"<script>{assets.THEME_HEAD_JS}</script><style>{assets.CSS}</style></head>"
         f'<body><div class="app">{inner}</div>'
         f"<script>{assets.JS}</script><script>{assets.THEME_BODY_JS}</script>"
