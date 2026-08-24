@@ -494,10 +494,11 @@ that server issued, so the usual answer to all four is Enter. A token given at t
 is passed to the runner through the environment and never onto the command line, where
 every process on the machine could read it.
 
-An approach that runs agent networks adds a fifth question when there is a choice to make:
-which network. It asks the agent server what it is serving, offers them with their
-descriptions when there is more than one, and states the answer rather than prompting when
-there is only one.
+An approach that runs agent networks adds two questions, both before the session is chosen so
+that nothing slow happens after a live game is picked: where the agent server is or should
+run, and which network. It starts a server if none answers, uses one that is already there
+rather than starting a second, and shuts down only what it started. Networks come from the
+server itself, offered with their descriptions when there is more than one.
 
 The launcher itself lives in **nttd-examples**, not here, and `nttd runex` is a doorway to
 it: nttd is the engine and the referee, it runs no agent, and a contestant does not need it

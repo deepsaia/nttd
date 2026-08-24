@@ -128,8 +128,7 @@ uv run nttd server                                                              
 uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf    # terminal 2
 
 # --- in an nttd-examples checkout ---------------------------------------------------------
-uv run ns run                                                                   # terminal 3
-uv run runex                                                                    # terminal 4
+uv run runex                                                                    # terminal 3
 ```
 
 **1. `nttd server`** is the HTTP API on `:8000`. Everything talks to it and it runs no game by
@@ -141,12 +140,10 @@ condition and writes the result. The config decides the world and how long the r
 `t1_256_flat_1001_stepped.conf` is only an example: `ls config/benchmark/` has all four tiers
 in both modes. It does **not** run an agent.
 
-**3. `ns run`** serves the agent networks, for an entry that uses them. Not needed for a
-scripted or learned policy.
-
-**4. `runex`** asks which approach, which session and which token, reads what it can from the
-two servers already running, and starts the run. It is also `nttd runex` when both
-repositories are installed in one environment.
+**3. `runex`** asks which approach, which session and which token, reads what it can from the
+server already running, and starts the run. For an approach that needs an agent server of its
+own it finds one or starts one, and shuts down what it started when the run ends. It is also
+`nttd runex` when both repositories are installed in one environment.
 
 ### Or drive the lifecycle yourself
 

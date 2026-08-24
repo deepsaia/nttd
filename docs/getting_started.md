@@ -90,10 +90,15 @@ cd nttd-examples && uv sync
 uv run runex
 ```
 
-`runex` asks the four questions in order: which approach, which session, which token, and
-whether to start. It reads the open sessions from the running nttd server and offers the
-token that server issued, so the usual answer to all four is Enter. It is also `nttd runex`
-if you have both installed in one environment, and `python -m runex` from a checkout.
+`runex` asks the questions in order: which approach, which agent server if the approach needs
+one, which session, which token, and whether to start. It reads the open sessions from the
+running nttd server and offers the token that server issued, so the usual answer is Enter. It
+is also `nttd runex` if you have both installed in one environment, and `python -m runex`
+from a checkout.
+
+An approach that plays through an agent server, which today means neuro-san, no longer needs
+a terminal of its own: `runex` finds a running server or starts one, and stops what it
+started. A server you started yourself is used rather than duplicated, and left alone.
 
 Nothing depends on it. The same run starts by hand:
 
