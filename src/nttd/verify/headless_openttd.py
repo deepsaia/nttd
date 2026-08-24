@@ -22,6 +22,7 @@ real session uses rather than assembling a config of its own.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import shutil
 from pathlib import Path
@@ -64,6 +65,9 @@ class HeadlessOpenTTD:
         self._process: asyncio.subprocess.Process | None = None
         self._client: AdminClient | None = None
         self._poll: asyncio.Task[None] | None = None
+        # Where the game's own output goes, so a refusal to start can be reported.
+        self._log_path: Path | None = None
+        self._log_file: io.BufferedWriter | None = None
 
     @property
     def client(self) -> AdminClient:
@@ -116,10 +120,20 @@ class HeadlessOpenTTD:
             argv += ["-g", str(savegame)]
 
         logger.info("Verification server: %s", " ".join(argv))
+        # Kept, not discarded. Both streams went to DEVNULL, so an OpenTTD that refused to
+        # start took its reason with it and every failure arrived as the same sentence:
+        # "could not reload the savegame with a responding GameScript". Measured on a CI
+        # runner, that sentence was hiding `exited with code 1` from a game that never got as
+        # far as opening its admin port, and there was nothing anywhere to say why.
+        #
+        # A file rather than a pipe. Nothing reads this until the process is over, and a pipe
+        # nobody drains fills its buffer and blocks the very process being diagnosed.
+        self._log_path = self._work_dir / "openttd.log"
+        self._log_file = self._log_path.open("wb")
         self._process = await asyncio.create_subprocess_exec(
             *argv,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stdout=self._log_file,
+            stderr=asyncio.subprocess.STDOUT,
         )
 
         if not await self._connect():
@@ -132,7 +146,8 @@ class HeadlessOpenTTD:
         for _ in range(_CONNECT_ATTEMPTS):
             if self._process is not None and self._process.returncode is not None:
                 logger.error(
-                    "Verification server exited with code %s", self._process.returncode,
+                    "Verification server exited with code %s. What it said:\n%s",
+                    self._process.returncode, self._said(),
                 )
                 return False
             if await client.connect(password=VERIFY_PASSWORD, name="nttd-verify"):
@@ -147,6 +162,21 @@ class HeadlessOpenTTD:
         logger.error("Verification server never opened admin port %d", self._admin_port)
         return False
 
+    def _said(self) -> str:
+        """What OpenTTD printed before it gave up, or a note that it printed nothing.
+
+        The tail rather than the whole thing: the reason a game refuses to start is its last
+        line, and the lines before it are the base sets it loaded.
+        """
+        if self._log_file is not None and not self._log_file.closed:
+            self._log_file.flush()
+        if self._log_path is None or not self._log_path.exists():
+            return "  (nothing was captured)"
+        said = self._log_path.read_text(errors="replace").strip()
+        if not said:
+            return "  (it printed nothing at all)"
+        return "\n".join(f"  {line}" for line in said.splitlines()[-15:])
+
     async def _wait_for_gamescript(self) -> bool:
         """Retry a ping until the GameScript answers."""
         for _ in range(_GS_ATTEMPTS):
@@ -157,7 +187,9 @@ class HeadlessOpenTTD:
 
         logger.error(
             "GameScript never answered on the verification server. Its config "
-            "directory must contain the game/ symlink, or OpenTTD runs without it.",
+            "directory must contain the game/ symlink, or OpenTTD runs without it. "
+            "What the game said:\n%s",
+            self._said(),
         )
         return False
 
@@ -178,5 +210,8 @@ class HeadlessOpenTTD:
         if self._process is not None and self._process.returncode is None:
             self._process.kill()
             await self._process.wait()
+        # After the process is gone, so nothing is still writing to it.
+        if self._log_file is not None and not self._log_file.closed:
+            self._log_file.close()
         if not keep_work_dir and self._work_dir.exists():
             shutil.rmtree(self._work_dir, ignore_errors=True)
