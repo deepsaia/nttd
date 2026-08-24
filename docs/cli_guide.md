@@ -299,12 +299,16 @@ Two readings worth knowing:
 
 ---
 
-### `nttd submit`
+### `nttd package`
 
 ```bash
-uv run nttd submit -s <session>
-uv run nttd submit -s <session> --no-archive
+uv run nttd package -s <session>
+uv run nttd package -s <session> --no-archive
 ```
+
+Named for what it does. It was `nttd submit`, which claimed the one thing it does not do:
+nothing leaves the machine and nothing is filed anywhere, so a contestant who ran it and
+stopped had submitted nothing. `nttd publish` is what submits.
 
 Packages the session into `logs/sessions/<id>/submission/` plus a `.tar.gz`, prints every
 artifact with its sha256, and states what the bundle cannot prove about itself.

@@ -22,7 +22,7 @@ Commands:
   nttd actions               Show the action surface, generated from the GameScript
   nttd benchmark             Stand up a benchmark task and wait for it to end
   nttd result                Show the scored result record for a session
-  nttd submit                Package a session into a submission bundle
+  nttd package               Package a session into a submission bundle
   nttd verify                Self-check a submission bundle
   nttd publish               File a bundle on the board as a pull request
   nttd analyze               Generate session analysis reports
@@ -37,13 +37,13 @@ from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
 from nttd.cli.mcp_command import mcp
 from nttd.cli.monitor_command import monitor
+from nttd.cli.package_command import package
 from nttd.cli.publish_command import publish
 from nttd.cli.result_command import result
 from nttd.cli.runex_command import runex
 from nttd.cli.scenario_commands import scenario_app
 from nttd.cli.server_command import server
 from nttd.cli.session_commands import session_app
-from nttd.cli.submit_command import submit
 from nttd.cli.verify_command import verify
 
 app = typer.Typer(
@@ -57,7 +57,7 @@ app.add_typer(scenario_app, name="scenario")
 app.command()(server)
 app.command()(benchmark)
 app.command()(result)
-app.command()(submit)
+app.command()(package)
 app.command()(publish)
 app.command()(verify)
 app.command()(analyze)

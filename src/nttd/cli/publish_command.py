@@ -33,7 +33,7 @@ TOKEN_VAR = "HF_TOKEN"
 def publish(
     bundle: Annotated[
         Path | None,
-        typer.Option("--bundle", "-b", help="Bundle directory, from `nttd submit`"),
+        typer.Option("--bundle", "-b", help="Bundle directory, from `nttd package`"),
     ] = None,
     session: Annotated[
         str | None,
@@ -69,7 +69,7 @@ def publish(
     if not (directory / MANIFEST_NAME).exists():
         console.print(
             f"[red]{directory} is not a submission bundle: no {MANIFEST_NAME}.[/]\n"
-            "Build one with `nttd submit -s <session>` rather than assembling it by hand."
+            "Build one with `nttd package -s <session>` rather than assembling it by hand."
         )
         raise typer.Exit(code=1)
 

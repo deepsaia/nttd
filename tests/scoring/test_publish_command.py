@@ -26,7 +26,7 @@ def _bundle(tmp_path: Path) -> Path:
 
 
 def test_a_directory_without_a_manifest_is_refused(tmp_path: Path) -> None:
-    """Assembling a bundle by hand is the mistake this catches: `nttd submit` builds one."""
+    """Assembling a bundle by hand is the mistake this catches: `nttd package` builds one."""
     (tmp_path / "not-a-bundle").mkdir()
     with pytest.raises(typer.Exit):
         publish_command.publish(bundle=tmp_path / "not-a-bundle", entrant="ada", dry_run=True)

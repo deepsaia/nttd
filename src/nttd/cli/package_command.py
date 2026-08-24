@@ -1,4 +1,4 @@
-"""``nttd submit`` -- package a finished session for submission."""
+"""``nttd package`` -- package a finished session into a submission bundle."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from nttd.store.submission_bundle import MANIFEST_NAME, SubmissionBundle
 from nttd.store.verification_gaps import verification_gaps
 
 
-def submit(
+def package(
     session: Annotated[str, typer.Option("--session", "-s", help="Session ID")],
     no_archive: Annotated[
         bool, typer.Option("--no-archive", help="Write the directory but not the tarball")
@@ -31,11 +31,15 @@ def submit(
 
     The manifest is a projection of the result record plus a digest per artifact, so it
     cannot contradict what was recorded. Run `nttd verify` on the bundle to check it
-    yourself before submitting anywhere.
+    yourself, then `nttd publish` to file it.
+
+    Named for what it does. It was `nttd submit`, which claimed the one thing it does not
+    do: nothing leaves the machine, nothing is filed anywhere, and a contestant who ran it
+    and stopped had submitted nothing. `nttd publish` is what submits.
 
     Examples:
-      nttd submit --session ses_abc123
-      nttd submit -s ses_abc123 --no-archive
+      nttd package --session 20260824-132212ist-sly-marsh
+      nttd package -s 20260824-132212ist-sly-marsh --no-archive
     """
     session_dir = session_paths.session_dir(session)
     if not session_dir.exists():

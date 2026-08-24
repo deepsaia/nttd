@@ -169,7 +169,7 @@ you end the run yourself with `session stop`.
 ### Then submit it for scoring
 
 ```bash
-uv run nttd submit -s <session>                          # writes <session dir>/submission
+uv run nttd package -s <session>                         # writes <session dir>/submission
 uv run nttd verify logs/sessions/<session>/submission    # your own check, advisory
 uv sync --extra publish                                  # once
 export HF_TOKEN=...                                      # your own token, write scope
@@ -453,7 +453,7 @@ nttd actions --observations Show only the actions that read the world
 nttd mcp                    Serve one session to an MCP client
 nttd runex                  Run an experiment against a live session, choosing interactively
 nttd monitor                Watch sessions in a browser while they run
-nttd submit                 Package a session into a submission bundle
+nttd package                Package a session into a submission bundle
 nttd verify                 Self-check a bundle before submitting it
 nttd result                 Show the scored result record
 nttd analyze                Generate analysis reports
