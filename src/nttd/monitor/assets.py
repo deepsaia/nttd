@@ -29,8 +29,9 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
  background:var(--bg);color:var(--ink);font-size:13px;}
 .app{display:flex;height:100vh;overflow:hidden;}
 /* 260px plus four characters. Written as calc rather than as a rounded pixel count so the
-   four is literal: a session name is now adj-noun-yyyymmdd-hhmmsstz, up to 31 characters, and
-   the list was clipping the timestamp that tells one run from another. */
+   four is literal: the sidebar carries the whole session id, 20260824-132212ist-sly-marsh,
+   which runs to 35 characters, and the list was clipping the timestamp that tells one run
+   from another. Anything longer still ellipsizes rather than wrapping. */
 .sidebar{width:calc(260px + 4ch);flex:0 0 calc(260px + 4ch);background:var(--panel);
  border-right:1px solid var(--line);padding:14px 12px;overflow-y:auto;}
 .sbhead{display:flex;align-items:center;justify-content:space-between;}

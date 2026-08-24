@@ -74,6 +74,9 @@ def _print_attach_instructions(
         f"  header: X-Participant-Token: {first.get('token', '')}\n"
         "[dim]The company is derived from the token, so a company_id in the body is "
         "ignored.[/]\n"
+        "\n[bold]Or let the launcher find all of that:[/] [cyan]nttd runex[/]\n"
+        "[dim]It reads the open sessions from this server and the token it just issued, so "
+        "nothing has to be copied between terminals.[/]\n"
     )
 
 

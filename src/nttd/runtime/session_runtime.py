@@ -25,7 +25,7 @@ from nttd.state.world import WorldState
 from nttd.store.recorder import SessionRecorder
 from nttd.store.terrain_scan import scan_terrain
 from nttd.store.tile_writer import TileWriter
-from nttd.utils.name_generator import generate_company_name
+from nttd.utils.name_generator import company_name_for
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +273,9 @@ class SessionRuntime:
         supplied = names or {}
         applied: dict[int, str] = {}
         for company_id in range(count):
-            name = supplied.get(company_id) or generate_company_name()
+            name = supplied.get(company_id) or company_name_for(
+                self.session_id, company_id
+            )
             result = await self.admin_client.send_gamescript(
                 "rename_company", {"company_id": company_id, "name": name}, timeout=10.0,
             )

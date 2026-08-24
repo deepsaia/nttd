@@ -201,7 +201,9 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
         meta, health = entry["meta"], entry["health"]
         rows.append([
             _state_label(meta),
-            meta["name"],
+            # The whole id here, not the word pair. A table has the width, and two runs of
+            # one scenario on different days are told apart only by the date in the id.
+            meta["session_id"],
             meta["scenario"] or "-",
             meta["seed"] or "-",
             str(meta["steps"]),
@@ -218,7 +220,7 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
         '<span class="hint">open one in the sidebar for its charts and map</span></div>'
     )
     listing = table(
-        ["state", "name", "scenario", "seed", "days", "rating", "value", "stations",
+        ["state", "session", "scenario", "seed", "days", "rating", "value", "stations",
          "vehicles", "actions", "wall (hh:mm:ss)", "health"],
         rows,
         "Sessions, newest first",
@@ -367,10 +369,16 @@ def _session_header(meta: dict[str, Any]) -> str:
     # nothing about which one was the rail attempt and which the combined one.
     aim = meta.get("description") or ""
     intent = f'<span class="aim">{esc(aim)}</span>' if aim else ""
+    # No company name, and the id is not repeated. The heading used to show the COMPANY's
+    # separately generated name where the run's name goes, so it read
+    # chief-warden-20260824-132213ist beside a URL saying 20260824-132212ist-sly-marsh: two
+    # identities for one run, a second apart. The company name is plumbing anyway, since
+    # OpenTTD needs a company not to be called "Unnamed" and an agent acts as company 0 by
+    # way of its participant token rather than by name.
     return (
         f'<div class="tabs"><a class="tab" href="/">&lsaquo; all sessions</a>'
         f'<span class="tab on">{live}{esc(meta["name"])}</span>{intent}'
-        f'<span class="hint">{esc(meta["session_id"])}{ended}</span>'
+        f'<span class="hint">{ended}</span>'
         f'{_stop_control(meta)}</div>'
     )
 

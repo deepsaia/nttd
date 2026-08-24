@@ -21,7 +21,6 @@ from typing import Any
 
 from nttd.analysis.date_utils import game_date_to_ymd
 from nttd.analysis.loader import SessionData
-from nttd.utils.name_generator import readable_part
 
 # The NETWORK pieces a company owns: the things a vehicle travels along. Named here rather
 # than discovered from the data so a mode that built none of something still gets a labelled
@@ -72,14 +71,19 @@ class SessionFeed:
         company = self._company(last)
         return {
             "session_id": data.session_id,
-            # The company's own generated name, which is what identifies a run: the
-            # session's name is the scenario slot it filled, and four concurrent runs of
-            # one scenario all carry the same one.
-            "name": company.get("name") or data.name or data.session_id,
-            # The words out of the id. A session is now named once, as
-            # 20260815-073255-dandy-willow, and a sidebar that repeats the date on every
-            # row beside a Date column spends its width saying the same thing twice.
-            "session_name": readable_part(data.name or data.session_id),
+            # The id, whole, and nowhere anything else. A run has ONE identity.
+            #
+            # This used to prefer the COMPANY's generated name, which was right when a
+            # session's name was only the scenario slot it filled and four concurrent runs of
+            # one scenario all carried the same one. It was wrong once a session gained a
+            # unique readable id: the sidebar read chief-warden-20260824-132213ist beside a
+            # URL and a directory that both said 20260824-132212ist-sly-marsh, one second
+            # apart, which is the two-identities-disagreeing bug the single id ended.
+            #
+            # Shortening it to the word pair was the next mistake. The date is what tells two
+            # runs of one scenario apart, and a reader comparing the sidebar to a directory
+            # name or a board row should not have to reconstruct it.
+            "name": data.session_id,
             "scenario": data.config_name,
             "description": data.description,
             "model": data.model,

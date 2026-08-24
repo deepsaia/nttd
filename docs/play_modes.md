@@ -311,10 +311,14 @@ uv run nttd scenario validate config/benchmark/t2_256_flat_1001_realtime.conf   
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s <session> --agent-companies 1
 uv run nttd session attach <session>                                # token and routes
-# ... your runner plays ...
+uv run nttd runex                                                   # or your runner, by hand
 uv run nttd session stop -s <session>
 uv run nttd result -s <session>
 ```
+
+`nttd benchmark --config <the same file>` is those three lifecycle commands in one, and it
+waits for the end condition and writes the result rather than leaving you to stop it. Use the
+four when you want to change something in between; neither is the blessed one.
 
 Shipped examples, all scored on their own merits rather than because they say so. Four tiers in
 both modes, and `config/benchmark/README.md` explains the day counts:

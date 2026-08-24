@@ -32,6 +32,14 @@ _DISTRIBUTION_OF = {
     "yaml": "pyyaml",
 }
 
+# Imported deliberately without being declared, because declaring them would be the bug.
+#
+# runex is the interactive experiment launcher, and it lives in nttd-examples. nttd is the
+# engine and the referee: it runs no agent, and a contestant does not need it installed to
+# write one. Depending on the repository that starts agents would make that claim false, so
+# `nttd runex` imports it inside a try and prints how to get it when the import fails.
+_OPTIONAL_BY_DESIGN = {"runex"}
+
 # av is imported directly by reports/video.py and is declared as the pyav extra of imageio
 # rather than on its own line. That is a declaration: the extra exists to pull it in.
 _DECLARED_BY_EXTRA = {"av"}
@@ -94,6 +102,7 @@ def test_every_imported_module_is_declared() -> None:
         name: sorted(users)
         for name, users in _imported().items()
         if name not in _DECLARED_BY_EXTRA
+        and name not in _OPTIONAL_BY_DESIGN
         and _DISTRIBUTION_OF.get(name, name).lower() not in declared
     }
     assert not undeclared, f"imported but not declared in pyproject: {undeclared}"

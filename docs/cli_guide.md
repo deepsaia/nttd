@@ -1,8 +1,9 @@
 # nttd CLI Guide
 
 Every command, with examples. The CLI drives the server, the session lifecycle, and the
-result record. It does **not** run agents: see [agent_guide.md](agent_guide.md) for
-that side.
+result record. It does **not** run agents, and the one command that looks as though it
+does, `nttd runex`, is a doorway to a launcher that lives in nttd-examples. See
+[agent_guide.md](agent_guide.md) for that side.
 
 ---
 
@@ -62,11 +63,24 @@ depends on. Takes a few minutes. Run it after upgrading OpenTTD.
 
 ```bash
 uv run nttd server                                               # terminal 1
-uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf   # terminal 2
+uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf    # terminal 2
 ```
 
 `benchmark` prints the session id and participant token, then waits. Attach your runner
 to those while it waits, and it writes the result when the end condition fires.
+
+The same thing, in four commands, when you want to change something in between or attach
+much later:
+
+```bash
+uv run nttd server                                                # terminal 1
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
+uv run nttd session start -s <session> --agent-companies 1
+uv run nttd session attach <session>   # prints the participant token
+```
+
+Either is fine and neither is the blessed one. `benchmark` also waits for the end condition
+and writes the result; with the four you end the run yourself with `session stop`.
 
 ---
 
@@ -91,7 +105,7 @@ session data is written; it defaults to `logs/sessions`.
 Stands up a task and waits for it to end.
 
 ```bash
-uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf
+uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf
 uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf --seed 2002
 uv run nttd benchmark --config config/benchmark/t2_256_flat_1001_realtime.conf -o results/
 ```
@@ -129,6 +143,11 @@ uv run nttd session stop -s <session>
 **`create`** registers the session and resolves the scenario. Pass only the config; the
 server loads it. Settings are not accepted from a client, because they carry `_scored`
 and the profile-derived keys that decide whether the run is scored and what bounds it.
+
+It also mints the id, and `--name` is the only way to supply one instead. A session has a
+single identity: the id **is** the name. Two identities generated a moment apart is what
+produced ids reading `benchmark_benchmark-t1-256-flat-1001-stepped`, and a run whose
+directory and monitor heading disagreed by a second.
 
 **`start`** generates the world and spawns OpenTTD. `--agent-companies 1` creates the
 company your runner will play; without it there is nothing to play.
@@ -452,6 +471,35 @@ terrain penalties, and printing that as currency would look authoritative and be
 `get_cargo_income` says what carrying a cargo pays, which is what makes a route ranking mean
 anything. At distance 32, steel pays 22 a unit against livestock's 16, and `/state/routes`
 now carries `income_per_unit` and `estimated_monthly_income` on every cargo candidate.
+
+---
+
+### `nttd runex`
+
+Runs an experiment against a live session, asking rather than requiring you to remember.
+
+```bash
+uv run nttd runex                          # ask everything
+uv run nttd runex --kind neuro-san         # skip the first question
+uv run nttd runex --session <id> --yes     # ask nothing
+```
+
+Four questions in order: which approach, which session, which participant token, and
+whether to start. It reads the open sessions from the running server and offers the token
+that server issued, so the usual answer to all four is Enter. A token given at the prompt
+is passed to the runner through the environment and never onto the command line, where
+every process on the machine could read it.
+
+An approach that runs agent networks adds a fifth question when there is a choice to make:
+which network. It asks the agent server what it is serving, offers them with their
+descriptions when there is more than one, and states the answer rather than prompting when
+there is only one.
+
+The launcher itself lives in **nttd-examples**, not here, and `nttd runex` is a doorway to
+it: nttd is the engine and the referee, it runs no agent, and a contestant does not need it
+installed to write one. Without the examples repository on the path this command prints how
+to get it. From a checkout of that repository, the same tool is `uv run runex` or
+`python -m runex`.
 
 ---
 

@@ -42,8 +42,6 @@ def session_create(
     url = base_url or get_base_url()
     check_server(url)
 
-    from nttd.utils.name_generator import generate_session_name
-
     # A bad path is a typo, not a crash. Reported as one line rather than a traceback,
     # while still refusing: the defaults behind a mistyped path are a random seed and a
     # different runtime mode, so quietly using them is worse than stopping.
@@ -53,7 +51,12 @@ def session_create(
         console.print(f"[red]{bad_config}[/]")
         raise typer.Exit(code=1) from None
     settings = scenario_to_settings(cfg)
-    session_name = name or (cfg.name if cfg.name != "default" else generate_session_name())
+
+    # The server mints the id when no name is sent, and that is the only place it should be
+    # minted: a session has one identity. Passing the scenario's own name here is what made
+    # ids read benchmark_benchmark-t1-256-flat-1001-stepped, and a client-minted name and a
+    # server-minted id disagreeing is the bug the single id was introduced to end.
+    session_name = name
 
     # config_path only: the server loads the scenario itself. Sending the whole
     # settings dict is refused with a 400, because it carries _scored and the
@@ -78,8 +81,9 @@ def session_create(
     seed = settings.get("_map_seed")
 
     console.print(Panel(
-        f"[bold]Session ID:[/]  [cyan]{session_id}[/]\n"
-        f"[bold]Name:[/]        {session_name}\n"
+        # No separate Name row. The id IS the name, and a row that repeated it, or sat
+        # empty when nothing was passed, only invited the question of which one to use.
+        f"[bold]Session:[/]     [cyan]{session_id}[/]\n"
         f"[bold]Config:[/]      {config or 'defaults'}\n"
         f"[bold]Map:[/]         {map_x}x{map_y}\n"
         f"[bold]Seed:[/]        "

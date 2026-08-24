@@ -142,6 +142,16 @@ uv run nttd session stop -s <session>
 uv run nttd result -s <session>
 ```
 
+Either way, the third step is your runner. The worked ones live in
+[nttd-examples](https://github.com/deepsaia/nttd-examples), and its `runex` launcher asks
+which approach, which session and which token rather than making you carry them between
+terminals:
+
+```bash
+uv run runex          # from an nttd-examples checkout
+uv run nttd runex     # or through nttd, when both are installed together
+```
+
 Validate a scenario before committing to a long run:
 
 ```bash
@@ -411,10 +421,13 @@ nttd scenario profile       Show the rules a scored scenario must satisfy
 nttd actions                Show every action and what it takes
 nttd actions --observations Show only the actions that read the world
 nttd mcp                    Serve one session to an MCP client
+nttd runex                  Run an experiment against a live session, choosing interactively
+nttd monitor                Watch sessions in a browser while they run
 nttd submit                 Package a session into a submission bundle
 nttd verify                 Self-check a bundle before submitting it
 nttd result                 Show the scored result record
 nttd analyze                Generate analysis reports
+nttd publish                File a bundle on the board as a pull request
 ```
 
 Full API at `http://localhost:8000/docs` once the server is running.
