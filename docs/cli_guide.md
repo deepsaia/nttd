@@ -490,6 +490,11 @@ that server issued, so the usual answer to all four is Enter. A token given at t
 is passed to the runner through the environment and never onto the command line, where
 every process on the machine could read it.
 
+An approach that runs agent networks adds a fifth question when there is a choice to make:
+which network. It asks the agent server what it is serving, offers them with their
+descriptions when there is more than one, and states the answer rather than prompting when
+there is only one.
+
 The launcher itself lives in **nttd-examples**, not here, and `nttd runex` is a doorway to
 it: nttd is the engine and the referee, it runs no agent, and a contestant does not need it
 installed to write one. Without the examples repository on the path this command prints how
