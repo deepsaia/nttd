@@ -103,36 +103,32 @@ def readable_part(session_id: str) -> str:
     return session_id
 
 
-def generate_company_name() -> str:
-    """Generate a company name like 'jade-heron-06apr2026-160734pdt'.
+def company_name_for(session_id: str, company_id: int) -> str:
+    """The company's name, taken from the session that created it.
 
-    The same shape as a session name, deliberately. Companies default to "Unnamed" in
-    OpenTTD, which makes a leaderboard row unable to identify who played, so every
-    contestant company gets a readable name it can still override.
+    A company used to mint its own name, with its own adjective, noun and timestamp. So a run
+    called 20260824-132212ist-sly-marsh was played by a company called
+    chief-warden-20260824-132213ist: two identities for one run, generated a second apart,
+    which is the exact bug that collapsing the session's two names into one id was meant to
+    end. The monitor then showed one of them in its sidebar and the other in its URL.
 
-    It used to end in four hex characters, which made a company name and a session name
-    look like different kinds of thing and told a reader nothing about when the run
-    happened. The timestamp keeps names distinct as well as the hex did, since two
-    companies minted in the same second on the same adjective and noun is not a case that
-    arises: one session plays one scored company.
+    So the company carries the session's word pair. One run, one name.
 
-    The word pair is chosen to FIT rather than freely, because OpenTTD caps a company name
-    at MAX_COMPANY_NAME characters and the timestamp alone is 19 of them. Picking freely
-    gives up to 35, which the game would refuse, and a refused rename leaves the company
-    called "Unnamed" so a leaderboard row cannot say who played. Shape is preserved: still
-    exactly <adj>-<noun>-<timestamp>, only drawn from the pairs that fit.
+    **The date is deliberately dropped.** OpenTTD caps a company name at MAX_COMPANY_NAME
+    characters, and a session id runs to 35: the longest adjective and noun together are 14,
+    a four-letter timezone makes the stamp 19, and 19 + 1 + 14 + 1 is over the cap. A rule
+    that included the date would therefore fit most ids and silently truncate the longest,
+    which is worse than a rule that never includes it. The date adds nothing inside a game
+    anyway: a company name only has to be unambiguous in the game it belongs to, and the
+    session id is what carries the date everywhere outside it.
+
+    Extra companies are numbered. Only one company is scored, but `--ai-opponents N` creates
+    idle ones and OpenTTD would otherwise leave them all sharing a name.
     """
-    timestamp = generate_timestamp()
-    budget = MAX_COMPANY_NAME - len(timestamp) - 2  # two hyphens
-    pairs = [
-        (adj, noun)
-        for adj in _ADJECTIVES
-        for noun in _NOUNS
-        if len(adj) + len(noun) <= budget
-    ]
-    if not pairs:
-        # A timestamp long enough to leave no room at all. Truncating beats refusing,
-        # because a named company is the point.
-        return f"{_ADJECTIVES[0]}-{_NOUNS[0]}-{timestamp}"[:MAX_COMPANY_NAME]
-    adj, noun = random.choice(pairs)
-    return f"{adj}-{noun}-{timestamp}"
+    suffix = "" if company_id == 0 else f"-{company_id}"
+    # readable_part answers the whole id for anything that is not the current shape, and a
+    # supplied --name may be up to 128 characters, so the cap is enforced rather than assumed.
+    # A named company is the point: truncating beats a refused rename, which leaves it
+    # "Unnamed" and a leaderboard row unable to say who played.
+    stem = readable_part(session_id)[:MAX_COMPANY_NAME - len(suffix)]
+    return f"{stem}{suffix}"

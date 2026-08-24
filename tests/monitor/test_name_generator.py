@@ -1,10 +1,11 @@
-"""Tests for generated company names.
+"""Tests for the one name a run has, and for the company that carries it.
 
-OpenTTD leaves companies as "Unnamed", which makes a leaderboard row unable to say
-who played and the company_name column in result.parquet useless. Every contestant
-company therefore gets a readable name.
+OpenTTD leaves companies as "Unnamed", which makes a leaderboard row unable to say who
+played and the company_name column in result.parquet useless. Every contestant company
+therefore gets a readable name, and that name comes from the session rather than being
+minted separately.
 
-Run with: uv run pytest tests/test_name_generator.py -v
+Run with: uv run pytest tests/monitor/test_name_generator.py -v
 """
 
 from __future__ import annotations
@@ -13,47 +14,59 @@ import re
 
 from nttd.utils.name_generator import (
     MAX_COMPANY_NAME,
-    generate_company_name,
+    company_name_for,
     generate_session_id,
     readable_part,
 )
 
-# One shape for a session and a company alike: <adj>-<noun>-<date>-<time><tz>.
-_COMPANY_PATTERN = re.compile(r"^[a-z]+-[a-z]+-\d{8}-\d{6}[a-z]+$")
 
+def test_the_company_carries_the_session_name() -> None:
+    """The defect this replaced.
 
-def test_company_name_matches_the_session_name_shape() -> None:
-    """A company used to end in four hex characters, which made it look like a different
-    kind of thing from a session and said nothing about when the run happened.
+    A company used to mint its own adjective, noun and timestamp, so a run called
+    20260824-132212ist-sly-marsh was played by chief-warden-20260824-132213ist. Two
+    identities for one run, a second apart, which is the bug collapsing the session's two
+    names into one id was meant to end. The monitor showed one in its sidebar and the other
+    in its URL.
     """
-    for _ in range(50):
-        name = generate_company_name()
-        assert _COMPANY_PATTERN.match(name), f"unexpected shape: {name}"
+    assert company_name_for("20260824-132212ist-sly-marsh", 0) == "sly-marsh"
 
 
-def test_company_names_are_distinct_in_practice() -> None:
-    """The timestamp keeps names apart when the adjective/noun pair repeats."""
-    names = {generate_company_name() for _ in range(200)}
-    assert len(names) > 190, "too many collisions for a leaderboard identifier"
+def test_extra_companies_are_numbered_rather_than_sharing_one_name() -> None:
+    """Only one company is scored, but --ai-opponents N creates idle ones."""
+    session = "20260824-132212ist-sly-marsh"
+    names = [company_name_for(session, cid) for cid in range(4)]
+    assert names == ["sly-marsh", "sly-marsh-1", "sly-marsh-2", "sly-marsh-3"]
+    assert len(set(names)) == 4
 
 
-def test_company_name_is_short_enough_for_openttd() -> None:
-    """OpenTTD rejects an over-long company name, and a refused rename leaves the company
-    called "Unnamed", so a leaderboard row cannot say who played.
+def test_the_company_name_fits_openttd_for_every_id_the_generator_makes() -> None:
+    """A refused rename leaves the company "Unnamed", so a row cannot say who played.
 
-    The timestamp is 19 of the 31 characters available, and the longest adjective and noun
-    together are 14, which would give 35. generate_company_name draws from the pairs that
-    fit rather than freely, which is why this holds.
+    The date is why this holds. A session id runs to 35 characters: a four-letter timezone
+    makes the stamp 19, and the longest adjective and noun together are 14. Including the
+    date would fit most ids and silently truncate the longest, which is worse than a rule
+    that never includes it.
     """
-    for _ in range(200):
-        name = generate_company_name()
-        assert len(name) <= MAX_COMPANY_NAME, f"{name} is {len(name)} characters"
+    for _ in range(300):
+        session = generate_session_id()
+        for company_id in (0, 1, 12):
+            name = company_name_for(session, company_id)
+            assert len(name) <= MAX_COMPANY_NAME, f"{name} is {len(name)} characters"
 
 
-def test_company_name_has_no_whitespace_or_quotes() -> None:
+def test_a_supplied_session_name_too_long_for_a_company_is_capped_not_refused() -> None:
+    """--name accepts up to 128 characters, so the cap is enforced rather than assumed."""
+    session = "x" * 128
+    name = company_name_for(session, 2)
+    assert len(name) == MAX_COMPANY_NAME
+    assert name.endswith("-2"), "the number must survive the truncation"
+
+
+def test_a_company_name_has_no_whitespace_or_quotes() -> None:
     """The name is passed through rcon and JSON, so keep it free of separators."""
     for _ in range(50):
-        name = generate_company_name()
+        name = company_name_for(generate_session_id(), 0)
         assert " " not in name
         assert '"' not in name and "'" not in name
 
