@@ -29,6 +29,11 @@ SUBMISSIONS_ROOT = "submissions"
 
 TOKEN_VAR = "HF_TOKEN"
 
+# What an entrant is called when nothing can name them. Reached only by --dry-run, which
+# does not read the token, so a dry run can show the shape of a path without one. A real
+# filing always has a token, and a token always resolves to an account.
+UNKNOWN_ENTRANT = "unknown-user"
+
 
 def publish(
     bundle: Annotated[
@@ -40,7 +45,8 @@ def publish(
         typer.Option("--session", "-s", help="Session id, to find its bundle"),
     ] = None,
     entrant: Annotated[
-        str | None, typer.Option("--entrant", "-e", help="Who is entering")
+        str | None,
+        typer.Option("--entrant", "-e", help="Your HuggingFace account. Read from the token if omitted"),
     ] = None,
     submission_id: Annotated[
         str | None,
@@ -61,8 +67,14 @@ def publish(
     Needs a HuggingFace token in the environment as HF_TOKEN, with write scope on your own
     account. The pull request is yours; nobody needs write access to the board.
 
+    The entrant is read from that token unless you name one. It has to be your HuggingFace
+    account: the board refuses a pull request that touches anything outside
+    submissions/<the account that opened it>/, so a name that is merely a label is a
+    submission that gets rejected.
+
     Examples:
-      nttd publish -s 20260815-132431ist-quiet-pickle --entrant ada
+      nttd publish -s 20260815-132431ist-quiet-pickle
+      nttd publish -s 20260815-132431ist-quiet-pickle --entrant an-org-you-can-write-to
       nttd publish --bundle logs/sessions/<id>/submission --entrant ada --id air-01
     """
     directory = _bundle_dir(bundle, session)
@@ -73,10 +85,16 @@ def publish(
         )
         raise typer.Exit(code=1)
 
-    if not entrant:
-        console.print("[red]--entrant is required: it is the name a row appears under.[/]")
+    token = os.environ.get(TOKEN_VAR)
+    if not token and not dry_run:
+        console.print(
+            f"\n[red]No {TOKEN_VAR} in the environment.[/]\n"
+            "A pull request is filed under your own account, so the token is yours and "
+            "needs write scope on it. Create one at https://huggingface.co/settings/tokens"
+        )
         raise typer.Exit(code=1)
 
+    entrant = _entrant(entrant, token)
     name = submission_id or (session or directory.parent.name)
     target = f"{SUBMISSIONS_ROOT}/{entrant}/{name}"
     files = sorted(p for p in directory.iterdir() if p.is_file())
@@ -89,18 +107,51 @@ def publish(
         console.print("\n[yellow]--dry-run: nothing was uploaded.[/]")
         return
 
-    token = os.environ.get(TOKEN_VAR)
-    if not token:
-        console.print(
-            f"\n[red]No {TOKEN_VAR} in the environment.[/]\n"
-            "A pull request is filed under your own account, so the token is yours and "
-            "needs write scope on it. Create one at https://huggingface.co/settings/tokens"
-        )
-        raise typer.Exit(code=1)
-
     url = _upload(directory, files, target, dataset, token)
     console.print(f"\n[green]Filed.[/] {url}")
     console.print("The board verifies what was filed and publishes the verdict.")
+
+
+def _entrant(supplied: str | None, token: str | None) -> str:
+    """Whose submission this is, read from the token unless it was named.
+
+    Not a label. The board's ingest checks the diff against the account that OPENED the pull
+    request and refuses anything outside `submissions/<that account>/`, so an entrant that is
+    not the HuggingFace username is not a cosmetic mismatch: the submission is rejected. A
+    contestant had no way to know that from `--entrant`'s old description, "who is entering".
+
+    Reading it from the token makes it right by construction. --entrant stays, because one
+    account may file under an organisation it can write to, and because being unable to
+    override a derived value is its own kind of trap.
+    """
+    if supplied:
+        return supplied
+    if not token:
+        return UNKNOWN_ENTRANT
+
+    try:
+        who = _whoami_name(token)
+    except Exception as failure:  # noqa: BLE001 - any failure here means "could not ask"
+        console.print(f"[yellow]Could not read your account from {TOKEN_VAR}:[/] {failure}")
+        return UNKNOWN_ENTRANT
+
+    if not who:
+        console.print(f"[yellow]{TOKEN_VAR} resolved to no account name.[/]")
+        return UNKNOWN_ENTRANT
+
+    console.print(f"Filing as [bold]{who}[/] [dim](read from {TOKEN_VAR})[/]")
+    return who
+
+
+def _whoami_name(token: str) -> str:
+    """The account a token belongs to, as the hub reports it.
+
+    Its own function so a test can replace it without a network, and so the failure handling
+    around it stays readable.
+    """
+    from huggingface_hub import whoami  # noqa: PLC0415
+
+    return str((whoami(token=token) or {}).get("name") or "")
 
 
 def _bundle_dir(bundle: Path | None, session: str | None) -> Path:

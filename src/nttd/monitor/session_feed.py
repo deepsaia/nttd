@@ -97,6 +97,12 @@ class SessionFeed:
             "end_reason": data.end_reason,
             "minutes": round(data.duration_minutes, 1),
             "steps": self.step_count(),
+            # Game days, which is NOT the snapshot count. Measured: a 366 day run wrote 378
+            # snapshots over 367 distinct dates, because a day on which the runner acted more
+            # than once is captured more than once. The page labelled the row count "days" and
+            # so reported 378 for a run whose result record says 366, which is the kind of
+            # disagreement that makes a reader doubt the scored number rather than the label.
+            "days": self.game_days(),
             "game_date": game.get("game_date"),
             "mode": game.get("mode"),
             "map": f"{game.get('map_width', '?')}x{game.get('map_height', '?')}",
@@ -405,6 +411,30 @@ class SessionFeed:
         if self._parsed is not None:
             return len(self._parsed)
         return sum(1 for raw in self._raw_snapshots() if _looks_complete(raw))
+
+    def game_days(self) -> int:
+        """How many game days the run has covered, from the game's own clock.
+
+        Read off the `game_date` column rather than by parsing snapshots, so it costs no more
+        than counting rows did. The span is inclusive of neither end being duplicated: a run
+        of N days has N+1 distinct dates on it, and max minus min is N, which is what the
+        result record independently reports as `game_days`.
+
+        Falls back to the horizon the engine publishes on the snapshot, and then to the row
+        count, so a session whose frame lacks the column still shows something rather than
+        zero.
+        """
+        frame = self._data.snapshots
+        if not frame.is_empty() and "game_date" in frame.columns:
+            column = frame["game_date"].drop_nulls()
+            if len(column):
+                return max(0, int(column.max()) - int(column.min()))
+
+        game = self._latest().get("game") or {}
+        total = int(game.get("game_days_total") or 0)
+        if total:
+            return max(0, total - int(game.get("game_days_remaining") or 0))
+        return self.step_count()
 
     def _company(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         """The contestant company. A session holds exactly one, so this is the first."""
