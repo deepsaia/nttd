@@ -55,6 +55,7 @@ _INTERESTING: dict[str, Any] = {
     "participant_type": "rl",
     "total_actions": 61,
     "spend_is_reported": True,
+    "cost_is_reported": True,
     "scored_session": True,
     "clean_run": True,
     "blocked_attempts": 0,
@@ -184,6 +185,23 @@ class TestMapDigest:
 class TestVerificationGaps:
     def test_a_complete_record_has_no_gaps(self) -> None:
         assert verification_gaps([_complete_row()]) == []
+
+    def test_tokens_without_a_price_is_its_own_gap(self) -> None:
+        """Not the same as reporting nothing, and saying so would be wrong twice.
+
+        The tokens ARE recorded, and the reason the cost is not is usually a model missing
+        from the runner's price table rather than a runner that never reported.
+        """
+        gaps = verification_gaps([_complete_row(cost_is_reported=False)])
+        assert len(gaps) == 1
+        assert "without a price" in gaps[0]
+        assert "no spend reported" not in gaps[0]
+
+    def test_reporting_nothing_still_says_so(self) -> None:
+        gaps = verification_gaps([
+            _complete_row(spend_is_reported=False, cost_is_reported=False),
+        ])
+        assert any("no spend reported" in gap for gap in gaps)
 
     @pytest.mark.parametrize(
         ("field", "value", "expected"),
