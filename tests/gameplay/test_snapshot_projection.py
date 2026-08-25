@@ -13,7 +13,7 @@ them safe is that they are derived on the way past and never written independent
 is what these tests hold.
 
 They are also deliberately partial: company 0 only, and no expenses. Anything wider has to
-read the JSON, and ``analysis.business_metrics`` does. That is the property that stops the
+read the JSON. That is the property that stops the
 projection quietly becoming the record.
 """
 
@@ -118,7 +118,7 @@ class TestTheProjectionStaysPartial:
         assert not [n for n in _SCHEMA.names if n.startswith("c1_")]
 
     def test_it_carries_no_expenses(self) -> None:
-        """business_metrics reads snapshot_json precisely because expenses are absent.
+        """Anything wanting expenses reads snapshot_json, precisely because they are absent here.
         Adding them here would give it a shortcut, and the shortcut would be the thing
         that drifts."""
         assert not [n for n in _SCHEMA.names if "expense" in n or "spend" in n]

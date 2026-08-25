@@ -17,7 +17,7 @@ into every reader.
 
 They are deliberately partial, and that is the reason they cannot become the record.
 They cover company 0 only, and no expenses, so anything about another company or about
-spend has to read the JSON regardless. ``analysis.business_metrics`` does exactly that.
+spend has to read the JSON regardless.
 
 Derived from the OpenTTD multiplayer/agent study, §13 (local research notes, not in the repo).
 """

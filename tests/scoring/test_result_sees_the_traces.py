@@ -1,6 +1,6 @@
 """The result is scored only after the recorded traces exist on disk.
 
-Every business metric in result.parquet comes from ``business_metrics.compute``, which reads
+The scored figures in result.parquet come from the recorded artifacts, which are read
 the per-snapshot series out of ``snapshots.parquet``. That file does not exist during a run:
 the recorder writes fragments as it goes and only merges them into ``snapshots.parquet`` when
 it stops.
