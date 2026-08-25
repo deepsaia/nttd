@@ -324,7 +324,7 @@ def play_modes() -> None:
   <rect class="box" x="644" y="86" width="318" height="76" rx="8"/>
   <text class="label" x="662" y="110" font-weight="600">Measures play AND speed</text>
   <text class="muted" x="662" y="130">A faster model gets more decisions per horizon.</text>
-  <text class="muted" x="662" y="147">Bounded by wall-minutes. Ceiling: 15 actions.</text>
+  <text class="muted" x="662" y="147">Bounded by wall-minutes. No action ceiling.</text>
 
   <rect class="box" x="644" y="180" width="318" height="76" rx="8"/>
   <text class="label" x="662" y="204" font-weight="600">Measures policy only</text>
