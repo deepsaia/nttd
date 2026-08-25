@@ -94,7 +94,7 @@ fallback-version = "0.0.0"
 # rejects outright.
 
 [tool.hatch.build.targets.wheel]
-# Only the engine. The reference runners live in deepsaia/nttd-examples: they are
+# Only the engine. The reference runners live in deepsaia/nttd-workbench: they are
 # contestant-side code, they talk HTTP rather than importing nttd, and a top-level
 # package literally named "agents" collided with the OpenAI Agents SDK for anyone
 # who installed both.

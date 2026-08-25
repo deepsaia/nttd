@@ -90,7 +90,7 @@ def test_public_tier_is_read_only() -> None:
 
 # The test that used to sit here asserted the untiered duplicates still existed, on the
 # grounds that "existing scenarios, examples, the console, and the CLI depend on these". None
-# of that held by the time they were removed: the console was deleted, and nttd-examples, the
+# of that held by the time they were removed: the console was deleted, and nttd-workbench, the
 # CLI and the MCP client all build /v1 paths. The opposite is now asserted, in
 # tests/test_tiered_surface.py, which also records why the duplicates were harmful.
 

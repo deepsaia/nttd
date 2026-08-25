@@ -8,7 +8,7 @@ The pieces live in three repositories and it is worth knowing which does what:
 | repository | what it owns |
 |---|---|
 | `nttd` | the engine. Draws the world, runs the game, records artifacts, scores the result. |
-| `nttd-examples` | contestant-side runners: the loop that decides what to do. |
+| `nttd-workbench` | contestant-side runners: the loop that decides what to do. |
 | `nttd-leaderboard` | the board. Verifies a bundle and publishes the verdict. |
 
 ---
@@ -85,8 +85,8 @@ artifacts, the monitor view and the board row together.
 Anything that can speak HTTP can play. The worked runners are in the examples repository:
 
 ```bash
-git clone git@github.com:deepsaia/nttd-examples.git
-cd nttd-examples && uv sync
+git clone git@github.com:deepsaia/nttd-workbench.git
+cd nttd-workbench && uv sync
 uv run runex
 ```
 
@@ -162,7 +162,7 @@ uv run nttd publish -s <session> --entrant <your name>
 
 Add `--dry-run` first to see exactly what would be filed and where, and remember that the
 pull request has to be **merged** before verification will find it. The README in
-nttd-examples covers the contestant path in full.
+nttd-workbench covers the contestant path in full.
 
 ### If you are running the board yourself
 
