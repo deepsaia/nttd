@@ -23,6 +23,7 @@ from nttd.api.observation_routes import router as observation_router
 from nttd.api.snapshot_routes import router as snapshot_router
 from nttd.api.tiers import TIER_DESCRIPTIONS, Tier
 from nttd.api.ws_routes import router as ws_router
+from nttd.runtime.server_lock import ServerLock
 from nttd.runtime.session_manager import SessionManager
 from nttd.store import session_paths
 from nttd.version import version
@@ -49,6 +50,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
+    # BEFORE anything reads the sessions directory, and that order is the point.
+    #
+    # uvicorn runs these startup hooks before it binds its socket, so a second server got as
+    # far as adopting a live session and connecting to its OpenTTD, then failed to bind, then
+    # took the ordinary shutdown path out and stopped every session it had adopted. A measured
+    # run ended at day 189 of 366 because a second process failed to start.
+    #
+    # Raising here is what makes it safe: the context manager never reaches its yield, so the
+    # teardown below cannot run and there is nothing for it to tear down.
+    lock = ServerLock(SESSIONS_DIR)
+    lock.acquire()
+
     # Initialize session manager
     deps.session_manager = SessionManager(
         openttd_binary=OPENTTD_BINARY,
@@ -58,20 +71,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         port_range_start=PORT_RANGE_START,
     )
 
-    # Recover any sessions that were running before nttd restarted
-    await deps.session_manager.recover_orphans()
-    logger.info(
-        "nttd started (binary=%s, base_config=%s, sessions_dir=%s, ports=%d+)",
-        OPENTTD_BINARY, BASE_CONFIG_DIR, SESSIONS_DIR, PORT_RANGE_START,
-    )
+    try:
+        # Recover any sessions that were running before nttd restarted
+        await deps.session_manager.recover_orphans()
+        logger.info(
+            "nttd started (binary=%s, base_config=%s, sessions_dir=%s, ports=%d+)",
+            OPENTTD_BINARY, BASE_CONFIG_DIR, SESSIONS_DIR, PORT_RANGE_START,
+        )
 
-    yield
+        yield
 
-    # Shut down all running sessions (triggered by uvicorn on SIGINT/SIGTERM)
-    logger.info("Shutting down nttd...")
-    if deps.session_manager:
-        await deps.session_manager.shutdown_all()
-    logger.info("nttd shut down")
+        # Shut down all running sessions (triggered by uvicorn on SIGINT/SIGTERM)
+        logger.info("Shutting down nttd...")
+        if deps.session_manager:
+            await deps.session_manager.shutdown_all()
+        logger.info("nttd shut down")
+    finally:
+        # After shutdown_all, so the window in which this process may adopt or stop a session
+        # is exactly the window in which it holds the lock.
+        lock.release()
 
 
 app = FastAPI(
