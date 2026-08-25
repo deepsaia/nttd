@@ -83,13 +83,6 @@ across a set of one-year runs on random seeds, air and mixed air-and-road networ
 times what rail and water managed, and the rail attempts that failed did not fail by a little:
 they delivered nothing at all.
 
-![A finished run, as the monitor shows it](images/monitor.png)
-
-*A one-year air run at the end of its year: rating and company value climbing in steps as each
-aircraft enters service, cargo waiting at stations oscillating as planes clear it, and a fleet of
-nine against four stations. The flat "infrastructure pieces" line is the point of the mode: an
-air network builds nothing between its endpoints.*
-
 ---
 
 ## 3. A playbook that survived contact
