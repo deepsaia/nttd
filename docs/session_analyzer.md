@@ -50,6 +50,9 @@ All data lives in `logs/sessions/<session_id>/`:
 | `save/` | `final.sav`, written at session end in every mode, plus OpenTTD's own autosaves |
 | `submission/` | The bundle `nttd package` assembles, with a digest over each artifact |
 | `_fragments/` | In-progress session data (auto-merged on stop) |
+| `nttd_scenario.conf` | The resolved scenario, for provenance |
+| `openttd.cfg` | The settings the world was generated with, kept as the only complete record of it |
+| `participants.json` | The tokens the session issued, mode 0600 |
 
 `final.sav` is the load-bearing one. A result says a company scored 812; the savegame is what
 lets somebody else reload the world and get 812 back, which is why verification reads it and

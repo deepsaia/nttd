@@ -30,6 +30,55 @@ uv run nttd scenario validate config/benchmark/t1_256_flat_1001_stepped.conf
 
 ---
 
+### Running on Linux (untested)
+
+nttd has never been run end to end on Linux. Lint and the test suite run there in CI, but
+the suite needs no OpenTTD, so nothing has ever proved a game starts. If you want to try,
+these are the two things known to be in the way.
+
+**1. The binary is looked for at a macOS path.** The default is
+`/Applications/OpenTTD.app/Contents/MacOS/openttd`, written out in six places. Set
+`NTTD_OPENTTD_BINARY` to your executable and the server, the CLI and the scripts will use it.
+
+**2. No distribution packages OpenTTD 15.3,** which is what nttd is written against. Checked
+in August 2026:
+
+| Source | Version |
+| --- | --- |
+| Ubuntu 24.04 noble, which is `ubuntu-latest` | 13.4 |
+| Ubuntu plucky, Debian trixie | 14.1 |
+| Debian sid | 15.1 |
+
+This is not cosmetic. OpenTTD refuses a savegame written by a newer version, so an older
+build cannot read a session's `final.sav` at all, and several behaviours nttd depends on were
+established by measurement against 15.3. Install the official release rather than the
+package:
+
+```bash
+curl -fsSLO https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
+tar -xJf openttd-15.3-linux-generic-amd64.tar.xz
+export NTTD_OPENTTD_BINARY="$PWD/openttd-15.3-linux-generic-amd64/openttd"
+```
+
+Add OpenGFX as well. The release tarball ships the baseset metadata but no graphics, and
+OpenTTD will not start without a base graphics set even under `-D`, where nothing is drawn:
+
+```bash
+curl -fsSLO https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip
+unzip -q opengfx-8.0-all.zip && tar -xf opengfx-8.0.tar \
+  -C openttd-15.3-linux-generic-amd64/baseset
+```
+
+The generic build is dynamically linked, so on a slim system you may also need
+`libfontconfig1 libfreetype6 liblzma5 liblzo2-2 libpng16-16 zlib1g`. Then check it before
+trusting it: `$NTTD_OPENTTD_BINARY --version`, followed by
+`uv run python -m scripts.verify_environment`, which is the script that would catch a
+version difference actually mattering.
+
+Reports of what does and does not work are welcome.
+
+---
+
 ## 2. Pick a tier
 
 A scenario decides the world and how long the run lasts. The shipped ones are named for what
@@ -90,15 +139,9 @@ cd nttd-workbench && uv sync
 uv run runex
 ```
 
-`runex` asks the questions in order: which approach, which agent server if the approach needs
-one, which session, which token, and whether to start. It reads the open sessions from the
-running nttd server and offers the token that server issued, so the usual answer is Enter. It
-is also `nttd runex` if you have both installed in one environment, and `python -m runex`
-from a checkout.
-
-An approach that plays through an agent server, which today means neuro-san, no longer needs
-a terminal of its own: `runex` finds a running server or starts one, and stops what it
-started. A server you started yourself is used rather than duplicated, and left alone.
+A few questions, and the usual answer to each is Enter, because it reads the answers off
+the running server. [cli_guide.md](cli_guide.md#nttd-runex) has the detail and the flags
+for skipping them.
 
 Nothing depends on it. The same run starts by hand:
 
@@ -118,9 +161,9 @@ first, `uv run nttd mcp --session <session>` serves one session over MCP.
 uv run nttd monitor        # then open http://127.0.0.1:4281
 ```
 
-The monitor reads session directories from disk, so it works on a run in progress, on a
-finished one, and on a copy of a session directory from another machine. Two panels earn
-their place while something is going wrong:
+It works on a run in progress or a finished one, and needs nothing running:
+[cli_guide.md](cli_guide.md#nttd-monitor). Two panels earn their place while something is
+going wrong:
 
 - **Fleet, worst earner first** names the vehicle that is failing and why: lost, no orders,
   in depot, not moving. A single silent failure among thirty vehicles is the first row.

@@ -125,13 +125,14 @@ caller-supplied value won and any client could act as any company, selling a riv
 vehicles or claiming a rival's score.
 
 **The scored lock is the real boundary**, because it is session state rather than a
-credential: there is nothing for a contestant to hold wrongly. A scenario with
-`scored = true` refuses game-mutating operator operations for its whole life, for
-every caller.
+credential: there is nothing for a contestant to hold wrongly, and a self-hosting one holds
+every credential anyway. What the lock refuses, and for how long, is in
+[play_modes.md](play_modes.md#what-scored-changes-at-runtime).
 
-A refusal does not void the run. Nothing happened, so the score stands and the attempt
-is recorded: voiding on a stray probe would destroy an otherwise legitimate
-two-hour run. The result reports `clean_run = false` and names what was attempted.
+A refusal does not void the run, and
+[play_modes.md](play_modes.md#what-scored-changes-at-runtime) has what the row says about
+it. The design reason is worth keeping here: voiding on a stray probe would destroy an
+otherwise legitimate two-hour run, so the lock refuses and records rather than punishing.
 
 ### Detection over prevention
 
@@ -143,18 +144,18 @@ verification gaps.
 
 ### Human parity
 
-An agent may take any action a human can take through the GUI, and nothing more.
+The boundary nttd draws is the GUI: whatever a person could reach through it, an agent may
+reach too. The rule as a contestant meets it is in
+[agent_guide.md](agent_guide.md#what-you-may-not-do), and the actions on the far side of it
+are listed, generated, in
+[action_reference.md](action_reference.md#the-actions-nobody-can-play).
 
-Nine superhuman actions are operator-only: `create_subsidy` (a human can only *claim*
-an offered subsidy), `change_bank_balance` and `set_max_loan` (free money, self-granted
-credit), plus `found_town`, `expand_town`, `set_town_growth`, `change_town_rating`,
-`set_cargo_goal`, `set_game_setting`.
-
-More interestingly, twelve capabilities were *implemented and unreachable*: the
-benchmark was measuring play without the features that separate expert from novice.
-Terraforming, conditional orders, one-way roads, road conversion, tree planting, and
-cost estimation are now available. `perform_town_action` is kept, bribery and exclusive
-rights included, because those are buttons in the town window.
+What belongs here is what drawing that boundary found. Nine actions went behind the
+operator routes, and twelve capabilities turned out to be *implemented and unreachable*:
+the benchmark had been measuring play without the features that separate expert from
+novice. Terraforming, conditional orders, one-way roads, road conversion, tree planting
+and cost estimation are all available now. `perform_town_action` was kept, bribery and
+exclusive rights included, because those are buttons in the town window.
 
 ---
 
@@ -194,9 +195,8 @@ meaning.
 hand, which worlds a leaderboard admits is operator policy, not an implementation
 detail, so it must be a reviewable diff rather than a Python literal.
 
-**Locked** settings must hold exactly, because a difference changes the problem without
-being visible to anyone reading a score: nobody looking at 812 can tell it was earned
-with denser industry.
+**Locked** settings must hold exactly. Which ones, and what each would change if it did
+not, [play_modes.md](play_modes.md#everything-else-is-pinned).
 
 **Allowed** settings may vary within an enumerated set, because each is a leaderboard
 column. Enumerations rather than bounds, which closed a hole: `terrain_type = "custom"`
@@ -267,15 +267,9 @@ unclamped and every transport mode has more stock than at 1960 (train 39 → 40,
 
 ![Stepped mode](images/step_barrier.svg)
 
-Real-time is a wall-clock race: a faster model takes more decisions in the same
-economy horizon. Stepped mode removes that, so RL and ES can be compared on policy
-rather than on inference speed. Between steps the game is **paused**, so deliberation
-costs zero game-days. Verified live: 20 seconds of thinking advanced the game by 0
-days.
-
-`POST /step` is synchronous. It fixes the target date, unpauses, flushes the batch,
-advances to the target, re-pauses, and returns the observation, so a policy never has
-to guess when its actions took effect.
+What stepped mode is for, what it measures, and how a run in it is bounded are in
+[play_modes.md](play_modes.md#stepped). This section is the part that is about how it had
+to be built, which is where the surprises were.
 
 Two details that are not obvious:
 
@@ -294,21 +288,6 @@ before running it, so the flush cannot be made conditional.
 1, a paused construction command times out, **wedges the GameScript** until unpause,
 and has *already executed*, so nttd would record a failure for an action that changed
 the world.
-
-A stepped run is bounded by `max_heartbeats`, not wall time. nttd refuses the
-combination, because wall time in stepped mode measures the contestant's hardware.
-
----
-
-## Play modes
-
-![Play modes: what each one measures](images/play_modes.svg)
-
-Real time measures play and speed together; stepped measures the policy alone. Which
-contestants use which, and how each is bounded and scored, is in
-[play_modes.md](play_modes.md). The one hard constraint is that a human can only play real
-time: a stepped world stays paused until a registered stepper calls `POST /step`, and an
-OpenTTD client has no way to do that.
 
 ---
 
@@ -358,25 +337,17 @@ batch and one runner submits it, so nttd sees a single stepper however many agen
 produced the decision. Nothing in the protocol needs to know the difference, which is why
 there is no multi-agent surface: `NttdEnv` and the participant routes are it.
 
-Several *contestant* companies are refused. Two contestants sharing a map compete for the
-same towns and industries, which is a different problem from a solo run on the same
-world, and nothing on a result row records which it was. Extra non-contestant companies
-are unaffected: `--ai-opponents N` creates idle slots that do not compete.
+Several *contestant* companies are refused, for reasons that belong to the benchmark rather
+than to this layer: [play_modes.md](play_modes.md#4-the-contestants). What matters here is
+what that refusal bought, which is the section above: one contestant makes the stepping
+barrier unnecessary rather than something to guard.
 
 ---
 
 ## The record
 
-Per session, under `logs/sessions/<session_id>/` (or `NTTD_SESSIONS_DIR`):
-
-| File | |
-|---|---|
-| `result.parquet` | one row per scored company: the leaderboard artifact |
-| `actions.parquet` | every action, including refusals, with status and game date |
-| `snapshots.parquet` | full game state time-series |
-| `events.parquet` | lifecycle and game events |
-| `tiles.parquet` | terrain scan |
-| `nttd_scenario.conf` | the resolved scenario, for provenance |
+What a session leaves behind is listed in
+[session_analyzer.md](session_analyzer.md#data-sources), which is the doc that reads it.
 
 There is no database. `src/nttd/store/` reads and writes Parquet files on disk, and the
 package used to be called `db/`, which is what made the point worth stating.
@@ -393,13 +364,13 @@ drift apart again.
 
 ### Scoring
 
-`performance_rating` is the primary score: OpenTTD's own 0–1000 composite of cargo
-delivered, profitable vehicles, station coverage, vehicle profit, quarterly revenue,
-cargo diversity, cash, and loan status. Cargo delivered breaks ties. Company value is
-displayed but not ranked, because it rewards hoarding.
+The score is OpenTTD's own `performance_rating`, taken unchanged. What it is made of is in
+[gameplay_guide.md](gameplay_guide.md#1-the-score-is-not-how-big-is-your-company), component
+by component with the source lines that compute them; what ranks and what breaks a tie is in
+[play_modes.md](play_modes.md#5-scoring).
 
-`SCORE_VERSION` is recorded, so a change to the definition does not silently mix
-incomparable rows.
+The part that belongs to the record is `SCORE_VERSION`. It is written on every row, so a
+change to the definition does not silently mix incomparable rows.
 
 ---
 

@@ -209,6 +209,17 @@ until a registered stepper calls `POST /step`, and an OpenTTD client has no way 
 Everything else is a choice, and an unusual one is legitimate as long as the mode is
 recorded, which it is.
 
+### An ES population is many sessions, not many companies
+
+One session per candidate, all on the same seed, so every candidate faces the same world.
+Sessions are independent processes on their own ports, so a generation parallelises.
+
+Neither half of the overhead is what limits such a run. Setup and teardown measure about
+**13 seconds** per episode against roughly 30 minutes of play for a T2 episode, and four
+concurrent starts take about **8.6s** against 33s run serially. What bounds an ES run is
+wall-clock play time, which is why parallelism is the lever worth pulling and session
+startup is not.
+
 ### Multi-agent means several loops, one company
 
 A coordinator plus specialists, all holding the same participant token. nttd sees one
@@ -232,7 +243,8 @@ contestant makes that unreachable rather than guarded against.
 
 `performance_rating` is OpenTTD's own quarterly rating, 0 to 1000, taken from the game
 unchanged. It is nine capped components, and cargo delivered over the last four quarters is
-by far the largest at 400 of the 1000 points. `total_cargo`, every unit the run delivered,
+by far the largest at 400 of the 1000 points; the full breakdown is in
+[gameplay_guide.md](gameplay_guide.md#1-the-score-is-not-how-big-is-your-company). `total_cargo`, every unit the run delivered,
 breaks ties. `company_value` is recorded for display and does **not** affect rank.
 
 Using the game's own rating rather than an nttd invention matters: it is the number the
@@ -277,12 +289,9 @@ Everything in the right column arrives through `POST /report` and is marked unve
 because a contestant could put anything there. Marking it is the honest option:
 `spend_is_reported` says so in the row, so nobody reads it as though nttd had measured it.
 
-Per-model rather than one figure, because a multi-agent system routinely uses several, and
-a cheap router in front of one expensive planner is a different system from the same total
-spent uniformly. `(model, role)` is the key, so one model in two roles stays separate.
-
-Reporting nothing still produces a complete result row: action counts come from nttd's own
-log.
+`(model, role)` is the key rather than the model alone, so one model in two roles stays
+separate. [agent_guide.md](agent_guide.md#reporting-what-nttd-cannot-see) is where a
+contestant is told how to send it, and why per model rather than one figure.
 
 ### What makes two rows comparable
 
@@ -294,9 +303,6 @@ can check rather than assume:
   themselves, not a hand-written number, so it changes exactly when they do.
 - **`runtime_mode`** matters because real time scores speed and stepped does not.
   Comparing across them compares two different things.
-
-`clean_run = false` means an operator power was reached for and refused. The run still
-counts; the flag says a reader should look at what was attempted.
 
 ---
 
