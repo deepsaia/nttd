@@ -90,13 +90,29 @@ def test_a_crashed_vehicle_is_not_banked_as_a_closed_year() -> None:
     assert rows[1]["fleet_profit_total"] == 5000, "same year, so nothing is banked"
 
 
-def test_both_series_are_charted_and_the_resetting_one_says_so() -> None:
+def test_both_series_are_charted_and_income_claims_nothing_it_cannot_back() -> None:
+    """The income title used to read "this quarter, resets each quarter", and this test pinned
+    it there. Both halves were wrong: measured across three runs the series changes on days 91,
+    182, 274 and 366 and nowhere else, and it can go DOWN, so it is the last COMPLETED quarter
+    held flat rather than the one in progress, and it never resets to zero. The title is bare
+    now and the behaviour is written down in docs/session_analyzer.md, where it has room.
+    """
     from nttd.monitor.page import _SINGLE_CHARTS
 
     fields = dict(_SINGLE_CHARTS)
     assert "fleet_profit_total" in fields
     assert "cumulative" in fields["fleet_profit_total"]
-    assert "resets" in fields["income"]
+    assert fields["income"] == "Income"
+    for wrong in ("resets", "this quarter", "cumulative"):
+        assert wrong not in fields["income"].lower()
+
+
+def test_the_first_row_leads_with_value_then_income_then_the_rating() -> None:
+    """Same order as the headline chips, and for the same reason: value is what the board ranks
+    on, and the rating saturates so two runs an order of magnitude apart can share one."""
+    from nttd.monitor.page import _SINGLE_CHARTS
+
+    assert [field for field, _ in _SINGLE_CHARTS][:3] == ["value", "income", "rating"]
 
 
 def test_orders_and_routes_are_counted_per_step() -> None:

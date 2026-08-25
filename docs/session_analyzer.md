@@ -161,7 +161,8 @@ nttd neither recomputes nor adjusts them.
 | Company value | `value` | Assets minus loan plus cash, where assets count vehicles at one and a half times their current value. A company that owes more than it owns floors at exactly **1**, which is a real answer and not a rounding error. Drawing a loan does not raise it, because the loan is subtracted again. |
 | Rating | `performance_rating` | OpenTTD's own 1000-point score, nine capped components. |
 | Balance, loan | `money`, `loan` | |
-| Income | `income` | `GetQuarterlyIncome`, an accumulator that RESETS at each quarter boundary, which is why the chart is a sawtooth and why it says nothing about the last few days. |
+| Currency | | The game's money is reported in internal units and nttd does not convert it. `ottd_config/openttd.cfg` selects the custom currency at `rate = 1` with a `$` prefix, so OpenTTD's own display and these numbers are the same number: an opening balance reads 100,000 in the API and $100,000 in the game. Changing the setting would move only the game's display, not anything recorded, and any rate other than 1 would make the two disagree. |
+| Income | `income` | The last COMPLETED quarter, held flat until the next one closes. Measured across three runs it changes on days 91, 182, 274 and 366 and nowhere else, and it can go DOWN, so it is neither the quarter in progress nor a running total. It says nothing about the last few days, which is why cumulative fleet profit exists beside it. |
 | Cargo delivered | `cargo_delivered_total` | Banked across the quarter resets by the GameScript, so it only goes up. |
 | Stations, vehicles | list lengths | |
 
@@ -175,6 +176,7 @@ answers a slightly different question than the one being asked.
 | figure | how it is arrived at |
 |---|---|
 | Day | The snapshot's game date minus the date the run opened on. NOT the row number: a day the runner acted on twice is captured twice, so a 366 day run can have 378 rows, and an axis of row positions labelled "day" disagrees with the scored result. |
+| Reported cost and tokens | Plotted PER DAY, not cumulative, so a turn that cost four times the last one is four times the height rather than a slightly steeper piece of one climb. Zero on a day no turn ended is the true answer rather than a gap. The totals are in the per-model table underneath. |
 | Fleet profit, cumulative | Each vehicle's `profit_this_year` summed, plus the totals banked at every game-year boundary. `profit_this_year` resets on 1 January and a one-year run ENDS on 1 January, so the live sum alone reads near zero on the final snapshot: measured 174,449 on 30-Dec-2020 and -20 the next step. Banked on the YEAR changing rather than on the sum dropping, because a sold or crashed vehicle also drops it and that would count its earnings twice. |
 | Cargo waiting | Summed across every station. Read against cargo delivered on the same plot: waiting climbing while delivered stays flat is a network that collects and does not move. |
 | Routes, orders, vehicles with no orders | Counted from each vehicle's order list. A vehicle with no orders is the failure a clone produces: it inherits the order list but arrives stopped, so it sits earning nothing while looking correctly configured. |

@@ -173,11 +173,18 @@ class SessionFeed:
                 "loan": company.get("loan"),
                 "value": company.get("value"),
                 "income": company.get("income"),
-                # Live earnings. `income` is GetQuarterlyIncome, an accumulator that resets
-                # at every quarter boundary, so the income chart is a sawtooth that says
-                # nothing about the last few days. Each vehicle's profit_this_year updates
-                # continuously and already nets its running cost, so the fleet total is the
-                # honest answer to "is this company earning right now".
+                # Live earnings, and the reason a second earnings series exists at all.
+                #
+                # `income` is NOT GetQuarterlyIncome and not an accumulator that resets; that
+                # was a wrong comment here for a long time and it put "resets each quarter" on
+                # a chart title. It arrives on the admin port's economy packet and, measured
+                # across three runs, changes on days 91, 182, 274 and 366 and nowhere else,
+                # and it can go down. So it is the last COMPLETED quarter, held flat for the
+                # ninety days until the next one closes, which says nothing about now.
+                #
+                # Each vehicle's profit_this_year updates continuously and already nets its
+                # running cost, so the fleet total is the honest answer to "is this company
+                # earning right now".
                 "fleet_profit": live_profit,
                 "fleet_profit_total": banked + live_profit,
                 # What the fleet has been TOLD to do, and how many distinct services that is.
@@ -462,13 +469,16 @@ class SessionFeed:
             else:
                 entry["cost"] += float(cost)
 
-        # Cumulative, because that is the question: what has this run cost by now. A per
-        # report bar answers "what did that one turn cost", which the table below already says.
+        # PER DAY, not cumulative. A running total only ever goes up, so every turn looks like
+        # progress and a turn that cost four times the last one is a slightly steeper piece of
+        # the same climb. Per day, that turn is four times the height, which is the thing worth
+        # seeing. The totals are not lost: the "Reported model usage" table under these charts
+        # carries them per model and for all models together.
         #
-        # And a point PER DAY, not per report. Spend only changes when a turn ends, and a turn
-        # covers many days, so a series of report-days is a handful of points scattered across
-        # a year with nothing between them. Held flat between turns it reads as what it is:
-        # money spent in steps, against the run's own clock.
+        # A point on every day rather than only on the days a turn ended. Spend lands when a
+        # turn ends and a turn covers many days, so a series of report-days alone is a handful
+        # of points scattered across a year. Zero on a day no turn ended is not a gap in the
+        # data, it is the true answer: nothing was spent that day.
         banked: dict[int, float] = {}
         counted: dict[int, int] = {}
         for row in rows:
@@ -486,16 +496,14 @@ class SessionFeed:
         turn_days = sorted(banked)
         last_day = max(turn_days[-1], self.game_days()) if turn_days else self.game_days()
 
-        running_cost, running_tokens = 0.0, 0
-        series: list[dict[str, Any]] = []
-        for day in range(0, last_day + 1):
-            running_cost += banked.get(day, 0.0)
-            running_tokens += counted.get(day, 0)
-            series.append({
+        series: list[dict[str, Any]] = [
+            {
                 "day": day,
-                "cost": round(running_cost, 6),
-                "tokens": running_tokens,
-            })
+                "cost": round(banked.get(day, 0.0), 6),
+                "tokens": counted.get(day, 0),
+            }
+            for day in range(0, last_day + 1)
+        ]
 
         models = sorted(per_model.values(), key=lambda m: -m["cost"])
         return {
