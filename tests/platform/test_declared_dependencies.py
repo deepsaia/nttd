@@ -34,7 +34,7 @@ _DISTRIBUTION_OF = {
 
 # Imported deliberately without being declared, because declaring them would be the bug.
 #
-# runex is the interactive experiment launcher, and it lives in nttd-examples. nttd is the
+# runex is the interactive experiment launcher, and it lives in nttd-workbench. nttd is the
 # engine and the referee: it runs no agent, and a contestant does not need it installed to
 # write one. Depending on the repository that starts agents would make that claim false, so
 # `nttd runex` imports it inside a try and prints how to get it when the import fails.

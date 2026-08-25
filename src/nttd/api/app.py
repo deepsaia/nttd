@@ -142,12 +142,12 @@ app.include_router(actions_router, prefix=Tier.PUBLIC.prefix, tags=[Tier.PUBLIC.
 #
 # Not an auth bypass: the same router objects were mounted twice, so the handlers and their
 # checks were identical. The harm was that the whole surface had two names, and the second one
-# kept a stale client working well enough to hide that it was stale. That is how nttd-examples
+# kept a stale client working well enough to hide that it was stale. That is how nttd-workbench
 # drifted: its old client posted to /sessions/{id}/actions/submit, which still resolved, so a
 # runner half worked instead of failing on its first request. A 404 on the first call is worth
 # more than a run that half works.
 #
-# Nothing shipped depends on them. nttd-examples and the MCP client build /v1/participant
+# Nothing shipped depends on them. nttd-workbench and the MCP client build /v1/participant
 # paths, the CLI prints tiered URLs, the monitor's sentry posts to /v1/operator, and the
 # admin console that did use them was removed.
 

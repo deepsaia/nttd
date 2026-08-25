@@ -446,7 +446,7 @@ diversity, cash, and loan status. Cargo delivered breaks ties.
 ## Reference runners
 
 Working runners live in a separate repository,
-[deepsaia/nttd-examples](https://github.com/deepsaia/nttd-examples): a scripted policy
+[deepsaia/nttd-workbench](https://github.com/deepsaia/nttd-workbench): a scripted policy
 that needs no model, and a neuro-san multi-agent system whose coded tools call back into
 `gs/query`. One per idea rather than one per SDK, because four copies of one loop drift in
 four directions.

@@ -2,7 +2,7 @@
 
 Every command, with examples. The CLI drives the server, the session lifecycle, and the
 result record. It does **not** run agents, and the one command that looks as though it
-does, `nttd runex`, is a doorway to a launcher that lives in nttd-examples. See
+does, `nttd runex`, is a doorway to a launcher that lives in nttd-workbench. See
 [agent_guide.md](agent_guide.md) for that side.
 
 ---
@@ -500,7 +500,7 @@ run, and which network. It starts a server if none answers, uses one that is alr
 rather than starting a second, and shuts down only what it started. Networks come from the
 server itself, offered with their descriptions when there is more than one.
 
-The launcher itself lives in **nttd-examples**, not here, and `nttd runex` is a doorway to
+The launcher itself lives in **nttd-workbench**, not here, and `nttd runex` is a doorway to
 it: nttd is the engine and the referee, it runs no agent, and a contestant does not need it
 installed to write one. Without the examples repository on the path this command prints how
 to get it. From a checkout of that repository, the same tool is `uv run runex` or

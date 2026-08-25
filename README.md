@@ -116,18 +116,18 @@ Reports of what does and does not work are welcome.
 ## Running a benchmark
 
 New here? [docs/getting_started.md](docs/getting_started.md) walks one whole experiment end
-to end: install, run a session, play it with a runner from nttd-examples, watch it in the
+to end: install, run a session, play it with a runner from nttd-workbench, watch it in the
 monitor, read the result, and publish it through nttd-leaderboard.
 
 A whole run is four commands across two repositories. Steps 1 and 2 are here; steps 3 and 4
-are in [nttd-examples](https://github.com/deepsaia/nttd-examples), because nttd runs no agent.
+are in [nttd-workbench](https://github.com/deepsaia/nttd-workbench), because nttd runs no agent.
 
 ```bash
 # --- here -------------------------------------------------------------------------------
 uv run nttd server                                                              # terminal 1
 uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf    # terminal 2
 
-# --- in an nttd-examples checkout ---------------------------------------------------------
+# --- in an nttd-workbench checkout ---------------------------------------------------------
 uv run runex                                                                    # terminal 3
 ```
 
@@ -490,7 +490,7 @@ per-session config directory, so editing it takes effect on the next session: no
 rebuild.
 
 Reference runners live in
-[deepsaia/nttd-examples](https://github.com/deepsaia/nttd-examples). They are
+[deepsaia/nttd-workbench](https://github.com/deepsaia/nttd-workbench). They are
 contestant-side code and none of them import the `nttd` package: this repository ships
 only the engine, `src/nttd`.
 

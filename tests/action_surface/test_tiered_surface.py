@@ -6,7 +6,7 @@ bypass, since the same router objects served both, so the handlers and their che
 identical either way.
 
 The harm was subtler. A second name for the whole surface kept a stale client working well
-enough to hide that it was stale. nttd-examples posted to /sessions/{id}/actions/submit, which
+enough to hide that it was stale. nttd-workbench posted to /sessions/{id}/actions/submit, which
 still resolved, so a runner half worked instead of failing on its first request, and the drift
 went unnoticed until the examples were rebuilt. A 404 on the first call is worth more than a
 run that half works.

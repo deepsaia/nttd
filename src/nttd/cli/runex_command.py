@@ -1,6 +1,6 @@
 """nttd runex command -- hand over to the interactive experiment launcher.
 
-The launcher lives in nttd-examples, not here, and that is deliberate. nttd is the engine and
+The launcher lives in nttd-workbench, not here, and that is deliberate. nttd is the engine and
 the referee: it stands up a world, takes actions and scores what happened. It runs no agent, and
 a contestant does not need it installed to write one. Owning the thing that starts agents would
 make that claim false.
@@ -18,11 +18,11 @@ from nttd.cli.helpers import console
 
 _MISSING = """[yellow]The experiment launcher is not installed.[/]
 
-It ships with the worked agent examples, which are a separate repository so that nttd
-itself stays free of any framework:
+It lives in the workbench, a separate repository so that nttd itself stays free of any
+framework:
 
-    git clone https://github.com/deepsaia/nttd-examples
-    cd nttd-examples
+    git clone https://github.com/deepsaia/nttd-workbench
+    cd nttd-workbench
     uv sync
 
 then run it from there with [cyan]uv run runex[/] or [cyan]python -m runex[/]."""
