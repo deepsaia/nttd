@@ -164,7 +164,20 @@ def line_chart(
     )
 
     out = [
-        f'<svg viewBox="0 0 {WIDTH} {HEIGHT}" preserveAspectRatio="none" '
+        # No style="aspect-ratio:{WIDTH}/{HEIGHT}", and an aspect-ratio carried on the element itself.
+        #
+        # "none" lets the browser scale x and y independently to fill whatever box the CSS
+        # gives it, and the box was `width:100%; height:150px` against a 460x200 drawing. So
+        # the vertical scale was ALWAYS 0.75 and the horizontal scale was whatever the panel
+        # happened to be: in the three-across row, 394/460 = 0.86. Text came out 14% wider
+        # than it was drawn and the axis labels looked stretched sideways.
+        #
+        # The ratio is written from the same two constants the drawing uses, inline rather
+        # than in the stylesheet, because a copy of 460/200 in assets.py is two numbers that
+        # can disagree. With the box matching the drawing there is nothing to letterbox and
+        # nothing to distort, and if a future style breaks the match the failure is a margin
+        # rather than deformed text.
+        f'<svg viewBox="0 0 {WIDTH} {HEIGHT}" style="aspect-ratio:{WIDTH}/{HEIGHT}" '
         f'class="chart" data-cid="{esc(cid)}" role="img">'
     ]
     out.extend(_grid(scale))

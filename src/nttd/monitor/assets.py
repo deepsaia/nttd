@@ -116,7 +116,10 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .ptitle{font-size:12px;font-weight:600;margin-bottom:4px;display:flex;
  justify-content:space-between;}
 .readout{color:var(--accent);font-weight:600;font-size:11px;}
-.chart{width:100%;height:150px;display:block;}
+/* The height comes from the drawing's own aspect ratio, carried inline on the svg from the
+   same constants that draw it. A fixed height here scaled the two axes independently and made
+   the axis labels look stretched. */
+.chart{width:100%;height:auto;display:block;}
 .chart .gl{stroke:var(--grid);}
 /* The days a turn ended on. Dotted and dim: they are a reference for reading the steps in
    the line, not data in their own right. */
