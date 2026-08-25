@@ -160,7 +160,8 @@ export HF_TOKEN=...                                       # your token, write sc
 uv run nttd publish -s <session> --entrant <your name>
 ```
 
-Add `--dry-run` first to see exactly what would be filed and where. `docs/submitting.md` in
+Add `--dry-run` first to see exactly what would be filed and where, and remember that the
+pull request has to be **merged** before verification will find it. The README in
 nttd-examples covers the contestant path in full.
 
 ### If you are running the board yourself
