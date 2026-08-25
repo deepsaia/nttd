@@ -81,8 +81,13 @@ def test_the_dearest_model_is_listed_first() -> None:
     assert [m["model"] for m in spend["models"]] == ["dear", "cheap"]
 
 
-def test_the_series_is_cumulative_and_measured_in_game_days() -> None:
-    """The question is what the run has cost BY NOW, and the x axis is the game's clock.
+def test_the_series_is_per_day_and_measured_in_game_days() -> None:
+    """What each turn cost, not what the run has cost by now, and on the game's clock.
+
+    A running total only ever goes up, so every turn looks like progress and a turn costing
+    four times the last one is a slightly steeper piece of the same climb. Per day that turn is
+    four times the height, which is the thing worth seeing. The totals are not lost: the
+    per-model table under these charts carries them.
 
     With no snapshot series to say when the run opened, the first report is the only origin
     available and the series starts there. A run WITH snapshots starts at day zero instead,
@@ -96,10 +101,13 @@ def test_the_series_is_cumulative_and_measured_in_game_days() -> None:
     series = {p["day"]: p for p in spend["series"]}
     assert len(series) == 31, "one point per day, not one per report"
     assert [series[day]["cost"] for day in (0, 9, 10, 19, 20, 30)] == [
-        1.0, 1.0, 3.0, 3.0, 3.0, 6.0,
-    ], "flat between turns, stepping up on each"
-    assert series[30]["tokens"] == 330
+        1.0, 0.0, 2.0, 0.0, 0.0, 3.0,
+    ], "each turn's own cost on the day it ended, and nothing on the days between"
+    assert series[30]["tokens"] == 110, "that turn's tokens, not the run's"
     assert spend["turn_days"] == [0, 10, 30]
+    # The totals still add up to what the table shows.
+    assert sum(p["cost"] for p in spend["series"]) == 6.0
+    assert spend["cost"] == 6.0
 
 
 # --- tokens counted, price unknown ------------------------------------------------------
@@ -160,7 +168,8 @@ def test_there_is_a_point_for_every_day_of_the_run() -> None:
     """Spend only changes when a turn ends, and a turn covers many days.
 
     Plotted per report it is a handful of points scattered across a year with nothing between
-    them. Held flat between turns it reads as what it is: money spent in steps.
+    them, so there is a point on every day and the x axis stays the run's own clock, shared
+    with every other chart on the page.
     """
     feed = _feed_over(
         list(range(100, 111)),                      # eleven days of run
@@ -174,13 +183,13 @@ def test_the_line_sits_at_nothing_until_the_first_turn_ends() -> None:
     """Day zero is when the RUN opened, not when the first report arrived.
 
     Measuring from the first report puts the opening turn at day 0 and hides however long it
-    took, and the honest picture is a flat line until a turn lands.
+    took, and the honest picture is nothing at all until a turn lands.
     """
     feed = _feed_over(list(range(100, 111)), [(105, 0, "m", "anthropic", 10, 1, 2.0)])
     series = feed.spend()["series"]
     assert [p["cost"] for p in series[:5]] == [0.0] * 5
-    assert series[5]["cost"] == 2.0, "it steps up on the day the turn ended"
-    assert series[-1]["cost"] == 2.0, "and holds until the next one"
+    assert series[5]["cost"] == 2.0, "the whole of that turn's cost, on the day it ended"
+    assert series[-1]["cost"] == 0.0, "and nothing after it: no turn ended that day"
 
 
 def test_the_turn_days_are_reported_for_the_markers() -> None:
@@ -190,7 +199,10 @@ def test_the_turn_days_are_reported_for_the_markers() -> None:
     )
     spend = feed.spend()
     assert spend["turn_days"] == [5, 15]
-    assert spend["series"][-1]["cost"] == 2.0
+    by_day = {p["day"]: p["cost"] for p in spend["series"]}
+    assert by_day[5] == 1.0 and by_day[15] == 1.0
+    assert by_day[20] == 0.0, "the last day of the run ended no turn"
+    assert spend["cost"] == 2.0, "the total is still reported, for the table"
 
 
 def test_two_models_reporting_on_one_day_are_one_turn() -> None:
