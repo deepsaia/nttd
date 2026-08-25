@@ -62,19 +62,11 @@ nttd_actions()                        one line per action, for choosing
 nttd_actions("build_road_stop")       parameters, types, defaults, accepted values
 ```
 
-Three things there are worth reading rather than guessing.
-
-**Named constants are not guessable.** `order_flags` is a bitmask you add together, and
-neighbouring meanings are not neighbouring values: `OF_FULL_LOAD` is 64, `OF_NO_LOAD` is
-128, and `OF_UNLOAD` and `OF_SERVICE_IF_NEEDED` are both 4. The accepted values come with
-the parameter, read from the OpenTTD build rather than written down.
-
-**Some actions accept a choice.** `add_order` takes a station id or a destination tile.
-Anything placed on the map takes `tile` or an `x,y` pair. The `one_of` field says which.
-
-**Some ids are assigned by the running game** and gated by year: rail types, road types,
-cargo types, bridge types, engines. Ask with `nttd_query` rather than reusing a number
-that worked in another game.
+Three kinds of value there cannot be guessed and have to be read: named constants whose
+numbers are not in any sensible order, actions that accept one of two shapes rather than a
+fixed set, and ids the running game assigns and gates by year.
+[agent_guide.md](agent_guide.md#acting) sets them out with the examples. Over MCP the only
+difference is where you ask: `nttd_actions` for the first two, `nttd_query` for the third.
 
 ## Acting
 
@@ -82,9 +74,9 @@ that worked in another game.
 what stepped play needs: the reply is the world after the moves landed, so nothing has to
 guess when they took effect.
 
-Send as many actions as you like. There is no per-call limit. A stepped run is bounded by
-how many steps it takes and how many game-days each advances, both fixed by the scenario,
-so a larger batch buys no more world than anyone else gets.
+Send as many actions as you like: there is no per-call limit, and
+[play_modes.md](play_modes.md#3-the-two-play-modes) explains why capping it would buy
+nothing.
 
 `nttd_act(moves, dry_run=True)` checks a batch without submitting it. Worth doing for
 something you are unsure of, since a refused action still costs a round trip.
@@ -103,7 +95,8 @@ station would fit, which engines exist this year, what a move would cost. That i
 built and no money moves.
 
 One query is not free of consequence despite being a read: `get_cargo_flows` resets the
-cargo monitors, so a second call reports only what moved since the first.
+cargo monitors. [action_reference.md](action_reference.md) is the place that says so for
+every action, since it is generated from the game.
 
 ## What this replaced
 

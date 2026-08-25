@@ -152,10 +152,9 @@ directory and monitor heading disagreed by a second.
 **`start`** generates the world and spawns OpenTTD. `--agent-companies 1` creates the
 company your runner will play; without it there is nothing to play.
 
-More than one contestant company is **refused**, before anything spawns. A scored result
-is one company on one world, and several sharing a map is a different problem that
-nothing on a result row records. A multi-agent entry is several agents driving that one
-company. For extra companies that do not compete, use `--ai-opponents N`.
+More than one contestant company is **refused**, before anything spawns; a multi-agent
+entry is several agents driving that one company. For extra companies that do not compete,
+use `--ai-opponents N`. Why, in [play_modes.md](play_modes.md#4-the-contestants).
 
 **`attach`** prints the participant token and the routes: real-time and stepped. The
 token exists only in the `start` output and in `participants.json` otherwise, so this is
@@ -594,17 +593,16 @@ makes it different.
 
 ### What a scored scenario may set
 
-Locked by `config/benchmark/profile.conf` and refused if you change them:
-`variety`, `smoothness`, `rivers`, `sea_level`, `map_edges`, `starting_year`,
-`town_names`, `number_towns`, `industry_density`, `landscape`.
+Two things are free to vary, because each is recorded as a result column: the map **size**
+(one list for both axes, which must be equal) and `terrain_type`. That is 5 × 5 = 25
+scoreable maps, each admitting any seed.
 
-Free to vary, because each is recorded as a result column: the map **size** (one list
-for both axes, which must be equal) and `terrain_type`. That is 5 × 5 = 25 scoreable
-maps, each admitting any seed. Run `nttd scenario profile` for the permitted values.
-
-**Scoredness is computed, not declared.** A conforming world is scored whether or not
-the file says so; `scored = true` over a non-conforming world is refused rather than
-honoured. See [play_modes.md](play_modes.md).
+Everything else is locked by `config/benchmark/profile.conf` and refused if a scenario
+changes it. **Run `nttd scenario profile`** for the list and the permitted values: it reads
+the profile, so it cannot go stale the way a copy here would.
+[play_modes.md](play_modes.md#1-the-world) says which settings and why each one is pinned,
+and why **scoredness is computed rather than declared**, so `scored = true` over a
+non-conforming world is refused rather than honoured.
 
 There is **no** `agents` block and **no** `fairness` block. Which agents play is your
 runner's business; how much anyone may do is operator policy and lives in the profile.
@@ -622,10 +620,9 @@ A scenario carrying either is refused, with a message saying where it went.
   }
 ```
 
-`time_limit` must be explicitly disabled. It defaults to **enabled at 60 minutes**, so a
-stepped scenario that simply omits it still ends on a wall clock, which is the one bound
-that means nothing when the clock only advances on request. nttd refuses the combination
-rather than letting it look reasonable.
+`time_limit` must be explicitly disabled, not merely omitted, and nttd refuses a stepped
+scenario that leaves it on. [play_modes.md](play_modes.md#which-bounds-are-legal) has the
+reason and the table of which bound is legal in which mode.
 
 ### Tiers
 
@@ -640,27 +637,19 @@ returns 501 and explains why.
 
 ## Session data
 
-Under `NTTD_SESSIONS_DIR` (default `logs/sessions`), per session:
+One directory per session, under `NTTD_SESSIONS_DIR` (default `logs/sessions`). The full
+inventory is in [session_analyzer.md](session_analyzer.md#data-sources). Two things about it
+are worth knowing from here.
 
-| File | |
-|---|---|
-| `result.parquet` | one row per scored company: the leaderboard artifact |
-| `actions.parquet` | every action, refusals included, with status and game date |
-| `snapshots.parquet` | full game state time-series |
+**`participants.json` holds the tokens, mode 0600.** It and the `start` output are the only
+places a participant token exists, which is what `attach` reads.
 
-`snapshots.parquet` holds each snapshot whole, as `snapshot_json`, and beside it a few
-typed columns extracted from that same snapshot: four `num_*` counts and fourteen `c0_*`
+**`snapshots.parquet` holds each snapshot whole**, as `snapshot_json`, with a few typed
+columns extracted from that same snapshot beside it: four `num_*` counts and fourteen `c0_*`
 figures for company 0. **The JSON is the record; the columns are an index into it.** They
 exist so a dashboard can filter or plot a series without parsing a large JSON string per
-row, and they cost 5 to 6 percent of the file to do it.
-
-They are deliberately partial, covering company 0 only and no expenses, so anything wider
-reads the JSON. That is why `nttd result --business` recomputes its metrics from
-`snapshot_json` rather than from the columns.
-| `events.parquet` | lifecycle and game events |
-| `tiles.parquet` | terrain scan |
-| `nttd_scenario.conf` | the resolved scenario, for provenance |
-| `participants.json` | the tokens, mode 0600 |
+row, and they cost 5 to 6 percent of the file to do it. They are deliberately partial,
+covering company 0 only and no expenses, so anything wider reads the JSON.
 
 ---
 

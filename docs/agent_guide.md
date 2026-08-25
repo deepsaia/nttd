@@ -78,11 +78,10 @@ roughly 389,000 tokens.
 consumer pairs are unserved, which town pairs have demand, how far apart they are, and
 which transport modes could serve each. Filter it with `agent_type` to one mode.
 
-It is deliberately not filtered for you. Deciding what matters is part of the task, so
-nttd hands over everything and leaves filtering to your code: that is where it belongs
-in a multi-agent design, and it stops information differences confounding scores. The
-practical consequence is that a naive agent pays more tokens per step. That is the
-intended incentive.
+It is deliberately not filtered for you: deciding what matters is part of the task, so a
+scored run receives the complete entitled state and filtering is your code's job.
+[architecture.md](architecture.md#observation-is-deliberately-unbounded) sets out what that
+buys and what it costs.
 
 `GET /state/compact?company_id=0` gives a smaller payload for development. A scored run
 observes fully regardless.
@@ -95,9 +94,7 @@ uv run nttd actions --playable        # the 76 ways to change it
 uv run nttd actions build_road_stop   # one action's parameters and defaults
 ```
 
-Or read it as files. Start with [the index](actions/index.md): every action on one line
-with its call shape, so choosing one costs about 3k tokens rather than reading all of
-them.
+Or read it as files, starting from [the index](actions/index.md), which is the cheap way in.
 
 ```
 remove_order(vehicle_id, order_index|order_position)
@@ -275,25 +272,16 @@ action", because an agent told only "no" retries forever.
 
 ### How many actions to take
 
-Your call, in both modes. There is no ceiling.
-
-That is deliberate: how much to attempt per decision is part of what a benchmark should
-measure, not something to equalise. A multi-agent system coordinating parallel work, an
-RL policy batching a whole route, and an agent taking one action at a time are making
-different bets, and each pays for its own in tokens and compute.
-
-Nothing is bought by capping it. In real time the world moves whether or not you act, so
-every action already costs game time. In stepped mode the run is bounded by how many
-steps it takes and how many game-days each one advances, both fixed by the scenario, so
-a larger batch cannot buy you more world than anyone else gets.
-
-Loops sharing a company share nothing but the company: nttd sees one contestant and
-writes one result row, and how many agents you run inside it is your business.
+Your call, in both modes. **There is no ceiling**, and none is coming: how much to attempt
+per decision is part of what a benchmark should measure rather than something to equalise.
+[play_modes.md](play_modes.md#3-the-two-play-modes) works through why capping it would buy
+nothing, mode by mode.
 
 ## Stepped mode, for RL and ES
 
-Real-time is a wall-clock race. Stepped mode is not: the game is paused between steps,
-so deliberation costs no game time.
+Stepped mode pauses the world between steps, so deliberation costs no game time and a slow
+policy is not punished for being slow. That, and how a stepped run is bounded, is in
+[play_modes.md](play_modes.md#stepped). Here is what it looks like to call.
 
 ```python
 requests.post(f"{P}/step/reset", headers=H, timeout=180)     # opening observation
@@ -356,10 +344,9 @@ result = step(session, actions)              # one call
 
 ### Why not several companies
 
-Two contestants sharing a map compete for the same towns and industries, which is a
-different problem from a solo run on the same world, and nothing on a result row records
-which it was. The two could never be compared, so the runs would not be scoreable and the
-board would not accept them.
+A session holds **one** contestant company, and more than one is refused. Several agents
+driving that one company is the supported shape; two contestants sharing a map is not, and
+[play_modes.md](play_modes.md#4-the-contestants) says why.
 
 Extra *non-contestant* companies are still available: `--ai-opponents N` creates idle
 slots. They do not compete for cargo or town ratings.
@@ -397,23 +384,22 @@ requests.post(f"{P}/report", headers=H, json={
 ```
 
 Per model, because a multi-agent system routinely uses several and a cheap router in
-front of one expensive planner is a different system from the same total spent
-uniformly. `role` is part of the key, so one model in two roles stays separate.
+front of one expensive planner is a different system from the same total spent uniformly.
 
 Calls **accumulate**, so report each cycle's usage as your provider returns it rather
-than holding totals yourself. Optional: a contestant that reports nothing still gets a
-complete result row, because action counts come from nttd's own log.
+than holding totals yourself. It is optional: report nothing and you still get a complete
+result row, since the action counts come from nttd's own log.
 
 ---
 
 ## What you may not do
 
-An agent may take any action a human can take through the GUI, and nothing more.
+**An agent may take any action a human can take through the GUI, and nothing more.**
 
-Nine actions are operator-only because a human has no equivalent:
-`change_bank_balance`, `set_max_loan`, `create_subsidy` (a human can only *claim* an
-offered subsidy), `found_town`, `expand_town`, `set_town_growth`, `change_town_rating`,
-`set_cargo_goal`, `set_game_setting`.
+A handful have no human equivalent and live behind the operator routes instead.
+[action_reference.md](action_reference.md#the-actions-nobody-can-play) lists them with
+what each one does, and it is generated from the game, so it cannot drift the way a copy
+here would.
 
 Everything a human *can* do is available, including the ones easy to miss: terraforming
 (`raise_tile`, `lower_tile`, `level_tiles`), conditional orders, one-way roads, road
@@ -422,9 +408,9 @@ because those are buttons in the town window.
 
 `GET /v1/participant/sessions/{id}/actions/available` lists the vocabulary by category.
 
-In a **scored** session, reaching for an operator power is refused and recorded. It does
-not void your run: nothing happened, but the result reports `clean_run = false` and
-names what was attempted.
+In a **scored** session, reaching for one is refused and recorded, and
+[play_modes.md](play_modes.md#what-scored-changes-at-runtime) says what that costs you.
+The short answer is nothing: the run still counts, because nothing happened.
 
 ---
 
@@ -434,12 +420,14 @@ names what was attempted.
 uv run nttd result -s <session>
 ```
 
-Shows the score, the task identity, code provenance, per-model spend, and an explicit
-list of verification gaps: the things that would stop someone checking your run.
+Prints what the run scored and everything a reader would need to check it, including the
+verification gaps: the things that would stop someone checking it at all.
+[cli_guide.md](cli_guide.md#nttd-result) lists what it shows and its flags.
 
-The score is OpenTTD's own `performance_rating`: a 0–1000 composite of cargo delivered,
-profitable vehicles, station coverage, vehicle profit, quarterly revenue, cargo
-diversity, cash, and loan status. Cargo delivered breaks ties.
+The score is OpenTTD's own `performance_rating`, taken unchanged, and cargo delivered
+breaks ties. It is worth knowing what it is made of before optimising anything:
+[gameplay_guide.md](gameplay_guide.md#1-the-score-is-not-how-big-is-your-company) has the
+nine components with their caps and weights, and three of them a one-year run cannot win.
 
 ---
 
