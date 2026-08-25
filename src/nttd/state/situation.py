@@ -7,10 +7,11 @@ business judgement should not also be measuring whether a model can add up.
 
 So the split is: this reports the facts, and the agent decides what to do about them.
 
-**The formulas match the ones the board scores.** Operating margin here is the same
-expression as ``analysis.business_metrics``, deliberately. An agent judging itself by a
-different yardstick than its scorer optimises the wrong thing, which is a subtle way for
-a benchmark to be unfair.
+**These are facts about the company, not a grade.** Operating margin here is arithmetic on
+what the game reports, so an agent reading it sees the same thing a person would. There was
+once a whole derived-metrics module alongside it; it went because every figure in it was
+computed from game data that the snapshot series already carries, and a second expression of
+the same numbers is a second thing to keep true.
 
 In the loop, rather than after it. The ``analysis`` package computes richer versions of
 several of these and does work on a running session, because nttd writes a snapshot

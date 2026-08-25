@@ -100,6 +100,9 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 @media (max-width:1080px){ .split{grid-template-columns:minmax(0,1fr);} }
 /* The two logs, read against each other. */
 .grid.pair{grid-template-columns:repeat(auto-fit,minmax(420px,1fr));}
+/* Three across on a wide screen: the event log beside the two spend charts. Narrower
+   than .pair because these three are read together and a two-up row would orphan one. */
+.grid.trio{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));}
 .plot{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;}
 .plot.two{grid-column:span 2;}
 .plot.full{grid-column:1/-1;}

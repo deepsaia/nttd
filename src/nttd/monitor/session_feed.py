@@ -103,6 +103,10 @@ class SessionFeed:
             # so reported 378 for a run whose result record says 366, which is the kind of
             # disagreement that makes a reader doubt the scored number rather than the label.
             "days": self.game_days(),
+            # What the contestant says it has spent so far. Blank rather than zero when
+            # nothing was reported, which is every RL and ES entry: a zero there would be a
+            # claim the run was free rather than the absence of a claim.
+            "cost": self._cost_so_far(),
             "game_date": game.get("game_date"),
             "mode": game.get("mode"),
             "map": f"{game.get('map_width', '?')}x{game.get('map_height', '?')}",
@@ -251,18 +255,6 @@ class SessionFeed:
                 ],
             })
         return frames
-
-    def metrics(self) -> dict[str, Any]:
-        """The scored business metrics, or empty while the run is still going.
-
-        Read from result.parquet rather than recomputed, so the page shows the same numbers the
-        leaderboard sorts on. They exist only once a session ends: the metrics are derived from
-        the merged snapshot series, and that file is written when the recorder finalises.
-        """
-        result = self._data.result
-        if result is None or result.is_empty():
-            return {}
-        return result.row(0, named=True)
 
     def tiles(self) -> Any:
         """The recorded terrain grid, for the map's base image.
@@ -489,6 +481,13 @@ class SessionFeed:
             # withhold a total that would be missing one of its parts.
             "priced": all(m["priced"] for m in models),
         }
+
+    def _cost_so_far(self) -> str:
+        """The reported spend, formatted, or "" when there is none or no price for it."""
+        spend = self.spend()
+        if not spend or not spend.get("priced"):
+            return ""
+        return f"${spend['cost']:,.2f}"
 
     def game_days(self) -> int:
         """How many game days the run has covered, from the game's own clock.

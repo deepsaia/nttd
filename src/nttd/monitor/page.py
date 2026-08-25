@@ -148,10 +148,16 @@ def session_page(
     body.append(_fleet_table(feed))
     body.append(_action_type_table(feed))
     body.append(_action_table(feed))
-    body.append(_event_table(feed))
     body.append("</div>")
-    body.extend(_spend_panels(feed.spend()))
-    body.append(_metrics_panel(feed.metrics()))
+
+    # Events beside the two spend charts, three across. All three answer "what happened, and
+    # when", against the same run of game days, so reading them together is the point.
+    spend = feed.spend()
+    body.append('<div class="grid trio">')
+    body.append(_event_table(feed))
+    body.extend(_spend_charts(spend))
+    body.append("</div>")
+    body.extend(_spend_table(spend))
     body.append("</div>")
     return shell("".join(body), refresh=LIVE_REFRESH_SECONDS if meta["live"] else 0)
 
@@ -230,97 +236,6 @@ def _index_view(entries: list[dict[str, Any]]) -> str:
         "no sessions",
     )
     return header + cards + '<div class="grid">' + listing + "</div>"
-
-
-# The scored business metrics, grouped as they are computed, with the formatter each needs.
-# Last on the page deliberately: they are the summary of a finished run, not something to watch
-# while it plays, and every one of them is fixed once the session ends.
-_METRIC_GROUPS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
-    ("Profitability", (
-        ("operating_margin_final", "operating margin, final", "ratio"),
-        ("operating_margin_mean", "operating margin, mean", "ratio"),
-        ("profitable_quarters_share", "profitable quarters", "ratio"),
-        ("maintenance_burden_final", "maintenance burden", "ratio"),
-    )),
-    ("Capital", (
-        ("return_on_capital", "return on capital", "ratio"),
-        ("peak_capital_deployed", "peak capital deployed", "money"),
-        ("days_to_first_profit", "days to first profit", "days"),
-    )),
-    ("Growth", (
-        ("value_at_25pct", "value at 25%", "money"),
-        ("value_at_50pct", "value at 50%", "money"),
-        ("value_at_75pct", "value at 75%", "money"),
-        ("cargo_at_25pct", "cargo at 25%", "count"),
-        ("cargo_at_50pct", "cargo at 50%", "count"),
-        ("cargo_at_75pct", "cargo at 75%", "count"),
-    )),
-    ("Risk", (
-        ("peak_credit_used", "peak credit used", "ratio"),
-        ("final_credit_used", "final credit used", "ratio"),
-        ("min_cash", "minimum cash", "money"),
-        ("ended_in_debt", "ended in debt", "flag"),
-    )),
-    ("Operations", (
-        ("profitable_vehicle_share", "profitable vehicles, peak", "ratio"),
-        ("idle_vehicle_share", "idle vehicles", "ratio"),
-        ("vehicles_final", "vehicles", "count"),
-        ("stations_final", "stations", "count"),
-        ("cargo_per_vehicle", "cargo per vehicle", "rate"),
-        ("cargo_per_station", "cargo per station", "rate"),
-    )),
-    ("Decision economy", (
-        ("action_success_rate", "action success rate", "ratio"),
-        ("value_per_action", "value per action", "rate"),
-        ("usd_per_score_point", "USD per score point", "rate"),
-    )),
-)
-
-
-def _metric_value(raw: Any, kind: str) -> str:
-    """One metric, formatted for its kind. Blank when the run never produced it."""
-    if raw is None:
-        return "-"
-    if kind == "flag":
-        return "yes" if raw else "no"
-    if kind == "days":
-        # -1 is the sentinel for "never turned a profit", which is a fact and not a missing value.
-        return "never" if int(raw) < 0 else str(int(raw))
-    if kind == "ratio":
-        return f"{float(raw):.2f}"
-    if kind == "rate":
-        return f"{float(raw):,.1f}"
-    return f"{int(raw):,}"
-
-
-def _metrics_panel(metrics: dict[str, Any]) -> str:
-    """The scored metrics, or a line saying when they will exist.
-
-    Shown because nothing on this page carried them: twenty four numbers were computed into
-    result.parquet and sorted on by the leaderboard, and a reader watching a run had no way to
-    see any of them.
-    """
-    if not metrics:
-        return panel(
-            "Business metrics",
-            '<div class="ph">Computed when the session ends, from the merged snapshot series. '
-            "These are the figures the leaderboard sorts on.</div>",
-            span="full",
-        )
-    blocks = []
-    for title, fields in _METRIC_GROUPS:
-        rows = "".join(
-            f'<div class="mrow"><span class="mk">{esc(label)}</span>'
-            f'<span class="mv">{esc(_metric_value(metrics.get(key), kind))}</span></div>'
-            for key, label, kind in fields
-        )
-        blocks.append(f'<div class="mgroup"><div class="mgt">{esc(title)}</div>{rows}</div>')
-    version = metrics.get("metrics_version") or "?"
-    return panel(
-        f"Business metrics ({esc(str(version))})",
-        f'<div class="mgrid">{"".join(blocks)}</div>',
-        span="full",
-    )
 
 
 def _delete_control(meta: dict[str, Any]) -> str:
@@ -414,6 +329,9 @@ def _session_cards(meta: dict[str, Any]) -> str:
         # realtime, while a game day is the same unit in both, so one monitor reads both.
         ("days", meta["days"], ""),
         ("actions", f"{meta['actions']} / {meta['refused']} refused", ""),
+        # Blank rather than $0.00 when nothing was reported. nttd runs no model, so an empty
+        # chip is the absence of a claim, and a zero would be the claim that it was free.
+        ("cost", meta.get("cost") or "not reported", ""),
         ("wall time (hh:mm:ss)", _clock(meta["minutes"]), ""),
     ])
 
@@ -533,24 +451,43 @@ def _series(
     }
 
 
-def _spend_panels(spend: dict[str, Any]) -> list[str]:
-    """What the contestant said its models cost, if it said anything.
+def _spend_charts(spend: dict[str, Any]) -> list[str]:
+    """Cost and tokens over the run, or NOTHING when nothing was reported.
 
-    Returns NOTHING when nothing was reported, which is the normal state for an RL or ES
-    entry: those run a policy rather than a model and have no tokens to declare. An empty
-    chart of zeros would not be a fact about the run, it would be a fact about the absence
-    of a report, and the page already has somewhere to say that.
+    Nothing is the important half. An RL or ES entry runs a policy rather than a model and has
+    no tokens to declare, so it gets no chart rather than a flat line at zero: that would be a
+    fact about the absence of a report, not about the run.
+    """
+    if not spend or not spend.get("models"):
+        return []
+    return [
+        line_chart(
+            "cspend",
+            [{"label": "cost so far", "colour": colour(2),
+              "rows": [{"day": p["day"], "v": p["cost"]} for p in spend["series"]]}],
+            "Reported cost over the run", "v",
+        ),
+        line_chart(
+            "ctokens",
+            [{"label": "tokens so far", "colour": colour(0),
+              "rows": [{"day": p["day"], "v": p["tokens"]} for p in spend["series"]]}],
+            "Reported tokens over the run", "v",
+        ),
+    ]
 
-    Every figure here is the contestant's claim about itself. nttd runs no model, so it
-    cannot observe a token or a dollar, and the panel says so rather than presenting these
-    beside the action counts it tallied itself.
+
+def _spend_table(spend: dict[str, Any]) -> list[str]:
+    """Which model cost what, dearest first, with the caveat that nttd cannot check any of it.
+
+    Dearest first is the lever rather than decoration: on a measured run the strategist was
+    92% of the bill while the four workers came to under two dollars between them.
     """
     if not spend or not spend.get("models"):
         return []
 
-    priced = spend.get("priced", True)
     # Withheld rather than understated. A total missing one model's price still reads as a
     # total, which is a worse answer than declining to give one.
+    priced = spend.get("priced", True)
     total = f"${spend['cost']:,.2f}" if priced else "not priced"
 
     rows = [
@@ -569,32 +506,17 @@ def _spend_panels(spend: dict[str, Any]) -> list[str]:
         number(spend["completion_tokens"]), str(spend["reports"]), total,
     ])
 
-    out = [
-        line_chart(
-            "cspend",
-            [{"label": "cost so far", "colour": colour(2),
-              "rows": [{"day": p["day"], "v": p["cost"]} for p in spend["series"]]}],
-            "Reported cost over the run", "v",
+    return [
+        table(
+            ["model", "role", "prompt", "completion", "reports", "cost"],
+            rows,
+            "Reported model usage",
+            "nothing reported",
         ),
-        line_chart(
-            "ctokens",
-            [{"label": "tokens so far", "colour": colour(0),
-              "rows": [{"day": p["day"], "v": p["tokens"]} for p in spend["series"]]}],
-            "Reported tokens over the run", "v",
-        ),
-    ]
-    out.append(table(
-        ["model", "role", "prompt", "completion", "reports", "cost"],
-        rows,
-        "Reported model usage",
-        "nothing reported",
-    ))
-    out.append(
         '<p class="note">Contestant-reported and unverifiable: nttd runs no model, so it '
         "cannot see what you used or what it cost. A run that reports nothing, which is "
-        "every RL and ES entry, shows none of this rather than a row of zeros.</p>"
-    )
-    return ['<div class="grid pair">', *out, "</div>"]
+        "every RL and ES entry, shows none of this rather than a row of zeros.</p>",
+    ]
 
 
 def _fleet_table(feed: SessionFeed) -> str:

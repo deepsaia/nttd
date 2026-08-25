@@ -12,7 +12,7 @@ from pathlib import Path
 import polars as pl
 
 from nttd.analysis.loader import SessionData
-from nttd.monitor.page import _spend_panels
+from nttd.monitor.page import _spend_charts, _spend_table
 from nttd.monitor.session_feed import SessionFeed
 
 _COLUMNS = (
@@ -45,12 +45,14 @@ def test_a_run_that_reported_nothing_has_no_panel_at_all() -> None:
     """
     empty = SessionFeed(SessionData(session_id="s", session_dir=Path("/nonexistent")))
     assert empty.spend() == {}
-    assert _spend_panels(empty.spend()) == []
+    assert _spend_charts(empty.spend()) == []
+    assert _spend_table(empty.spend()) == []
 
 
 def test_an_empty_dict_draws_nothing_rather_than_an_empty_chart() -> None:
-    assert _spend_panels({}) == []
-    assert _spend_panels({"models": []}) == []
+    for empty in ({}, {"models": []}):
+        assert _spend_charts(empty) == []
+        assert _spend_table(empty) == []
 
 
 # --- what an agent run shows -----------------------------------------------------------
@@ -113,7 +115,7 @@ def test_an_unpriced_model_counts_its_tokens_and_withholds_the_money() -> None:
 
 def test_the_panel_says_not_priced_rather_than_a_dollar_total() -> None:
     """A total missing one of its parts still reads as a total."""
-    html = "".join(_spend_panels(_spend([
+    html = "".join(_spend_table(_spend([
         (100, 0, "unpriced", "anthropic", 9_000, 900, None),
     ])))
     assert "not priced" in html
@@ -123,5 +125,5 @@ def test_the_panel_says_not_priced_rather_than_a_dollar_total() -> None:
 def test_the_panel_says_the_figures_are_the_contestants_own() -> None:
     """nttd runs no model. Presenting these beside counts it tallied itself would imply
     it checked them."""
-    html = "".join(_spend_panels(_spend([(100, 0, "m", "anthropic", 10, 1, 0.5)])))
+    html = "".join(_spend_table(_spend([(100, 0, "m", "anthropic", 10, 1, 0.5)])))
     assert "unverifiable" in html
