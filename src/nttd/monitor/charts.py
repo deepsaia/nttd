@@ -57,6 +57,46 @@ def number(value: Any) -> str:
     return f"{as_float:,.0f}"
 
 
+def money(value: Any) -> str:
+    """A sum of money short enough for a sidebar line.
+
+    Separate from `number` rather than a flag on it, because the two round differently and for
+    different reasons. `number` labels an axis, where 250.0k and 250k are equally readable. This
+    labels a company's worth beside a day and a rating in about twenty characters, so it takes
+    the shortest form that still distinguishes two companies: $1.54M, $250K, $812.
+
+    Thousands are whole. A company worth 250,400 and one worth 250,000 are the same company for
+    the purpose of a glance, and $250.4K spends a character on a distinction nobody reads there.
+    Millions keep two decimals, because at that size the third digit IS the difference between
+    two runs.
+
+    The sign goes outside the currency, -$4K rather than $-4K, which is how a negative balance
+    is written and, more usefully, how it is scanned: the minus is the first thing seen.
+    """
+    if value is None:
+        return "-"
+    try:
+        as_float = float(value)
+    except (TypeError, ValueError):
+        return esc(value)
+
+    sign = "-" if as_float < 0 else ""
+    size = abs(as_float)
+
+    # Compared against the figure that would ROUND UP into the next tier, not against the tier
+    # itself. 999,999 divided by a thousand and rounded to no decimals is 1,000, so a plain
+    # `>= 1e6` test prints $1,000K: a thousand thousands, which makes the reader do exactly the
+    # arithmetic the shortening was supposed to save. The same boundary exists one tier up,
+    # where two decimals mean anything from 999,995,000 rounds to 1,000.00M.
+    if size >= 999_995_000:
+        return f"{sign}${size / 1e9:,.2f}B"
+    if size >= 999_500:
+        return f"{sign}${size / 1e6:,.2f}M"
+    if size >= 1e3:
+        return f"{sign}${size / 1e3:,.0f}K"
+    return f"{sign}${size:,.0f}"
+
+
 def panel(
     title: str,
     inner: str,
