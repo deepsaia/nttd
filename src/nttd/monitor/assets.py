@@ -95,7 +95,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
    under it. The column is a fixed width so the map stays a readable square rather than
    stretching with the window, and it drops under the charts on a narrow screen. */
 .split{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;
- align-items:start;margin-bottom:12px;}
+ align-items:start;margin-bottom:18px;}
 .rail{display:flex;flex-direction:column;gap:12px;}
 @media (max-width:1080px){ .split{grid-template-columns:minmax(0,1fr);} }
 /* The two logs, read against each other. */
@@ -103,6 +103,13 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 /* Three across on a wide screen: the event log beside the two spend charts. Narrower
    than .pair because these three are read together and a two-up row would orphan one. */
 .grid.trio{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));}
+/* Between one row of panels and the next.
+   Half again the 12px gap INSIDE a row, which is the point: with both the same, a stack of
+   rows reads as one undifferentiated field of boxes and there is no telling where a row ends.
+   Bigger than this and the page stops feeling like one page.
+   The second selector is for a panel that follows a row on its own, which is what the
+   per-model spend table does under the three-across row above it. */
+.grid + .grid, .grid + .plot{margin-top:18px;}
 .plot{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;}
 .plot.two{grid-column:span 2;}
 .plot.full{grid-column:1/-1;}
