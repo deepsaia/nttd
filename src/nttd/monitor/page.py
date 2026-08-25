@@ -20,6 +20,7 @@ from nttd.monitor.charts import (
     kpi_cards,
     line_chart,
     mix_bars,
+    money,
     number,
     panel,
     table,
@@ -188,8 +189,8 @@ def _sidebar(entries: list[dict[str, Any]], active: str | None) -> str:
             f'href="{_session_link(meta["session_id"])}">'
             f'<span class="ndot" style="background:{colour(index)}"></span>'
             f'<span class="meta"><span class="name">{dot}{esc(meta["name"])}</span>'
-            f'<span class="stat">day {meta["days"]} &middot; rating '
-            f'{number(meta["rating"])}</span></span></a>'
+            f'<span class="stat">day {meta["days"]} &middot; {money(meta["value"])} '
+            f'&middot; rating {number(meta["rating"])}</span></span></a>'
             f'{_delete_control(meta)}'
             f'</div>'
         )
