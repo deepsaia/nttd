@@ -436,7 +436,14 @@ class SessionFeed:
             return {}
 
         rows = frame.to_dicts()
-        opened_on = min((int(r["game_date"]) for r in rows if r.get("game_date")), default=0)
+        # Day zero is when the RUN opened, not when the first report arrived. Measuring from
+        # the first report puts the opening turn at day 0 and hides however long it took, and
+        # the honest picture is a line sitting at nothing until the first turn ends.
+        opened_on = self._opened_on()
+        if not opened_on:
+            opened_on = min(
+                (int(r["game_date"]) for r in rows if r.get("game_date")), default=0
+            )
 
         per_model: dict[str, dict[str, Any]] = {}
         for row in rows:
@@ -457,14 +464,35 @@ class SessionFeed:
 
         # Cumulative, because that is the question: what has this run cost by now. A per
         # report bar answers "what did that one turn cost", which the table below already says.
+        #
+        # And a point PER DAY, not per report. Spend only changes when a turn ends, and a turn
+        # covers many days, so a series of report-days is a handful of points scattered across
+        # a year with nothing between them. Held flat between turns it reads as what it is:
+        # money spent in steps, against the run's own clock.
+        banked: dict[int, float] = {}
+        counted: dict[int, int] = {}
+        for row in rows:
+            day = max(0, int(row.get("game_date") or opened_on) - opened_on)
+            banked[day] = banked.get(day, 0.0) + float(row.get("total_cost_usd") or 0.0)
+            counted[day] = (
+                counted.get(day, 0)
+                + int(row.get("prompt_tokens") or 0)
+                + int(row.get("completion_tokens") or 0)
+            )
+
+        # The days a turn ENDED on, which is where the line steps up. Drawn as markers so a
+        # reader can see the cadence: thirteen steps across a year is a different system from
+        # three hundred, and the shape says which without reading a number.
+        turn_days = sorted(banked)
+        last_day = max(turn_days[-1], self.game_days()) if turn_days else self.game_days()
+
         running_cost, running_tokens = 0.0, 0
         series: list[dict[str, Any]] = []
-        for row in sorted(rows, key=lambda r: (int(r.get("game_date") or 0), r.get("timestamp"))):
-            running_cost += float(row.get("total_cost_usd") or 0.0)
-            running_tokens += int(row.get("prompt_tokens") or 0)
-            running_tokens += int(row.get("completion_tokens") or 0)
+        for day in range(0, last_day + 1):
+            running_cost += banked.get(day, 0.0)
+            running_tokens += counted.get(day, 0)
             series.append({
-                "day": max(0, int(row.get("game_date") or opened_on) - opened_on),
+                "day": day,
                 "cost": round(running_cost, 6),
                 "tokens": running_tokens,
             })
@@ -473,6 +501,8 @@ class SessionFeed:
         return {
             "models": models,
             "series": series,
+            # Where the line steps up, for the vertical markers on the charts.
+            "turn_days": turn_days,
             "reports": len(rows),
             "prompt_tokens": sum(m["prompt_tokens"] for m in models),
             "completion_tokens": sum(m["completion_tokens"] for m in models),
@@ -481,6 +511,18 @@ class SessionFeed:
             # withhold a total that would be missing one of its parts.
             "priced": all(m["priced"] for m in models),
         }
+
+    def _opened_on(self) -> int:
+        """The game date the run started on, from the snapshot series.
+
+        The same column game_days() reads, so the spend charts and every other chart share
+        one origin and a day on one is the same day on the others.
+        """
+        frame = self._data.snapshots
+        if frame.is_empty() or "game_date" not in frame.columns:
+            return 0
+        column = frame["game_date"].drop_nulls()
+        return int(column.min()) if len(column) else 0
 
     def _cost_so_far(self) -> str:
         """The reported spend, formatted, or "" when there is none or no price for it."""
