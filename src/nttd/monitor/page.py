@@ -320,10 +320,15 @@ def _session_cards(meta: dict[str, Any]) -> str:
     it was doing so from rules that are heuristics. The Health panel still lists exactly which
     rule tripped and why, which is the useful form: evidence rather than a grade.
     """
+    # Value first, because it is what the board ranks on and what the run is trying to grow.
+    # Rating used to lead and it is the weaker headline: it is bounded at 1000 and saturates,
+    # so two runs an order of magnitude apart in worth can wear the same number. Balance sits
+    # beside value because the pair is one reading, what the company is worth against what it
+    # can spend today.
     return kpi_cards([
-        ("rating", number(meta["rating"]), "good" if (meta["rating"] or 0) > 30 else "warn"),
         ("company value", number(meta["value"]), ""),
         ("balance", number(meta["balance"]), ""),
+        ("rating", number(meta["rating"]), "good" if (meta["rating"] or 0) > 30 else "warn"),
         ("stations", meta["stations"], ""),
         ("vehicles", meta["vehicles"], "good" if meta["vehicles"] else "bad"),
         # Days, not steps. A step is one heartbeat in stepped mode and means nothing in
