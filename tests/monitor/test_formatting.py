@@ -142,3 +142,59 @@ def test_the_sidebar_shows_the_day_the_value_and_the_rating() -> None:
     assert "day 366" in html
     assert "$1.54M" in html
     assert "rating 812" in html
+
+
+# --- the headline chips, and the shape of the charts under them --------------------------------
+
+
+def test_the_chips_lead_with_what_the_run_is_trying_to_grow() -> None:
+    """Value first, then balance, then rating.
+
+    Rating used to lead and it is the weaker headline: it is bounded at 1000 and saturates, so
+    two runs an order of magnitude apart in worth can wear the same number. The board ranks on
+    value. Asserted as an ORDER rather than as presence, because presence was never in doubt
+    and the order is the thing that was wrong.
+    """
+    from nttd.monitor import page
+
+    card = page._session_cards(
+        {"rating": 812, "value": 1_540_000, "balance": 250_000, "stations": 8, "vehicles": 4,
+         "days": 366, "steps": 366, "actions": 42, "refused": 12, "minutes": 43.9},
+    )
+    order = [card.index(label) for label in ("company value", "balance", "rating", "stations")]
+    assert order == sorted(order), "the headline chips are not in the order they are read in"
+
+
+def test_a_chart_is_never_scaled_unevenly() -> None:
+    """`preserveAspectRatio="none"` let the browser scale x and y independently.
+
+    The box was `width:100%; height:150px` against a 460x200 drawing, so the vertical scale was
+    always 0.75 and the horizontal scale was whatever the panel happened to be. In the
+    three-across row that came to 394/460, which put the axis labels 14% wider than they were
+    drawn and made them look stretched sideways.
+    """
+    from nttd.monitor.charts import line_chart
+
+    svg = line_chart("c", [{"label": "x", "colour": "#000", "rows": [
+        {"day": 1, "v": 1}, {"day": 2, "v": 4},
+    ]}], "A chart", "v")
+    assert 'preserveAspectRatio="none"' not in svg
+
+
+def test_the_box_a_chart_is_drawn_into_matches_the_drawing() -> None:
+    """One source of truth for the ratio, so nothing can letterbox or distort.
+
+    A copy of 460/200 in the stylesheet would be two numbers that can disagree. The ratio is
+    written onto the element from the same constants that draw it, and the stylesheet only
+    says the height follows.
+    """
+    from nttd.monitor.charts import HEIGHT, WIDTH, line_chart
+
+    svg = line_chart("c", [{"label": "x", "colour": "#000", "rows": [
+        {"day": 1, "v": 1}, {"day": 2, "v": 4},
+    ]}], "A chart", "v")
+    assert f'viewBox="0 0 {WIDTH} {HEIGHT}"' in svg
+    assert f"aspect-ratio:{WIDTH}/{HEIGHT}" in svg
+
+    rule = assets.CSS.split(".chart{")[1].split("}")[0]
+    assert "height:auto" in rule, f"a fixed height would fight the aspect ratio: {rule}"
