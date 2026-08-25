@@ -2,15 +2,20 @@
 
 **A benchmark for long-horizon planning, built on OpenTTD.**
 
+**nttd does not run your agent.** This repository is the engine: it draws the world, runs
+the game and scores the result. The agents that play it live in
+**[nttd-workbench](https://github.com/deepsaia/nttd-workbench)**, which is where to go if
+what you want is to watch something play a session rather than to write one from scratch.
+
 An agent has to build a transport network that turns a profit: survey a map, pick routes
 worth serving, lay track and roads, buy vehicles, set orders, and manage a loan. A decision
 made in the first game month is still paying or costing you two game years later.
 
 nttd wraps an OpenTTD 15.3 dedicated server and exposes the game as a structured JSON API.
-It is agent-agnostic and framework-agnostic: **nttd does not run your agent.** You bring the
-loop, in your own process, in whatever language you like. An LLM agent, a multi-agent
-system, an RL policy, an ES population and a human all reach the game through the same
-surface and are recorded the same way.
+It is agent-agnostic and framework-agnostic: you bring the loop, in your own process, in
+whatever language you like. An LLM agent, a multi-agent system, an RL policy, an ES
+population and a human all reach the game through the same surface and are recorded the
+same way.
 
 ![nttd architecture](docs/images/architecture.svg)
 
@@ -58,15 +63,19 @@ uv run runex                                                                  # 
 id and participant token, then waits for an end condition and writes the result.
 `ls config/benchmark/` has all four tiers in both modes.
 
-### Drive the lifecycle yourself
-
-```bash
-uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
-uv run nttd session start -s <session> --agent-companies 1   # no flag, no company, no token
-uv run nttd session attach <session>                         # positional here; prints token and routes
-uv run nttd session stop -s <session>                        # writes result.parquet
-uv run nttd result -s <session>
-```
+> ### [Optional] Drive the lifecycle yourself
+>
+> Instead of `nttd benchmark`, which is these rolled into one. Use them separately to change
+> something in between, run two sessions against one server, or open a world now and attach
+> to it much later. Nothing here waits for the end condition, so you stop the run yourself.
+>
+> ```bash
+> uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
+> uv run nttd session start -s <session> --agent-companies 1   # no flag, no company, no token
+> uv run nttd session attach <session>                         # positional here; token and routes
+> uv run nttd session stop -s <session>                        # writes result.parquet
+> uv run nttd result -s <session>
+> ```
 
 ### Watch it, and read it
 
