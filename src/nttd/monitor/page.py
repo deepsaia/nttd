@@ -40,10 +40,20 @@ LIVE_REFRESH_SECONDS = 0
 
 # The single series charts, as (field, title). Money and counts that only make sense
 # against a companion are charted separately below.
+# Value first, then income, then the rating, for the same reason the chips are in that order:
+# value is what the board ranks on and the rating saturates.
+#
+# "Income" is left unqualified. It used to read "this quarter, resets each quarter", which is
+# wrong twice: the series never resets to zero, and it never shows the quarter in progress.
+# Measured across three runs it changes on days 91, 182, 274 and 366 and nowhere else, and it
+# can go DOWN, so it is the last COMPLETED quarter's income held flat until the next one
+# closes. It is not cumulative either, though a run whose quarters each beat the last makes it
+# look that way. The behaviour is documented in docs/session_analyzer.md rather than crammed
+# into a chart title.
 _SINGLE_CHARTS = (
-    ("rating", "Performance rating (the score)"),
     ("value", "Company value"),
-    ("income", "Income (this quarter, resets each quarter)"),
+    ("income", "Income"),
+    ("rating", "Performance rating (the score)"),
     ("fleet_profit_total", "Fleet profit, cumulative (live)"),
 )
 
