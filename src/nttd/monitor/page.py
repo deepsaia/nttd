@@ -460,18 +460,21 @@ def _spend_charts(spend: dict[str, Any]) -> list[str]:
     """
     if not spend or not spend.get("models"):
         return []
+    # The days a turn ended on. The line is flat between turns and steps up at one, so the
+    # rules say where the steps are rather than leaving a reader to infer them from corners.
+    turns = [float(day) for day in spend.get("turn_days") or []]
     return [
         line_chart(
             "cspend",
             [{"label": "cost so far", "colour": colour(2),
               "rows": [{"day": p["day"], "v": p["cost"]} for p in spend["series"]]}],
-            "Reported cost over the run", "v",
+            "Reported cost over the run", "v", marks=turns,
         ),
         line_chart(
             "ctokens",
             [{"label": "tokens so far", "colour": colour(0),
               "rows": [{"day": p["day"], "v": p["tokens"]} for p in spend["series"]]}],
-            "Reported tokens over the run", "v",
+            "Reported tokens over the run", "v", marks=turns,
         ),
     ]
 

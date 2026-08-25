@@ -84,16 +84,22 @@ def test_the_dearest_model_is_listed_first() -> None:
 def test_the_series_is_cumulative_and_measured_in_game_days() -> None:
     """The question is what the run has cost BY NOW, and the x axis is the game's clock.
 
-    Day zero is the first report, not the first snapshot: this series is about spend, and
-    a runner that declares nothing until day 50 has spent nothing before it.
+    With no snapshot series to say when the run opened, the first report is the only origin
+    available and the series starts there. A run WITH snapshots starts at day zero instead,
+    which the tests below cover.
     """
     spend = _spend([
         (737_790, 0, "m", "anthropic", 100, 10, 1.0),
         (737_800, 0, "m", "anthropic", 100, 10, 2.0),
         (737_820, 0, "m", "anthropic", 100, 10, 3.0),
     ])
-    assert [(p["day"], p["cost"]) for p in spend["series"]] == [(0, 1.0), (10, 3.0), (30, 6.0)]
-    assert [p["tokens"] for p in spend["series"]] == [110, 220, 330]
+    series = {p["day"]: p for p in spend["series"]}
+    assert len(series) == 31, "one point per day, not one per report"
+    assert [series[day]["cost"] for day in (0, 9, 10, 19, 20, 30)] == [
+        1.0, 1.0, 3.0, 3.0, 3.0, 6.0,
+    ], "flat between turns, stepping up on each"
+    assert series[30]["tokens"] == 330
+    assert spend["turn_days"] == [0, 10, 30]
 
 
 # --- tokens counted, price unknown ------------------------------------------------------
@@ -127,3 +133,92 @@ def test_the_panel_says_the_figures_are_the_contestants_own() -> None:
     it checked them."""
     html = "".join(_spend_table(_spend([(100, 0, "m", "anthropic", 10, 1, 0.5)])))
     assert "unverifiable" in html
+
+
+# --- a point per day, and where the turns were ---------------------------------------------
+
+
+def _feed_over(dates: list[int], rows: list[tuple]) -> SessionFeed:
+    """A spend frame plus a snapshot series, so the run's own day range is known."""
+    import json  # noqa: PLC0415
+
+    snaps = pl.DataFrame({
+        "game_date": dates,
+        "snapshot_json": [json.dumps({"game": {"game_date": d}, "companies": [{}]}) for d in dates],
+    })
+    spend = pl.DataFrame(
+        {name: [row[index] for row in rows] for index, name in enumerate(_COLUMNS)},
+        schema_overrides={"total_cost_usd": pl.Float64},
+    )
+    data = SessionData(
+        session_id="s", session_dir=Path("/nonexistent"), snapshots=snaps, spend=spend,
+    )
+    return SessionFeed(data)
+
+
+def test_there_is_a_point_for_every_day_of_the_run() -> None:
+    """Spend only changes when a turn ends, and a turn covers many days.
+
+    Plotted per report it is a handful of points scattered across a year with nothing between
+    them. Held flat between turns it reads as what it is: money spent in steps.
+    """
+    feed = _feed_over(
+        list(range(100, 111)),                      # eleven days of run
+        [(105, 0, "m", "anthropic", 10, 1, 2.0)],   # one turn, ending on day 5
+    )
+    series = feed.spend()["series"]
+    assert [p["day"] for p in series] == list(range(11)), "one point per game day"
+
+
+def test_the_line_sits_at_nothing_until_the_first_turn_ends() -> None:
+    """Day zero is when the RUN opened, not when the first report arrived.
+
+    Measuring from the first report puts the opening turn at day 0 and hides however long it
+    took, and the honest picture is a flat line until a turn lands.
+    """
+    feed = _feed_over(list(range(100, 111)), [(105, 0, "m", "anthropic", 10, 1, 2.0)])
+    series = feed.spend()["series"]
+    assert [p["cost"] for p in series[:5]] == [0.0] * 5
+    assert series[5]["cost"] == 2.0, "it steps up on the day the turn ended"
+    assert series[-1]["cost"] == 2.0, "and holds until the next one"
+
+
+def test_the_turn_days_are_reported_for_the_markers() -> None:
+    feed = _feed_over(
+        list(range(100, 121)),
+        [(105, 0, "m", "anthropic", 10, 1, 1.0), (115, 0, "m", "anthropic", 10, 1, 1.0)],
+    )
+    spend = feed.spend()
+    assert spend["turn_days"] == [5, 15]
+    assert spend["series"][-1]["cost"] == 2.0
+
+
+def test_two_models_reporting_on_one_day_are_one_turn() -> None:
+    """A turn reports once per model, so the day must not be counted twice as two steps."""
+    feed = _feed_over(
+        list(range(100, 111)),
+        [(105, 0, "opus", "anthropic", 10, 1, 1.0), (105, 0, "sonnet", "anthropic", 10, 1, 0.5)],
+    )
+    spend = feed.spend()
+    assert spend["turn_days"] == [5], "one turn, not two"
+    assert spend["series"][5]["cost"] == 1.5, "both models land on the same step"
+
+
+def test_the_charts_draw_a_rule_for_each_turn() -> None:
+    feed = _feed_over(
+        list(range(100, 121)),
+        [(105, 0, "m", "anthropic", 10, 1, 1.0), (115, 0, "m", "anthropic", 10, 1, 1.0)],
+    )
+    html = "".join(_spend_charts(feed.spend()))
+    assert html.count('class="mark"') == 4, "two turns, on each of two charts"
+
+
+def test_a_run_reporting_every_day_draws_no_rules_at_all() -> None:
+    """One rule per day is a solid block rather than a reading aid, and past that density
+    the cadence is legible from the line itself."""
+    from nttd.monitor.charts import _MOST_MARKS  # noqa: PLC0415
+
+    days = list(range(100, 100 + _MOST_MARKS + 10))
+    feed = _feed_over(days, [(d, 0, "m", "anthropic", 1, 1, 0.01) for d in days])
+    html = "".join(_spend_charts(feed.spend()))
+    assert 'class="mark"' not in html

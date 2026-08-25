@@ -118,6 +118,9 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,san
 .readout{color:var(--accent);font-weight:600;font-size:11px;}
 .chart{width:100%;height:150px;display:block;}
 .chart .gl{stroke:var(--grid);}
+/* The days a turn ended on. Dotted and dim: they are a reference for reading the steps in
+   the line, not data in their own right. */
+.chart .mark{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4;opacity:.85;}
 .chart .axl{fill:var(--muted);}
 .chart .xhair{stroke:var(--ink);}
 .legend{display:flex;flex-wrap:wrap;gap:9px;margin-top:5px;}

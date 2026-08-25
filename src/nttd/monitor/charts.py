@@ -96,12 +96,17 @@ def line_chart(
     title: str,
     field: str,
     filled: bool = False,
+    marks: list[float] | None = None,
 ) -> str:
-    """One panel plotting ``field`` for each series against its step.
+    """One panel plotting ``field`` for each series against its day.
 
     ``series`` entries are ``{label, colour, rows}``. A point is plotted only when both
-    the step and the value are numbers, so a missing figure leaves a gap rather than
+    the day and the value are numbers, so a missing figure leaves a gap rather than
     being drawn as a zero, which would read as a real collapse.
+
+    ``marks`` draws a dotted vertical rule at each x. Used for the days a turn ended on:
+    the spend line is flat between turns and steps up at one, and the rules say where the
+    steps are without a reader having to infer them from the corners.
     """
     points = _collect(series, field)
     if not points:
@@ -123,6 +128,7 @@ def line_chart(
         f'class="chart" data-cid="{esc(cid)}" role="img">'
     ]
     out.extend(_grid(scale))
+    out.extend(_marks(scale, marks))
     out.append(
         f'<line class="xhair" x1="0" y1="{PAD_TOP}" x2="0" y2="{HEIGHT - PAD_BOTTOM}" '
         f'stroke-width="1" opacity="0" pointer-events="none"/>'
@@ -227,6 +233,10 @@ def table(
 # ----------------------------------------------------------------------
 
 
+# Past this many, one rule per turn is a solid block rather than a reading aid.
+_MOST_MARKS = 60
+
+
 def _collect(series: list[dict[str, Any]], field: str) -> list[tuple[float, float]]:
     points: list[tuple[float, float]] = []
     for entry in series:
@@ -244,6 +254,27 @@ def _plottable(value: Any) -> bool:
     silently plot as a zero or one line.
     """
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _marks(scale: Scale, marks: list[float] | None) -> list[str]:
+    """Dotted verticals at the given x values, inside the plotted range.
+
+    Capped, because a run that reports every day would draw one rule per day and the chart
+    would become a solid block. Past the cap the cadence is dense enough to read off the
+    line itself, which is the thing the rules exist to make legible.
+    """
+    if not marks or len(marks) > _MOST_MARKS:
+        return []
+    out: list[str] = []
+    for at in marks:
+        if at < scale.x_min or at > scale.x_max:
+            continue
+        x = scale.x(at)
+        out.append(
+            f'<line x1="{x:.1f}" y1="{PAD_TOP}" x2="{x:.1f}" y2="{HEIGHT - PAD_BOTTOM}" '
+            f'class="mark"/>'
+        )
+    return out
 
 
 def _grid(scale: Scale) -> list[str]:
