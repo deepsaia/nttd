@@ -1,5 +1,7 @@
 # nttd
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22105381.svg)](https://doi.org/10.5281/zenodo.22105381)
+
 **A benchmark for long-horizon planning, built on OpenTTD.**
 
 **nttd does not run your agent.** This repository is the engine: it draws the world, runs
@@ -171,3 +173,23 @@ the engine, `src/nttd`.
 
 Apache-2.0. The GameScript runs in-process against OpenTTD's GPL-2.0 API; see
 `ottd_config/game/nttd-gs/` for its header.
+
+---
+
+## Citation
+
+If you use nttd in academic work, please cite it using the following BibTeX entry:
+
+```bibtex
+@software{nttd,
+  author = {Deepak},
+  title  = {{nttd: an agent-agnostic benchmark for long-horizon planning, built on OpenTTD}},
+  year   = {2026},
+  doi    = {10.5281/zenodo.22105381},
+  url    = {https://doi.org/10.5281/zenodo.22105381}
+}
+```
+
+The DOI above is the **concept DOI**, which always resolves to the latest release and
+aggregates citations across all versions. To cite a specific version instead, use that
+version's DOI from the [Zenodo record](https://doi.org/10.5281/zenodo.22105381).
