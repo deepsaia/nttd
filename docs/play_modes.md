@@ -241,15 +241,20 @@ contestant makes that unreachable rather than guarded against.
 
 ## 5. Scoring
 
-`performance_rating` is OpenTTD's own quarterly rating, 0 to 1000, taken from the game
-unchanged. It is nine capped components, and cargo delivered over the last four quarters is
-by far the largest at 400 of the 1000 points; the full breakdown is in
-[gameplay_guide.md](gameplay_guide.md#1-the-score-is-not-how-big-is-your-company). `total_cargo`, every unit the run delivered,
-breaks ties. `company_value` is recorded for display and does **not** affect rank.
+**The board ranks `company_value`**, what the company is worth when the run ends, with
+`total_cargo` breaking a tie and the entrant name breaking that in turn so the order is stable
+rather than dependent on dict iteration. Rank is computed **per size and terrain, never
+globally**: a 64x64 flat run and a 1024x1024 mountainous one are not competing, and numbering
+them together would invite the comparison anyway.
 
-Using the game's own rating rather than an nttd invention matters: it is the number the
-game itself considers success, it is not tuned to any strategy nttd happens to favour, and
-it cannot drift as nttd changes.
+`performance_rating`, OpenTTD's own quarterly rating from 0 to 1000, is published beside it and
+does not decide position. It is nine capped components, cargo delivered over the last four
+quarters being by far the largest at 400 of the 1000; the breakdown is in
+[gameplay_guide.md](gameplay_guide.md#1-two-numbers-and-only-one-of-them-ranks).
+
+Using the game's own figures rather than an nttd invention matters: both come from the game
+rather than from anything nttd computes, neither is tuned to a strategy nttd happens to favour,
+and neither can drift as nttd changes.
 
 Two details a reader of a row needs:
 

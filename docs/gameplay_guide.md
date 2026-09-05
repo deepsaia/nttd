@@ -8,11 +8,16 @@ build plays. Nothing in this guide is inferred from how the game feels.
 
 ---
 
-## 1. The score is not "how big is your company"
+## 1. Two numbers, and only one of them ranks
 
-The leaderboard ranks `performance_rating`, which is OpenTTD's own number, computed in
-[`UpdateCompanyRatingAndValue`](https://github.com/OpenTTD/OpenTTD/blob/15.3/src/economy.cpp#L202).
-It is nine components, each capped, each worth a fixed slice of 1000:
+**The board ranks `company_value`**, what the company is worth when the run ends, with
+`total_cargo` breaking a tie. Rank is computed per world shape and never globally.
+
+`performance_rating` is published beside it and does **not** decide position. It is still worth
+understanding, because it is OpenTTD's own composite judgement of a company and it is what the
+game itself considers success. It is computed in
+[`UpdateCompanyRatingAndValue`](https://github.com/OpenTTD/OpenTTD/blob/15.3/src/economy.cpp#L202)
+from nine components, each capped, each worth a fixed slice of 1000:
 
 | component | what it counts | full marks at | points |
 |---|---|---:|---:|
@@ -52,7 +57,7 @@ So a realistic ceiling for a single year is around 800, and hand-played runs on 
 well under a quarter of that. Treat the rating as a scale you are near the bottom of, not one you
 are near the top of.
 
-### Company value is a different question
+### Company value, the figure that ranks
 
 `company_value` is
 [assets minus loan plus cash](https://github.com/OpenTTD/OpenTTD/blob/15.3/src/economy.cpp#L150),

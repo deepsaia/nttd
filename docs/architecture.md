@@ -365,7 +365,7 @@ drift apart again.
 ### Scoring
 
 The score is OpenTTD's own `performance_rating`, taken unchanged. What it is made of is in
-[gameplay_guide.md](gameplay_guide.md#1-the-score-is-not-how-big-is-your-company), component
+[gameplay_guide.md](gameplay_guide.md#1-two-numbers-and-only-one-of-them-ranks), component
 by component with the source lines that compute them; what ranks and what breaks a tie is in
 [play_modes.md](play_modes.md#5-scoring).
 
