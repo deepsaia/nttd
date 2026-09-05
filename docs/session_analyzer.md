@@ -169,7 +169,7 @@ nttd neither recomputes nor adjusts them.
 | Cargo delivered | `cargo_delivered_total` | Banked across the quarter resets by the GameScript, so it only goes up. |
 | Stations, vehicles | list lengths | |
 
-[The gameplay guide](gameplay_guide.md#1-the-score-is-not-how-big-is-your-company) has the
+[The gameplay guide](gameplay_guide.md#1-two-numbers-and-only-one-of-them-ranks) has the
 component-by-component breakdown of the rating and the source lines that compute both it and
 company value.
 

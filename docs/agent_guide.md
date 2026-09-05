@@ -424,10 +424,12 @@ Prints what the run scored and everything a reader would need to check it, inclu
 verification gaps: the things that would stop someone checking it at all.
 [cli_guide.md](cli_guide.md#nttd-result) lists what it shows and its flags.
 
-The score is OpenTTD's own `performance_rating`, taken unchanged, and cargo delivered
-breaks ties. It is worth knowing what it is made of before optimising anything:
-[gameplay_guide.md](gameplay_guide.md#1-the-score-is-not-how-big-is-your-company) has the
-nine components with their caps and weights, and three of them a one-year run cannot win.
+Two figures come back, both from the game. The board ranks `company_value`, with
+`total_cargo` breaking a tie; `performance_rating` is OpenTTD's own composite judgement and is
+published beside it without deciding position. Both are worth understanding before optimising
+anything: [gameplay_guide.md](gameplay_guide.md#1-two-numbers-and-only-one-of-them-ranks) has
+the rating's nine components with their caps and weights, three of which a one-year run cannot
+win, and what company value is actually made of.
 
 ---
 
