@@ -295,6 +295,12 @@ class WorldState:
 
         GS CmdGetCompanyFinance returns: balance, loan, q1_income, q1_value, q2_income, q2_value.
         We map these to Company fields, falling back to existing values when absent.
+
+        The company value is not taken from here. q1_value is the value at the end of
+        the last completed quarter, so it reads 0 for the first 91 days and then moves
+        four times a year. apply_gs_companies already filled company.value with the
+        live figure from CmdGetCompanies, and the score and every observation read that
+        field, so overwriting it here reported a quarter-old number as the result.
         """
         company = self.companies.get(company_id)
         if company is None:
@@ -310,7 +316,6 @@ class WorldState:
         company.loan = _int(result.get("loan"), company.loan)
         # GS returns quarterly income; use q1 as the current-period income
         company.income = _int(result.get("q1_income", result.get("income")), company.income)
-        company.value = _int(result.get("q1_value", result.get("value")), company.value)
 
     def apply_gs_subsidies(self, results: list[dict[str, Any]]) -> None:
         """Populate subsidies list from GS get_subsidies result."""
