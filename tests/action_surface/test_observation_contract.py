@@ -29,7 +29,7 @@ from nttd.rl.env import NttdEnv
 from nttd.schemas.company import Company
 from tests.conftest import REPO_ROOT
 
-# The keys the GameScript's CmdGetCompanies emits, plus the two apply_gs_company_finance fills
+# The keys the GameScript's CmdGetCompanies emits, plus the income apply_gs_company_finance fills
 # from get_company_finance. Taken from main.nut and state/world.py rather than invented, since
 # inventing the payload is what made the original bug invisible: a fixture with an "expenses"
 # key would have let the broken code pass.
@@ -44,7 +44,7 @@ _COMPANY_FROM_A_REAL_RUN = {
     "q0_expenses": -21000,   # negative, as OpenTTD reports it
     "q0_cargo": 240,
     "income": 76000,         # q1_income, the last completed quarter
-    "value": 1809,           # q1_value
+    "value": 1809,           # company_value, live
     "profit_last_year": 0,
     "color": 0,
     "is_ai": False,
