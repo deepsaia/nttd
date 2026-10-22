@@ -27,6 +27,9 @@ class RouteRegistry:
         # Vehicles the game has already walked from their own tile to the route's first
         # station. A vehicle that passed once is on the network and is not asked again.
         self._vehicles_with_path: dict[str, set[int]] = {}
+        # The game hands a sold vehicle's id to the next one bought. A drop in a vehicle's
+        # age means a new vehicle under an old id, whose path has to be walked afresh.
+        self._vehicle_age: dict[int, int] = {}
 
     def reconcile(
         self,
@@ -43,6 +46,16 @@ class RouteRegistry:
         """
         self._map_width = map_width
         active_route_ids: set[str] = set()
+
+        for vid, v in vehicles.items():
+            if v.age < self._vehicle_age.get(vid, v.age):
+                for passed in self._vehicles_with_path.values():
+                    passed.discard(vid)
+            self._vehicle_age[vid] = v.age
+        for vid in [vid for vid in self._vehicle_age if vid not in vehicles]:
+            del self._vehicle_age[vid]
+            for passed in self._vehicles_with_path.values():
+                passed.discard(vid)
 
         tile_to_sid: dict[int, int] = {}
         for sid, s in stations.items():

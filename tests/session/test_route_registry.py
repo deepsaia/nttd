@@ -255,6 +255,32 @@ class TestVehiclePaths:
         assert route.vehicles_without_path == []
         assert route.status == "active"
 
+    def test_a_reused_vehicle_id_is_walked_again(self, stations: dict[int, Station]) -> None:
+        """OpenTTD gives a sold vehicle's id to the next purchase. The old vehicle's pass
+        must not cover the new one, which may stand in a depot no road joins."""
+        registry = RouteRegistry()
+        old = _make_vehicle(1, 0, [10, 20], stations=stations)
+        old.age = 300
+        route = registry.reconcile({1: old}, stations, game_date=100)[0]
+        registry.record_vehicle_paths(route.route_id, with_path=[1], without_path=[], game_date=100)
+        assert registry.vehicles_to_check(route) == []
+
+        new = _make_vehicle(1, 0, [10, 20], stations=stations)
+        new.age = 0
+        route = registry.reconcile({1: new}, stations, game_date=101)[0]
+        assert registry.vehicles_to_check(route) == [1]
+
+    def test_a_vehicle_that_disappeared_is_walked_again_if_its_id_returns(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicle = _make_vehicle(1, 0, [10, 20], stations=stations)
+        route = registry.reconcile({1: vehicle}, stations, game_date=100)[0]
+        registry.record_vehicle_paths(route.route_id, with_path=[1], without_path=[], game_date=100)
+        registry.record_connection(route.route_id, True, game_date=100)
+        registry.reconcile({}, stations, game_date=101)
+
+        route = registry.reconcile({1: vehicle}, stations, game_date=102)[0]
+        assert registry.vehicles_to_check(route) == [1]
+
     def test_the_list_is_cleared_when_the_vehicles_leave(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
