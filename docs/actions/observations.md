@@ -370,7 +370,7 @@ Report a rectangle of ground, tile by tile: height, slope, whether it is buildab
 - `y1` (integer, required) Y coordinate of the first corner.
 - `y2` (integer, required) Y coordinate of the opposite corner.
 
-Returns a list of `buildable`, `coast`, `has_rail`, `has_road`, `has_tree`, `height`, `is_bridge`, `is_station`, `is_tunnel`, `owner`, `slope`, `water`, `x`, `y`.
+Returns a list of `buildable`, `coast`, `has_rail`, `has_road`, `has_tree`, `height`, `is_bridge`, `is_station`, `is_tunnel`, `other_end`, `owner`, `slope`, `water`, `x`, `y`.
 
 ### `get_tile_info`
 
@@ -465,6 +465,7 @@ Supply one of: `tile_to` or `to_x` and `to_y`.
 - `from_x` (integer, optional) X coordinate of the starting tile.
 - `from_y` (integer, optional) Y coordinate of the starting tile.
 - `max_iterations` (integer, default 20000) How hard the pathfinder may try before giving up. Raising it costs time, not money.
+- `road_type` (integer, default 0) Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.
 - `tile_from` (integer, optional) Tile index to start from. An alternative to from_x and from_y.
 - `tile_to` (integer, optional) Tile index to finish at. An alternative to to_x and to_y.
 - `to_x` (integer, optional) X coordinate of the finishing tile.

@@ -3164,6 +3164,7 @@
           "is_bridge",
           "is_station",
           "is_tunnel",
+          "other_end",
           "owner",
           "slope",
           "water",
@@ -5353,6 +5354,12 @@
           "required": false,
           "default": 20000,
           "description": "How hard the pathfinder may try before giving up. Raising it costs time, not money.",
+          "type": "integer"
+        },
+        "road_type": {
+          "required": false,
+          "default": 0,
+          "description": "Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.",
           "type": "integer"
         },
         "tile_from": {

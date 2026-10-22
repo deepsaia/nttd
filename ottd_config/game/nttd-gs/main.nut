@@ -1032,6 +1032,10 @@ class NttdGS extends GSController {
                      + "so a track walk does not describe it." };
     }
     local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
+    // Every GSRoad test below answers false while the script's current road type is
+    // unset, which it is until some build command sets it. Set it here so a walk asked
+    // before any road was built answers about the road and not about the missing type.
+    if (kind == "road") GSRoad.SetCurrentRoadType(("road_type" in p) ? p.road_type : 0);
     local start = pair.from.tile;
     local goal = pair.to.tile;
 
@@ -1064,6 +1068,26 @@ class NttdGS extends GSController {
 
       local cx = GSMap.GetTileX(node.tile), cy = GSMap.GetTileY(node.tile);
       local reverse = (node.dir + 2) % 4;
+
+      // A bridge or tunnel exists only as its two end tiles; the tiles between carry no
+      // road or track. A vehicle crosses in one move, so the walk jumps to the other end.
+      local transport = (kind == "road") ? GSTile.TRANSPORT_ROAD : GSTile.TRANSPORT_RAIL;
+      if ((GSBridge.IsBridgeTile(node.tile) || GSTunnel.IsTunnelTile(node.tile))
+          && GSTile.HasTransportType(node.tile, transport)) {
+        local other = GSBridge.IsBridgeTile(node.tile)
+          ? GSBridge.GetOtherBridgeEnd(node.tile) : GSTunnel.GetOtherTunnelEnd(node.tile);
+        local ox = GSMap.GetTileX(other), oy = GSMap.GetTileY(other);
+        local span_dir = (ox > cx) ? 0 : (oy > cy) ? 1 : (ox < cx) ? 2 : 3;
+        // A train enters the head along the span, so it leaves along the span too.
+        if (kind == "road" || node.tile == start || node.dir == span_dir) {
+          local other_key = (kind == "road") ? other * 4 : other * 4 + span_dir;
+          if (!(other_key in seen)) {
+            seen[other_key] <- true;
+            visited_tiles[other] <- true;
+            queue.append({ tile = other, dir = span_dir });
+          }
+        }
+      }
       for (local exit_dir = 0; exit_dir < 4; exit_dir++) {
         if (kind == "rail" && exit_dir == reverse) continue;
         local nx = cx + dir_dx[exit_dir], ny = cy + dir_dy[exit_dir];
@@ -1074,10 +1098,16 @@ class NttdGS extends GSController {
 
         local joined = false;
         if (kind == "road") {
-          joined = GSRoad.IsRoadTile(next) && GSRoad.AreRoadTilesConnected(node.tile, next);
+          // IsRoadTile rejects bay stops and depots, so a walk to a bay stop could never
+          // reach its goal. A stop or depot counts when the road bits actually join it.
+          local is_road = GSRoad.IsRoadTile(next) || GSRoad.IsRoadStationTile(next)
+                          || GSRoad.IsRoadDepotTile(next)
+                          || GSTile.HasTransportType(next, GSTile.TRANSPORT_ROAD);
+          joined = is_road && GSRoad.AreRoadTilesConnected(node.tile, next);
         } else {
           local is_track = GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
-                           || GSRail.IsRailDepotTile(next);
+                           || GSRail.IsRailDepotTile(next)
+                           || GSTile.HasTransportType(next, GSTile.TRANSPORT_RAIL);
           if (node.tile == start) {
             // THE FIRST HOP HAS NO INCOMING DIRECTION. AreTilesConnected asks about a triple,
             // from-through-to, and at the start there is no "from": the code used to invent one
