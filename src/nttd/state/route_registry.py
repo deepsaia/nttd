@@ -1,7 +1,8 @@
 """Persistent route registry: assigns stable IDs and tracks lifecycle.
 
 Routes are identified by a deterministic hash of (company_id, vehicle_type, sorted station_ids).
-The registry reconciles each cycle from live vehicle orders, and updates status from action results.
+The registry reconciles each cycle from live vehicle orders, records the game's answer about
+the path between the stations, and updates status from action results.
 """
 
 from __future__ import annotations
@@ -23,6 +24,9 @@ class RouteRegistry:
     def __init__(self) -> None:
         self._routes: dict[str, Route] = {}
         self._map_width: int = 256
+        # Vehicles the game has already walked from their own tile to the route's first
+        # station. A vehicle that passed once is on the network and is not asked again.
+        self._vehicles_with_path: dict[str, set[int]] = {}
 
     def reconcile(
         self,
@@ -31,7 +35,12 @@ class RouteRegistry:
         game_date: int,
         map_width: int = 256,
     ) -> list[Route]:
-        """Reconcile registry with live vehicle/station data. Returns all routes."""
+        """Reconcile registry with live vehicle/station data. Returns all routes.
+
+        This groups vehicle orders into routes and nothing more. Whether a path exists
+        between the stations is a separate question, answered by record_connection once
+        the game has walked the built road or rail.
+        """
         self._map_width = map_width
         active_route_ids: set[str] = set()
 
@@ -55,60 +64,77 @@ class RouteRegistry:
             rid = make_route_id(company_id, vtype, sids)
             active_route_ids.add(rid)
 
-            if rid in self._routes:
-                route = self._routes[rid]
-            else:
+            route = self._routes.get(rid)
+            if route is None or route.status == "removed":
+                # A removed route comes back as a new one: its old confirmation may
+                # describe a station that no longer exists, so the path is asked again.
                 route = Route(
                     route_id=rid,
                     company_id=company_id,
                     vehicle_type=vtype,
                     station_ids=list(sids),
-                    status="active",
                     created_at=game_date,
-                    first_vehicle_at=game_date,
                 )
                 self._routes[rid] = route
-                logger.info("Route %s created (active): stations %s", rid, list(sids))
-
-            # A route derived from the running game HAS its track, and saying so here is
-            # the only thing that ever will.
-            #
-            # track_confirmed_at is written nowhere else in production: on_action_result
-            # and register_planned_route have no caller outside the tests. So every route
-            # reconcile produced sat at the schema default of 0, and situation reported
-            # "missing: a connection between the stations" for a line whose trains were
-            # running and profitable. That is the first thing the endpoint tells an agent
-            # to read, and on the one route in this project that earned, it was wrong.
-            #
-            # The evidence is what reconcile grouped on: vehicles carrying goto-station
-            # orders for both ends. A train cannot hold those and run unless the track is
-            # there, so the derivation itself is the confirmation.
-            if not route.track_confirmed_at:
-                route.track_confirmed_at = game_date
+                logger.info("Route %s created: stations %s", rid, list(sids))
 
             route.vehicle_ids = [v.id for v in vlist]
             route.vehicle_count = len(vlist)
             route.total_profit_this_year = sum(v.profit_this_year for v in vlist)
             route.total_profit_last_year = sum(v.profit_last_year for v in vlist)
-            if route.status == "planned" or route.status == "track_built":
-                route.status = "active"
-                route.first_vehicle_at = route.first_vehicle_at or game_date
+            route.vehicles_without_path = [v for v in route.vehicles_without_path if v in route.vehicle_ids]
+            if not route.first_vehicle_at:
+                route.first_vehicle_at = game_date
+            route.refresh_status()
 
         for rid, route in self._routes.items():
-            if rid not in active_route_ids and route.status == "active":
-                all_stations_exist = all(
-                    sid in stations for sid in route.station_ids
-                )
-                if all_stations_exist:
-                    route.status = "track_built"
-                    route.vehicle_ids = []
-                    route.vehicle_count = 0
-                    route.total_profit_this_year = 0
-                    route.total_profit_last_year = 0
-                else:
-                    route.status = "removed"
+            if rid in active_route_ids or route.status == "removed":
+                continue
+            if not all(sid in stations for sid in route.station_ids):
+                route.status = "removed"
+                continue
+            route.vehicle_ids = []
+            route.vehicle_count = 0
+            route.total_profit_this_year = 0
+            route.total_profit_last_year = 0
+            route.vehicles_without_path = []
+            self._vehicles_with_path.pop(rid, None)
+            route.refresh_status()
 
         return [r for r in self._routes.values() if r.status != "removed"]
+
+    def vehicles_to_check(self, route: Route) -> list[int]:
+        """The route's vehicles the game has not yet walked to the first station."""
+        passed = self._vehicles_with_path.get(route.route_id, set())
+        return [vid for vid in route.vehicle_ids if vid not in passed]
+
+    def record_vehicle_paths(
+        self, route_id: str, with_path: list[int], without_path: list[int], game_date: int,
+    ) -> None:
+        """Store which vehicles can reach the route's first station from their own tile.
+
+        A vehicle that got no answer this time keeps its previous entry."""
+        route = self._routes.get(route_id)
+        if route is None or route.status == "removed":
+            return
+        passed = self._vehicles_with_path.setdefault(route_id, set())
+        passed.update(with_path)
+        answered = set(with_path) | set(without_path)
+        kept = [v for v in route.vehicles_without_path if v not in answered and v in route.vehicle_ids]
+        route.vehicles_without_path = sorted(set(without_path) | set(kept))
+        route.connection_checked_at = game_date
+        route.refresh_status()
+
+    def record_connection(self, route_id: str, connected: bool, game_date: int) -> None:
+        """Store the game's answer about the path between the route's stations."""
+        route = self._routes.get(route_id)
+        if route is None or route.status == "removed":
+            return
+        route.connection_checked_at = game_date
+        if connected and not route.track_confirmed_at:
+            route.track_confirmed_at = game_date
+            logger.info("Route %s: path confirmed", route_id)
+        route.refresh_status()
 
     def on_action_result(
         self,
@@ -150,9 +176,9 @@ class RouteRegistry:
                 continue
             route_sids = set(route.station_ids)
             if {src_sid, dst_sid} == route_sids:
-                route.status = "track_built"
                 route.track_confirmed_at = game_date
                 route.path_tiles = path_tiles
+                route.refresh_status()
                 logger.info("Route %s: track confirmed (%d path tiles)", route.route_id, len(path_tiles))
                 return
 
