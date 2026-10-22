@@ -82,7 +82,8 @@ class TestReconcile:
         routes = registry.reconcile(vehicles, stations, game_date=100)
         assert len(routes) == 1
         route = routes[0]
-        assert route.status == "active"
+        assert route.status == "unchecked"
+        assert route.track_confirmed_at == 0
         assert route.vehicle_count == 2
         assert set(route.vehicle_ids) == {1, 2}
         assert route.station_ids == [10, 20]
@@ -106,15 +107,165 @@ class TestReconcile:
         route_ids = {r.route_id for r in routes}
         assert len(route_ids) == 2
 
-    def test_vehicle_removed_degrades_route(self, stations: dict[int, Station]) -> None:
+    def test_vehicle_removed_from_confirmed_route_leaves_track_built(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
-        registry.reconcile(vehicles, stations, game_date=100)
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, True, game_date=100)
 
         routes = registry.reconcile({}, stations, game_date=200)
         assert len(routes) == 1
         assert routes[0].status == "track_built"
         assert routes[0].vehicle_count == 0
+
+    def test_vehicle_removed_from_unconfirmed_route_removes_it(self, stations: dict[int, Station]) -> None:
+        """Orders to two stations with no path between them leave nothing behind once
+        the orders change. Keeping such a route would show a line that never existed."""
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, False, game_date=100)
+
+        assert registry.reconcile({}, stations, game_date=200) == []
+
+    def test_track_built_route_is_removed_when_a_station_goes(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, True, game_date=100)
+        registry.reconcile({}, stations, game_date=200)
+
+        remaining = {30: stations[30]}
+        assert registry.reconcile({}, remaining, game_date=300) == []
+
+
+    def test_a_removed_route_comes_back_when_vehicles_hold_its_orders_again(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, False, game_date=100)
+        assert registry.reconcile({}, stations, game_date=200) == []
+
+        routes = registry.reconcile(vehicles, stations, game_date=300)
+        assert len(routes) == 1
+        assert routes[0].route_id == route.route_id
+        assert routes[0].status == "unchecked"
+        assert routes[0].connection_checked_at == 0
+        assert routes[0].created_at == 300
+
+
+class TestRecordConnection:
+    def test_path_found_makes_the_route_active(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+
+        registry.record_connection(route.route_id, True, game_date=101)
+        assert route.status == "active"
+        assert route.track_confirmed_at == 101
+        assert route.connection_checked_at == 101
+
+    def test_no_path_marks_the_route_unconnected(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+
+        registry.record_connection(route.route_id, False, game_date=101)
+        assert route.status == "unconnected"
+        assert route.track_confirmed_at == 0
+        assert route.connection_checked_at == 101
+
+        registry.reconcile(vehicles, stations, game_date=102)
+        assert route.status == "unconnected"
+
+    def test_a_path_built_later_turns_the_route_active(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, False, game_date=101)
+
+        registry.record_connection(route.route_id, True, game_date=150)
+        assert route.status == "active"
+        assert route.track_confirmed_at == 150
+
+    def test_confirmation_date_is_kept(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, True, game_date=101)
+
+        registry.record_connection(route.route_id, True, game_date=200)
+        assert route.track_confirmed_at == 101
+
+    def test_unknown_route_is_ignored(self) -> None:
+        registry = RouteRegistry()
+        registry.record_connection("rt_missing", True, game_date=1)
+        assert registry.get_routes() == []
+
+
+class TestVehiclePaths:
+    def test_a_vehicle_that_cannot_get_out_keeps_the_route_unconnected(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, True, game_date=100)
+
+        registry.record_vehicle_paths(route.route_id, with_path=[1], without_path=[2], game_date=100)
+        assert route.status == "unconnected"
+        assert route.vehicles_without_path == [2]
+        assert route.track_confirmed_at == 100
+
+    def test_every_vehicle_with_a_path_makes_the_route_active(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, True, game_date=100)
+        registry.record_vehicle_paths(route.route_id, with_path=[], without_path=[1], game_date=100)
+
+        registry.record_vehicle_paths(route.route_id, with_path=[1], without_path=[], game_date=120)
+        assert route.status == "active"
+        assert route.vehicles_without_path == []
+
+    def test_a_vehicle_that_passed_is_not_asked_again(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        assert registry.vehicles_to_check(route) == [1, 2]
+
+        registry.record_vehicle_paths(route.route_id, with_path=[1], without_path=[2], game_date=100)
+        assert registry.vehicles_to_check(route) == [2]
+
+    def test_a_vehicle_without_answer_keeps_its_entry(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_vehicle_paths(route.route_id, with_path=[], without_path=[1, 2], game_date=100)
+
+        registry.record_vehicle_paths(route.route_id, with_path=[], without_path=[2], game_date=101)
+        assert route.vehicles_without_path == [1, 2]
+
+    def test_a_vehicle_that_left_the_route_drops_out_of_the_list(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, True, game_date=100)
+        registry.record_vehicle_paths(route.route_id, with_path=[1], without_path=[2], game_date=100)
+
+        registry.reconcile({1: vehicles[1]}, stations, game_date=101)
+        assert route.vehicles_without_path == []
+        assert route.status == "active"
+
+    def test_the_list_is_cleared_when_the_vehicles_leave(self, stations: dict[int, Station]) -> None:
+        registry = RouteRegistry()
+        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
+        route = registry.reconcile(vehicles, stations, game_date=100)[0]
+        registry.record_connection(route.route_id, True, game_date=100)
+        registry.record_vehicle_paths(route.route_id, with_path=[], without_path=[1], game_date=100)
+
+        registry.reconcile({}, stations, game_date=101)
+        assert route.status == "track_built"
+        assert route.vehicles_without_path == []
+        assert registry.vehicles_to_check(route) == []
 
     def test_station_removed_marks_removed(self) -> None:
         registry = RouteRegistry()

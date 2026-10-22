@@ -59,7 +59,7 @@ Full detail in [observations.md](observations.md).
 - `get_waypoints()` List your waypoints.
 - `ping()` Check that the GameScript is answering.
 - `scan_town_area(town_id, [radius])` Report the land around a town: what is buildable, what is already built, and where the roads run.
-- `trace_route(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, transport_type])` Walk existing track from one point to another and say whether the chain of pieces joins up.
+- `trace_route(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, road_type, transport_type])` Walk existing track from one point to another and say whether the chain of pieces joins up.
 
 ## Actions
 
