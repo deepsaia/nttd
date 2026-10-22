@@ -559,7 +559,32 @@ class Orchestrator:
                 return tiles
             tiles.extend(band)
             band_start = band_end + 1
+        tiles.extend(await self.far_ends_of(tiles))
         return tiles
+
+    async def far_ends_of(self, tiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The other end of every bridge or tunnel in tiles that the area left out.
+
+        A tunnel can run dozens of tiles, so its far portal is usually outside the
+        neighbourhood a build refreshes. Each end tile names its other end.
+        """
+        have = {(t.get("x"), t.get("y")) for t in tiles}
+        far: list[dict[str, Any]] = []
+        for tile in tiles:
+            other = tile.get("other_end")
+            if not isinstance(other, list) or len(other) != 2:
+                continue
+            x, y = int(other[0]), int(other[1])
+            if (x, y) in have:
+                continue
+            have.add((x, y))
+            reply = await self.client.send_gamescript(
+                "get_tile_area", {"x1": x, "y1": y, "x2": x, "y2": y, "max_tiles": 1}, timeout=20.0,
+            )
+            band = reply.get("result")
+            if reply.get("success") and isinstance(band, list):
+                far.extend(band)
+        return far
 
     def _record_action(
         self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",

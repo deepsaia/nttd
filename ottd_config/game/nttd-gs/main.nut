@@ -5620,6 +5620,12 @@ class NttdGS extends GSController {
           has_tree = GSTile.HasTreeOnTile(tile),
           is_bridge = GSBridge.IsBridgeTile(tile),
           is_tunnel = GSTunnel.IsTunnelTile(tile),
+          // The far end of a bridge or tunnel, which may lie well outside this area.
+          other_end = GSBridge.IsBridgeTile(tile)
+            ? [GSMap.GetTileX(GSBridge.GetOtherBridgeEnd(tile)), GSMap.GetTileY(GSBridge.GetOtherBridgeEnd(tile))]
+            : (GSTunnel.IsTunnelTile(tile)
+              ? [GSMap.GetTileX(GSTunnel.GetOtherTunnelEnd(tile)), GSMap.GetTileY(GSTunnel.GetOtherTunnelEnd(tile))]
+              : null),
         });
       }
     }
