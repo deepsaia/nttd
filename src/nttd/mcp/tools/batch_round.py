@@ -14,11 +14,19 @@ from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-from nttd.mcp import texts
 from nttd.mcp.game_session import GameSession
 from nttd.mcp.moves import coerce_flag, read_moves
 from nttd.mcp.tools.focus import FOCUS_KEYS
 from nttd.mcp.tools.query import run_query
+
+BATCH_ROUND = """Round envelope for an orchestrator that runs several agents.
+Carries every agent's call for one round as {agent_tag, tool, args} entries,
+where tool is one of observe, act, query, list_commands, focus. Reads run first,
+all moves are sent together with the agents in a random order, and the game
+advances exactly once. Replies with per-agent results keyed by agent_tag.
+A single agent never needs this tool.
+"""
+
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +131,7 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
 def register(mcp: FastMCP, session: GameSession) -> None:
     """Register the round envelope."""
 
-    @mcp.tool(description=texts.BATCH_ROUND)
+    @mcp.tool(description=BATCH_ROUND)
     async def batch_round(entries: list[dict[str, Any]]) -> str:
         await session.ensure_started()
         return json.dumps(await run_round(session, entries))

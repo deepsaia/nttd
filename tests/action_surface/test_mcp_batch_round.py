@@ -8,11 +8,12 @@ from typing import Any
 
 import httpx
 
-from nttd.mcp.game_session import GameSession
+from nttd.mcp.game_session import GAME_ENDED_NOTE, GameSession
+from nttd.mcp.moves import MOVES_FORMAT_HINT
 from nttd.mcp.participant_client import ParticipantClient
 from nttd.mcp.server import build
-from nttd.mcp.texts import GAME_ENDED_NOTE, MOVES_FORMAT_HINT, PARAMETERS_FORMAT_HINT
 from nttd.mcp.tools.batch_round import run_round
+from nttd.mcp.tools.query import PARAMETERS_FORMAT_HINT
 from tests.action_surface.test_mcp_game_session import FakeGame
 
 

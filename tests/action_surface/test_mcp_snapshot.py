@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from nttd.mcp.snapshot import explain_timeouts, rename_income, reshape, with_vehicle_state_words
-from nttd.mcp.texts import TIMEOUT_NOTE
+from nttd.mcp.snapshot import TIMEOUT_NOTE, explain_timeouts, rename_income, reshape, with_vehicle_state_words
 
 
 def test_every_vehicle_carries_its_state_as_a_word() -> None:

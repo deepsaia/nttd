@@ -62,9 +62,7 @@ class TestTheToolSurface:
             assert tool.description, name
 
     def test_the_instructions_are_sent_at_connection(self, mcp: Any) -> None:
-        from nttd.mcp import texts
-
-        assert mcp.instructions == texts.INSTRUCTIONS
+        assert mcp.instructions == server.INSTRUCTIONS
 
 
 class TestTheVocabularyIsInTheSchema:

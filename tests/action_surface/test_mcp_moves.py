@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from nttd.mcp.moves import coerce_flag, coerce_params, name_commands, read_moves
-from nttd.mcp.texts import MOVES_FORMAT_HINT
+from nttd.mcp.moves import MOVES_FORMAT_HINT, coerce_flag, coerce_params, name_commands, read_moves
 
 
 def test_params_may_arrive_as_an_object_a_json_string_or_nothing() -> None:

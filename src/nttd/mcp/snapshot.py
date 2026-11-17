@@ -15,7 +15,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from nttd.mcp.texts import TIMEOUT_NOTE
+TIMEOUT_NOTE = (
+    "The game searched for a route until its 120 s limit and found none. "
+    "A search between two points with no possible route runs to the limit."
+)
+
+
 
 DROPPED_VEHICLE_FIELDS = ("idle_reason", "lost", "running")
 STATE_WORDS = {1: "stopped", 2: "in_depot", 3: "at_station", 4: "broken_down", 5: "crashed"}

@@ -15,7 +15,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from nttd.mcp.texts import MOVES_FORMAT_HINT
+MOVES_FORMAT_HINT = (
+    'moves must be a list of objects, each {"command": <name>, '
+    '"parameters": {...}}. Use the list_commands tool for parameter details.'
+)
+
+
 
 
 def coerce_params(params: Any) -> dict[str, Any] | None:

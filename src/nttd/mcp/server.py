@@ -28,10 +28,25 @@ import os
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-from nttd.mcp import texts
 from nttd.mcp.game_session import STEPPED, GameSession
 from nttd.mcp.participant_client import ParticipantClient
 from nttd.mcp.tools import act, batch_round, focus, list_commands, observe, query
+
+INSTRUCTIONS = """\
+You are playing OpenTTD as one company, through nttd.
+
+You build transport infrastructure and run vehicles to move cargo and passengers for
+profit. You are scored on OpenTTD's own performance rating, which rewards delivered
+cargo, vehicle count, station count, profit and money in hand.
+
+Start by calling nttd_observe to see the world, and nttd_actions to look up anything you
+have not called before. Prefer nttd_query for what the snapshot does not carry, such as
+where a station will fit or which engines exist this year.
+
+Actions are refused for ordinary reasons: too little money, a tile that will not take the
+structure, a town with a poor opinion of you. A refusal is information, not a fault.
+"""
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +76,7 @@ def build(
     default_tag: str = DEFAULT_TAG,
 ) -> FastMCP:
     """Wire one session's tools onto a server."""
-    mcp = FastMCP("nttd", instructions=texts.INSTRUCTIONS, host=host, port=port)
+    mcp = FastMCP("nttd", instructions=INSTRUCTIONS, host=host, port=port)
     client = ParticipantClient(base_url, session_id, token)
     session = GameSession(client, company_id=company_id, days=days, reward_enabled=reward, seed=seed, default_tag=default_tag)
     session.mode = mode

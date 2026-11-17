@@ -12,9 +12,8 @@ from typing import Any
 import httpx
 
 from nttd.api.participant_auth import TOKEN_HEADER
-from nttd.mcp.game_session import GameSession
+from nttd.mcp.game_session import GAME_ENDED_NOTE, MISSING_RESULT_NOTE, GameSession
 from nttd.mcp.participant_client import ParticipantClient
-from nttd.mcp.texts import GAME_ENDED_NOTE, MISSING_RESULT_NOTE
 
 BASE = "/v1/participant/sessions/ses_test"
 

@@ -20,7 +20,13 @@ from nttd.mcp.focus import FocusRegistry
 from nttd.mcp.moves import name_commands
 from nttd.mcp.participant_client import ParticipantClient
 from nttd.mcp.snapshot import explain_timeouts, reshape
-from nttd.mcp.texts import GAME_ENDED_NOTE, MISSING_RESULT_NOTE
+
+AGENT_TAG_PARAM = "Name of the agent making the call. Leave it empty when there is only one agent."
+
+GAME_ENDED_NOTE = "The game has ended. No more actions can be taken."
+
+MISSING_RESULT_NOTE = "The game returned no result for this command."
+
 
 logger = logging.getLogger(__name__)
 
