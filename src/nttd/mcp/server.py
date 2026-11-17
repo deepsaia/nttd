@@ -1,31 +1,22 @@
-"""The nttd MCP server: five tools that are enough to play a whole game.
+"""The nttd MCP server: six tools that play one session as one company.
 
-    uv run python -m nttd.mcp.server --session ses_abc --token <participant-token>
-    uv run python -m nttd.mcp.server --session ses_abc --token <tok> --transport http
+    nttd mcp <session_id> [--url ...] [--transport stdio|http] [--port 8100]
+    python -m nttd.mcp --session <session_id> ...
 
-What this replaces was not a play surface. It had 33 tools, 30 of them getters wrapping
-one REST call each, and no way to act or step at all: its own docstring said execution
-happened somewhere else. An agent connected to it could look at the game and do nothing.
+    observe        read the world
+    act            change it, in every game mode
+    query          ask something the state does not carry
+    list_commands  look up what a command or query takes
+    focus          choose the part of the map the replies describe
+    batch_round    the calls of many agents for one round, for an orchestrator
 
-Five, because the tools are the verbs and there are only five:
+The game commands are not tools. They arrive as enums in the schemas of ``act`` and
+``query``, built from the action manifest, so a name outside the manifest cannot be
+sent and none has to be learned from a prompt.
 
-    nttd_observe   read the world
-    nttd_act       change it, in real time
-    nttd_step      change it and advance, for stepped play
-    nttd_query     ask something the snapshot does not carry
-    nttd_actions   look up what an action takes
-
-The 120 actions are not hidden by this. ``action_type`` is an enum, so every name is in
-the tool schema where a client already looks, and 30 near-identical getters were never
-the vocabulary anyway: they were one wrapper per endpoint, which is a shape that grows
-with the API rather than with the game.
-
-Both transports are supported because both kinds of client matter here: stdio for an
-agent that launches the server as a subprocess, and streamable HTTP for a multi-agent
-framework that connects to one already running.
-
-One server is one seat. It holds a single session and a single participant token, so no
-tool takes a session argument and no client can act for a company it was not given.
+Both transports exist because both kinds of client matter: stdio for an agent that
+launches the server as a subprocess, and streamable HTTP for a framework that connects
+to one already running. One server plays one session and one company.
 """
 
 from __future__ import annotations
@@ -34,49 +25,61 @@ import argparse
 import logging
 import os
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 
+from nttd.mcp import texts
+from nttd.mcp.game_session import STEPPED, GameSession
 from nttd.mcp.participant_client import ParticipantClient
-from nttd.mcp.tools import act, catalogue, observe, query, step
+from nttd.mcp.tools import act, batch_round, focus, list_commands, observe, query
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_URL = "http://localhost:8000"
-
-_INSTRUCTIONS = """\
-You are playing OpenTTD as one company, through nttd.
-
-You build transport infrastructure and run vehicles to move cargo and passengers for
-profit. You are scored on OpenTTD's own performance rating, which rewards delivered
-cargo, vehicle count, station count, profit and money in hand.
-
-Start by calling nttd_observe to see the world, and nttd_actions to look up anything you
-have not called before. Prefer nttd_query for what the snapshot does not carry, such as
-where a station will fit or which engines exist this year.
-
-Actions are refused for ordinary reasons: too little money, a tile that will not take the
-structure, a town with a poor opinion of you. A refusal is information, not a fault.
-"""
+DEFAULT_TAG = "agent"
 
 
-def build(base_url: str, session_id: str, token: str, host: str, port: int) -> FastMCP:
-    """Wire one seat's tools onto a server."""
-    mcp = FastMCP("nttd", instructions=_INSTRUCTIONS, host=host, port=port)
+def fetch_mode(base_url: str, session_id: str) -> str:
+    """Read the session's mode once, before the tools are registered: the act text
+    depends on it."""
+    response = httpx.get(f"{base_url.rstrip('/')}/v1/public/sessions/{session_id}/status", timeout=30.0)
+    response.raise_for_status()
+    return str(response.json().get("mode", STEPPED))
+
+
+def build(
+    base_url: str,
+    session_id: str,
+    token: str | None,
+    host: str,
+    port: int,
+    mode: str = STEPPED,
+    company_id: int = 0,
+    days: int | None = None,
+    reward: bool = False,
+    seed: int | None = None,
+    default_tag: str = DEFAULT_TAG,
+) -> FastMCP:
+    """Wire one session's tools onto a server."""
+    mcp = FastMCP("nttd", instructions=texts.INSTRUCTIONS, host=host, port=port)
     client = ParticipantClient(base_url, session_id, token)
+    session = GameSession(client, company_id=company_id, days=days, reward_enabled=reward, seed=seed, default_tag=default_tag)
+    session.mode = mode
 
-    observe.register(mcp, client)
-    act.register(mcp, client)
-    step.register(mcp, client)
-    query.register(mcp, client)
-    catalogue.register(mcp)
+    observe.register(mcp, session)
+    act.register(mcp, session)
+    query.register(mcp, session)
+    list_commands.register(mcp, session)
+    focus.register(mcp, session)
+    batch_round.register(mcp, session)
     return mcp
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="nttd MCP server (one session, one seat)")
+    parser = argparse.ArgumentParser(description="nttd MCP server (one session, one company)")
     parser.add_argument("--url", default=os.getenv("NTTD_URL", DEFAULT_URL))
     parser.add_argument("--session", default=os.getenv("NTTD_SESSION_ID"))
-    parser.add_argument("--token", default=os.getenv("NTTD_PARTICIPANT_TOKEN"))
+    parser.add_argument("--token", default=os.getenv("NTTD_PARTICIPANT_TOKEN"), help="Participant token. Not needed by a session that issued none.")
     parser.add_argument(
         "--transport",
         choices=["stdio", "http"],
@@ -85,25 +88,29 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--host", default=os.getenv("NTTD_MCP_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("NTTD_MCP_PORT", "8100")))
+    parser.add_argument("--company", type=int, default=0, help="The company to play.")
+    parser.add_argument("--days", type=int, default=None, help="Game days per step. Unset uses the scenario's step size.")
+    parser.add_argument("--reward", action="store_true", help="Add the change in money minus loan to every act reply.")
+    parser.add_argument("--seed", type=int, default=None, help="Seed for the random order of the agents in a round.")
+    parser.add_argument("--default-tag", default=DEFAULT_TAG, help="Agent tag used when a call names none.")
     return parser.parse_args()
 
 
 def main() -> None:
-    """Entry point for ``python -m nttd.mcp.server``."""
+    """Entry point for ``python -m nttd.mcp``."""
     logging.basicConfig(level=logging.INFO)
     args = _parse_args()
+    if not args.session:
+        raise SystemExit("Missing --session. Get the id from `nttd session list`.")
 
-    # Checked here rather than on the first tool call. Under stdio a missing token
-    # surfaces as every tool failing with a 401, which reads as nttd being broken.
-    missing = [name for name, value in (("--session", args.session), ("--token", args.token)) if not value]
-    if missing:
-        raise SystemExit(
-            f"Missing {' and '.join(missing)}. Get both from `nttd session attach <id>`."
-        )
-
-    mcp = build(args.url, args.session, args.token, args.host, args.port)
+    mode = fetch_mode(args.url, args.session)
+    mcp = build(
+        args.url, args.session, args.token, args.host, args.port,
+        mode=mode, company_id=args.company, days=args.days, reward=args.reward,
+        seed=args.seed, default_tag=args.default_tag,
+    )
     logger.info(
-        "nttd MCP serving session %s over %s (nttd at %s)", args.session, args.transport, args.url,
+        "nttd MCP serving session %s (%s mode) over %s (nttd at %s)", args.session, mode, args.transport, args.url,
     )
     mcp.run(transport="streamable-http" if args.transport == "http" else "stdio")
 

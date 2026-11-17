@@ -1,26 +1,23 @@
-"""``nttd_observe``: the whole world, as one call."""
+"""``observe``: the game state, as one agent sees it."""
 
 from __future__ import annotations
 
 import json
+from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
-from nttd.mcp.participant_client import ParticipantClient
+from nttd.mcp import texts
+from nttd.mcp.game_session import GameSession
 
 
-def register(mcp: FastMCP, client: ParticipantClient) -> None:
+def register(mcp: FastMCP, session: GameSession) -> None:
     """Register the observation tool."""
 
-    @mcp.tool()
-    async def nttd_observe() -> str:
-        """Read the whole game state: your company, the map, towns, industries,
-        stations, vehicles, and the rest of the world.
-
-        This returns everything rather than a summary. Deciding what matters is the
-        task, so nttd does not do that part for you. Filter it in your own code.
-
-        For anything not in the snapshot, such as which tiles are buildable or what a
-        move would cost, use nttd_query.
-        """
-        return json.dumps(await client.observe())
+    @mcp.tool(description=texts.OBSERVE)
+    async def observe(
+        agent_tag: Annotated[str | None, Field(description=texts.AGENT_TAG_PARAM)] = None,
+    ) -> str:
+        await session.ensure_started()
+        return json.dumps(await session.observe(session.tag(agent_tag)))
