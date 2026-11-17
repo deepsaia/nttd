@@ -142,8 +142,9 @@ class TileWriter:
                 "has_road": bool(t.get("has_road")),
                 "is_station": bool(t.get("is_station")),
                 "has_tree": bool(t.get("has_tree")),
-                "has_bridge": bool(t.get("has_bridge")),
-                "has_tunnel": bool(t.get("has_tunnel")),
+                # get_tile_area names these is_bridge and is_tunnel; older callers has_*.
+                "has_bridge": bool(t.get("is_bridge") or t.get("has_bridge")),
+                "has_tunnel": bool(t.get("is_tunnel") or t.get("has_tunnel")),
             }
             for t in tiles
         ]

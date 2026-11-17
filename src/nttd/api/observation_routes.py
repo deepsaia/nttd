@@ -12,6 +12,7 @@ from nttd.api.participant_auth import (
     apply_company_scope,
     extract_token,
 )
+from nttd.bridge.trace_route import line_exists
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS, READ_ONLY_GS_ACTIONS
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
@@ -187,8 +188,8 @@ async def plan_route(
         # adjacency in the tile cache, because adjacency is not connectivity: track beside a
         # platform pointing away from it is adjacent and useless.
         "can_build": bool(found.get("found")),
-        "line_exists": await _line_already_exists(
-            runtime, from_x, from_y, to_x, to_y, transport_type,
+        "line_exists": await line_exists(
+            runtime.admin_client, from_x, from_y, to_x, to_y, transport_type,
         ),
         "transport_type": transport_type,
         "from": [from_x, from_y],
@@ -376,36 +377,6 @@ async def _price_the_town_routes(
             priced[distance] = per_unit
         route["cargo"] = "PASS"
         route["income_per_unit"] = priced[distance]
-
-
-async def _line_already_exists(
-    runtime: Any, from_x: int, from_y: int, to_x: int, to_y: int, transport_type: str,
-) -> bool | None:
-    """Whether a vehicle could travel it now, asked of the game rather than of the cache.
-
-    None rather than False when the question cannot be put: a ship travels over open water
-    so a track walk does not describe it, and a game that is not connected has no answer.
-    False would read as "there is no line", which is a claim this has not earned.
-    """
-    if transport_type not in ("rail", "road"):
-        return None
-    if not runtime.admin_client.connected:
-        return None
-    try:
-        reply = await runtime.admin_client.send_gamescript(
-            "trace_route",
-            {
-                "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y,
-                "transport_type": transport_type,
-            },
-            timeout=20.0,
-        )
-    except Exception:
-        logger.debug("Could not trace the existing line", exc_info=True)
-        return None
-    if not reply.get("success"):
-        return None
-    return bool((reply.get("result") or {}).get("line_exists"))
 
 
 async def _cargo_ids(runtime: Any) -> dict[str, int]:
