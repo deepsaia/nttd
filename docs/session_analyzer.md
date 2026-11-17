@@ -12,6 +12,7 @@ src/nttd/analysis/
     plots.py               -- reusable Plotly visualization functions
     score.py               -- score_company(), the rating as the game computes it
     trajectory.py          -- per-day rows for a company, read from snapshots
+    live_metrics.py        -- finances and commands per game day, for a monitor that polls
     reports/
         registry.py        -- ReportResult, @register decorator, run_reports()
         renderer.py        -- render_markdown(), render_plots(), render_json()
