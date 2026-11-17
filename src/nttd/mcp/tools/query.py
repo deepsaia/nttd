@@ -16,14 +16,14 @@ PARAMETERS_FORMAT_HINT = 'parameters must be an object, e.g. {"town_id": 3}.'
 
 QUERY_QUERY_PARAM = "Name of the query."
 
-QUERY_PARAMETERS_PARAM = "The query's parameters as an object. The list_commands tool lists them per query."
+QUERY_PARAMETERS_PARAM = "The query's parameters."
 
 QUERY_BODY = """Ask the running game a question.
 
-Queries read what the state from observe does not carry. Examples include whether a tile
-is buildable, where a station fits, which engines are for sale this
-year, what an action would cost, a town's rating. Parameters differ per
-query; the list_commands tool lists them.
+Queries read what the state from observe does not carry. 
+Examples include whether a tile is buildable, where a station fits, which engines are for sale this
+year, what an action would cost, a town's rating. 
+To see query parameters use the list_commands tool.
 
 Available queries:
   {queries}

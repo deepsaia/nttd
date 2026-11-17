@@ -15,9 +15,7 @@ LIST_COMMANDS_NAME_PARAM = "A command or query name. Empty lists all of them."
 LIST_COMMANDS = """Describe a command or query: its parameters, their types,
 defaults, and the exact values they accept.
 
-Without a name the reply is one line per command and query. Some
-parameters take named constants or ids assigned by the game; the
-reply says which, and the query tool returns the ids.
+Without a name the reply is one line per command and query.
 """
 
 

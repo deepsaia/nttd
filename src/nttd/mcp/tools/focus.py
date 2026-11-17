@@ -33,10 +33,8 @@ FOCUS = """Choose the part of the map that your game replies describe.
 Name towns or industries, by name or id, or give a tile rectangle
 x1, y1, x2, y2, or both. The focus is the rectangle around them,
 widened by padding tiles on each side. From then on, replies from
-observe and act list only what is inside the focus: towns, industries
-and stations by position, vehicles that are inside or have an order to
-a station inside, and routes with a station or vehicle inside. The
-company, the date and the outcomes of your own commands stay complete.
+observe and act list only what is inside the focu. 
+The company, the date and the outcomes of your own commands stay complete.
 Each reply also carries an outside section, the towns and industries
 outside with their coordinates and the counts of everything left out,
 and the names of the agents whose focus overlaps yours. Agents without

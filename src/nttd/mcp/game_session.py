@@ -21,7 +21,7 @@ from nttd.mcp.moves import name_commands
 from nttd.mcp.participant_client import ParticipantClient
 from nttd.mcp.snapshot import explain_timeouts, reshape
 
-AGENT_TAG_PARAM = "Name of the agent making the call. Leave it empty when there is only one agent."
+AGENT_TAG_PARAM = "Name of the agent making the call."
 
 GAME_ENDED_NOTE = "The game has ended. No more actions can be taken."
 
@@ -65,7 +65,11 @@ class GameSession:
 
     def tag(self, agent_tag: str | None) -> str:
         """The caller's tag, or the default when the call named none."""
-        return agent_tag.strip() if isinstance(agent_tag, str) and agent_tag.strip() else self.default_tag
+        return (
+            agent_tag.strip()
+            if isinstance(agent_tag, str) and agent_tag.strip()
+            else self.default_tag
+        )
 
     async def start(self) -> dict[str, Any]:
         """Read the mode, register as the stepper when the game steps, and take the
@@ -80,7 +84,12 @@ class GameSession:
         self.last_net_worth = self.net_worth(snapshot)
         self.last_snapshot = snapshot
         self.started = True
-        logger.info("Session %s plays company %d in %s mode", self.client.session_id, self.company_id, self.mode)
+        logger.info(
+            "Session %s plays company %d in %s mode",
+            self.client.session_id,
+            self.company_id,
+            self.mode,
+        )
         return snapshot
 
     async def ensure_started(self) -> None:
@@ -113,7 +122,10 @@ class GameSession:
     async def validate(self, moves: list[dict[str, Any]]) -> dict[str, Any]:
         """The game's own check of the commands, without running them."""
         reply = await self.client.validate(
-            [{"action_type": move["command"], "parameters": move["parameters"]} for move in moves]
+            [
+                {"action_type": move["command"], "parameters": move["parameters"]}
+                for move in moves
+            ]
         )
         return {"dry_run": True, **reply}
 
@@ -135,11 +147,15 @@ class GameSession:
         if entry is None:
             return {
                 "error": f"No such command or query: {name}",
-                "did_you_mean": difflib.get_close_matches(name, entries, n=5, cutoff=0.5),
+                "did_you_mean": difflib.get_close_matches(
+                    name, entries, n=5, cutoff=0.5
+                ),
             }
         return {"name": name, **entry}
 
-    async def set_focus(self, tag: str, args: dict[str, Any], snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def set_focus(
+        self, tag: str, args: dict[str, Any], snapshot: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Store the agent's focus and return its view, or the error."""
         if snapshot is None:
             snapshot = await self.snapshot()
@@ -148,7 +164,9 @@ class GameSession:
             return outcome
         return self.focus.apply(tag, snapshot)
 
-    async def clear_focus(self, tag: str, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def clear_focus(
+        self, tag: str, snapshot: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Remove the agent's focus and return the whole map."""
         self.focus.clear(tag)
         return snapshot if snapshot is not None else await self.snapshot()
@@ -179,7 +197,9 @@ class GameSession:
             "metadata": {"participant_id": command["agent_tag"]},
         }
 
-    async def play_round(self, actor_moves: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, Any]]:
+    async def play_round(
+        self, actor_moves: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, dict[str, Any]]:
         """Run the commands of one round and return one raw result per actor.
 
         The actors run in a random order; each actor's block keeps the order it gave.
@@ -195,19 +215,29 @@ class GameSession:
         commands = {tag: self.name(tag, actor_moves[tag]) for tag in actors}
         try:
             if self.mode == STEPPED:
-                reply = await self.client.step([self.step_entry(c) for tag in actors for c in commands[tag]], self.days)
+                reply = await self.client.step(
+                    [self.step_entry(c) for tag in actors for c in commands[tag]],
+                    self.days,
+                )
                 snapshot = reshape(reply.get("snapshot") or {})
                 results = reply.get("action_results") or []
                 self.step_count = reply.get("step", self.step_count + 1)
                 if reply.get("terminated"):
                     self.terminated = True
                     self.end_reason = reply.get("end_reason")
-                round_info = {key: reply.get(key) for key in ("step", "days_advanced", "terminated", "end_reason")}
+                round_info = {
+                    key: reply.get(key)
+                    for key in ("step", "days_advanced", "terminated", "end_reason")
+                }
             else:
                 results = []
                 for tag in actors:
                     if commands[tag]:
-                        results.extend(await self.client.submit_batch([self.envelope(c) for c in commands[tag]]))
+                        results.extend(
+                            await self.client.submit_batch(
+                                [self.envelope(c) for c in commands[tag]]
+                            )
+                        )
                 snapshot = await self.snapshot()
                 self.step_count += 1
                 round_info = {"step": self.step_count}
@@ -216,23 +246,40 @@ class GameSession:
                 return {tag: self.ended_result() for tag in actors}
             raise
         self.last_snapshot = snapshot
-        by_id = {result.get("action_id"): result for result in results if isinstance(result, dict)}
+        by_id = {
+            result.get("action_id"): result
+            for result in results
+            if isinstance(result, dict)
+        }
         reward = self.settle_reward(snapshot)
         outcome: dict[str, dict[str, Any]] = {}
         for tag in actors:
-            own = explain_timeouts([self.result_of(by_id, command) for command in commands[tag]])
-            result: dict[str, Any] = {"snapshot": snapshot, "action_results": own, **round_info}
+            own = explain_timeouts(
+                [self.result_of(by_id, command) for command in commands[tag]]
+            )
+            result: dict[str, Any] = {
+                "snapshot": snapshot,
+                "action_results": own,
+                **round_info,
+            }
             if reward is not None:
                 result["reward"] = reward
             outcome[tag] = result
         return outcome
 
     @staticmethod
-    def result_of(by_id: dict[Any, dict[str, Any]], command: dict[str, Any]) -> dict[str, Any]:
+    def result_of(
+        by_id: dict[Any, dict[str, Any]], command: dict[str, Any]
+    ) -> dict[str, Any]:
         """The game's result for one command, or a placeholder when it sent none."""
         result = by_id.get(command["action_id"])
         if result is None:
-            return {"action_id": command["action_id"], "action_type": command["command"], "status": "unknown", "error": MISSING_RESULT_NOTE}
+            return {
+                "action_id": command["action_id"],
+                "action_type": command["command"],
+                "status": "unknown",
+                "error": MISSING_RESULT_NOTE,
+            }
         return result
 
     def settle_reward(self, snapshot: dict[str, Any]) -> float | None:
@@ -252,4 +299,8 @@ class GameSession:
         return True
 
     def ended_result(self) -> dict[str, Any]:
-        return {"terminated": True, "end_reason": self.end_reason, "note": GAME_ENDED_NOTE}
+        return {
+            "terminated": True,
+            "end_reason": self.end_reason,
+            "note": GAME_ENDED_NOTE,
+        }
