@@ -19,7 +19,6 @@ The state does not say which tiles are buildable or what a game command would co
 """
 
 
-
 def register(mcp: FastMCP, session: GameSession) -> None:
     """Register the observation tool."""
 

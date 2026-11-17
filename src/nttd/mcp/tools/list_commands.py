@@ -21,7 +21,6 @@ reply says which, and the query tool returns the ids.
 """
 
 
-
 def register(mcp: FastMCP, session: GameSession) -> None:
     """Register the manifest tool. It needs no running game."""
 

@@ -85,7 +85,6 @@ def act_description(mode: str, manifest: dict, commands: list[str]) -> str:
     )
 
 
-
 class Move(BaseModel):
     """One game command and its parameters.
 

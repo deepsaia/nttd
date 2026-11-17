@@ -21,8 +21,6 @@ MOVES_FORMAT_HINT = (
 )
 
 
-
-
 def coerce_params(params: Any) -> dict[str, Any] | None:
     """Return params as a dict, decoding a JSON string if needed.
 

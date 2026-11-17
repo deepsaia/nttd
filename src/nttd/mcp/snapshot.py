@@ -21,7 +21,6 @@ TIMEOUT_NOTE = (
 )
 
 
-
 DROPPED_VEHICLE_FIELDS = ("idle_reason", "lost", "running")
 STATE_WORDS = {1: "stopped", 2: "in_depot", 3: "at_station", 4: "broken_down", 5: "crashed"}
 

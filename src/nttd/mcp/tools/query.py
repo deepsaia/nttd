@@ -34,7 +34,6 @@ def query_description(queries: list[str]) -> str:
     return QUERY_BODY.format(queries=", ".join(sorted(queries)))
 
 
-
 async def run_query(session: GameSession, name: Any, raw_parameters: Any) -> dict[str, Any]:
     """What one query call does, shared with the round envelope."""
     parameters = coerce_params(raw_parameters)
