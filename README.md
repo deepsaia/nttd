@@ -145,7 +145,7 @@ Every command with its flags: [docs/cli_guide.md](docs/cli_guide.md). Full API a
 | [Agent guide](docs/agent_guide.md) | Writing a runner against the participant routes |
 | [Gameplay guide](docs/gameplay_guide.md) | What the score measures, and how to earn it |
 | [Action reference](docs/action_reference.md) | Every action, its parameters and accepted values |
-| [MCP guide](docs/mcp_guide.md) | Playing over MCP: five tools, both transports |
+| [MCP guide](docs/mcp_guide.md) | Playing over MCP: six tools, one or many agents, both transports |
 | [Session analysis](docs/session_analyzer.md) | Reading a completed run, and the monitor |
 
 ---
