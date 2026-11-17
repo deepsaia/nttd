@@ -558,12 +558,15 @@ class Orchestrator:
                 continue
 
             company_id = gs_params.get("company_id", -1)
+            # A caller may name its own action, so the result and the action log
+            # carry the id and the agent it already knows. Otherwise one is minted.
             envelope = ActionEnvelope(
-                action_id=f"hb_{uuid.uuid4().hex[:8]}",
+                action_id=str(action.get("action_id") or f"hb_{uuid.uuid4().hex[:8]}"),
                 company_id=company_id,
                 action_type=gs_action,
                 parameters=gs_params,
                 mode=ActionMode.ATOMIC,
+                metadata=dict(action.get("metadata") or {}),
             )
             if self.action_tracker:
                 self.action_tracker.submit(envelope)
