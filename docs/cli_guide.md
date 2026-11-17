@@ -562,6 +562,10 @@ scenario {
   # below, so declaring it would grant nothing. Add `scored = false` to opt OUT of a
   # conforming world, which is what you want while authoring.
 
+  # What the company is asked to achieve, stated to every agent by the MCP server:
+  # "global" (run a profitable company, the default), "cargo", "rating" or "value".
+  objective = "global"
+
   map {
     size_x       = 256      # 64 | 128 | 256 | 512 | 1024
     size_y       = 256      # must equal size_x: a scored map is square

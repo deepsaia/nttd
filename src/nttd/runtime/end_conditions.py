@@ -77,6 +77,21 @@ class EndConditionChecker:
             return 0
         return int(cfg.max_heartbeats.count or 0)
 
+    def episode_days(self, interval_days: int, secs_per_game_day: float) -> int:
+        """How many game days the run lasts, or 0 when no step or time bound is set.
+
+        With both bounds set, logic "any" ends at the first one and "all" at the last.
+        """
+        cfg = self._config
+        bounds: list[int] = []
+        if cfg.max_heartbeats.enabled:
+            bounds.append(int(cfg.max_heartbeats.count or 0) * interval_days)
+        if cfg.time_limit.enabled:
+            bounds.append(round(cfg.time_limit.wall_minutes * 60 / secs_per_game_day))
+        if not bounds:
+            return 0
+        return max(bounds) if cfg.logic == "all" else min(bounds)
+
     @property
     def game_days_remaining(self) -> int:
         """What is left of that budget. A contestant plans against this, so it is public."""

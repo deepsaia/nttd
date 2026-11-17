@@ -153,6 +153,13 @@ class Orchestrator:
         """
         self.world.game.game_days_total = self._end_checker.game_days_total
         self.world.game.game_days_remaining = self._end_checker.game_days_remaining
+        self.world.game.episode_days = self._end_checker.episode_days(
+            self._heartbeat_interval_days, self._secs_per_game_day,
+        )
+
+    def set_objective(self, objective: str) -> None:
+        """Put the scenario's objective onto the world, where the status reads it."""
+        self.world.game.objective = objective
 
     def _on_game_event(self, data: dict[str, Any]) -> None:
         """Handle unsolicited GS game events: refresh what moved, then record it."""
@@ -235,6 +242,7 @@ class Orchestrator:
         self._action_window_seconds = config.heartbeat.action_window_seconds
         self._snapshot_interval_days = config.runtime.snapshot_interval_days
         self._end_checker = EndConditionChecker(config.end_conditions)
+        self.set_objective(config.objective)
         # The economy clock rate is fixed -- there is no game-speed multiplier to
         # scale this by. config.heartbeat.game_speed is retained for config
         # compatibility but has no effect on timing.
@@ -247,6 +255,7 @@ class Orchestrator:
             config.runtime.snapshot_interval_days,
             config.end_conditions.logic,
         )
+        self._publish_horizon()
 
     def add_observer(self, callback: Any) -> None:
         self._observers.append(callback)
@@ -260,6 +269,7 @@ class Orchestrator:
 
     def set_heartbeat_interval(self, days: int) -> None:
         self._heartbeat_interval_days = days
+        self._publish_horizon()
 
     def stop(self) -> None:
         self._running = False
@@ -1071,6 +1081,7 @@ class Orchestrator:
         """Set end conditions programmatically (without a full ScenarioConfig)."""
         self._end_checker = EndConditionChecker(config)
         logger.info("End conditions configured: logic=%s", config.logic)
+        self._publish_horizon()
 
     async def run_async_realtime(self) -> None:
         """Game runs continuously, GS refresh every 10s, snapshots pushed every 2s.
