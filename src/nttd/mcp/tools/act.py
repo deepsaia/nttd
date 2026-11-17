@@ -8,7 +8,6 @@ from typing import Annotated, Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from nttd.config import action_manifest
 from nttd.mcp.action_types import PlayableAction
 from nttd.mcp.game_session import AGENT_TAG_PARAM, GameSession
 from nttd.mcp.moves import coerce_flag, read_moves
@@ -36,20 +35,8 @@ command outcomes are always complete.
 
 To see the commands parameters use the list_commands tool.
 Available game commands:
-{commands_by_group}
+  {commands}
 """
-
-
-def commands_by_group(manifest: dict, names: list[str]) -> str:
-    """One line per manifest category, listing the given command names."""
-    groups: dict[str, list[str]] = {}
-    for name in names:
-        category = manifest.get("actions", {}).get(name, {}).get("category", "other")
-        groups.setdefault(category, []).append(name)
-    return "\n".join(
-        f"  {category}: {', '.join(sorted(members))}"
-        for category, members in sorted(groups.items())
-    )
 
 
 class Move(BaseModel):
@@ -85,9 +72,7 @@ def register(mcp: FastMCP, session: GameSession) -> None:
         timing = ACT_TIMING_CLOCKED
     description = ACT_BODY.format(
         timing=timing,
-        commands_by_group=commands_by_group(
-            action_manifest.manifest(), [member.value for member in PlayableAction]
-        ),
+        commands=", ".join(sorted(member.value for member in PlayableAction)),
     )
 
     @mcp.tool(description=description)
