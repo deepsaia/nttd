@@ -12,23 +12,7 @@ from nttd.mcp.focus import DEFAULT_PADDING
 from nttd.mcp.game_session import AGENT_TAG_PARAM, GameSession
 from nttd.mcp.moves import coerce_flag
 
-FOCUS_TOWNS_PARAM = "Town names or ids to include."
-
-FOCUS_INDUSTRIES_PARAM = "Industry names or ids to include."
-
-FOCUS_X1_PARAM = "Left tile column of a rectangle to include."
-
-FOCUS_Y1_PARAM = "Top tile row of a rectangle to include."
-
-FOCUS_X2_PARAM = "Right tile column of a rectangle to include."
-
-FOCUS_Y2_PARAM = "Bottom tile row of a rectangle to include."
-
-FOCUS_PADDING_PARAM = (
-    "Tiles added on each side of the named places. Default {default_padding}."
-)
-
-FOCUS_CLEAR_PARAM = "True removes the focus."
+FOCUS_PADDING_PARAM = "Tiles added on each side of the named places."
 
 FOCUS = """Choose the part of the map that your game replies describe.
 
@@ -73,21 +57,14 @@ def register(mcp: FastMCP, session: GameSession) -> None:
 
     @mcp.tool(description=FOCUS)
     async def focus(
-        towns: Annotated[list[str] | None, Field(description=FOCUS_TOWNS_PARAM)] = None,
-        industries: Annotated[
-            list[str] | None, Field(description=FOCUS_INDUSTRIES_PARAM)
-        ] = None,
-        x1: Annotated[int | None, Field(description=FOCUS_X1_PARAM)] = None,
-        y1: Annotated[int | None, Field(description=FOCUS_Y1_PARAM)] = None,
-        x2: Annotated[int | None, Field(description=FOCUS_X2_PARAM)] = None,
-        y2: Annotated[int | None, Field(description=FOCUS_Y2_PARAM)] = None,
-        padding: Annotated[
-            int,
-            Field(
-                description=FOCUS_PADDING_PARAM.format(default_padding=DEFAULT_PADDING)
-            ),
-        ] = DEFAULT_PADDING,
-        clear: Annotated[bool, Field(description=FOCUS_CLEAR_PARAM)] = False,
+        towns: list[str] | None = None,
+        industries: list[str] | None = None,
+        x1: int | None = None,
+        y1: int | None = None,
+        x2: int | None = None,
+        y2: int | None = None,
+        padding: Annotated[int, Field(description=FOCUS_PADDING_PARAM)] = DEFAULT_PADDING,
+        clear: bool = False,
         agent_tag: Annotated[str | None, Field(description=AGENT_TAG_PARAM)] = None,
     ) -> str:
         await session.ensure_started()

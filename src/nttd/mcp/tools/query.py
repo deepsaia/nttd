@@ -18,21 +18,13 @@ QUERY_QUERY_PARAM = "Name of the query."
 
 QUERY_PARAMETERS_PARAM = "The query's parameters."
 
-QUERY_BODY = """Ask the running game a question.
+QUERY_BODY = """Queries return information about the world at the moment they run.
+They are executed and return information before the commands.
 
-Queries read what the state from observe does not carry.
 Examples include whether a tile is buildable, where a station fits, which engines are for sale this
-year, what an action would cost, a town's rating.
+year, a town's rating, etc...
 To see query parameters use the list_commands tool.
-
-Available queries:
-  {queries}
 """
-
-
-def query_description(queries: list[str]) -> str:
-    """The query tool text, naming every query."""
-    return QUERY_BODY.format(queries=", ".join(sorted(queries)))
 
 
 async def run_query(
@@ -46,10 +38,9 @@ async def run_query(
 
 
 def register(mcp: FastMCP, session: GameSession) -> None:
-    """Register the query tool. Its text names every query."""
-    description = query_description([member.value for member in ObservationAction])
+    """Register the query tool. The query names arrive in its schema."""
 
-    @mcp.tool(description=description)
+    @mcp.tool(description=QUERY_BODY)
     async def query(
         query: Annotated[ObservationAction, Field(description=QUERY_QUERY_PARAM)],
         parameters: Annotated[

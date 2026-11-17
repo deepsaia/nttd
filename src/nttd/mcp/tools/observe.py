@@ -15,7 +15,6 @@ vehicles, routes, and the rest of the world.
 
 The reply is the full state.
 With a focus set, the map part covers only the focus.
-To see which tiles are buildable or how much a game command costs, use the query tool.
 """
 
 

@@ -34,22 +34,16 @@ With a focus set, the snapshot in the reply covers only the focus; the
 command outcomes are always complete.
 
 To see the commands parameters use the list_commands tool.
-Available game commands:
-  {commands}
 """
 
 
+# One game command and its parameters. No docstring and no field descriptions: the
+# schema builder sends them to the agent, and the act description already explains the
+# shape. ``command`` is an enum, so every name an agent may send arrives in the tool
+# schema and a name outside the manifest cannot be sent at all.
 class Move(BaseModel):
-    """One game command and its parameters.
-
-    ``command`` is an enum, so every name an agent may send arrives in the tool schema
-    and a name outside the manifest cannot be sent at all.
-    """
-
-    command: PlayableAction = Field(description="Which game command to run.")
-    parameters: dict[str, Any] = Field(
-        default_factory=dict, description="Command parameters."
-    )
+    command: PlayableAction
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 async def run_act(
@@ -70,19 +64,11 @@ def register(mcp: FastMCP, session: GameSession) -> None:
         timing = ACT_TIMING_STEPPED
     else:
         timing = ACT_TIMING_CLOCKED
-    description = ACT_BODY.format(
-        timing=timing,
-        commands=", ".join(sorted(member.value for member in PlayableAction)),
-    )
+    description = ACT_BODY.format(timing=timing)
 
     @mcp.tool(description=description)
     async def act(
-        moves: Annotated[
-            list[Move] | None,
-            Field(
-                description="Game commands, each with a command name and its parameters."
-            ),
-        ] = None,
+        moves: list[Move] | None = None,
         dry_run: Annotated[
             bool,
             Field(
