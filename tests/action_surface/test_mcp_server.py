@@ -62,7 +62,17 @@ class TestTheToolSurface:
             assert tool.description, name
 
     def test_the_instructions_are_sent_at_connection(self, mcp: Any) -> None:
-        assert mcp.instructions == server.INSTRUCTIONS
+        assert mcp.instructions == server.instructions_for("stepped", "global", 0)
+
+    def test_the_instructions_follow_the_session(self) -> None:
+        built = build("http://localhost:8000", "ses_test", None, "127.0.0.1", 8100,
+                      mode="async_realtime", objective="value", episode_days=365)
+        assert built.instructions == server.instructions_for("async_realtime", "value", 365)
+
+    @pytest.mark.parametrize("mode", ["stepped", "heartbeat", "async_realtime"])
+    @pytest.mark.parametrize("objective", ["global", "cargo", "rating", "value"])
+    def test_every_mode_and_objective_has_a_text(self, mode: str, objective: str) -> None:
+        assert server.instructions_for(mode, objective, 10)
 
 
 class TestTheVocabularyIsInTheSchema:

@@ -7,7 +7,9 @@ from typing import Annotated
 import typer
 
 from nttd.cli.helpers import console
-from nttd.mcp.server import DEFAULT_TAG, build, fetch_mode
+from nttd.config.scenario_config import DEFAULT_OBJECTIVE
+from nttd.mcp.game_session import STEPPED
+from nttd.mcp.server import DEFAULT_TAG, build, fetch_status
 
 
 def mcp(
@@ -43,10 +45,13 @@ def mcp(
         console.print(f"[red]Unknown transport:[/] {transport}. Use stdio or http.")
         raise typer.Exit(code=1)
 
-    mode = fetch_mode(url, session_id)
+    status = fetch_status(url, session_id)
+    mode = str(status.get("mode", STEPPED))
     server = build(
         url, session_id, token, host, port,
-        mode=mode, company_id=company, days=days, reward=reward, seed=seed, default_tag=default_tag,
+        mode=mode, objective=str(status.get("objective", DEFAULT_OBJECTIVE)),
+        episode_days=int(status.get("episode_days") or 0),
+        company_id=company, days=days, reward=reward, seed=seed, default_tag=default_tag,
     )
 
     # stdio speaks the protocol on stdout, so a banner there would corrupt the stream.

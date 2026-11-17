@@ -38,8 +38,17 @@ Flags:
 | `--seed` | Seed for the random order of the agents in a round. |
 | `--default-tag` | The agent tag used when a call names none. Default `agent`. |
 
-At start the server reads the session's mode. In a stepped session it registers as the
-stepper with the game before the first command, so no client has to.
+At start the server reads the session's mode, objective and episode length from the public
+status. In a stepped session it registers as the stepper with the game before the first
+command, so no client has to.
+
+## Instructions
+
+The server sends instructions when a client connects, the standard MCP field a client puts
+in its system prompt. They describe the company, the objective, the episode length, how
+turns and commands work in the session's mode, and what each command reply contains. The
+objective comes from the scenario's `objective` setting, one of `global`, `cargo`,
+`rating` and `value`, default `global`. The text is in `nttd/mcp/server.py`.
 
 ## Where the commands are
 
