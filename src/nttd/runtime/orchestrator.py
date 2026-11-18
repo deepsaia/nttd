@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from nttd.actions.gate import admit
 from nttd.actions.gs_reply import result_from_reply
 from nttd.actions.tracker import ActionTracker
+from nttd.actions.validation import validate_parameters
 from nttd.bridge.admin_client import AdminClient
 from nttd.bridge.trace_route import line_exists
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
@@ -151,11 +152,13 @@ class Orchestrator:
         is time for it to pay for itself, and a run that hides its own length forces that
         decision to be made blind.
         """
-        self.world.game.game_days_total = self._end_checker.game_days_total
-        self.world.game.game_days_remaining = self._end_checker.game_days_remaining
-        self.world.game.episode_days = self._end_checker.episode_days(
+        self.world.game.game_days_total = self._end_checker.episode_days(
             self._heartbeat_interval_days, self._secs_per_game_day,
         )
+        self.world.game.game_days_remaining = self._end_checker.remaining_episode_days(
+            self._heartbeat_interval_days, self._secs_per_game_day,
+        )
+        self.world.game.episode_days = self.world.game.game_days_total
 
     def set_objective(self, objective: str) -> None:
         """Put the scenario's objective onto the world, where the status reads it."""
@@ -599,6 +602,7 @@ class Orchestrator:
     def _record_action(
         self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",
         changed: dict[str, Any] | None = None,
+        outcome: ActionResult | None = None,
     ) -> None:
         """Write an action to the session's audit log.
 
@@ -624,8 +628,9 @@ class Orchestrator:
                         "submitted_at": datetime.now(timezone.utc).isoformat(),
                     },
                 ),
-                result=ActionResult(
+                result=outcome or ActionResult(
                     action_id=envelope.action_id,
+                    action_type=envelope.action_type,
                     status=status,
                     error=error,
                     changed_entities=changed or {},
@@ -690,6 +695,18 @@ class Orchestrator:
                 ))
                 continue
 
+            validation_error = validate_parameters(gs_action, gs_params, allow_company=True)
+            if validation_error:
+                outcome = ActionResult(
+                    action_id=envelope.action_id, action_type=gs_action,
+                    status=ActionStatus.REJECTED, error=validation_error, error_name="INVALID_PARAMETERS",
+                )
+                if self.action_tracker:
+                    self.action_tracker.store_result(outcome)
+                self._record_action(envelope, outcome.status, outcome.error, outcome=outcome)
+                outcomes.append(outcome)
+                continue
+
             if not self.client.connected:
                 if self.action_tracker:
                     self.action_tracker.update_result(
@@ -717,6 +734,7 @@ class Orchestrator:
                     # copies of one mapping, which is why the stepped path knew nothing
                     # about partial builds or error codes while the other did.
                     outcome = result_from_reply(envelope.action_id, result)
+                    outcome.action_type = gs_action
                     if self.action_tracker:
                         self.action_tracker.update_result(
                             envelope.action_id, outcome.status, outcome.error,
@@ -724,10 +742,11 @@ class Orchestrator:
                         )
                     self._record_action(
                         envelope, outcome.status, outcome.error,
-                        changed=outcome.changed_entities,
+                        changed=outcome.changed_entities, outcome=outcome,
                     )
                     await self.refresh_changed_tiles(envelope, outcome)
-                    outcome.action_type = gs_action
+                    if self.action_tracker:
+                        self.action_tracker.store_result(outcome)
                     outcomes.append(outcome)
                     if outcome.status == ActionStatus.SUCCESS:
                         logger.info("Action %s succeeded", gs_action)

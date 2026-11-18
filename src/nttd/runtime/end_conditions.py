@@ -5,6 +5,7 @@ Logic "any" (default): simulation stops when the first enabled condition is met.
 Logic "all": simulation stops when every enabled condition is simultaneously met.
 """
 import logging
+import math
 import time
 from dataclasses import dataclass
 
@@ -99,6 +100,25 @@ class EndConditionChecker:
         if not total:
             return 0
         return max(0, total - int(self._heartbeat_count or 0))
+
+    def remaining_episode_days(self, interval_days: int, secs_per_game_day: float) -> int:
+        """Remaining configured duration, expressed only in game days.
+
+        Use the scored clock for timed runs, not the number of checks made by
+        the real-time loop. A partial final day stays positive until expiry.
+        """
+        cfg = self._config
+        bounds: list[int] = []
+        if cfg.max_heartbeats.enabled:
+            bounds.append(self.game_days_remaining * interval_days)
+        if cfg.time_limit.enabled:
+            total_seconds = cfg.time_limit.wall_minutes * 60
+            elapsed = 0.0 if self._start_time is None else max(0.0, time.time() - self._start_time)
+            remaining = math.ceil(max(0.0, total_seconds - elapsed) / secs_per_game_day)
+            bounds.append(min(round(total_seconds / secs_per_game_day), remaining))
+        if not bounds:
+            return 0
+        return max(bounds) if cfg.logic == "all" else min(bounds)
 
     def reset(self) -> None:
         self._start_time = None

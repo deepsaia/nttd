@@ -33,62 +33,78 @@ from nttd.mcp.game_session import STEPPED, GameSession
 from nttd.mcp.participant_client import ParticipantClient
 from nttd.mcp.tools import act, batch_round, focus, list_commands, observe, query
 
-INSTRUCTIONS = """\
-You are part of a transport company in OpenTTD.
-The company transports cargo and passengers by aircraft, ship, road, or train, between towns and industries.
-
-OBJECTIVE
-Your goal is to {objective}
-
-Note:
-- The game episode lasts {days} game days.
-- The game is scored over the whole episode, but an episode is only valid if you reach the end of the game episode.
-- The game episode may end earlier if the company goes bankrupt.
-
-COMPANY
-The company can use four transport modes: aircraft, ship, train and road.
-Bridges can be used with rail, road, or water. Tunnels and paths can be used with rail or road.
-
-TURNS AND COMMANDS
-{turns}- A connection command fails if there is no possible route between its endpoints. Construction can also succeed only partially. 
-
-GAME REPORT
-
-{report}
-
-It includes:
-- company's cash
-- loan balance
-- loan limit
-- company value (calculated as max(1, cash - loan + total station value + 1.5 x total current vehicle worth))
-- performance rating (range: 0-1000)
-- previous quarter revenue
-{date}- the outcome of each command you submitted
-"""
+INSTRUCTIONS = (
+    'You are part of a transport company in OpenTTD.\n'
+    'The company transports cargo and passengers by aircraft, ship, road, or train, '
+    'between towns and industries.\n'
+    '\n'
+    'OBJECTIVE\n'
+    'Your goal is to {objective}\n'
+    '\n'
+    'Note:\n'
+    '- The game episode lasts {days} game days.\n'
+    '- The game is scored over the whole episode, but an episode is only valid if you '
+    'reach the end of the game episode.\n'
+    '- The game episode may end earlier if the company goes bankrupt.\n'
+    '\n'
+    'COMPANY\n'
+    'The company can use four transport modes: aircraft, ship, train and road.\n'
+    'Bridges can be used with rail, road, or water. Tunnels and paths can be used with '
+    'rail or road.\n'
+    '\n'
+    'TURNS AND COMMANDS\n'
+    '{turns}- A connection command fails if there is no possible route between its '
+    'endpoints. Construction can also succeed only partially. \n'
+    '\n'
+    'GAME REPORT\n'
+    '\n'
+    '{report}\n'
+    '\n'
+    'It includes:\n'
+    "- company's cash\n"
+    '- loan balance\n'
+    '- loan limit\n'
+    '- company value (calculated as max(1, cash - loan + total station value + 1.5 x '
+    'total current vehicle worth))\n'
+    '- performance rating (range: 0-1000)\n'
+    '- previous quarter revenue\n'
+    '{date}- the outcome of each command you submitted\n'
+)
 
 OBJECTIVES = {
     "global": "run a profitable company.",
     "cargo": "Maximize the total number of cargo the company delivers over the game episode.",
-    "rating": """Maximize the company's performance rating at the end of the game episode.
-
-The game computes the rating on the first day of each quarter and reports it as performance_rating. It goes from 0 to 1000 and is the sum of nine parts. Each part grows in proportion from 0 to its maximum, which is reached at the target shown:
-
-- cargo delivered in the last four quarters: 400 points at 40,000 units
-- vehicles whose profit last year was positive: 100 points at 120 vehicles
-- station facilities that loaded or unloaded cargo in the last 20 days: 100 points at 80 facilities
-- lowest profit last year among vehicles older than two years: 100 points at 10,000
-- lowest quarterly income minus expenses over the last twelve quarters: 50 points at 50,000
-- highest quarterly income minus expenses over the last twelve quarters: 100 points at 100,000
-- cargo types delivered in the last quarter: 50 points at 8 types
-- cash: 50 points at 10,000,000
-- loan: 50 points at a loan of 0, falling to 0 points at a loan of 250,000 or more
-
-Vehicle worth, station worth and company value are not part of the rating.""",
-    "value": """Maximize the company's value at the end of the game episode:
-
-company value = max(1, cash - loan + total station value + 1.5 × total current vehicle worth)
-
-Values below 1 are reported as 1. Taking a loan increases cash and loan equally, so it does not directly change company value.""",
+    "rating": (
+        "Maximize the company's performance rating at the end of the game episode.\n"
+        '\n'
+        'The game computes the rating on the first day of each quarter and reports it as '
+        'performance_rating. It goes from 0 to 1000 and is the sum of nine parts. Each part '
+        'grows in proportion from 0 to its maximum, which is reached at the target shown:\n'
+        '\n'
+        '- cargo delivered in the last four quarters: 400 points at 40,000 units\n'
+        '- vehicles whose profit last year was positive: 100 points at 120 vehicles\n'
+        '- station facilities that loaded or unloaded cargo in the last 20 days: 100 points '
+        'at 80 facilities\n'
+        '- lowest profit last year among vehicles older than two years: 100 points at 10,000\n'
+        '- lowest quarterly income minus expenses over the last twelve quarters: 50 points at '
+        '50,000\n'
+        '- highest quarterly income minus expenses over the last twelve quarters: 100 points '
+        'at 100,000\n'
+        '- cargo types delivered in the last quarter: 50 points at 8 types\n'
+        '- cash: 50 points at 10,000,000\n'
+        '- loan: 50 points at a loan of 0, falling to 0 points at a loan of 250,000 or more\n'
+        '\n'
+        'Vehicle worth, station worth and company value are not part of the rating.'
+    ),
+    "value": (
+        "Maximize the company's value at the end of the game episode:\n"
+        '\n'
+        'company value = max(1, cash - loan + total station value + 1.5 × total current '
+        'vehicle worth)\n'
+        '\n'
+        'Values below 1 are reported as 1. Taking a loan increases cash and loan equally, so '
+        'it does not directly change company value.'
+    ),
 }
 
 TURNS = {
@@ -98,15 +114,23 @@ TURNS = {
     "heartbeat": """- The game advances autonomously. Each game day it runs the commands that arrived during that day.
 - The game goes on while you think, so game days might pass during your turn.
 """,
-    "stepped": """- The game only advances when it receives a command, in which case all the commands that arrived in that game day are executed and one game day passes. 
-    -The day still passes if all commands fail.
-""",
+    "stepped": (
+        '- The game only advances when it receives a command, in which case all the commands '
+        'that arrived in that game day are executed and one game day passes. \n'
+        '    -The day still passes if all commands fail.\n'
+    ),
 }
 
 REPORTS = {
     "stepped": "The report shows the world after the game day in which your commands ran.",
-    "heartbeat": "The report shows the world at the moment your commands were accepted. They run on the next game day, so their effects appear in later reports.",
-    "async_realtime": "The report shows the world at the moment your commands were accepted. Effects of commands that have not run yet appear in later reports.",
+    "heartbeat": (
+        'The report shows the world at the moment your commands were accepted. They run on '
+        'the next game day, so their effects appear in later reports.'
+    ),
+    "async_realtime": (
+        'The report shows the world at the moment your commands were accepted. Effects of '
+        'commands that have not run yet appear in later reports.'
+    ),
 }
 
 DATE_REALTIME = "- game date\n"

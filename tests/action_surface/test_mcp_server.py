@@ -65,8 +65,16 @@ class TestTheToolSurface:
         assert mcp.instructions == server.instructions_for("stepped", "global", 0)
 
     def test_the_instructions_follow_the_session(self) -> None:
-        built = build("http://localhost:8000", "ses_test", None, "127.0.0.1", 8100,
-                      mode="async_realtime", objective="value", episode_days=365)
+        built = build(
+            "http://localhost:8000",
+            "ses_test",
+            None,
+            "127.0.0.1",
+            8100,
+            mode="async_realtime",
+            objective="value",
+            episode_days=365,
+        )
         assert built.instructions == server.instructions_for("async_realtime", "value", 365)
 
     @pytest.mark.parametrize("mode", ["stepped", "heartbeat", "async_realtime"])
@@ -99,7 +107,9 @@ class TestTheVocabularyIsInTheSchema:
         assert not offered & OPERATOR_ACTIONS
 
     def test_the_two_vocabularies_do_not_overlap(self, tools: dict[str, Any]) -> None:
-        assert not set(self._enum(tools["act"], "PlayableAction")) & set(self._enum(tools["query"], "ObservationAction"))
+        assert not set(self._enum(tools["act"], "PlayableAction")) & set(
+            self._enum(tools["query"], "ObservationAction")
+        )
 
     def test_it_is_built_from_the_manifest_not_a_list(self) -> None:
         source = inspect.getsource(action_types)

@@ -6,7 +6,7 @@ import json
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from nttd.mcp.action_types import PlayableAction
 from nttd.mcp.game_session import AGENT_TAG_PARAM, GameSession
@@ -21,19 +21,20 @@ ACT_BODY = """Send game commands to the company.
 Commands are listed in the "moves" field and executed in the given order.
 {timing}
 
-The reply reports the outcome of each of your commands.
+The reply reports each command's outcome and any created IDs in changed_entities.
 A refused command is normal play and can happen for many in-game reasons.
 
 Examples of command formatting:
   no command:   {{"moves": []}}
   one command:      {{"moves": [{{"command": "command_name", "parameters": {{"key": value}}}}]}}
-  several commands: {{"moves": [{{"command": "command_name", "parameters": {{"key": value, "another_key": another_value}}}},
-                               {{"command": "command_name", "parameters": {{"key": value, "another_key": another_value}}}}]}}
+  several commands: {{"moves": [{{"command": "command_name", "parameters": {{"key": value}}}},
+                               {{"command": "command_name", "parameters": {{"key": value}}}}]}}
 
 With a focus set, the snapshot in the reply covers only the focus; the
 command outcomes are always complete.
 
-To see the commands parameters use the list_commands tool.
+Use list_commands(name=...) for parameter names, types and required alternatives.
+Unknown fields and wrong types are rejected.
 """
 
 
@@ -42,6 +43,8 @@ To see the commands parameters use the list_commands tool.
 # shape. ``command`` is an enum, so every name an agent may send arrives in the tool
 # schema and a name outside the manifest cannot be sent at all.
 class Move(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     command: PlayableAction
     parameters: dict[str, Any] = Field(default_factory=dict)
 

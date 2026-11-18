@@ -77,6 +77,9 @@ def read_moves(raw_moves: Any) -> tuple[list[dict[str, Any]], str | None]:
             except json.JSONDecodeError:
                 return [], MOVES_FORMAT_HINT
         if isinstance(move, dict):
+            unknown = set(move) - {"command", "parameters"}
+            if unknown:
+                return [], f"Unknown move fields: {', '.join(sorted(unknown))}. {MOVES_FORMAT_HINT}"
             command = move.get("command", "")
             params = coerce_params(move.get("parameters"))
         else:

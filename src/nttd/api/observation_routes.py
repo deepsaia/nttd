@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
+from nttd.actions.validation import validate_parameters
 from nttd.api.participant_auth import (
     AuthorizationHeader,
     ParticipantToken,
@@ -587,4 +588,7 @@ async def gs_query(
 
     scoped = dict(params or {})
     apply_company_scope(runtime, scoped, extract_token(x_participant_token, authorization))
+    error = validate_parameters(action, scoped, allow_company=True)
+    if error:
+        return {"success": False, "error": error, "error_name": "INVALID_PARAMETERS", "command": action}
     return await runtime.admin_client.send_gamescript(action, scoped)

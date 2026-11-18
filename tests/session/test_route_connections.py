@@ -35,7 +35,9 @@ class _TracingClient:
         return {"success": True, "result": {"line_exists": exists, "transport_type": params["transport_type"]}}
 
 
-def _world(vehicle_type: str, station_ids: list[int], positions: dict[int, tuple[int, int]] | None = None) -> WorldState:
+def _world(
+    vehicle_type: str, station_ids: list[int], positions: dict[int, tuple[int, int]] | None = None
+) -> WorldState:
     """One vehicle per entry of positions, default a single vehicle 7 standing on the first station."""
     world = WorldState()
     world.game.game_date = 500

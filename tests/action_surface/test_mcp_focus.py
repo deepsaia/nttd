@@ -31,8 +31,7 @@ def snapshot() -> dict[str, Any]:
         ],
         "vehicles": [
             {"id": 1, "x": 12, "y": 10, "orders": [{"destination": tile(15, 9)}]},
-            {"id": 2, "x": 40, "y": 40,
-             "orders": [{"destination": tile(15, 9)}, {"destination": tile(51, 54)}]},
+            {"id": 2, "x": 40, "y": 40, "orders": [{"destination": tile(15, 9)}, {"destination": tile(51, 54)}]},
             {"id": 3, "x": 50, "y": 52, "orders": [{"destination": tile(51, 54)}]},
         ],
         "routes": [
@@ -71,7 +70,9 @@ def test_focus_rectangle_is_clamped_and_merged_with_places() -> None:
     registry = FocusRegistry()
     rect_only = registry.set_focus("a", snapshot(), {"x1": -4, "y1": 99, "x2": 99, "y2": 40})["focus"]
     assert {k: rect_only[k] for k in WEST} == {"x1": 0, "y1": 40, "x2": WIDTH - 1, "y2": WIDTH - 1}
-    merged = registry.set_focus("a", snapshot(), {"x1": 0, "y1": 0, "x2": 2, "y2": 2, "towns": ["Easton"], "padding": 0})["focus"]
+    merged = registry.set_focus(
+        "a", snapshot(), {"x1": 0, "y1": 0, "x2": 2, "y2": 2, "towns": ["Easton"], "padding": 0}
+    )["focus"]
     assert {k: merged[k] for k in WEST} == {"x1": 0, "y1": 0, "x2": 50, "y2": 50}
 
 

@@ -17,14 +17,15 @@ Requires:
 
 import json
 import logging
-import pathlib
 import time
+import uuid
 
 import httpx
 import pytest
 
 from nttd.api.tiers import Tier
 from nttd.constants import READ_ONLY_GS_ACTIONS
+from nttd.store.session_paths import sessions_dir
 
 # The only surface there is. The untiered duplicates these used to call are gone.
 _ADMIN = f"{Tier.OPERATOR.prefix}/admin"
@@ -73,6 +74,7 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
         resp = client.get(f"{_ADMIN}/sessions/{provided}")
         if resp.status_code != 200:
             pytest.skip(f"Session {provided} not found (status {resp.status_code})")
+        client.headers.update(_participant_headers(provided))
         yield provided
         return
 
@@ -102,6 +104,7 @@ def session_id(request: pytest.FixtureRequest, client: httpx.Client) -> str:
         "agent_companies": 1,
     })
     assert resp.status_code == 200, f"Failed to start session: {resp.text}"
+    client.headers.update(_participant_headers(sid))
     log.info("Session %s started, waiting for GS...", sid)
 
     # Wait for GS to become responsive
@@ -170,11 +173,12 @@ def gs_query(client: httpx.Client, session_id: str, action: str, params: dict | 
 def interpret(
     client: httpx.Client, session_id: str, actions: list[dict], company_id: int
 ) -> list[dict]:
-    """Submit actions via the interpreter and return results."""
+    """Submit through the same batch route as MCP, with distinct receipt IDs."""
+    batch_id = uuid.uuid4().hex
     resp = client.post(
-        f"{_PLAY}/{session_id}/actions/interpret",
-        json=actions,
-        params={"company_id": company_id},
+        f"{_PLAY}/{session_id}/actions/submit-batch",
+        json=[{"action_id": f"{batch_id}:{i}", "company_id": company_id, **action}
+              for i, action in enumerate(actions)],
     )
     resp.raise_for_status()
     return resp.json()
@@ -327,7 +331,7 @@ class TestBusRoutePipeline:
             results = interpret(client, session_id, [
                 {"action_type": "build_road_stop", "parameters": {
                     "tile": spot["tile"], "direction": spot["direction"],
-                    "is_truck": False, "is_drive_through": False,
+                    "is_truck_stop": False, "is_drive_through": False,
                 }},
             ], company_id)
             r = results[0]
@@ -376,7 +380,7 @@ class TestBusRoutePipeline:
             r = interpret(client, session_id, [
                 {"action_type": "build_road_stop", "parameters": {
                     "tile": spot["tile"], "direction": spot["direction"],
-                    "is_truck": is_truck, "is_drive_through": False,
+                    "is_truck_stop": is_truck, "is_drive_through": False,
                 }},
             ], company_id)[0]
             if r["status"] == "success":
@@ -390,7 +394,7 @@ class TestBusRoutePipeline:
             r = interpret(client, session_id, [
                 {"action_type": "build_road_stop", "parameters": {
                     "tile": spot["tile"], "direction": spot["direction"],
-                    "is_truck": is_truck, "is_drive_through": False,
+                    "is_truck_stop": is_truck, "is_drive_through": False,
                 }},
             ], company_id)[0]
             if r["status"] == "success":
@@ -462,7 +466,7 @@ class TestBusRoutePipeline:
 
         # Verify orders
         orders = gs_query(client, session_id, "get_orders", {"vehicle_id": vehicle_id})
-        assert len(orders) >= 2, f"Expected 2+ orders, got {len(orders)}"
+        assert orders["order_count"] >= 2, orders
 
         # Start
         start_results = interpret(client, session_id, [
@@ -472,10 +476,10 @@ class TestBusRoutePipeline:
 
         log.info("Bus route created: vehicle=%d, stations=%d<->%d", vehicle_id, sid_a, sid_b)
 
-    def test_add_order_tile_fallback(
+    def test_add_order_requires_explicit_tile_parameter(
         self, client: httpx.Client, session_id: str, company_id: int
     ) -> None:
-        """Verify add_order works when a tile is passed as station_id (fallback path)."""
+        """An explicit station ID must not be silently reinterpreted as a tile."""
         stations = gs_query(client, session_id, "get_stations", {"company_id": company_id})
         vehicles = gs_query(client, session_id, "get_vehicles", {"company_id": company_id})
         if not stations or not vehicles:
@@ -484,7 +488,8 @@ class TestBusRoutePipeline:
         # Find a station whose tile value is large enough to distinguish from station_id
         # We need a station with known tile; query get_station_info for the tile
         station_info = gs_query(client, session_id, "get_station_info", {"station_id": stations[0]["id"]})
-        tile = station_info.get("tile")
+        map_size = gs_query(client, session_id, "get_map_size")
+        tile = station_info["y"] * map_size["size_x"] + station_info["x"]
         if tile is None or tile < 100:
             pytest.skip("Station tile too small to test fallback")
 
@@ -496,9 +501,14 @@ class TestBusRoutePipeline:
             }},
         ], company_id)
 
-        assert result[0]["status"] == "success", (
-            f"Tile-as-station_id fallback failed: {result[0].get('error')}"
-        )
+        assert result[0]["status"] == "failed"
+        assert "Invalid station_id" in result[0]["error"]
+        result = interpret(client, session_id, [
+            {"action_type": "add_order", "parameters": {
+                "vehicle_id": vehicle_id, "dest_tile": tile, "order_flags": 1,
+            }},
+        ], company_id)
+        assert result[0]["status"] == "success", result
 
 
 # ---------------------------------------------------------------------------
@@ -1032,10 +1042,7 @@ def _participant_headers(session_id: str) -> dict[str, str]:
     documented place to find it: the auth refusal itself says tokens are written to the
     session directory.
     """
-    issued = (
-        pathlib.REPO_ROOT
-        / "logs" / "sessions" / session_id / "participants.json"
-    )
+    issued = sessions_dir() / session_id / "participants.json"
     if not issued.exists():
         return {}
     tokens = json.loads(issued.read_text())
@@ -1074,3 +1081,48 @@ def test_every_read_only_query_reaches_its_handler(
     assert _SQUIRREL_MEMBER_ERROR not in error, (
         f"{action} named a member that does not exist: {error}"
     )
+
+
+class TestExplicitToolErrors:
+    def test_invalid_vehicle_is_not_an_already_running_success(self, client, session_id, company_id):
+        result = interpret(client, session_id, [
+            {"action_type": "start_vehicle", "parameters": {"vehicle_id": 65534}},
+        ], company_id)[0]
+        assert result["status"] == "failed", result
+        assert result["error_name"] == "INVALID_VEHICLE_ID"
+        assert "65534" in result["error"]
+
+    def test_cost_estimate_uses_outer_company_and_does_not_rename(self, client, session_id, company_id):
+        vehicles = gs_query(client, session_id, "get_vehicles")
+        assert isinstance(vehicles, list) and vehicles, vehicles
+        vehicle = vehicles[0]
+        result = interpret(client, session_id, [
+            {"action_type": "estimate_cost", "parameters": {
+                "action": "rename_vehicle", "params": {"vehicle_id": vehicle["id"], "name": "estimate-only"},
+            }},
+        ], company_id)[0]
+        assert result["status"] == "success", result
+        assert result["changed_entities"]["estimated_cost"] == 0
+        after = gs_query(client, session_id, "get_vehicle_info", {"vehicle_id": vehicle["id"]})
+        assert after["name"] == vehicle["name"]
+
+    def test_remove_order_reports_index_and_current_count(self, client, session_id, company_id):
+        vehicles = gs_query(client, session_id, "get_vehicles")
+        assert isinstance(vehicles, list) and vehicles, vehicles
+        vid = vehicles[0]["id"]
+        orders = gs_query(client, session_id, "get_orders", {"vehicle_id": vid})
+        result = interpret(client, session_id, [
+            {"action_type": "remove_order", "parameters": {"vehicle_id": vid, "order_index": 1000}},
+        ], company_id)[0]
+        assert result["error_name"] == "INVALID_ORDER_INDEX", result
+        assert f"{orders['order_count']} orders" in result["error"]
+
+    def test_selling_a_running_vehicle_explains_the_depot_requirement(self, client, session_id, company_id):
+        vehicles = gs_query(client, session_id, "get_vehicles")
+        assert isinstance(vehicles, list) and vehicles, vehicles
+        vid = vehicles[0]["id"]
+        result = interpret(client, session_id, [
+            {"action_type": "sell_vehicle", "parameters": {"vehicle_id": vid}},
+        ], company_id)[0]
+        assert result["error_name"] == "ERR_VEHICLE_NOT_IN_DEPOT", result
+        assert "stopped inside a depot" in result["error"]

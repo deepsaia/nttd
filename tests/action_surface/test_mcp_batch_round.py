@@ -51,12 +51,13 @@ def call(mcp: Any, name: str, **kwargs: Any) -> Any:
 
 # ---- the single-agent tools ----------------------------------------------------------
 
+
 def test_act_plays_one_round_for_the_caller_and_starts_the_session_first() -> None:
     game = FakeGame(mode="stepped")
     mcp, played = served(game)
     reply = call(mcp, "act", moves=[{"command": "set_loan", "parameters": {"amount": 5}}])
     assert len(game.calls("/step/reset")) == 1
-    (_, _, body), = game.calls("/step")
+    ((_, _, body),) = game.calls("/step")
     assert body["actions"][0]["action_id"] == "agent:0"
     assert body["actions"][0]["metadata"] == {"participant_id": "agent"}
     assert reply["action_results"][0]["action_type"] == "set_loan"
@@ -67,7 +68,7 @@ def test_act_takes_the_agent_tag_when_given() -> None:
     game = FakeGame(mode="stepped")
     mcp, _ = served(game)
     call(mcp, "act", moves=[{"command": "set_loan", "parameters": {"amount": 5}}], agent_tag="crew_2")
-    (_, _, body), = game.calls("/step")
+    ((_, _, body),) = game.calls("/step")
     assert body["actions"][0]["action_id"] == "crew_2:0"
 
 
@@ -83,7 +84,7 @@ def test_act_with_no_moves_passes_the_day_in_stepped_mode() -> None:
     game = FakeGame(mode="stepped")
     mcp, _ = served(game)
     reply = call(mcp, "act")
-    (_, _, body), = game.calls("/step")
+    ((_, _, body),) = game.calls("/step")
     assert body["actions"] == [] and reply["action_results"] == []
 
 
@@ -104,6 +105,7 @@ def test_observe_query_and_focus_work_through_the_tools() -> None:
 
 # ---- the round envelope ----------------------------------------------------------------
 
+
 def entry(tag: str, tool: str, **args: Any) -> dict[str, Any]:
     return {"agent_tag": tag, "tool": tool, "args": args}
 
@@ -112,16 +114,21 @@ def test_a_round_runs_reads_then_one_step_and_answers_every_agent() -> None:
     game = FakeGame(mode="stepped")
     played = session_for(game, seed=1)
     asyncio.run(played.start())
-    reply = asyncio.run(run_round(played, [
-        entry("a", "act", moves=[{"command": "set_loan", "parameters": {"amount": 5}}, {"command": "ping"}]),
-        entry("b", "act", moves=[{"command": "build_dock"}]),
-        entry("c", "observe"),
-        entry("d", "query", query="get_date", parameters={}),
-        entry("e", "list_commands", name="ping"),
-        entry("f", "act", moves=[{"command": "ping"}], dry_run="true"),
-        entry("g", "act", moves="not json"),
-        entry("h", "nothing"),
-    ]))["results"]
+    reply = asyncio.run(
+        run_round(
+            played,
+            [
+                entry("a", "act", moves=[{"command": "set_loan", "parameters": {"amount": 5}}, {"command": "ping"}]),
+                entry("b", "act", moves=[{"command": "build_dock"}]),
+                entry("c", "observe"),
+                entry("d", "query", query="get_date", parameters={}),
+                entry("e", "list_commands", name="ping"),
+                entry("f", "act", moves=[{"command": "ping"}], dry_run="true"),
+                entry("g", "act", moves="not json"),
+                entry("h", "nothing"),
+            ],
+        )
+    )["results"]
     assert len(game.calls("/step")) == 1 and game.calls("/state/full") == []
     assert [r["action_type"] for r in reply["a"]["action_results"]] == ["set_loan", "ping"]
     assert [r["action_type"] for r in reply["b"]["action_results"]] == ["build_dock"]
@@ -138,12 +145,17 @@ def test_a_round_sets_focus_and_returns_the_focused_view_with_one_fetch() -> Non
     played = session_for(game, seed=1)
     asyncio.run(played.start())
     game.seen.clear()
-    reply = asyncio.run(run_round(played, [
-        entry("a", "focus", towns="Weston", padding="9"),
-        entry("b", "focus", towns=["Easton"]),
-        entry("c", "observe"),
-        entry("d", "focus", towns=["Nowhere"]),
-    ]))["results"]
+    reply = asyncio.run(
+        run_round(
+            played,
+            [
+                entry("a", "focus", towns="Weston", padding="9"),
+                entry("b", "focus", towns=["Easton"]),
+                entry("c", "observe"),
+                entry("d", "focus", towns=["Nowhere"]),
+            ],
+        )
+    )["results"]
     assert len(game.calls("/state/full")) == 1
     assert [t["name"] for t in reply["a"]["towns"]] == ["Weston"]
     assert reply["a"]["focus"]["anchors"][0]["name"] == "Weston"
@@ -167,10 +179,15 @@ def test_focus_set_in_a_round_cuts_the_actors_of_the_same_round() -> None:
     game = FakeGame(mode="stepped")
     played = session_for(game, seed=1)
     asyncio.run(played.start())
-    reply = asyncio.run(run_round(played, [
-        entry("a", "focus", towns=["Weston"], padding=5),
-        entry("a", "act", moves=[{"command": "ping"}]),
-    ]))["results"]
+    reply = asyncio.run(
+        run_round(
+            played,
+            [
+                entry("a", "focus", towns=["Weston"], padding=5),
+                entry("a", "act", moves=[{"command": "ping"}]),
+            ],
+        )
+    )["results"]
     assert len(reply["a"]["snapshot"]["towns"]) == 1
     assert len(reply["a"]["action_results"]) == 1
     assert game.calls("/state/full") == [], "the post-step snapshot serves the focus request too"
@@ -180,10 +197,15 @@ def test_a_bad_query_does_not_fail_the_round() -> None:
     game = FakeGame(mode="stepped")
     played = session_for(game, seed=1)
     asyncio.run(played.start())
-    reply = asyncio.run(run_round(played, [
-        entry("a", "query", query="get_date", parameters="oops"),
-        entry("b", "act", moves=[{"command": "ping"}]),
-    ]))["results"]
+    reply = asyncio.run(
+        run_round(
+            played,
+            [
+                entry("a", "query", query="get_date", parameters="oops"),
+                entry("b", "act", moves=[{"command": "ping"}]),
+            ],
+        )
+    )["results"]
     assert reply["a"] == {"error": PARAMETERS_FORMAT_HINT}
     assert reply["b"]["action_results"][0]["status"] == "success"
 
@@ -193,7 +215,11 @@ def test_a_game_refusal_is_reported_to_every_actor_of_the_round() -> None:
     played = session_for(game, seed=1)
     asyncio.run(played.start())
     game.closed = True
-    reply = asyncio.run(run_round(played, [entry("a", "act", moves=[{"command": "ping"}]), entry("b", "act", moves=[{"command": "ping"}])]))["results"]
+    reply = asyncio.run(
+        run_round(
+            played, [entry("a", "act", moves=[{"command": "ping"}]), entry("b", "act", moves=[{"command": "ping"}])]
+        )
+    )["results"]
     assert reply["a"]["error"] == "nttd returned 404" and reply["b"] == reply["a"]
     assert not played.terminated, "a 404 ends only a game that keeps its own clock"
 
@@ -203,7 +229,9 @@ def test_after_the_end_actors_and_readers_learn_the_game_ended() -> None:
     played = session_for(game, seed=1)
     asyncio.run(played.start())
     game.closed = True
-    reply = asyncio.run(run_round(played, [entry("a", "act", moves=[{"command": "ping"}]), entry("b", "observe")]))["results"]
+    reply = asyncio.run(run_round(played, [entry("a", "act", moves=[{"command": "ping"}]), entry("b", "observe")]))[
+        "results"
+    ]
     assert reply["a"]["note"] == GAME_ENDED_NOTE
     assert reply["b"]["note"] == GAME_ENDED_NOTE
 
@@ -214,7 +242,7 @@ def test_a_missing_agent_tag_in_an_entry_gets_the_default() -> None:
     asyncio.run(played.start())
     reply = asyncio.run(run_round(played, [{"tool": "act", "args": {"moves": [{"command": "ping"}]}}]))["results"]
     assert list(reply) == ["solo"]
-    (_, _, body), = game.calls("/step")
+    ((_, _, body),) = game.calls("/step")
     assert body["actions"][0]["action_id"] == "solo:0"
 
 

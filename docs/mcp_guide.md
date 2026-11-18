@@ -73,14 +73,45 @@ The names arrive in the schema; the parameters do not, because they differ per c
 
 ```
 list_commands()                        one line per command and query
-list_commands("build_road_stop")       parameters, types, defaults, accepted values
+list_commands(name="build_road_stop")       parameters, types, defaults, accepted values
 ```
+
+The command lookup includes `parameter_schema`, generated from the same contract used
+by execution and dry runs. The six tool definitions stay compact; the detailed contract
+is returned only when requested. Validation rejects unknown fields, missing required
+fields or alternatives, wrong types, and invalid enum values. Integers are not coerced
+from strings, floats or booleans. Nested `build_path.steps` and `estimate_cost.params`
+are checked too. Order flags remain bit masks and may be combined.
+
+For example, `start_vehicle` with `{"vehicle_id": "6"}` is refused with a message naming
+`parameters.vehicle_id` and the required integer type. A typo such as `vehicle_type`
+in `trace_route` is refused, with accepted keys and a `list_commands` lookup hint;
+it no longer silently uses the default transport type.
+
+`dry_run=True` checks the command format. Entity existence, ownership, funds and other
+changing game preconditions are checked when GameScript executes the command. Errors
+include readable `error` text and, where available, `error_name` and OpenTTD's
+`error_code`. A format refusal uses `INVALID_PARAMETERS`.
+
+Town, station and vehicle IDs are integers returned by observations and creation
+receipts. Display names, including numbers in names such as "Road Vehicle #1", are
+not IDs. `station_id` requires an actual station; use `dest_tile` for a map tile.
+`get_station_info.entry_tiles` describes rail platform entrances only; an empty list
+for a bus station does not indicate a disconnected road.
+
+To estimate a cost, send an `estimate_cost` move with parameters such as
+`{"action": "build_road_stop", "params": {"x": 10, "y": 20, "direction": 0}}`.
+The nested parameters follow the target command's contract; nttd injects the company's
+ID internally. Queries, operator commands and recursive estimates are rejected.
 
 ## Acting
 
 `act` takes `moves`, a list of `{"command": <name>, "parameters": {...}}`, and runs them
 in order. The reply carries the state after the moves and one result per command, each
-with the command's `action_id`, its status and any error.
+with the command's `action_id`, `action_type`, its status and any error. Successful
+creation commands return IDs in `changed_entities`. Read those IDs before submitting
+dependent commands in a later call. Sequential batches do not substitute one command's
+results into another's parameters, and `0` is not a placeholder for a newly created ID.
 
 The server picks the game route from the session's mode. In a stepped session every
 `act` is one step, and an empty `moves` list passes the day. In a heartbeat or real-time
@@ -92,7 +123,9 @@ session the commands run when they arrive and the game keeps its own clock.
 
 `observe` returns the whole state. Two fields are reshaped for reading: a company's
 `income` is named `revenue_last_quarter`, since it holds the revenue of the last completed
-quarter, and a vehicle's `state` is a word rather than a code.
+quarter, and a vehicle's `state` is a word rather than a code. `get_vehicles` and
+`get_vehicle_info` queries use the same state words; the detailed vehicle query retains
+its cargo and diagnostic fields.
 
 What the state does not carry is `query`: whether a tile is buildable, where a station
 fits, which engines exist this year, what a command would cost.

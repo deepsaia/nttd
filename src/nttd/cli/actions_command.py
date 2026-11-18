@@ -185,7 +185,7 @@ def _show_one(name: str, as_json: bool) -> None:
             rendered = "[dim]tile or x,y[/]"
         table.add_row(
             param,
-            meta.get("type") or "",
+            " or ".join(meta["type"]) if isinstance(meta.get("type"), list) else meta.get("type") or "",
             "yes" if meta.get("required") else "no",
             rendered,
             meta.get("description") or "[yellow]not described yet[/]",

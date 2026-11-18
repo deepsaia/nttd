@@ -15,11 +15,12 @@ from typing import Any
 
 import httpx
 
+from nttd.actions.validation import parameter_schema
 from nttd.config import action_manifest
 from nttd.mcp.focus import FocusRegistry
 from nttd.mcp.moves import name_commands
 from nttd.mcp.participant_client import ParticipantClient
-from nttd.mcp.snapshot import explain_timeouts, reshape
+from nttd.mcp.snapshot import explain_timeouts, reshape, reshape_query
 
 AGENT_TAG_PARAM = "Name of the agent making the call."
 
@@ -117,7 +118,7 @@ class GameSession:
         return self.focus.apply(tag, result)
 
     async def query(self, name: str, parameters: dict[str, Any]) -> dict[str, Any]:
-        return await self.client.query(name, parameters or {})
+        return reshape_query(name, await self.client.query(name, parameters or {}))
 
     async def validate(self, moves: list[dict[str, Any]]) -> dict[str, Any]:
         """The game's own check of the commands, without running them."""
@@ -151,7 +152,7 @@ class GameSession:
                     name, entries, n=5, cutoff=0.5
                 ),
             }
-        return {"name": name, **entry}
+        return {"name": name, **entry, "parameter_schema": parameter_schema(name)}
 
     async def set_focus(
         self, tag: str, args: dict[str, Any], snapshot: dict[str, Any] | None = None

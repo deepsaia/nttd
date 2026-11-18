@@ -31,17 +31,14 @@ def _make_vehicle(
     stations: dict[int, Station] | None = None,
     vtype: str = "train",
 ) -> Vehicle:
-    dests = [
-        _station_tile(stations, sid) if stations else sid
-        for sid in station_ids
-    ]
-    orders = [
-        Order(index=i, destination=dest, is_goto_station=True)
-        for i, dest in enumerate(dests)
-    ]
+    dests = [_station_tile(stations, sid) if stations else sid for sid in station_ids]
+    orders = [Order(index=i, destination=dest, is_goto_station=True) for i, dest in enumerate(dests)]
     return Vehicle(
-        id=vid, type=vtype, company_id=company_id,
-        order_count=len(orders), orders=orders,
+        id=vid,
+        type=vtype,
+        company_id=company_id,
+        order_count=len(orders),
+        orders=orders,
     )
 
 
@@ -138,7 +135,6 @@ class TestReconcile:
         remaining = {30: stations[30]}
         assert registry.reconcile({}, remaining, game_date=300) == []
 
-
     def test_a_removed_route_comes_back_when_vehicles_hold_its_orders_again(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
         vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations)}
@@ -206,7 +202,10 @@ class TestRecordConnection:
 class TestVehiclePaths:
     def test_a_vehicle_that_cannot_get_out_keeps_the_route_unconnected(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        vehicles = {
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 0, [10, 20], stations=stations),
+        }
         route = registry.reconcile(vehicles, stations, game_date=100)[0]
         registry.record_connection(route.route_id, True, game_date=100)
 
@@ -228,7 +227,10 @@ class TestVehiclePaths:
 
     def test_a_vehicle_that_passed_is_not_asked_again(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        vehicles = {
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 0, [10, 20], stations=stations),
+        }
         route = registry.reconcile(vehicles, stations, game_date=100)[0]
         assert registry.vehicles_to_check(route) == [1, 2]
 
@@ -237,7 +239,10 @@ class TestVehiclePaths:
 
     def test_a_vehicle_without_answer_keeps_its_entry(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        vehicles = {
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 0, [10, 20], stations=stations),
+        }
         route = registry.reconcile(vehicles, stations, game_date=100)[0]
         registry.record_vehicle_paths(route.route_id, with_path=[], without_path=[1, 2], game_date=100)
 
@@ -246,7 +251,10 @@ class TestVehiclePaths:
 
     def test_a_vehicle_that_left_the_route_drops_out_of_the_list(self, stations: dict[int, Station]) -> None:
         registry = RouteRegistry()
-        vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations), 2: _make_vehicle(2, 0, [10, 20], stations=stations)}
+        vehicles = {
+            1: _make_vehicle(1, 0, [10, 20], stations=stations),
+            2: _make_vehicle(2, 0, [10, 20], stations=stations),
+        }
         route = registry.reconcile(vehicles, stations, game_date=100)[0]
         registry.record_connection(route.route_id, True, game_date=100)
         registry.record_vehicle_paths(route.route_id, with_path=[1], without_path=[2], game_date=100)

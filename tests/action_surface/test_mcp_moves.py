@@ -67,3 +67,10 @@ def test_named_commands_carry_a_unique_id_and_the_agent_tag() -> None:
     assert {c["agent_tag"] for c in named} == {"crew_3"}
     assert named[0]["command"] == "set_loan" and named[0]["parameters"] == {"amount": 5}
     assert name_commands([], "crew_3", 0) == []
+
+
+def test_unknown_move_fields_do_not_silently_become_empty_parameters() -> None:
+    moves, error = read_moves([{"command": "set_loan", "params": {"amount": 5}}])
+    assert moves == []
+    assert "Unknown move fields: params" in error
+    assert '"parameters"' in error

@@ -262,7 +262,8 @@ def test_a_wrong_param_shape_is_told_the_real_one() -> None:
     ])
     for name in ("x", "y", "width", "height"):
         assert name in errors[0]
-    assert "x1" not in errors[0]
+    assert "unknown parameter(s): x1, y1" in errors[0]
+    assert "x1 -> x" in errors[0]
 
 
 def test_an_action_offering_a_choice_accepts_any_branch() -> None:

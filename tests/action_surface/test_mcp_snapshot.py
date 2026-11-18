@@ -27,7 +27,16 @@ def test_every_vehicle_carries_its_state_as_a_word() -> None:
 
     out = with_vehicle_state_words(snapshot)
 
-    assert [v["state"] for v in out["vehicles"]] == ["running", "stopped", "in_depot", "at_station", "broken_down", "crashed", "halted", "no_path"]
+    assert [v["state"] for v in out["vehicles"]] == [
+        "running",
+        "stopped",
+        "in_depot",
+        "at_station",
+        "broken_down",
+        "crashed",
+        "halted",
+        "no_path",
+    ]
     assert out["vehicles"][0] == {"id": 1, "state": "running", "current_speed": 30}
     assert snapshot["vehicles"][0]["state"] == 0
 
@@ -50,7 +59,11 @@ def test_reshape_applies_both_changes_and_leaves_other_replies_alone() -> None:
 
 def test_a_search_timeout_is_explained() -> None:
     results = [
-        {"status": "failed", "error": "the game did not answer within 120s and the stream was healthy, so the command was slow rather than lost"},
+        {
+            "status": "failed",
+            "error": ("the game did not answer within 120s and the stream was healthy, "
+                      "so the command was slow rather than lost"),
+        },
         {"status": "success", "error": None},
         "not a dict",
     ]
