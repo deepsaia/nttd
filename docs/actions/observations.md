@@ -102,6 +102,8 @@ Returns a list of `adjacent_track_x`, `adjacent_track_y`, `depot_direction`, `di
 
 Find somewhere to put a station serving a given industry or town.
 
+Supply one of: `industry_id` or `town_id`.
+
 - `industry_id` (integer, optional) Which industry.
 - `max_results` (integer, default 5) How many results to return at most.
 - `platform_length` (integer, default 3) How many tiles long each platform is. A train longer than its platform will not load fully.
@@ -214,7 +216,7 @@ Returns `can_refit`, `capacity`, `cargo_type`, `engine_id`, `max_age`, `max_spee
 
 List engine models that can be bought now. What is available changes with the year, so this is worth re-reading rather than caching for the whole game.
 
-- `vehicle_type` (string, default "train") One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.
+- `vehicle_type` (string or integer, default "train") One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.
 
 Returns a list of `capacity`, `cargo_label`, `cargo_type`, `id`, `is_wagon`, `max_speed`, `name`, `plane_type`, `power`, `price`, `rail_type`, `reliability`, `running_cost`, `weight`.
 
@@ -335,7 +337,7 @@ Returns a list of `id`, `name`, `x`, `y`.
 
 ### `get_station_info`
 
-Report one station in detail: what is waiting, what it accepts, and its cargo ratings.
+Report one station in detail: what is waiting, what it accepts, and its cargo ratings. entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access.
 
 - `station_id` (integer, required) Which station.
 
@@ -417,12 +419,13 @@ Report one vehicle in detail: where it is, what it carries, its orders, age, rel
 Returns `age`, `age_left`, `cargo`, `current_speed`, `engine_id`, `has_shared_orders`, `id`, `idle_reason`, `in_depot`, `is_articulated`, `length`, `lost`, `max_age`, `name`, `orders`, `profit_last_year`, `profit_this_year`, `state`, `type`, `x`, `y`.
 
 Each `orders` carries `destination`, `flags`, `index`, `is_conditional`, `is_goto_depot`, `is_goto_station`, `is_goto_waypoint`.
+Each `cargo` carries `cargo_id`, `capacity`, `loaded`.
 
 ### `get_vehicles`
 
 List your vehicles, optionally of one type only, with their positions, cargo and orders.
 
-- `vehicle_type` (string, default null) One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.
+- `vehicle_type` (string or integer, optional) One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.
 
 Returns a list of `age`, `capacity`, `current_speed`, `engine_id`, `id`, `in_depot`, `is_articulated`, `max_age`, `name`, `order_count`, `orders`, `profit_last_year`, `profit_this_year`, `running`, `running_cost`, `state`, `type`, `x`, `y`.
 

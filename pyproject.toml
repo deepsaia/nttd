@@ -26,6 +26,7 @@ dependencies = [
     "uvicorn>=0.34.0",
     "websockets>=14.0",
     "pydantic>=2.10.0",
+    "jsonschema>=4.26.0",
     "httpx>=0.28.0",
     "requests>=2.32.5",
     # OpenTTD admin protocol and config

@@ -106,6 +106,12 @@ _KNOWN_RUNTIME_MODES: frozenset[str] = frozenset({
     "async_realtime", "heartbeat", "stepped",
 })
 
+# What the company is asked to achieve. global: run a profitable company. cargo:
+# maximize delivered cargo. rating: maximize the performance rating. value: maximize
+# the company value. The MCP server states it to every agent.
+DEFAULT_OBJECTIVE = "global"
+KNOWN_OBJECTIVES: frozenset[str] = frozenset({"global", "cargo", "rating", "value"})
+
 # OpenTTD water_borders bitmask: NE=1, SE=2, SW=4, NW=8, random=16
 _WATER_BORDER_NE = 1
 _WATER_BORDER_SE = 2
@@ -220,6 +226,7 @@ class ScenarioConfig:
     name: str = "default"
     description: str = ""
     id: str = ""
+    objective: str = DEFAULT_OBJECTIVE
     # Computed from the world by resolve_scored, never read from the file as a fact.
     # When true the session refuses game-mutating operator operations for its whole
     # life, for every caller: a self-hosting contestant holds every credential, so
@@ -303,7 +310,7 @@ def _report(strict: bool, problems: list[str], message: str, *args: Any) -> None
 def _validate_config(
     m: Any, co: Any, strict: bool = False, rt: Any = None, fair: Any = None,
     scored: bool = False, scenario_id: str = "", ec: Any = None,
-    conformance: list[str] | None = None,
+    conformance: list[str] | None = None, objective: str = DEFAULT_OBJECTIVE,
 ) -> None:
     """Validate map, company, and runtime config values.
 
@@ -322,6 +329,7 @@ def _validate_config(
         fair: The ``fairness`` config tree, if present.
         scored: Whether the scenario is scored, which additionally holds the map
             to the benchmark profile.
+        objective: The scenario's ``objective``.
 
     Raises:
         ScenarioConfigError: In strict mode, if any problem was found.
@@ -416,6 +424,13 @@ def _validate_config(
     num_ai = int(_get(co, "num_ai_companies", 2))
     if num_ai < 0 or num_ai > 14:
         _report(strict, problems, "num_ai_companies = %d is outside range [0, 14]", num_ai)
+
+    if objective not in KNOWN_OBJECTIVES:
+        _report(
+            strict, problems,
+            "Unknown objective value %r. Valid: %s",
+            objective, ", ".join(sorted(KNOWN_OBJECTIVES)),
+        )
 
     # --- Max loan: must be positive ---
     max_loan = int(_get(co, "max_loan", 300000))
@@ -582,6 +597,7 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
         scored=scored, scenario_id=scenario_id,
         ec=_get(raw, "end_conditions", None),
         conformance=conformance,
+        objective=str(_get(raw, "objective", DEFAULT_OBJECTIVE)),
     )
 
     # For a scored run, an omitted locked setting takes the profile's value rather
@@ -704,6 +720,11 @@ def scenario_to_settings(cfg: ScenarioConfig, strict: bool = False) -> dict[str,
 
     # nttd-internal runtime metadata (prefixed with _)
     settings["_runtime_mode"] = str(_get(rt, "mode", "async_realtime"))
+    # The objective is part of the task, so it enters the task id. Stored only when it
+    # is not the default, so every scenario that names none keeps its task id.
+    objective = str(_get(raw, "objective", DEFAULT_OBJECTIVE))
+    if objective != DEFAULT_OBJECTIVE:
+        settings["_objective"] = objective
     snapshot_interval = int(_get(rt, "snapshot_interval_days", 1))
     if snapshot_interval != 1:
         settings["_snapshot_interval_days"] = str(snapshot_interval)
@@ -834,6 +855,7 @@ def load(config_path: Path | str | None = None) -> ScenarioConfig:
     return ScenarioConfig(
         name=scenario_name,
         description=_get(s, "description", ""),
+        objective=str(_get(s, "objective", DEFAULT_OBJECTIVE)),
         # id falls back to name so existing scenarios keep a stable identity
         # without every file needing an explicit id.
         id=str(_get(s, "id", scenario_name)),

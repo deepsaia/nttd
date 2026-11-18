@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 import nttd.api.dependencies as deps
 from nttd.actions.gate import admit
 from nttd.actions.gs_reply import result_from_reply
+from nttd.actions.validation import validate_parameters
 from nttd.api.participant_auth import (
     AuthorizationHeader,
     ParticipantToken,
@@ -86,6 +87,7 @@ async def submit_action(
         runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, "Not connected to OpenTTD")
         return ActionResult(
             action_id=envelope.action_id,
+            action_type=envelope.action_type,
             status=ActionStatus.FAILED,
             error="Not connected to OpenTTD",
         )
@@ -112,11 +114,22 @@ async def submit_action(
         )
         result = ActionResult(
             action_id=envelope.action_id,
+            action_type=envelope.action_type,
             status=admission.status,
             error=admission.error,
         )
         # Recorded whatever the reason: reaching for a superhuman power, or running
         # into the ceiling, is exactly what an auditor wants to see.
+        _record(runtime, envelope, params, result)
+        return result
+
+    validation_error = validate_parameters(envelope.action_type, params, allow_company=True)
+    if validation_error:
+        runtime.action_tracker.update_result(envelope.action_id, ActionStatus.REJECTED, validation_error)
+        result = ActionResult(
+            action_id=envelope.action_id, action_type=envelope.action_type,
+            status=ActionStatus.REJECTED, error=validation_error, error_name="INVALID_PARAMETERS",
+        )
         _record(runtime, envelope, params, result)
         return result
 
@@ -131,6 +144,7 @@ async def submit_action(
         timeout = 120.0 if envelope.action_type.startswith("connect_") else 10.0
         gs_result = await runtime.admin_client.send_gamescript(envelope.action_type, params, timeout=timeout)
         result = result_from_reply(envelope.action_id, gs_result)
+        result.action_type = envelope.action_type
         runtime.action_tracker.update_result(
             envelope.action_id, result.status, result.error,
             changed_entities=result.changed_entities,
@@ -144,6 +158,7 @@ async def submit_action(
         runtime.action_tracker.update_result(envelope.action_id, ActionStatus.FAILED, str(exc))
         result = ActionResult(
             action_id=envelope.action_id,
+            action_type=envelope.action_type,
             status=ActionStatus.FAILED,
             error=str(exc),
         )
@@ -159,6 +174,7 @@ def _record(
     runtime: Any, envelope: ActionEnvelope, params: dict[str, Any], result: ActionResult,
 ) -> None:
     """Write an executed action to the session's action log."""
+    runtime.action_tracker.store_result(result)
     recorder = getattr(runtime, "recorder", None)
     if recorder is None:
         return
@@ -222,10 +238,18 @@ async def validate_action(session_id: str, envelope: ActionEnvelope) -> ActionRe
     if envelope.action_type not in KNOWN_ACTIONS:
         return ActionResult(
             action_id=envelope.action_id,
+            action_type=envelope.action_type,
             status=ActionStatus.REJECTED,
             error=f"Unknown action_type: {envelope.action_type}",
         )
-    return ActionResult(action_id=envelope.action_id, status=ActionStatus.VALIDATED)
+    admission = admit(envelope.action_type, envelope.company_id)
+    error = (admission.error if not admission.allowed
+             else validate_parameters(envelope.action_type, envelope.parameters, allow_company=True))
+    return ActionResult(
+        action_id=envelope.action_id, action_type=envelope.action_type,
+        status=ActionStatus.REJECTED if error else ActionStatus.VALIDATED,
+        error=error or "", error_name="INVALID_PARAMETERS" if error and admission.allowed else "",
+    )
 
 
 @participant_router.get("/{action_id}/status", response_model=ActionResult)

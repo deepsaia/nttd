@@ -15,7 +15,9 @@ class ActionTracker:
 
     def submit(self, envelope: ActionEnvelope) -> ActionResult:
         self._actions[envelope.action_id] = envelope
-        result = ActionResult(action_id=envelope.action_id, status=ActionStatus.PENDING)
+        result = ActionResult(
+            action_id=envelope.action_id, action_type=envelope.action_type, status=ActionStatus.PENDING,
+        )
         self._results[envelope.action_id] = result
         self._trim()
         return result
@@ -35,6 +37,11 @@ class ActionTracker:
         if changed_entities:
             result.changed_entities = changed_entities
         return result
+
+    def store_result(self, result: ActionResult) -> None:
+        """Retain the complete receipt, including structured errors, for retries."""
+        if result.action_id in self._results:
+            self._results[result.action_id] = result
 
     def get_result(self, action_id: str) -> ActionResult | None:
         return self._results.get(action_id)

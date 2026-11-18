@@ -269,7 +269,12 @@ async def take_step(
     for entry in request.actions:
         params = dict(entry.get("params") or {})
         apply_company_scope(runtime, params, token)
-        actions.append({"action": entry.get("action"), "params": params})
+        action: dict[str, Any] = {"action": entry.get("action"), "params": params}
+        if entry.get("action_id"):
+            action["action_id"] = str(entry["action_id"])
+        if isinstance(entry.get("metadata"), dict):
+            action["metadata"] = dict(entry["metadata"])
+        actions.append(action)
 
     # The scenario owns the step size for a scored run: letting a contestant pass
     # `days` would let it choose how much world each decision buys.

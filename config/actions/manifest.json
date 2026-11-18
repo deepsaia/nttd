@@ -101,6 +101,19 @@
               "AT_METROPOLITAN": 3,
               "AT_SMALL": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
           }
         },
         "tile": {
@@ -174,8 +187,15 @@
         "transport_type": {
           "required": false,
           "default": "road",
-          "description": "What crosses the bridge: rail, water, or road. Anything else is treated as road.",
-          "type": "string"
+          "description": "What the structure carries: rail, road, water. Other values are rejected.",
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road",
+              "water"
+            ]
+          }
         }
       },
       "returns": {
@@ -477,14 +497,112 @@
         },
         "steps": {
           "required": true,
-          "description": "The path to lay, as objects carrying x, y and an action. At least two are needed.",
-          "type": "array"
+          "description": "At least two path steps. Each contains integer x/y and an optional action (default move). Bridge steps also require bridge_from_x/y; tunnel steps require tunnel_from_x/y.",
+          "type": "array",
+          "schema": {
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y"
+              ],
+              "properties": {
+                "x": {
+                  "type": "integer"
+                },
+                "y": {
+                  "type": "integer"
+                },
+                "bridge_from_x": {
+                  "type": "integer"
+                },
+                "bridge_from_y": {
+                  "type": "integer"
+                },
+                "bridge_type": {
+                  "type": "integer"
+                },
+                "tunnel_from_x": {
+                  "type": "integer"
+                },
+                "tunnel_from_y": {
+                  "type": "integer"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "start",
+                    "end",
+                    "move",
+                    "build_road",
+                    "build_rail",
+                    "build_bridge",
+                    "build_tunnel",
+                    "build_canal",
+                    "build_lock"
+                  ],
+                  "default": "move"
+                },
+                "length": {
+                  "type": "integer",
+                  "description": "Span length supplied by the nttd pathfinder; execution uses the endpoint coordinates."
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "action": {
+                        "const": "build_bridge"
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "bridge_from_x",
+                      "bridge_from_y"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "action": {
+                        "const": "build_tunnel"
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "tunnel_from_x",
+                      "tunnel_from_y"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
         },
         "transport_type": {
           "required": false,
           "default": "road",
-          "description": "What the path carries: rail or road. Anything else is treated as road.",
-          "type": "string"
+          "description": "What the path carries: rail, road or water. Other values are rejected.",
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road",
+              "water"
+            ]
+          }
         }
       },
       "returns": {
@@ -593,6 +711,21 @@
               "SIGNALTYPE_PBS_ONEWAY": 5,
               "SIGNALTYPE_TWOWAY": 8
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              8,
+              9,
+              10,
+              11,
+              255
+            ]
           }
         },
         "tile": {
@@ -1030,15 +1163,6 @@
             "depot_x",
             "depot_y"
           ]
-        ],
-        [
-          [
-            "depot_tile"
-          ],
-          [
-            "depot_x",
-            "depot_y"
-          ]
         ]
       ],
       "returns": {
@@ -1068,8 +1192,14 @@
         "transport_type": {
           "required": false,
           "default": "rail",
-          "description": "What runs through the tunnel: rail or road. Anything else is treated as rail.",
-          "type": "string"
+          "description": "What the structure carries: rail, road. Other values are rejected.",
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road"
+            ]
+          }
         },
         "x": {
           "required": false,
@@ -1183,15 +1313,6 @@
             "depot_x",
             "depot_y"
           ]
-        ],
-        [
-          [
-            "depot_tile"
-          ],
-          [
-            "depot_x",
-            "depot_y"
-          ]
         ]
       ],
       "returns": {
@@ -1237,6 +1358,23 @@
               "EXPENSES_TRAIN_INC": 7,
               "EXPENSES_TRAIN_RUN": 2
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
           }
         }
       },
@@ -1307,7 +1445,7 @@
           "type": "integer"
         }
       },
-      "one_of": [
+      "optional_one_of": [
         [
           [
             "depot_tile"
@@ -1721,8 +1859,23 @@
         "vehicle_type": {
           "required": false,
           "default": "train",
-          "description": "One of train, road, ship or aircraft. An unrecognised value silently becomes train.",
-          "type": "string"
+          "description": "One of train, road, ship or aircraft, or the corresponding integer 0, 1, 2 or 3.",
+          "type": [
+            "string",
+            "integer"
+          ],
+          "schema": {
+            "enum": [
+              "train",
+              "road",
+              "ship",
+              "aircraft",
+              0,
+              1,
+              2,
+              3
+            ]
+          }
         }
       },
       "returns": {
@@ -1758,6 +1911,12 @@
               "SPT_INDUSTRY": 0,
               "SPT_TOWN": 1
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1
+            ]
           }
         },
         "to_id": {
@@ -1775,6 +1934,12 @@
               "SPT_INDUSTRY": 0,
               "SPT_TOWN": 1
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1
+            ]
           }
         }
       },
@@ -1851,7 +2016,7 @@
         },
         "params": {
           "required": true,
-          "description": "The parameters of the action being estimated, exactly as they would be submitted.",
+          "description": "Parameters of the action being estimated, with the same requirements as a normal command. The server supplies the company automatically; do not include company_id.",
           "type": "object"
         }
       },
@@ -1859,16 +2024,7 @@
         "shape": "object",
         "fields": [
           "action",
-          "depot_x",
-          "depot_y",
-          "dest_tile",
-          "estimated_cost",
-          "from_x",
-          "from_y",
-          "to_x",
-          "to_y",
-          "x",
-          "y"
+          "estimated_cost"
         ]
       }
     },
@@ -1922,6 +2078,19 @@
               "AT_METROPOLITAN": 3,
               "AT_SMALL": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
           }
         },
         "max_results": {
@@ -2288,6 +2457,16 @@
           "type": "integer"
         }
       },
+      "one_of": [
+        [
+          [
+            "industry_id"
+          ],
+          [
+            "town_id"
+          ]
+        ]
+      ],
       "returns": {
         "shape": "object",
         "fields": [
@@ -2406,6 +2585,15 @@
               "ROAD_LAYOUT_ORIGINAL": 0,
               "ROAD_LAYOUT_RANDOM": 4
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
           }
         },
         "size": {
@@ -2422,6 +2610,13 @@
               "TOWN_SIZE_MEDIUM": 1,
               "TOWN_SIZE_SMALL": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2
+            ]
           }
         },
         "tile": {
@@ -2697,7 +2892,22 @@
           "required": false,
           "default": "train",
           "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.",
-          "type": "string"
+          "type": [
+            "string",
+            "integer"
+          ],
+          "schema": {
+            "enum": [
+              "train",
+              "road",
+              "ship",
+              "aircraft",
+              0,
+              1,
+              2,
+              3
+            ]
+          }
         }
       },
       "returns": {
@@ -2754,7 +2964,12 @@
         "keys": {
           "required": true,
           "description": "Names of game settings to read. An unknown name reads back as null rather than failing the call.",
-          "type": "array"
+          "type": "array",
+          "schema": {
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "returns": {
@@ -3031,7 +3246,7 @@
       }
     },
     "get_station_info": {
-      "description": "Report one station in detail: what is waiting, what it accepts, and its cargo ratings.",
+      "description": "Report one station in detail: what is waiting, what it accepts, and its cargo ratings. entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetStationInfo",
@@ -3129,7 +3344,10 @@
           "required": false,
           "default": 400,
           "description": "How many tiles to report at most. Guards against asking for more than a reply can carry.",
-          "type": "integer"
+          "type": "integer",
+          "schema": {
+            "minimum": 1
+          }
         },
         "x1": {
           "required": true,
@@ -3346,6 +3564,11 @@
             "is_goto_depot",
             "is_goto_station",
             "is_goto_waypoint"
+          ],
+          "cargo": [
+            "cargo_id",
+            "capacity",
+            "loaded"
           ]
         }
       }
@@ -3358,9 +3581,23 @@
       "parameters": {
         "vehicle_type": {
           "required": false,
-          "default": null,
           "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.",
-          "type": "string"
+          "type": [
+            "string",
+            "integer"
+          ],
+          "schema": {
+            "enum": [
+              "train",
+              "road",
+              "ship",
+              "aircraft",
+              0,
+              1,
+              2,
+              3
+            ]
+          }
         }
       },
       "returns": {
@@ -3760,6 +3997,18 @@
               "TOWN_ACTION_FUND_BUILDINGS": 5,
               "TOWN_ACTION_ROAD_REBUILD": 3
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
           }
         },
         "town_id": {
@@ -4923,6 +5172,16 @@
               "TE_PASSENGERS": 1,
               "TE_WATER": 4
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
           }
         },
         "town_id": {
@@ -5027,6 +5286,18 @@
               "CF_MORE_THAN": 4,
               "CF_NOT_EQUALS": 1
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
           }
         },
         "order_pos": {
@@ -5100,6 +5371,18 @@
               "OC_REQUIRES_SERVICE": 4,
               "OC_UNCONDITIONALLY": 5
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
           }
         },
         "order_pos": {
@@ -5195,6 +5478,13 @@
               "STOPLOCATION_MIDDLE": 1,
               "STOPLOCATION_NEAR": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2
+            ]
           }
         },
         "vehicle_id": {
@@ -5390,7 +5680,13 @@
           "required": false,
           "default": "rail",
           "description": "rail or road. Defaults to rail.",
-          "type": "string"
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road"
+            ]
+          }
         }
       },
       "one_of": [

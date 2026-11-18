@@ -50,7 +50,18 @@ def test_an_action_with_no_parameters_is_fine() -> None:
     assert StepRequest(actions=[{"action": "ping"}]).actions[0]["action"] == "ping"
 
 
-def test_the_mcp_step_tool_shape_is_accepted() -> None:
-    """src/nttd/mcp/tools/step.py sends exactly these two keys, so the rule must admit it."""
+def test_the_two_key_shape_is_accepted() -> None:
+    """A caller that sends only action and params is admitted."""
     request = StepRequest(actions=[{"action": "buy_vehicle", "params": {"engine_id": 12}}])
     assert request.actions[0]["action"] == "buy_vehicle"
+
+
+def test_an_action_may_name_itself_and_its_agent() -> None:
+    """A caller that sets action_id gets it back on the result, and metadata reaches
+    the action log. Both are optional, so the two-key shape above still passes."""
+    request = StepRequest(actions=[{
+        "action": "build_dock", "params": {"x": 1, "y": 2},
+        "action_id": "crew_3:7", "metadata": {"participant_id": "crew_3"},
+    }])
+    assert request.actions[0]["action_id"] == "crew_3:7"
+    assert request.actions[0]["metadata"]["participant_id"] == "crew_3"

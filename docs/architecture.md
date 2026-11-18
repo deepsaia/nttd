@@ -54,7 +54,7 @@ local RL policy and `$0.00` from a silent entry are not the same claim.
 Three ways in, all reaching the same routes:
 
 - **HTTP (REST)**: the primary surface. `GET /state/full`, `POST /actions/submit`.
-- **MCP**: five tools over the same routes, for agents built around a tool-calling
+- **MCP**: six tools over the same routes, for agents built around a tool-calling
   loop. The action vocabulary arrives as an enum in the tool schema rather than in a
   prompt, so a client cannot send a name the game does not have. stdio and streamable
   HTTP, because an agent that spawns its tools and a framework that connects to a

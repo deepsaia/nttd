@@ -19,8 +19,10 @@ from nttd.schemas.action_result import ActionResult
 from nttd.schemas.snapshot import StateSnapshot
 
 # The only keys an action entry in a step batch may carry. Everything an action needs
-# goes inside `params`, which is what the MCP step tool and the REST route both send.
-_ACTION_KEYS = frozenset({"action", "params"})
+# goes inside `params`. `action_id` and `metadata` are optional: a caller that sets
+# them gets them back on the result and in the action log, and one that does not
+# gets an id minted by the orchestrator.
+_ACTION_KEYS = frozenset({"action", "params", "action_id", "metadata"})
 
 
 class StepResult(BaseModel):
@@ -68,6 +70,9 @@ class StepRequest(BaseModel):
             once may. There is no ceiling: a stepped run is bounded by how many
             steps it takes and how many game-days each advances, both fixed by the
             scenario, so a larger batch buys no more world than anyone else gets.
+            Each entry is ``{"action", "params"}`` plus an optional ``action_id``,
+            echoed on its result, and an optional ``metadata`` object, kept in the
+            action log. ``metadata.participant_id`` names the agent that sent it.
         days: Override the scenario's step size. Present for experimentation, and
             ignored for a scored run, where the step size is part of the task.
     """

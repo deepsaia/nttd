@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 from nttd.analysis.score import rank_companies
 from nttd.config.benchmark_profile import dimensions_from_settings
 from nttd.config.scenario_config import (
+    DEFAULT_OBJECTIVE,
     BankruptcyConfig,
     CargoThresholdConfig,
     EndConditionsConfig,
@@ -39,6 +40,11 @@ from nttd.store.repositories import session_repo
 from nttd.store.result_writer import ResultWriter
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_objective(runtime: SessionRuntime, settings: dict[str, str]) -> None:
+    """Give the orchestrator the scenario's objective, on start and on recovery."""
+    runtime.orchestrator.set_objective(settings.get("_objective") or DEFAULT_OBJECTIVE)
 
 
 def _apply_step_size(runtime: SessionRuntime, settings: dict[str, str]) -> None:
@@ -238,6 +244,7 @@ class SessionManager:
         runtime.scored_lock.scored = effective_settings.get("_scored") == "1"
         runtime.dimensions = dimensions_from_settings(effective_settings)
         _apply_step_size(runtime, effective_settings)
+        _apply_objective(runtime, effective_settings)
         if runtime.scored_lock.scored:
             logger.info(
                 "Session %s is SCORED: game-mutating operator operations are refused",
@@ -595,6 +602,7 @@ class SessionManager:
             runtime.scored_lock.scored = stored.get("_scored") == "1"
             runtime.dimensions = dimensions_from_settings(stored)
             _apply_step_size(runtime, stored)
+            _apply_objective(runtime, stored)
             if runtime.scored_lock.scored:
                 logger.info("Recovered session %s is SCORED: lock restored", sid)
             if stored:

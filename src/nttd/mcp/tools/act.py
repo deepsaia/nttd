@@ -1,63 +1,86 @@
-"""``nttd_act``: submit moves, in real time."""
+"""``act``: send game commands, in every game mode."""
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from nttd.mcp.action_types import PlayableAction
-from nttd.mcp.participant_client import ParticipantClient
+from nttd.mcp.game_session import AGENT_TAG_PARAM, GameSession
+from nttd.mcp.moves import coerce_flag, read_moves
+
+ACT_TIMING_STEPPED = """Each time you call this tool the game advances a day.
+An empty list sends no commands, but still advances the day."""
+
+ACT_TIMING_CLOCKED = """An empty list sends no commands."""
+
+ACT_BODY = """Send game commands to the company.
+Commands are listed in the "moves" field and executed in the given order.
+{timing}
+
+The reply reports each command's outcome and any created IDs in changed_entities.
+A refused command is normal play and can happen for many in-game reasons.
+
+Examples of command formatting:
+  no command:   {{"moves": []}}
+  one command:      {{"moves": [{{"command": "command_name", "parameters": {{"key": value}}}}]}}
+  several commands: {{"moves": [{{"command": "command_name", "parameters": {{"key": value}}}},
+                               {{"command": "command_name", "parameters": {{"key": value}}}}]}}
+
+With a focus set, the snapshot in the reply covers only the focus; the
+command outcomes are always complete.
+
+Use list_commands(name=...) for parameter names, types and required alternatives.
+Unknown fields and wrong types are rejected.
+"""
 
 
+# One game command and its parameters. No docstring and no field descriptions: the
+# schema builder sends them to the agent, and the act description already explains the
+# shape. ``command`` is an enum, so every name an agent may send arrives in the tool
+# schema and a name outside the manifest cannot be sent at all.
 class Move(BaseModel):
-    """One action and its parameters.
+    model_config = ConfigDict(extra="forbid")
 
-    ``action_type`` is an enum rather than a string, so every name a contestant may
-    submit arrives in the tool schema and a client never has to be told them in a
-    prompt. Parameters stay an open object because they differ per action: what each
-    one takes is in nttd_actions.
-    """
-
-    action_type: PlayableAction = Field(description="Which action to run.")
-    parameters: dict[str, Any] = Field(
-        default_factory=dict, description="Its parameters. See nttd_actions.",
-    )
+    command: PlayableAction
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
-def register(mcp: FastMCP, client: ParticipantClient) -> None:
-    """Register the action tool."""
+async def run_act(
+    session: GameSession, tag: str, raw_moves: Any, dry_run: Any
+) -> dict[str, Any]:
+    """What one act call does, shared with the round envelope."""
+    moves, error = read_moves(raw_moves)
+    if error:
+        return {"error": error}
+    if coerce_flag(dry_run):
+        return await session.validate(moves)
+    results = await session.play_round({tag: moves})
+    return session.view(tag, results[tag])
 
-    @mcp.tool()
-    async def nttd_act(moves: list[Move], dry_run: bool = False) -> str:
-        """Submit one or more actions to the game, in order.
 
-        Use this in a real-time session. In a stepped session use nttd_step, which
-        submits and advances in one call.
+def register(mcp: FastMCP, session: GameSession) -> None:
+    if session.mode == "stepped":
+        timing = ACT_TIMING_STEPPED
+    else:
+        timing = ACT_TIMING_CLOCKED
+    description = ACT_BODY.format(timing=timing)
 
-        There is no limit on how many you may send. Each is attempted in order, and
-        the reply reports each one separately: a refusal is normal play, not an error,
-        and the usual reasons are money, a tile that will not take the structure, or a
-        town that thinks poorly of you.
-
-        With dry_run the actions are only checked, and nothing is submitted. Worth
-        doing for a batch you are unsure of, since a refused action still costs a round
-        trip.
-
-        The company is taken from this server's participant token. You cannot act for
-        another company, and you do not pass a company id.
-        """
-        payload = [
-            {"action_type": move.action_type.value, "parameters": move.parameters}
-            for move in moves
-        ]
-        if dry_run:
-            return json.dumps({"dry_run": True, **await client.validate(payload)})
-
-        results = [
-            await client.submit(entry["action_type"], entry["parameters"])
-            for entry in payload
-        ]
-        return json.dumps({"submitted": len(results), "results": results})
+    @mcp.tool(description=description)
+    async def act(
+        moves: list[Move] | None = None,
+        dry_run: Annotated[
+            bool,
+            Field(
+                description="If True, only check the commands formatting, without sending them."
+            ),
+        ] = False,
+        agent_tag: Annotated[str | None, Field(description=AGENT_TAG_PARAM)] = None,
+    ) -> str:
+        await session.ensure_started()
+        return json.dumps(
+            await run_act(session, session.tag(agent_tag), moves or [], dry_run)
+        )
