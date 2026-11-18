@@ -622,7 +622,7 @@ requires-dist = [
     { name = "imageio", extras = ["pyav"], specifier = ">=2.37.3" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "kaleido", specifier = ">=1.2.0" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.9" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.9,<2" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pillow", specifier = ">=11.0" },

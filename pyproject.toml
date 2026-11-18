@@ -54,8 +54,8 @@ dependencies = [
     # RL and ES surface: nttd.rl.env and nttd.rl.multi_env
     "gymnasium>=1.0.0",
     "numpy>=2.0",
-    # MCP surface
-    "mcp[cli]>=1.9",
+    # Uses the SDK v1 FastMCP API; v2 removes mcp.server.fastmcp.
+    "mcp[cli]>=1.9,<2",
     # Tests and lint
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
