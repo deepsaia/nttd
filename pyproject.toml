@@ -43,6 +43,8 @@ dependencies = [
     # a dependency of seaborn, so removing seaborn broke `nttd analyze` on a fresh install.
     # An undeclared dependency that happens to be present is a working install by luck.
     "pandas>=2.2",
+    # Pareto ranking of results over the benchmark axes, nttd.analysis.pareto.
+    "moocore>=0.3",
     "plotly>=6.6.0",
     "kaleido>=1.2.0",
     # imageio[pyav] rather than plain imageio: the video report imports av directly, and the
