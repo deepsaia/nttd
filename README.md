@@ -126,6 +126,7 @@ nttd package                Package a session into a submission bundle
 nttd verify                 Self-check a bundle before submitting it
 nttd result                 Show the scored result record
 nttd analyze                Generate analysis reports
+nttd evaluate               Evaluate recorded runs and plot comparison curves
 nttd publish                File a bundle on the board as a pull request
 ```
 
