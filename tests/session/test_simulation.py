@@ -139,7 +139,7 @@ async def test_heartbeat_action_submitted_and_tracked(
     def submit_action(snap: StateSnapshot) -> None:
         orchestrator.submit_heartbeat_action({
             "action": "connect_road",
-            "params": {"company_id": 0, "start_tile": 1000, "end_tile": 1010},
+            "params": {"company_id": 0, "tile_from": 1000, "tile_to": 1010},
         })
 
     orchestrator.add_observer(submit_action)

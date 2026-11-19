@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING, Any
 from nttd.actions.gate import admit
 from nttd.actions.gs_reply import result_from_reply
 from nttd.actions.tracker import ActionTracker
+from nttd.actions.validation import validate_parameters
 from nttd.bridge.admin_client import AdminClient
+from nttd.bridge.trace_route import line_exists
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
 from nttd.constants import TICK_DEPENDENT_ACTIONS
 from nttd.runtime.company_lock import CompanyLockManager
@@ -22,6 +24,7 @@ from nttd.runtime.end_conditions import EndConditionChecker
 from nttd.schemas.action_envelope import ActionEnvelope, ActionMode
 from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.game import RuntimeMode
+from nttd.schemas.route import Route
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.step_result import StepResult
 from nttd.state.tile_footprint import affected_area
@@ -149,8 +152,17 @@ class Orchestrator:
         is time for it to pay for itself, and a run that hides its own length forces that
         decision to be made blind.
         """
-        self.world.game.game_days_total = self._end_checker.game_days_total
-        self.world.game.game_days_remaining = self._end_checker.game_days_remaining
+        self.world.game.game_days_total = self._end_checker.episode_days(
+            self._heartbeat_interval_days, self._secs_per_game_day,
+        )
+        self.world.game.game_days_remaining = self._end_checker.remaining_episode_days(
+            self._heartbeat_interval_days, self._secs_per_game_day,
+        )
+        self.world.game.episode_days = self.world.game.game_days_total
+
+    def set_objective(self, objective: str) -> None:
+        """Put the scenario's objective onto the world, where the status reads it."""
+        self.world.game.objective = objective
 
     def _on_game_event(self, data: dict[str, Any]) -> None:
         """Handle unsolicited GS game events: refresh what moved, then record it."""
@@ -233,6 +245,7 @@ class Orchestrator:
         self._action_window_seconds = config.heartbeat.action_window_seconds
         self._snapshot_interval_days = config.runtime.snapshot_interval_days
         self._end_checker = EndConditionChecker(config.end_conditions)
+        self.set_objective(config.objective)
         # The economy clock rate is fixed -- there is no game-speed multiplier to
         # scale this by. config.heartbeat.game_speed is retained for config
         # compatibility but has no effect on timing.
@@ -245,6 +258,7 @@ class Orchestrator:
             config.runtime.snapshot_interval_days,
             config.end_conditions.logic,
         )
+        self._publish_horizon()
 
     def add_observer(self, callback: Any) -> None:
         self._observers.append(callback)
@@ -258,6 +272,7 @@ class Orchestrator:
 
     def set_heartbeat_interval(self, days: int) -> None:
         self._heartbeat_interval_days = days
+        self._publish_horizon()
 
     def stop(self) -> None:
         self._running = False
@@ -352,6 +367,8 @@ class Orchestrator:
                 if r.get("success") and isinstance(r.get("result"), dict):
                     self.world.apply_gs_infrastructure(company.id, r["result"])
 
+            await self.confirm_route_connections()
+
             # Cargo flows use GSCargoMonitor counters that accumulate between reads.
             # Refresh on staggered cycles (same cadence as towns/industries).
             if self._refresh_cycle % _STAGGER_INTERVAL == 0:
@@ -372,6 +389,67 @@ class Orchestrator:
 
         except Exception:
             logger.exception("GS world refresh failed")
+
+    async def confirm_route_connections(self) -> None:
+        """Ask the game whether each route with vehicles can actually be run.
+
+        The game accepts an order to a station that no road or track reaches, and a depot
+        that no road joins, and the vehicle then never arrives. The registry only groups
+        orders, so it cannot tell. Two walks with trace_route answer it: one between
+        consecutive stations, asked until a path is found so a road built later turns the
+        route active, and one from each vehicle's own tile to the first station, asked
+        until that vehicle passes once. Aircraft need no track. Ships sail open water,
+        which the walk does not cover, so a ship route counts as connected.
+        """
+        stations = self.world.stations
+        game_date = self.world.game.game_date
+        registry = self.world.route_registry
+        for route in self.world._derive_routes():
+            if not route.vehicle_ids:
+                continue
+            if route.vehicle_type in ("aircraft", "ship"):
+                if not route.track_confirmed_at:
+                    registry.record_connection(route.route_id, True, game_date)
+                continue
+            if route.vehicle_type not in ("train", "road"):
+                continue
+            transport_type = "rail" if route.vehicle_type == "train" else "road"
+            if not route.track_confirmed_at:
+                connected = await self.stations_joined(route, transport_type)
+                if connected is not None:
+                    registry.record_connection(route.route_id, connected, game_date)
+            first = stations.get(route.station_ids[0]) if route.station_ids else None
+            if first is None:
+                continue
+            with_path: list[int] = []
+            without_path: list[int] = []
+            for vid in registry.vehicles_to_check(route):
+                vehicle = self.world.vehicles.get(vid)
+                if vehicle is None:
+                    continue
+                answer = await line_exists(self.client, vehicle.x, vehicle.y, first.x, first.y, transport_type)
+                if answer is True:
+                    with_path.append(vid)
+                elif answer is False:
+                    without_path.append(vid)
+            if with_path or without_path:
+                registry.record_vehicle_paths(route.route_id, with_path, without_path, game_date)
+
+    async def stations_joined(self, route: Route, transport_type: str) -> bool | None:
+        """Whether built road or track joins every consecutive pair of the route's stations.
+
+        None when the game could not answer for some pair."""
+        stations = self.world.stations
+        for sid_a, sid_b in zip(route.station_ids, route.station_ids[1:]):
+            if sid_a == sid_b:
+                continue
+            a, b = stations.get(sid_a), stations.get(sid_b)
+            if a is None or b is None:
+                return None
+            answer = await line_exists(self.client, a.x, a.y, b.x, b.y, transport_type)
+            if answer is not True:
+                return answer
+        return True
 
     def start_scored_clock(self) -> bool:
         """Start the scored wall-clock. Returns True if this call started it.
@@ -494,11 +572,37 @@ class Orchestrator:
                 return tiles
             tiles.extend(band)
             band_start = band_end + 1
+        tiles.extend(await self.far_ends_of(tiles))
         return tiles
+
+    async def far_ends_of(self, tiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The other end of every bridge or tunnel in tiles that the area left out.
+
+        A tunnel can run dozens of tiles, so its far portal is usually outside the
+        neighbourhood a build refreshes. Each end tile names its other end.
+        """
+        have = {(t.get("x"), t.get("y")) for t in tiles}
+        far: list[dict[str, Any]] = []
+        for tile in tiles:
+            other = tile.get("other_end")
+            if not isinstance(other, list) or len(other) != 2:
+                continue
+            x, y = int(other[0]), int(other[1])
+            if (x, y) in have:
+                continue
+            have.add((x, y))
+            reply = await self.client.send_gamescript(
+                "get_tile_area", {"x1": x, "y1": y, "x2": x, "y2": y, "max_tiles": 1}, timeout=20.0,
+            )
+            band = reply.get("result")
+            if reply.get("success") and isinstance(band, list):
+                far.extend(band)
+        return far
 
     def _record_action(
         self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",
         changed: dict[str, Any] | None = None,
+        outcome: ActionResult | None = None,
     ) -> None:
         """Write an action to the session's audit log.
 
@@ -524,8 +628,9 @@ class Orchestrator:
                         "submitted_at": datetime.now(timezone.utc).isoformat(),
                     },
                 ),
-                result=ActionResult(
+                result=outcome or ActionResult(
                     action_id=envelope.action_id,
+                    action_type=envelope.action_type,
                     status=status,
                     error=error,
                     changed_entities=changed or {},
@@ -558,12 +663,15 @@ class Orchestrator:
                 continue
 
             company_id = gs_params.get("company_id", -1)
+            # A caller may name its own action, so the result and the action log
+            # carry the id and the agent it already knows. Otherwise one is minted.
             envelope = ActionEnvelope(
-                action_id=f"hb_{uuid.uuid4().hex[:8]}",
+                action_id=str(action.get("action_id") or f"hb_{uuid.uuid4().hex[:8]}"),
                 company_id=company_id,
                 action_type=gs_action,
                 parameters=gs_params,
                 mode=ActionMode.ATOMIC,
+                metadata=dict(action.get("metadata") or {}),
             )
             if self.action_tracker:
                 self.action_tracker.submit(envelope)
@@ -585,6 +693,18 @@ class Orchestrator:
                     status=admission.status,
                     error=admission.error,
                 ))
+                continue
+
+            validation_error = validate_parameters(gs_action, gs_params, allow_company=True)
+            if validation_error:
+                outcome = ActionResult(
+                    action_id=envelope.action_id, action_type=gs_action,
+                    status=ActionStatus.REJECTED, error=validation_error, error_name="INVALID_PARAMETERS",
+                )
+                if self.action_tracker:
+                    self.action_tracker.store_result(outcome)
+                self._record_action(envelope, outcome.status, outcome.error, outcome=outcome)
+                outcomes.append(outcome)
                 continue
 
             if not self.client.connected:
@@ -614,6 +734,7 @@ class Orchestrator:
                     # copies of one mapping, which is why the stepped path knew nothing
                     # about partial builds or error codes while the other did.
                     outcome = result_from_reply(envelope.action_id, result)
+                    outcome.action_type = gs_action
                     if self.action_tracker:
                         self.action_tracker.update_result(
                             envelope.action_id, outcome.status, outcome.error,
@@ -621,10 +742,11 @@ class Orchestrator:
                         )
                     self._record_action(
                         envelope, outcome.status, outcome.error,
-                        changed=outcome.changed_entities,
+                        changed=outcome.changed_entities, outcome=outcome,
                     )
                     await self.refresh_changed_tiles(envelope, outcome)
-                    outcome.action_type = gs_action
+                    if self.action_tracker:
+                        self.action_tracker.store_result(outcome)
                     outcomes.append(outcome)
                     if outcome.status == ActionStatus.SUCCESS:
                         logger.info("Action %s succeeded", gs_action)
@@ -978,6 +1100,7 @@ class Orchestrator:
         """Set end conditions programmatically (without a full ScenarioConfig)."""
         self._end_checker = EndConditionChecker(config)
         logger.info("End conditions configured: logic=%s", config.logic)
+        self._publish_horizon()
 
     async def run_async_realtime(self) -> None:
         """Game runs continuously, GS refresh every 10s, snapshots pushed every 2s.

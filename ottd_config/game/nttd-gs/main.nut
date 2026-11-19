@@ -1032,6 +1032,10 @@ class NttdGS extends GSController {
                      + "so a track walk does not describe it." };
     }
     local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
+    // Every GSRoad test below answers false while the script's current road type is
+    // unset, which it is until some build command sets it. Set it here so a walk asked
+    // before any road was built answers about the road and not about the missing type.
+    if (kind == "road") GSRoad.SetCurrentRoadType(("road_type" in p) ? p.road_type : 0);
     local start = pair.from.tile;
     local goal = pair.to.tile;
 
@@ -1064,6 +1068,26 @@ class NttdGS extends GSController {
 
       local cx = GSMap.GetTileX(node.tile), cy = GSMap.GetTileY(node.tile);
       local reverse = (node.dir + 2) % 4;
+
+      // A bridge or tunnel exists only as its two end tiles; the tiles between carry no
+      // road or track. A vehicle crosses in one move, so the walk jumps to the other end.
+      local transport = (kind == "road") ? GSTile.TRANSPORT_ROAD : GSTile.TRANSPORT_RAIL;
+      if ((GSBridge.IsBridgeTile(node.tile) || GSTunnel.IsTunnelTile(node.tile))
+          && GSTile.HasTransportType(node.tile, transport)) {
+        local other = GSBridge.IsBridgeTile(node.tile)
+          ? GSBridge.GetOtherBridgeEnd(node.tile) : GSTunnel.GetOtherTunnelEnd(node.tile);
+        local ox = GSMap.GetTileX(other), oy = GSMap.GetTileY(other);
+        local span_dir = (ox > cx) ? 0 : (oy > cy) ? 1 : (ox < cx) ? 2 : 3;
+        // A train enters the head along the span, so it leaves along the span too.
+        if (kind == "road" || node.tile == start || node.dir == span_dir) {
+          local other_key = (kind == "road") ? other * 4 : other * 4 + span_dir;
+          if (!(other_key in seen)) {
+            seen[other_key] <- true;
+            visited_tiles[other] <- true;
+            queue.append({ tile = other, dir = span_dir });
+          }
+        }
+      }
       for (local exit_dir = 0; exit_dir < 4; exit_dir++) {
         if (kind == "rail" && exit_dir == reverse) continue;
         local nx = cx + dir_dx[exit_dir], ny = cy + dir_dy[exit_dir];
@@ -1074,10 +1098,16 @@ class NttdGS extends GSController {
 
         local joined = false;
         if (kind == "road") {
-          joined = GSRoad.IsRoadTile(next) && GSRoad.AreRoadTilesConnected(node.tile, next);
+          // IsRoadTile rejects bay stops and depots, so a walk to a bay stop could never
+          // reach its goal. A stop or depot counts when the road bits actually join it.
+          local is_road = GSRoad.IsRoadTile(next) || GSRoad.IsRoadStationTile(next)
+                          || GSRoad.IsRoadDepotTile(next)
+                          || GSTile.HasTransportType(next, GSTile.TRANSPORT_ROAD);
+          joined = is_road && GSRoad.AreRoadTilesConnected(node.tile, next);
         } else {
           local is_track = GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
-                           || GSRail.IsRailDepotTile(next);
+                           || GSRail.IsRailDepotTile(next)
+                           || GSTile.HasTransportType(next, GSTile.TRANSPORT_RAIL);
           if (node.tile == start) {
             // THE FIRST HOP HAS NO INCOMING DIRECTION. AreTilesConnected asks about a triple,
             // from-through-to, and at the start there is no "from": the code used to invent one
@@ -1419,7 +1449,7 @@ class NttdGS extends GSController {
   }
 
   function CmdGetStationInfo(p) {
-    if (!GSStation.IsValidStation(p.station_id)) return { success = false, error = "Invalid station ID" };
+    if (!GSStation.IsValidStation(p.station_id)) return { success = false, error_name = "INVALID_STATION_ID", error = "Invalid station_id " + p.station_id };
     local loc = GSBaseStation.GetLocation(p.station_id);
     local cargo_waiting = [];
     foreach (cargo_id, _ in GSCargoList()) {
@@ -1499,11 +1529,10 @@ class NttdGS extends GSController {
   function CmdGetVehicles(p) {
     local company_mode = GSCompanyMode(p.company_id);
     local vehicles = [];
-    local filter_type = ("vehicle_type" in p) ? p.vehicle_type : null;
+    local filter_type = ("vehicle_type" in p) ? this._VehicleTypeEnum(p.vehicle_type) : null;
     foreach (id, _ in GSVehicleList()) {
       if (filter_type != null) {
-        local tn = this._VehicleTypeName(GSVehicle.GetVehicleType(id));
-        if (tn != filter_type) continue;
+        if (GSVehicle.GetVehicleType(id) != filter_type) continue;
       }
       local loc = GSVehicle.GetLocation(id);
       local eid = GSVehicle.GetEngineType(id);
@@ -1541,7 +1570,7 @@ class NttdGS extends GSController {
   }
 
   function CmdGetVehicleInfo(p) {
-    if (!GSVehicle.IsValidVehicle(p.vehicle_id)) return { success = false, error = "Invalid vehicle ID" };
+    if (!GSVehicle.IsValidVehicle(p.vehicle_id)) return { success = false, error_name = "INVALID_VEHICLE_ID", error = "Invalid vehicle_id " + p.vehicle_id };
     local vid = p.vehicle_id;
     local loc = GSVehicle.GetLocation(vid);
     local orders = [];
@@ -4493,8 +4522,19 @@ class NttdGS extends GSController {
     }};
   }
 
+  function _InvalidVehicle(vehicle_id) {
+    if (GSVehicle.IsValidVehicle(vehicle_id)) return null;
+    return { success = false, error_name = "INVALID_VEHICLE_ID",
+      error = "Invalid vehicle_id " + vehicle_id + " for this company. Use an existing vehicle_id from observations or a build result; display names are not IDs." };
+  }
+
   function CmdSellVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
+    if (!GSVehicle.IsStoppedInDepot(p.vehicle_id))
+      return { success = false, error_name = "ERR_VEHICLE_NOT_IN_DEPOT",
+        error = "Vehicle " + p.vehicle_id + " is not stopped inside a depot. Selling requires it to be stopped inside a depot; sending it there does not mean it has arrived." };
     if (GSVehicle.SellVehicle(p.vehicle_id)) return { success = true, result = {} };
     return this._Refused();
   }
@@ -4532,6 +4572,8 @@ class NttdGS extends GSController {
     // running and never starts it: measured as four aircraft that stayed in their hangar for
     // sixty days while start_vehicle answered already_running.
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     local halted = GSVehicle.IsStoppedInDepot(p.vehicle_id)
                    || GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED;
     if (!halted) {
@@ -4545,6 +4587,8 @@ class NttdGS extends GSController {
 
   function CmdStopVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     if (GSVehicle.IsStoppedInDepot(p.vehicle_id)
         || GSVehicle.GetState(p.vehicle_id) == GSVehicle.VS_STOPPED) {
       return { success = true, result = { already_stopped = true } };
@@ -4555,18 +4599,24 @@ class NttdGS extends GSController {
 
   function CmdSendToDepot(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     if (GSVehicle.SendVehicleToDepot(p.vehicle_id)) return { success = true, result = {} };
     return this._Refused();
   }
 
   function CmdSendToDepotService(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     if (GSVehicle.SendVehicleToDepotForServicing(p.vehicle_id)) return { success = true, result = {} };
     return this._Refused();
   }
 
   function CmdCloneVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     // The depot to build the copy in. GSVehicle.GetLocation is the vehicle's CURRENT tile,
     // which is a depot only while the vehicle is parked in one, so taking it unconditionally
     // made this action work solely on a vehicle that had never been started. Growing a fleet
@@ -4589,6 +4639,8 @@ class NttdGS extends GSController {
 
   function CmdRefitVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     local cid = ("cargo_id" in p) ? p.cargo_id : ("cargo_type" in p) ? p.cargo_type : null;
     if (cid == null) return { success = false, error = "Need cargo_id or cargo_type" };
     if (GSVehicle.RefitVehicle(p.vehicle_id, cid)) return { success = true, result = {} };
@@ -4597,12 +4649,16 @@ class NttdGS extends GSController {
 
   function CmdReverseVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     if (GSVehicle.ReverseVehicle(p.vehicle_id)) return { success = true, result = {} };
     return this._Refused();
   }
 
   function CmdRenameVehicle(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     if (GSVehicle.SetName(p.vehicle_id, p.name)) {
       return { success = true, result = { vehicle_id = p.vehicle_id, name = p.name } };
     }
@@ -4664,18 +4720,18 @@ class NttdGS extends GSController {
 
   function CmdAddOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     local flags = ("order_flags" in p) ? p.order_flags : 0;
     flags = _SanitizeOrderFlags(p.vehicle_id, flags);
     // Accept station_id OR destination (tile ID of the station)
     local dest = null;
     if ("station_id" in p) {
       local sid = p.station_id;
-      if (GSStation.IsValidStation(sid)) {
-        dest = _ResolveOrderDest(sid);
-      } else if (GSMap.IsValidTile(sid)) {
-        // Agent likely passed a tile instead of station ID -- accept it
-        dest = sid;
-      }
+      if (!GSStation.IsValidStation(sid))
+        return { success = false, error_name = "INVALID_STATION_ID",
+          error = "Invalid station_id " + sid + ". Use a station ID from observations or a build result. For a map tile use dest_tile." };
+      dest = _ResolveOrderDest(sid);
     } else if ("dest_tile" in p) {
       dest = p.dest_tile;
     } else if ("destination" in p) {
@@ -4719,16 +4775,17 @@ class NttdGS extends GSController {
 
   function CmdInsertOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     local flags = ("order_flags" in p) ? p.order_flags : 0;
     flags = _SanitizeOrderFlags(p.vehicle_id, flags);
     local dest = null;
     if ("station_id" in p) {
       local sid = p.station_id;
-      if (GSStation.IsValidStation(sid)) {
-        dest = _ResolveOrderDest(sid);
-      } else if (GSMap.IsValidTile(sid)) {
-        dest = sid;
-      }
+      if (!GSStation.IsValidStation(sid))
+        return { success = false, error_name = "INVALID_STATION_ID",
+          error = "Invalid station_id " + sid + ". Use a station ID from observations or a build result. For a map tile use dest_tile." };
+      dest = _ResolveOrderDest(sid);
     } else if ("dest_tile" in p) {
       dest = p.dest_tile;
     } else if ("destination" in p) {
@@ -4755,9 +4812,15 @@ class NttdGS extends GSController {
 
   function CmdRemoveOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     local idx = ("order_index" in p) ? p.order_index :
                 ("order_position" in p) ? p.order_position : null;
     if (idx == null) return { success = false, error = "Need order_index or order_position" };
+    local count = GSOrder.GetOrderCount(p.vehicle_id);
+    if (idx < 0 || idx >= count)
+      return { success = false, error_name = "INVALID_ORDER_INDEX",
+        error = "Invalid order_index " + idx + " for vehicle " + p.vehicle_id + ": it has " + count + " orders." };
     if (GSOrder.RemoveOrder(p.vehicle_id, idx)) {
       return { success = true, result = { order_count = GSOrder.GetOrderCount(p.vehicle_id) } };
     }
@@ -4766,9 +4829,15 @@ class NttdGS extends GSController {
 
   function CmdSkipToOrder(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     local idx = ("order_index" in p) ? p.order_index :
                 ("order_position" in p) ? p.order_position : null;
     if (idx == null) return { success = false, error = "Need order_index or order_position" };
+    local count = GSOrder.GetOrderCount(p.vehicle_id);
+    if (idx < 0 || idx >= count)
+      return { success = false, error_name = "INVALID_ORDER_INDEX",
+        error = "Invalid order_index " + idx + " for vehicle " + p.vehicle_id + ": it has " + count + " orders." };
     if (GSOrder.SkipToOrder(p.vehicle_id, idx)) return { success = true, result = {} };
     return this._Refused();
   }
@@ -4786,9 +4855,15 @@ class NttdGS extends GSController {
 
   function CmdSetOrderFlags(p) {
     local company_mode = GSCompanyMode(p.company_id);
+    local invalid = this._InvalidVehicle(p.vehicle_id);
+    if (invalid != null) return invalid;
     local idx = ("order_index" in p) ? p.order_index :
                 ("order_position" in p) ? p.order_position : null;
     if (idx == null) return { success = false, error = "Need order_index or order_position" };
+    local count = GSOrder.GetOrderCount(p.vehicle_id);
+    if (idx < 0 || idx >= count)
+      return { success = false, error_name = "INVALID_ORDER_INDEX",
+        error = "Invalid order_index " + idx + " for vehicle " + p.vehicle_id + ": it has " + count + " orders." };
     if (GSOrder.SetOrderFlags(p.vehicle_id, idx, p.order_flags)) return { success = true, result = {} };
     return this._Refused();
   }
@@ -5226,33 +5301,26 @@ class NttdGS extends GSController {
   }
 
   function CmdEstimateCost(p) {
-    // Dry-run cost estimation using GSTestMode + GSAccounting
-    // p.action = the action to estimate, p.params = action params
+    // The backend validates the nested gameplay command and scopes the outer company.
     if (!("action" in p) || !("params" in p))
       return { success = false, error = "params.action and params.params required" };
-
-    if ("company_id" in p.params) {
-      local cid = p.params.company_id;
-      if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID)
-        return { success = false, error = "Invalid company ID" };
-
-      local cost = 0;
+    local cid = p.company_id;
+    if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID)
+      return { success = false, error = "Invalid company ID" };
+    local nested = clone p.params;
+    nested.rawset("company_id", cid);
+    local cost = 0;
+    {
+      local mode = GSCompanyMode(cid);
+      local accounting = GSAccounting();
       {
-        local mode = GSCompanyMode(cid);
-        local accounting = GSAccounting();
-        {
-          local test = GSTestMode();
-          // Dispatch the action in test mode
-          local result = this._Dispatch({ action = p.action, params = p.params });
-          if (!result.success)
-            return { success = false, error = "Test-mode execution failed: " + (("error" in result) ? result.error : "unknown") };
-        }
-        cost = accounting.GetCosts();
+        local test = GSTestMode();
+        local result = this._Dispatch({ action = p.action, params = nested });
+        if (!result.success) return result;
       }
-      return { success = true, result = { action = p.action, estimated_cost = cost } };
+      cost = accounting.GetCosts();
     }
-
-    return { success = false, error = "params.params.company_id required for cost estimation" };
+    return { success = true, result = { action = p.action, estimated_cost = cost } };
   }
 
   // ===========================================================================
@@ -5568,7 +5636,7 @@ class NttdGS extends GSController {
     local max_tiles = ("max_tiles" in p) ? p.max_tiles : 400;
 
     if ((x2 - x1 + 1) * (y2 - y1 + 1) > max_tiles)
-      return { success = false, error = "Area too large (max " + max_tiles + " tiles)" };
+      return { success = false, error_name = "INVALID_PARAMETERS", error = "Requested " + ((x2 - x1 + 1) * (y2 - y1 + 1)) + " tiles; max_tiles is " + max_tiles + ". Bounds are inclusive; reduce the rectangle or explicitly increase max_tiles." };
 
     local tiles = [];
     for (local x = x1; x <= x2; x++) {
@@ -5590,6 +5658,12 @@ class NttdGS extends GSController {
           has_tree = GSTile.HasTreeOnTile(tile),
           is_bridge = GSBridge.IsBridgeTile(tile),
           is_tunnel = GSTunnel.IsTunnelTile(tile),
+          // The far end of a bridge or tunnel, which may lie well outside this area.
+          other_end = GSBridge.IsBridgeTile(tile)
+            ? [GSMap.GetTileX(GSBridge.GetOtherBridgeEnd(tile)), GSMap.GetTileY(GSBridge.GetOtherBridgeEnd(tile))]
+            : (GSTunnel.IsTunnelTile(tile)
+              ? [GSMap.GetTileX(GSTunnel.GetOtherTunnelEnd(tile)), GSMap.GetTileY(GSTunnel.GetOtherTunnelEnd(tile))]
+              : null),
         });
       }
     }

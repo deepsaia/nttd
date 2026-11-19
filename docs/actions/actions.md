@@ -50,7 +50,7 @@ Bridge the gap between two tiles. The ends must be in line and at the same heigh
 - `end_y` (integer, required) Y coordinate of the far end.
 - `start_x` (integer, required) X coordinate of the near end.
 - `start_y` (integer, required) Y coordinate of the near end.
-- `transport_type` (string, default "road") What crosses the bridge: rail, water, or road. Anything else is treated as road.
+- `transport_type` (string, default "road") What the structure carries: rail, road, water. Other values are rejected.
 
 Returns `end_pos`, `start`.
 
@@ -73,7 +73,7 @@ Bore a tunnel into the hillside at the given tile. OpenTTD picks the far end its
 Supply one of: `tile` or `x` and `y`.
 
 - `tile` (integer, optional) Tile index. Takes precedence over x and y when both are given.
-- `transport_type` (string, default "rail") What runs through the tunnel: rail or road. Anything else is treated as rail.
+- `transport_type` (string, default "rail") What the structure carries: rail, road. Other values are rejected.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
@@ -148,7 +148,7 @@ Returns `balance`, `loan`.
 Create a group to organise vehicles of one type. Groups carry their own profit figures and can drive automatic replacement.
 
 - `parent_group_id` (integer, default GSGroup.GROUP_INVALID) Group to nest the new group inside. Omit for a top-level group.
-- `vehicle_type` (string, default "train") One of train, road, ship or aircraft. An unrecognised value silently becomes train.
+- `vehicle_type` (string or integer, default "train") One of train, road, ship or aircraft, or the corresponding integer 0, 1, 2 or 3.
 
 Returns `group_id`.
 
@@ -292,8 +292,8 @@ Lay a route you have already chosen, tile by tile. This is how you build a line 
 
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
 - `road_type` (integer, default 0) Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.
-- `steps` (array, required) The path to lay, as objects carrying x, y and an action. At least two are needed.
-- `transport_type` (string, default "road") What the path carries: rail or road. Anything else is treated as road.
+- `steps` (array, required) At least two path steps. Each contains integer x/y and an optional action (default move). Bridge steps also require bridge_from_x/y; tunnel steps require tunnel_from_x/y.
+- `transport_type` (string, default "road") What the path carries: rail, road or water. Other values are rejected.
 
 Returns `built`, `errors`, `existing`, `failed`, `skipped`, `status`, `total_steps`.
 
@@ -522,9 +522,9 @@ Returns no data beyond success.
 Report what an action would cost without doing it. The action runs in test mode, so nothing is built and no money moves. A failure here is a genuine refusal and worth reading before committing.
 
 - `action` (string, required) Name of the action to price, exactly as it would be submitted.
-- `params` (object, required) The parameters of the action being estimated, exactly as they would be submitted.
+- `params` (object, required) Parameters of the action being estimated, with the same requirements as a normal command. The server supplies the company automatically; do not include company_id.
 
-Returns `action`, `depot_x`, `depot_y`, `dest_tile`, `estimated_cost`, `from_x`, `from_y`, `to_x`, `to_y`, `x`, `y`.
+Returns `action`, `estimated_cost`.
 
 ## rail
 
@@ -897,8 +897,6 @@ Build a locomotive in a depot and optionally couple wagons to it. Wagons that ca
 
 Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 
-Supply one of: `depot_tile` or `depot_x` and `depot_y`.
-
 - `cargo_id` (integer, optional) Which cargo. Numbered by the running game, so ask get_cargo_types rather than assuming.
 - `depot_tile` (integer, optional) Tile index of the depot the vehicle is built in.
 - `depot_x` (integer, optional) X coordinate of the depot the vehicle is built in.
@@ -915,8 +913,6 @@ Build a vehicle of any type in a depot. It starts stopped, so it needs orders an
 
 Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 
-Supply one of: `depot_tile` or `depot_x` and `depot_y`.
-
 - `depot_tile` (integer, optional) Tile index of the depot the vehicle is built in.
 - `depot_x` (integer, optional) X coordinate of the depot the vehicle is built in.
 - `depot_y` (integer, optional) Y coordinate of the depot the vehicle is built in.
@@ -927,8 +923,6 @@ Returns `name`, `vehicle_id`.
 ### `clone_vehicle`
 
 Build a copy of an existing vehicle, optionally sharing the original's orders. Give depot_tile or depot_x and depot_y to say which depot builds the copy; without them the vehicle's current tile is used, which only works while it is parked in a depot.
-
-Supply one of: `depot_tile` or `depot_x` and `depot_y`.
 
 - `depot_tile` (integer, optional) Tile index of the depot the vehicle is built in.
 - `depot_x` (integer, optional) X coordinate of the depot the vehicle is built in.

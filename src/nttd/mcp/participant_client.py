@@ -15,7 +15,6 @@ worth having: no tool needs a session argument, so no client can address the wro
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any
 
 import httpx
@@ -27,18 +26,27 @@ logger = logging.getLogger(__name__)
 # Pathfinding builds run inside the game and a long one outlasts a default timeout, which
 # presents as a dead server rather than a slow move.
 _TIMEOUT_SECONDS = 180.0
+# A step and a submitted batch run until the game answers. The game bounds each
+# command itself, 120 s for a connection and 10 s otherwise. A call given up on
+# here would keep running in the game, refuse the next batch, and lose its results.
+_RUN_TIMEOUT = httpx.Timeout(_TIMEOUT_SECONDS, read=None)
 
 
 class ParticipantClient:
-    """Calls the participant tier of one nttd session, as one company."""
+    """Calls the participant tier of one nttd session, as one company.
 
-    def __init__(self, base_url: str, session_id: str, participant_token: str) -> None:
+    The token is optional. A session that issued no tokens takes the company from
+    the request body instead and ignores the header.
+    """
+
+    def __init__(self, base_url: str, session_id: str, participant_token: str | None = None) -> None:
         self._session_id = session_id
         self._base = f"/v1/participant/sessions/{session_id}"
+        headers = {TOKEN_HEADER: participant_token} if participant_token else {}
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             timeout=_TIMEOUT_SECONDS,
-            headers={TOKEN_HEADER: participant_token},
+            headers=headers,
         )
 
     @property
@@ -56,22 +64,24 @@ class ParticipantClient:
         response.raise_for_status()
         return response.json()
 
-    async def submit(self, action_type: str, parameters: dict[str, Any]) -> dict[str, Any]:
-        """Submit one action. The company comes from the token, never from here."""
-        envelope = {
-            "action_id": f"mcp_{uuid.uuid4().hex[:8]}",
-            "action_type": action_type,
-            "parameters": parameters,
-            "mode": "atomic",
-        }
-        response = await self._http.post(f"{self._base}/actions/submit", json=envelope)
+    async def submit_batch(self, envelopes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Submit several actions in one request, for a game that keeps its own clock.
+
+        Returns one result per envelope, in order, each carrying its action_id.
+        """
+        response = await self._http.post(
+            f"{self._base}/actions/submit-batch", json=envelopes, timeout=_RUN_TIMEOUT,
+        )
         response.raise_for_status()
         return response.json()
 
     async def validate(self, actions: list[dict[str, Any]]) -> dict[str, Any]:
-        """Check a list of actions without running any of them."""
+        """Check a list of actions without running any of them.
+
+        The route takes the list itself as the body, not an object around it.
+        """
         response = await self._http.post(
-            f"{self._base}/actions/interpret/validate", json={"actions": actions},
+            f"{self._base}/actions/interpret/validate", json=actions,
         )
         response.raise_for_status()
         return response.json()
@@ -97,7 +107,17 @@ class ParticipantClient:
         body: dict[str, Any] = {"actions": actions}
         if days is not None:
             body["days"] = days
-        response = await self._http.post(f"{self._base}/step", json=body)
+        response = await self._http.post(f"{self._base}/step", json=body, timeout=_RUN_TIMEOUT)
+        response.raise_for_status()
+        return response.json()
+
+    async def reset(self) -> dict[str, Any]:
+        """Enter stepped mode and return the opening observation.
+
+        The game refuses every step from a caller that has not done this once. It is
+        idempotent: calling it again re-pauses and re-observes without restarting.
+        """
+        response = await self._http.post(f"{self._base}/step/reset", json={})
         response.raise_for_status()
         return response.json()
 

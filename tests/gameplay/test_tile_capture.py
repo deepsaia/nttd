@@ -24,6 +24,8 @@ from typing import Any
 import polars as pl
 import pytest
 
+from nttd.runtime.orchestrator import Orchestrator
+from nttd.state.world import WorldState
 from nttd.store.tile_writer import TileWriter
 
 # The bit layout, mirrored from the GameScript so a change there fails a test here.
@@ -55,7 +57,10 @@ class _FakeGameScript:
         self.calls: list[dict[str, Any]] = []
 
     async def send_gamescript(
-        self, command: str, params: dict[str, Any], timeout: float = 0,
+        self,
+        command: str,
+        params: dict[str, Any],
+        timeout: float = 0,
     ) -> dict[str, Any]:
         assert command == "get_map_terrain"
         self.calls.append(dict(params))
@@ -80,18 +85,22 @@ class _FakeGameScript:
                     flags |= TUNNEL
                 tiles.append([3, 0, flags, 0 if x == 1 else -1])
             rows.append({"y": y, "tiles": tiles})
-        return {"success": True, "result": {
-            "rows": rows, "from_y": from_y, "to_y": to_y,
-            "truncated": truncated,
-            "next_from_y": to_y + 1 if truncated else None,
-        }}
+        return {
+            "success": True,
+            "result": {
+                "rows": rows,
+                "from_y": from_y,
+                "to_y": to_y,
+                "truncated": truncated,
+                "next_from_y": to_y + 1 if truncated else None,
+            },
+        }
 
 
 class _Runtime:
     """The three collaborators _capture_tiles touches, and nothing else."""
 
-    def __init__(self, session_id: str, admin_client: Any, tile_writer: TileWriter,
-                 world: _World) -> None:
+    def __init__(self, session_id: str, admin_client: Any, tile_writer: TileWriter, world: _World) -> None:
         self.session_id = session_id
         self.admin_client = admin_client
         self.tile_writer = tile_writer
@@ -102,7 +111,10 @@ def _runtime(tmp_path: Path, gs: Any) -> _Runtime:
     from nttd.runtime.session_runtime import SessionRuntime
 
     runtime = _Runtime(
-        "ses_t", gs, TileWriter("ses_t", data_dir=str(tmp_path)), _World(32, 32),
+        "ses_t",
+        gs,
+        TileWriter("ses_t", data_dir=str(tmp_path)),
+        _World(32, 32),
     )
     # Borrowed rather than reimplemented, so this tests the shipped routine, including
     # the shared terrain scan it now delegates the paging to.
@@ -172,6 +184,61 @@ async def test_bridges_and_tunnels_are_recorded(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+class _AreaClient:
+    """Answers get_tile_area from a table of tiles, one record per tile asked."""
+
+    def __init__(self, tiles: dict[tuple[int, int], dict[str, Any]]) -> None:
+        self.connected = True
+        self.tiles = tiles
+        self.asked: list[tuple[int, int, int, int]] = []
+
+    async def send_gamescript(self, action: str, params: dict | None = None, timeout: float = 10.0) -> dict[str, Any]:
+        p = params or {}
+        self.asked.append((p["x1"], p["y1"], p["x2"], p["y2"]))
+        found = [
+            dict(t, x=x, y=y) for (x, y), t in self.tiles.items() if p["x1"] <= x <= p["x2"] and p["y1"] <= y <= p["y2"]
+        ]
+        return {"success": True, "result": found}
+
+
+async def test_the_refresh_reads_the_far_portal_of_a_tunnel_it_touches() -> None:
+    """The exit of a 45-tile tunnel lies outside the neighbourhood of the build. The
+    recorder needs both portals, so the refresh follows other_end to the far one."""
+    client = _AreaClient(
+        {
+            (20, 96): {"height": 5, "slope": 3, "is_tunnel": True, "is_bridge": False, "other_end": [65, 96]},
+            (21, 96): {"height": 5, "slope": 0, "is_tunnel": False, "is_bridge": False, "other_end": None},
+            (65, 96): {"height": 5, "slope": 12, "is_tunnel": True, "is_bridge": False, "other_end": [20, 96]},
+        }
+    )
+    orchestrator = Orchestrator.__new__(Orchestrator)
+    orchestrator.client = client  # type: ignore[assignment]
+    orchestrator.world = WorldState()
+    orchestrator.world.game.map_width = 128
+    orchestrator.world.game.map_height = 128
+
+    tiles = await orchestrator._read_tile_area(18, 94, 23, 98)
+
+    assert {(t["x"], t["y"]) for t in tiles if t["is_tunnel"]} == {(20, 96), (65, 96)}
+    assert client.asked[-1] == (65, 96, 65, 96)
+
+
+def test_a_delta_in_the_game_s_named_shape_records_bridges_and_tunnels(tmp_path: Path) -> None:
+    """The refresh after a build hands the recorder get_tile_area's own records, which
+    name the ends is_bridge and is_tunnel. Each must land in the has_* column."""
+    writer = TileWriter("delta", data_dir=str(tmp_path))
+    writer.write_delta(
+        [
+            {"x": 3, "y": 1, "height": 2, "slope": 0, "buildable": False, "is_bridge": True, "is_tunnel": False},
+            {"x": 7, "y": 1, "height": 2, "slope": 3, "buildable": False, "is_bridge": False, "is_tunnel": True},
+            {"x": 9, "y": 1, "height": 2, "slope": 0, "buildable": True, "is_bridge": False, "is_tunnel": False},
+        ]
+    )
+    frame = pl.read_parquet(writer.file_path)
+    assert frame.sort("x")["has_bridge"].to_list() == [True, False, False]
+    assert frame.sort("x")["has_tunnel"].to_list() == [False, True, False]
+
+
 async def test_the_flags_bitmask_survives_for_the_terrain_reports(tmp_path: Path) -> None:
     """prepare_terrain_grid masks bit 0 of this column for water, and the terrain map and
     the video both go through it. Widening the mask must not disturb the low bits."""
@@ -202,7 +269,10 @@ async def test_a_list_reply_is_no_longer_accepted(tmp_path: Path) -> None:
         calls: list[dict[str, Any]] = []
 
         async def send_gamescript(
-            self, command: str, params: dict[str, Any], timeout: float = 0,
+            self,
+            command: str,
+            params: dict[str, Any],
+            timeout: float = 0,
         ) -> dict[str, Any]:
             return {"success": True, "result": [{"y": 1, "tiles": [[1, 0, 4]]}]}
 
@@ -218,7 +288,10 @@ async def test_a_handler_that_cannot_say_where_to_resume_does_not_spin(
 
     class _Stuck(_FakeGameScript):
         async def send_gamescript(
-            self, command: str, params: dict[str, Any], timeout: float = 0,
+            self,
+            command: str,
+            params: dict[str, Any],
+            timeout: float = 0,
         ) -> dict[str, Any]:
             reply = await super().send_gamescript(command, params, timeout)
             reply["result"]["truncated"] = True
@@ -237,7 +310,10 @@ async def test_a_reply_without_owners_still_loads(tmp_path: Path) -> None:
 
     class _ThreeValues(_FakeGameScript):
         async def send_gamescript(
-            self, command: str, params: dict[str, Any], timeout: float = 0,
+            self,
+            command: str,
+            params: dict[str, Any],
+            timeout: float = 0,
         ) -> dict[str, Any]:
             reply = await super().send_gamescript(command, params, timeout)
             for row in reply["result"]["rows"]:

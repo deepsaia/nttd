@@ -20,7 +20,7 @@ Full detail in [observations.md](observations.md).
 - `find_dock_spots(town_id, [max_results, radius])` Search near a town for coastal tiles a dock could be built on.
 - `find_flat_spots(tile|x,y, [max_results, min_size, platform_length, radius, rail_type, required_cargo, station_test])` Search around a tile for level ground.
 - `find_rail_depot_spot(tile|x,y, [max_results, radius, rail_type, town_id])` Find a tile near the given one where a rail depot would fit.
-- `find_station_spot([industry_id, max_results, platform_length, radius, rail_type, town_id])` Find somewhere to put a station serving a given industry or town.
+- `find_station_spot(industry_id|town_id, [max_results, platform_length, radius, rail_type])` Find somewhere to put a station serving a given industry or town.
 - `find_water_depot_spots(tile|x,y, [max_results, radius, town_id])` Search near a town for water a ship depot could be built on.
 - `get_airport_types()` List the airport types this game has, with their sizes and whether they are available yet.
 - `get_bridge_types()` List the bridge designs available, with their speed limits, maximum spans and costs.
@@ -59,7 +59,7 @@ Full detail in [observations.md](observations.md).
 - `get_waypoints()` List your waypoints.
 - `ping()` Check that the GameScript is answering.
 - `scan_town_area(town_id, [radius])` Report the land around a town: what is buildable, what is already built, and where the roads run.
-- `trace_route(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, transport_type])` Walk existing track from one point to another and say whether the chain of pieces joins up.
+- `trace_route(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, road_type, transport_type])` Walk existing track from one point to another and say whether the chain of pieces joins up.
 
 ## Actions
 
@@ -84,11 +84,11 @@ Full detail in [actions.md](actions.md).
 - `build_road_depot(tile|x,y, [direction, road_type])` Build a road depot at a tile, entered from the neighbour picked by direction.
 - `build_road_stop(tile|x,y, [direction, is_drive_through, is_truck_stop, road_type])` Build a bus or truck stop.
 - `build_sign(name, tile|x,y)` Place a named sign on a tile.
-- `build_train(engine_id, depot_tile|depot_x,depot_y, depot_tile|depot_x,depot_y, [cargo_id, num_wagons, wagon_id])` Build a locomotive in a depot and optionally couple wagons to it.
+- `build_train(engine_id, depot_tile|depot_x,depot_y, [cargo_id, num_wagons, wagon_id])` Build a locomotive in a depot and optionally couple wagons to it.
 - `build_tunnel(tile|x,y, [transport_type])` Bore a tunnel into the hillside at the given tile.
 - `build_water_depot(tile|x,y, [direction])` Build a ship depot on water.
-- `buy_vehicle(engine_id, depot_tile|depot_x,depot_y, depot_tile|depot_x,depot_y)` Build a vehicle of any type in a depot.
-- `clone_vehicle(vehicle_id, depot_tile|depot_x,depot_y, [share_orders])` Build a copy of an existing vehicle, optionally sharing the original's orders.
+- `buy_vehicle(engine_id, depot_tile|depot_x,depot_y)` Build a vehicle of any type in a depot.
+- `clone_vehicle(vehicle_id, [depot_tile, depot_x, depot_y, share_orders])` Build a copy of an existing vehicle, optionally sharing the original's orders.
 - `connect_depot(tile|x,y)` Join a rail depot to the running line beside it.
 - `connect_rail(tile_from|from_x,from_y, tile_to|to_x,to_y, [from_hint_x, from_hint_y, max_iterations, rail_type, to_hint_x, to_hint_y])` Lay track between two tiles, finding the route itself.
 - `connect_road(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, road_type])` Build road between two tiles, finding the route itself.

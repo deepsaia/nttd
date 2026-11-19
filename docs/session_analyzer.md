@@ -12,6 +12,7 @@ src/nttd/analysis/
     plots.py               -- reusable Plotly visualization functions
     score.py               -- score_company(), the rating as the game computes it
     trajectory.py          -- per-day rows for a company, read from snapshots
+    live_metrics.py        -- finances and commands per game day, for a monitor that polls
     reports/
         registry.py        -- ReportResult, @register decorator, run_reports()
         renderer.py        -- render_markdown(), render_plots(), render_json()
@@ -121,6 +122,57 @@ nttd analyze -s 20260815-132431ist-quiet-pickle --compare 20260815-141207ist-bri
 
 # Open saved report in browser
 nttd analyze -s 20260815-132431ist-quiet-pickle --save markdown --open
+```
+
+## Evaluation of multiple runs
+
+`nttd evaluate` accepts a list of session directories. A parent directory containing
+exactly one `snapshots.parquet` also works. No running server is needed.
+
+```bash
+# One curve and table row per run
+nttd evaluate logs/sessions/run_a logs/sessions/run_b -o results/comparison
+
+# Average seeds together by repeating a label
+nttd evaluate Luna=logs/sessions/luna_s1 Luna=logs/sessions/luna_s2 \
+  Terra=logs/sessions/terra_s1 Terra=logs/sessions/terra_s2 -o results/evaluation
+
+# Choose a company and request a static image as well
+nttd evaluate logs/sessions/run_a --company 0 --png -o results/evaluation
+```
+
+The four metrics are company value, cumulative revenue, cargo delivered, and rating.
+All four are maximized when computing Pareto fronts. Front 1 contains the groups
+that no other group dominates. Cost is displayed separately from the ranking.
+
+Each group is averaged over its runs, ending at their last common game day.
+The table's `day` column records that horizon; groups can have different horizons.
+Day zero comes from `result.parquet`'s `start_game_date`, falling back to the first
+snapshot. Revenue banks the recorded quarterly income across resets.
+
+Outputs:
+
+- `metrics.html`: interactive curves, reported costs, and Pareto fronts. Works offline.
+- `evaluation.md`, `evaluation.csv`, `evaluation.json`: means and ranks by group.
+- `curves.csv`: the daily group means used for the curves.
+- `runs.csv`: each run's final metrics, cost, and cost source.
+- `metrics.png`: optional image with `--png`; Kaleido requires Chrome installed.
+
+Reported cost and tokens come from `result.parquet`. An optional `costs.csv` in the
+supplied directory overrides those fields. It contains `total_cost_usd` (cumulative)
+or `cost_usd` (per call), plus `input_tokens` and `output_tokens` (per call).
+That file covers the whole runner lifetime, including calls after the game ended.
+Absent spend stays unavailable. A group's mean spend is unavailable if any run
+lacks it. This prevents a missing report from looking like a free run.
+
+The same evaluator is callable from Python:
+
+```python
+from pathlib import Path
+from nttd.analysis.evaluation import evaluate
+
+table = evaluate({"Luna": [Path("logs/sessions/s1"), Path("logs/sessions/s2")]},
+                 Path("results/evaluation"))
 ```
 
 ## The Monitor
