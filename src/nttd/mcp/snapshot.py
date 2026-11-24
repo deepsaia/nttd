@@ -5,9 +5,8 @@ Three changes, each with its own reason:
 - A company's ``income`` holds the revenue of the last completed game quarter and is
   refreshed only when a quarter ends, so it is renamed ``revenue_last_quarter``.
 - A vehicle's numeric ``state`` becomes the word the game uses for a single-vehicle
-  query. Three fields are dropped: ``idle_reason`` is always empty in the fleet
-  list, ``lost`` is never set because the game script never receives that event,
-  and ``running`` repeats the state code and reads true for a vehicle at speed zero.
+  query. Route reachability is reported separately, so a path problem cannot hide
+  a stopped or crashed vehicle. Redundant or unreliable legacy flags are dropped.
 - A command error that reports a search timeout gets a note saying what it means.
 """
 
@@ -16,8 +15,8 @@ from __future__ import annotations
 from typing import Any
 
 TIMEOUT_NOTE = (
-    "The game searched for a route until its 120 s limit and found none. "
-    "A search between two points with no possible route runs to the limit."
+    "The command did not return before the response deadline. "
+    "This does not prove that a route is impossible or that the command made no changes."
 )
 
 
@@ -44,17 +43,19 @@ def rename_income(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def vehicle_state_of(vehicle: dict[str, Any], without_path: set[Any]) -> str:
+def vehicle_state_of(vehicle: dict[str, Any]) -> str:
     """The vehicle's state as a word.
 
-    A running vehicle at speed zero reads "halted". A vehicle the route check found
-    cut off from its stations reads "no_path", moving or not.
+    A running vehicle at speed zero reads "halted". Reachability is a separate fact;
+    it must not hide whether the vehicle is stopped, broken down or crashed.
     """
-    if vehicle.get("id") in without_path:
-        return "no_path"
     word = STATE_WORDS.get(vehicle.get("state"))
     if word is not None:
         return word
+    if vehicle.get("state") in {*STATE_WORDS.values(), "running", "halted", "unknown"}:
+        return vehicle["state"]
+    if vehicle.get("state") != 0:
+        return "unknown"
     return "running" if (vehicle.get("current_speed") or 0) > 0 else "halted"
 
 
@@ -63,18 +64,30 @@ def with_vehicle_state_words(snapshot: dict[str, Any]) -> dict[str, Any]:
     vehicles = snapshot.get("vehicles")
     if not isinstance(vehicles, list):
         return snapshot
-    without_path = {
-        vid
-        for route in snapshot.get("routes") or []
-        if isinstance(route, dict)
-        for vid in route.get("vehicles_without_path") or []
-    }
+    reachability = {}
+    for route in snapshot.get("routes") or []:
+        if not isinstance(route, dict):
+            continue
+        for vid in route.get("vehicle_ids") or []:
+            if vid in (route.get("vehicles_without_path") or []):
+                reachability[vid] = "no_path"
+            elif vid in (route.get("vehicles_with_unknown_path") or []):
+                reachability[vid] = "unknown"
+            elif route.get("track_confirmed_at") or route.get("status") == "active":
+                reachability[vid] = "connected"
+            elif route.get("connection_checked_at"):
+                reachability[vid] = "no_path"
+            else:
+                reachability[vid] = "unknown"
+        for vid in route.get("vehicles_without_path") or []:
+            reachability[vid] = "no_path"
     return {
         **snapshot,
         "vehicles": [
             {
                 **{key: value for key, value in vehicle.items() if key not in DROPPED_VEHICLE_FIELDS},
-                "state": vehicle_state_of(vehicle, without_path),
+                "state": vehicle_state_of(vehicle),
+                "route_reachability": reachability.get(vehicle.get("id"), "unknown"),
             }
             if isinstance(vehicle, dict)
             else vehicle
@@ -107,6 +120,6 @@ def reshape_query(name: str, reply: dict[str, Any]) -> dict[str, Any]:
     def vehicle(value: Any) -> Any:
         if not isinstance(value, dict) or "state" not in value:
             return value
-        return {**value, "state": vehicle_state_of(value, set())}
+        return {**value, "state": vehicle_state_of(value), "route_reachability": "unknown"}
     result = [vehicle(item) for item in payload] if isinstance(payload, list) else vehicle(payload)
     return {**reply, "result": result}

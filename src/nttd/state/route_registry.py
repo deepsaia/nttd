@@ -21,12 +21,16 @@ logger = logging.getLogger(__name__)
 
 class RouteRegistry:
 
+    # About a minute in the realtime benchmark. Mutations invalidate sooner.
+    CONNECTION_CACHE_DAYS = 30
+
     def __init__(self) -> None:
         self._routes: dict[str, Route] = {}
         self._map_width: int = 256
-        # Vehicles the game has already walked from their own tile to the route's first
-        # station. A vehicle that passed once is on the network and is not asked again.
+        # Successful vehicle walks share the route's bounded confirmation lifetime.
         self._vehicles_with_path: dict[str, set[int]] = {}
+        self._vehicle_orders: dict[int, tuple] = {}
+        self._station_locations: dict[int, tuple[int, int]] = {}
         # The game hands a sold vehicle's id to the next one bought. A drop in a vehicle's
         # age means a new vehicle under an old id, whose path has to be walked afresh.
         self._vehicle_age: dict[int, int] = {}
@@ -47,13 +51,25 @@ class RouteRegistry:
         self._map_width = map_width
         active_route_ids: set[str] = set()
 
+        locations = {sid: (s.x, s.y) for sid, s in stations.items()}
+        if locations != self._station_locations:
+            self.invalidate_connections()
+        self._station_locations = locations
+
         for vid, v in vehicles.items():
-            if v.age < self._vehicle_age.get(vid, v.age):
+            orders = tuple((o.destination, o.flags, o.is_goto_station, o.is_goto_depot,
+                            o.is_goto_waypoint, o.is_conditional) for o in v.orders)
+            if ((self._routes and vid not in self._vehicle_orders)
+                    or v.age < self._vehicle_age.get(vid, v.age)
+                    or orders != self._vehicle_orders.get(vid, orders)):
                 for passed in self._vehicles_with_path.values():
                     passed.discard(vid)
+                self.invalidate_connections()
             self._vehicle_age[vid] = v.age
+            self._vehicle_orders[vid] = orders
         for vid in [vid for vid in self._vehicle_age if vid not in vehicles]:
             del self._vehicle_age[vid]
+            self._vehicle_orders.pop(vid, None)
             for passed in self._vehicles_with_path.values():
                 passed.discard(vid)
 
@@ -70,7 +86,7 @@ class RouteRegistry:
             )
             if not sids:
                 continue
-            key = (v.company_id, v.type, sids)
+            key = (v.company_id, v.type, tuple(sorted(set(sids))))
             vehicle_groups.setdefault(key, []).append(v)
 
         for (company_id, vtype, sids), vlist in vehicle_groups.items():
@@ -96,6 +112,7 @@ class RouteRegistry:
             route.total_profit_this_year = sum(v.profit_this_year for v in vlist)
             route.total_profit_last_year = sum(v.profit_last_year for v in vlist)
             route.vehicles_without_path = [v for v in route.vehicles_without_path if v in route.vehicle_ids]
+            self._update_unknown_paths(route)
             if not route.first_vehicle_at:
                 route.first_vehicle_at = game_date
             route.refresh_status()
@@ -111,39 +128,72 @@ class RouteRegistry:
             route.total_profit_this_year = 0
             route.total_profit_last_year = 0
             route.vehicles_without_path = []
+            route.vehicles_with_unknown_path = []
             self._vehicles_with_path.pop(rid, None)
             route.refresh_status()
 
         return [r for r in self._routes.values() if r.status != "removed"]
 
     def vehicles_to_check(self, route: Route) -> list[int]:
-        """The route's vehicles the game has not yet walked to the first station."""
+        """Vehicles without a current successful walk to their first ordered station."""
         passed = self._vehicles_with_path.get(route.route_id, set())
         return [vid for vid in route.vehicle_ids if vid not in passed]
 
+    def invalidate_connections(self, route_id: str | None = None) -> None:
+        """Discard stale connectivity evidence without asserting a disconnection."""
+        for route in self._routes.values():
+            if route.status == "removed" or route.vehicle_type == "aircraft":
+                continue
+            if route_id is not None and route.route_id != route_id:
+                continue
+            route.track_confirmed_at = 0
+            route.connection_checked_at = 0
+            route.vehicles_without_path = []
+            self._vehicles_with_path.pop(route.route_id, None)
+            self._update_unknown_paths(route)
+            route.refresh_status()
+
+    def expire_connections(self, game_date: int) -> None:
+        """Recheck successful paths periodically, including unobserved world changes."""
+        for route in list(self._routes.values()):
+            if (route.track_confirmed_at
+                    and game_date - route.connection_checked_at >= self.CONNECTION_CACHE_DAYS):
+                self.invalidate_connections(route.route_id)
+
+    def _update_unknown_paths(self, route: Route) -> None:
+        passed = self._vehicles_with_path.get(route.route_id, set())
+        route.vehicles_with_unknown_path = [
+            vid for vid in route.vehicle_ids
+            if vid not in passed and vid not in route.vehicles_without_path
+        ]
+
     def record_vehicle_paths(
         self, route_id: str, with_path: list[int], without_path: list[int], game_date: int,
+        unknown: list[int] | None = None,
     ) -> None:
-        """Store which vehicles can reach the route's first station from their own tile.
+        """Store which vehicles can reach their first ordered station from their own tile.
 
-        A vehicle that got no answer this time keeps its previous entry."""
+        Unmentioned vehicles keep their entries; explicitly unknown answers revoke them."""
         route = self._routes.get(route_id)
         if route is None or route.status == "removed":
             return
         passed = self._vehicles_with_path.setdefault(route_id, set())
+        passed.difference_update(without_path + (unknown or []))
         passed.update(with_path)
-        answered = set(with_path) | set(without_path)
+        answered = set(with_path) | set(without_path) | set(unknown or [])
         kept = [v for v in route.vehicles_without_path if v not in answered and v in route.vehicle_ids]
         route.vehicles_without_path = sorted(set(without_path) | set(kept))
-        route.connection_checked_at = game_date
+        self._update_unknown_paths(route)
         route.refresh_status()
 
-    def record_connection(self, route_id: str, connected: bool, game_date: int) -> None:
+    def record_connection(self, route_id: str, connected: bool | None, game_date: int) -> None:
         """Store the game's answer about the path between the route's stations."""
         route = self._routes.get(route_id)
         if route is None or route.status == "removed":
             return
-        route.connection_checked_at = game_date
+        route.connection_checked_at = game_date if connected is not None else 0
+        if connected is not True:
+            route.track_confirmed_at = 0
         if connected and not route.track_confirmed_at:
             route.track_confirmed_at = game_date
             logger.info("Route %s: path confirmed", route_id)

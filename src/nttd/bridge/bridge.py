@@ -61,11 +61,11 @@ class Bridge:
             company = Company(id=packet.id)
         company.money = _signed64(packet.money)
         company.loan = _signed64(packet.current_loan)
-        company.income = _signed64(packet.income)
-        if packet.quarterly_info and len(packet.quarterly_info) > 0:
-            company.value = _signed64(packet.quarterly_info[0].get("company_value", 0))
-        if packet.quarterly_info and len(packet.quarterly_info) > 1:
-            company.profit_last_year = _signed64(packet.quarterly_info[1].get("income", 0))
+        # This is the year's net cash-flow accounting, including capital costs;
+        # it is neither last-quarter vehicle revenue nor annual operating profit.
+        company.annual_net_income = _signed64(packet.income)
+        # quarterly_info contains historical value/rating/cargo, not income.
+        # Live value and quarter revenue come from the GameScript observations.
         self.world.update_company(company)
 
     def _on_company_remove(self, packet: CompanyRemovePacket) -> None:

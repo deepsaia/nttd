@@ -35,4 +35,9 @@ async def line_exists(
         return None
     if not reply.get("success"):
         return None
-    return bool((reply.get("result") or {}).get("line_exists"))
+    result = reply.get("result") or {}
+    if result.get("line_exists") is True:
+        return True
+    if result.get("exhausted") or result.get("line_exists") is not False:
+        return None
+    return False

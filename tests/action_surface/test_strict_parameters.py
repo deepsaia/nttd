@@ -154,7 +154,7 @@ def test_lookup_publishes_same_contract_and_corrected_returns():
 def test_vehicle_queries_use_observation_words_without_losing_details():
     info = {"state": 1, "current_speed": 0, "lost": True, "idle_reason": "stopped", "cargo": []}
     reply = reshape_query("get_vehicle_info", {"success": True, "result": info})
-    assert reply["result"] == {**info, "state": "stopped"}
+    assert reply["result"] == {**info, "state": "stopped", "route_reachability": "unknown"}
     fleet = reshape_query("get_vehicles", {"success": True, "result": [info]})
     assert fleet["result"][0]["state"] == "stopped"
 

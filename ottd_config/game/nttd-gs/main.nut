@@ -628,7 +628,7 @@ class NttdGS extends GSController {
         case "get_tile_info":     return this.CmdGetTileInfo(p);
         case "get_towns":         return this.CmdGetTowns();
         case "get_town_info":     return this.CmdGetTownInfo(p);
-        case "get_industries":    return this.CmdGetIndustries();
+        case "get_industries":    return this.CmdGetIndustries(p);
         case "get_industry_info": return this.CmdGetIndustryInfo(p);
         case "get_companies":     return this.CmdGetCompanies();
         case "get_company_finance": return this.CmdGetCompanyFinance(p);
@@ -998,6 +998,9 @@ class NttdGS extends GSController {
       towns.append({
         id = id, name = GSTown.GetName(id),
         population = GSTown.GetPopulation(id),
+        houses = GSTown.GetHouseCount(id),
+        is_city = GSTown.IsCity(id),
+        growth_rate = GSTown.GetGrowthRate(id),
         x = GSMap.GetTileX(loc), y = GSMap.GetTileY(loc)
       });
     }
@@ -1137,8 +1140,9 @@ class NttdGS extends GSController {
 
     local reachable = 0;
     foreach (_, __ in visited_tiles) reachable++;
+    local exhausted = !reached && head < queue.len() && steps >= max_iter;
     return { success = true, result = {
-      line_exists = reached,
+      line_exists = reached ? true : (exhausted ? null : false),
       transport_type = kind,
       from_x = pair.from.x, from_y = pair.from.y,
       to_x = pair.to.x, to_y = pair.to.y,
@@ -1146,26 +1150,26 @@ class NttdGS extends GSController {
       // short says where the reachable part ends, which is the repair an agent needs.
       tiles_reachable = reachable,
       steps = steps,
-      exhausted = (steps >= max_iter),
+      exhausted = exhausted,
     }};
   }
 
   function CmdGetTownInfo(p) {
     if (!GSTown.IsValidTown(p.town_id)) return { success = false, error = "Invalid town ID" };
+    local company_mode = GSCompanyMode(("company_id" in p) ? p.company_id : 0);
     local loc = GSTown.GetLocation(p.town_id);
 
     // What the town actually trades, which is the whole reason to build here.
     //
-    // A town produces passengers and mail continuously and accepts them at any station in
-    // its catchment, so two stations and a train is a working route with no supply chain to
-    // reason about. It is the first thing a human builds and nothing here said so: this
-    // reply carried population and road_layout and not one word about cargo, so an agent
-    // reasoning from it could not tell a town was worth anything at all.
-    //
+    // Cargo acceptance belongs to the houses in a station's actual catchment,
+    // not to a town-wide boolean. Query the station before planning deliveries.
     // Rates are last month's, per cargo, so a town that has never been served still reports
     // what it produces rather than nothing.
     local produced = [];
-    local accepted = [];
+    // Growth requirements are indexed by TownEffect, not cargo ID, and are
+    // distinct from cargo acceptance at any particular station or house.
+    local growth_requirements = [];
+    local growth_effects = {};
     foreach (cargo_id, _ in GSCargoList()) {
       local last = GSTown.GetLastMonthProduction(p.town_id, cargo_id);
       if (last > 0) {
@@ -1180,17 +1184,25 @@ class NttdGS extends GSController {
             GSTown.GetLastMonthTransportedPercentage(p.town_id, cargo_id),
         });
       }
-      if (GSTown.GetCargoGoal(p.town_id, cargo_id) > 0) {
-        accepted.append({
-          cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id),
-          goal = GSTown.GetCargoGoal(p.town_id, cargo_id),
-        });
+      local effect = GSCargo.GetTownEffect(cargo_id);
+      if (effect != GSCargo.TE_NONE && GSCargo.IsValidTownEffect(effect)) {
+        local goal = GSTown.GetCargoGoal(p.town_id, effect);
+        if (goal > 0) {
+          if (!(effect in growth_effects)) {
+            local requirement = { town_effect_id = effect, goal_per_month = goal, cargo_types = [] };
+            growth_effects.rawset(effect, requirement);
+            growth_requirements.append(requirement);
+          }
+          growth_effects[effect].cargo_types.append({
+            cargo_id = cargo_id, cargo_label = GSCargo.GetCargoLabel(cargo_id)
+          });
+        }
       }
     }
 
     return { success = true, result = {
       produces_cargo = produced,
-      accepts_cargo = accepted,
+      growth_requirements = growth_requirements,
       id = p.town_id,
       name = GSTown.GetName(p.town_id),
       population = GSTown.GetPopulation(p.town_id),
@@ -1217,7 +1229,8 @@ class NttdGS extends GSController {
     }};
   }
 
-  function CmdGetIndustries() {
+  function CmdGetIndustries(p) {
+    local company_id = ("company_id" in p) ? p.company_id : 0;
     local industries = [];
     foreach (id, _ in GSIndustryList()) {
       local loc = GSIndustry.GetLocation(id);
@@ -1272,13 +1285,9 @@ class NttdGS extends GSController {
         production = produced,
         accepted = accepted_list,
         produces_cargo = produces_types,
-        // Which of the company's stations is close enough to collect here, and how many are.
-        // An industry delivers to ONE station and not necessarily the nearest or newest: a
-        // leftover station four tiles away silently took 422 units of wood for 120 days while
-        // the station the train actually served showed nothing waiting. More than one in range
-        // is the warning; the failure is otherwise only visible by noticing cargo piling up
-        // somewhere you did not build.
-        served_by = this._ServingStations(loc),
+        // A proximity hint only: this does not establish catchment or service.
+        nearby_stations = this._NearbyStations(loc, company_id),
+        nearby_stations_company_id = company_id,
         accepts_cargo = accepts_types,
       });
     }
@@ -1344,12 +1353,16 @@ class NttdGS extends GSController {
       // What this kind of industry produces and takes, regardless of whether it has yet.
       // This is the pair to reason about a supply chain from on day one.
       produces_cargo = produces_types,
-      accepts_cargo = accepts_types
+      accepts_cargo = accepts_types,
+      nearby_stations = this._NearbyStations(loc, ("company_id" in p) ? p.company_id : 0),
+      nearby_stations_company_id = ("company_id" in p) ? p.company_id : 0
     }};
   }
 
   function CmdGetCompanies() {
     local companies = [];
+    local finance_date = GSDate.GetCurrentDate();
+    local finance_quarter = GSDate.GetYear(finance_date) * 4 + ((GSDate.GetMonth(finance_date) - 1) / 3).tointeger();
     for (local cid = GSCompany.COMPANY_FIRST; cid <= GSCompany.COMPANY_LAST; cid++) {
       if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID) continue;
       local cm = GSCompanyMode(cid);
@@ -1374,6 +1387,10 @@ class NttdGS extends GSController {
         performance_rating = GSCompany.GetQuarterlyPerformanceRating(cid, 1),
         company_value = GSCompany.GetQuarterlyCompanyValue(cid, 0),
         q0_income = GSCompany.GetQuarterlyIncome(cid, 0),
+        q1_income = GSCompany.GetQuarterlyIncome(cid, 1),
+        finance_date = finance_date,
+        finance_quarter = finance_quarter,
+        completed_quarter_income = this._CompletedQuarterIncome(cid),
         q0_expenses = GSCompany.GetQuarterlyExpenses(cid, 0),
         // Quarter 0 is the quarter IN PROGRESS and OpenTTD resets it to zero at every
         // boundary, so q0_cargo is a sawtooth and the last snapshot of a 366 day run reads 0.
@@ -1389,8 +1406,13 @@ class NttdGS extends GSController {
     local cid = p.company_id;
     if (GSCompany.ResolveCompanyID(cid) == GSCompany.COMPANY_INVALID) return { success = false, error = "Invalid company ID" };
     local cm = GSCompanyMode(cid);
+    local finance_date = GSDate.GetCurrentDate();
     return { success = true, result = {
       company_id = cid,
+      finance_date = finance_date,
+      finance_quarter = GSDate.GetYear(finance_date) * 4 + ((GSDate.GetMonth(finance_date) - 1) / 3).tointeger(),
+      q0_income = GSCompany.GetQuarterlyIncome(cid, 0),
+      completed_quarter_income = this._CompletedQuarterIncome(cid),
       balance = GSCompany.GetBankBalance(cid),
       loan = GSCompany.GetLoanAmount(),
       max_loan = GSCompany.GetMaxLoanAmount(),
@@ -1409,7 +1431,6 @@ class NttdGS extends GSController {
     foreach (id, _ in GSStationList(GSStation.STATION_ANY)) {
       local loc = GSBaseStation.GetLocation(id);
       local cw = [];
-      local ca = [];
       foreach (cargo_id, _ in GSCargoList()) {
         local w = GSStation.GetCargoWaiting(id, cargo_id);
         if (w > 0) {
@@ -1417,19 +1438,6 @@ class NttdGS extends GSController {
             cargo_id = cargo_id,
             cargo_label = GSCargo.GetCargoLabel(cargo_id),
             waiting = w
-          });
-        }
-        local has_rating = GSStation.HasCargoRating(id, cargo_id);
-        local acc = GSTile.GetCargoAcceptance(loc, cargo_id, 1, 1, 4);
-        local prod = GSTile.GetCargoProduction(loc, cargo_id, 1, 1, 4);
-        if (acc >= 8 || prod > 0 || has_rating) {
-          ca.append({
-            cargo_id = cargo_id,
-            cargo_label = GSCargo.GetCargoLabel(cargo_id),
-            accepts = acc >= 8,
-            produces = prod > 0,
-            supply = prod,
-            rated = has_rating
           });
         }
       }
@@ -1442,13 +1450,14 @@ class NttdGS extends GSController {
         has_airport = GSStation.HasStationType(id, GSStation.STATION_AIRPORT),
         has_dock = GSStation.HasStationType(id, GSStation.STATION_DOCK),
         cargo_waiting = cw,
-        cargo_acceptance = ca
+        cargo_acceptance = this._StationCargoInfo(id)
       });
     }
     return { success = true, result = stations };
   }
 
   function CmdGetStationInfo(p) {
+    local company_mode = GSCompanyMode(p.company_id);
     if (!GSStation.IsValidStation(p.station_id)) return { success = false, error_name = "INVALID_STATION_ID", error = "Invalid station_id " + p.station_id };
     local loc = GSBaseStation.GetLocation(p.station_id);
     local cargo_waiting = [];
@@ -1507,7 +1516,8 @@ class NttdGS extends GSController {
       has_bus = GSStation.HasStationType(p.station_id, GSStation.STATION_BUS_STOP),
       has_airport = GSStation.HasStationType(p.station_id, GSStation.STATION_AIRPORT),
       has_dock = GSStation.HasStationType(p.station_id, GSStation.STATION_DOCK),
-      cargo_waiting = cargo_waiting
+      cargo_waiting = cargo_waiting,
+      cargo_acceptance = this._StationCargoInfo(p.station_id)
     }};
   }
 
@@ -1540,10 +1550,13 @@ class NttdGS extends GSController {
       local oc = GSOrder.GetOrderCount(id);
       for (local oi = 0; oi < oc; oi++) {
         ords.append({
+          index = oi,
           destination = GSOrder.GetOrderDestination(id, oi),
           flags = GSOrder.GetOrderFlags(id, oi),
           is_goto_station = GSOrder.IsGotoStationOrder(id, oi),
-          is_goto_depot = GSOrder.IsGotoDepotOrder(id, oi)
+          is_goto_depot = GSOrder.IsGotoDepotOrder(id, oi),
+          is_goto_waypoint = GSOrder.IsGotoWaypointOrder(id, oi),
+          is_conditional = GSOrder.IsConditionalOrder(id, oi)
         });
       }
       vehicles.append({
@@ -1561,6 +1574,8 @@ class NttdGS extends GSController {
         state = GSVehicle.GetState(id),
         running = GSVehicle.GetState(id) == GSVehicle.VS_RUNNING,
         in_depot = GSVehicle.IsStoppedInDepot(id),
+        lost = this._IsLost(id),
+        idle_reason = this._IdleReason(id),
         order_count = oc,
         orders = ords,
         is_articulated = GSVehicle.IsArticulated(id)
@@ -1612,6 +1627,7 @@ class NttdGS extends GSController {
       idle_reason = this._IdleReason(vid),
       current_speed = GSVehicle.GetCurrentSpeed(vid),
       state = GSVehicle.GetState(vid),
+      running = GSVehicle.GetState(vid) == GSVehicle.VS_RUNNING,
       in_depot = GSVehicle.IsStoppedInDepot(vid),
       is_articulated = GSVehicle.IsArticulated(vid),
       // Through the shared orders LIST, not GSOrder.HasSharedOrders, which does not
@@ -1814,15 +1830,23 @@ class NttdGS extends GSController {
     local subsidies = [];
     foreach (id, _ in GSSubsidyList()) {
       if (!GSSubsidy.IsValidSubsidy(id)) continue;
+      local cargo = GSSubsidy.GetCargoType(id);
+      local source_type = GSSubsidy.GetSourceType(id);
+      local source = GSSubsidy.GetSourceIndex(id);
+      local destination_type = GSSubsidy.GetDestinationType(id);
+      local destination = GSSubsidy.GetDestinationIndex(id);
       subsidies.append({
         id = id,
         is_awarded = GSSubsidy.IsAwarded(id),
-        cargo_type = GSSubsidy.GetCargoType(id),
-        source_type = GSSubsidy.GetSourceType(id),
-        source_index = GSSubsidy.GetSourceIndex(id),
-        destination_type = GSSubsidy.GetDestinationType(id),
-        destination_index = GSSubsidy.GetDestinationIndex(id),
-        remaining = GSSubsidy.GetExpireDate(id) - GSDate.GetCurrentDate()
+        cargo_type = cargo,
+        cargo_label = GSCargo.IsValidCargo(cargo) ? GSCargo.GetCargoLabel(cargo) : null,
+        source_type = source_type,
+        source_index = source,
+        source_name = source_type == GSSubsidy.SPT_TOWN ? GSTown.GetName(source) : GSIndustry.GetName(source),
+        destination_type = destination_type,
+        destination_index = destination,
+        destination_name = destination_type == GSSubsidy.SPT_TOWN ? GSTown.GetName(destination) : GSIndustry.GetName(destination),
+        remaining_days = GSSubsidy.GetExpireDate(id) - GSDate.GetCurrentDate()
       });
     }
     return { success = true, result = subsidies };
@@ -2039,6 +2063,7 @@ class NttdGS extends GSController {
     local max_results = ("max_results" in p) ? p.max_results : 5;
     local aw = GSAirport.GetAirportWidth(airport_type);
     local ah = GSAirport.GetAirportHeight(airport_type);
+    local coverage = GSAirport.GetAirportCoverageRadius(airport_type);
     local loc = GSTown.GetLocation(p.town_id);
     local cx = GSMap.GetTileX(loc), cy = GSMap.GetTileY(loc);
     local spots = [];
@@ -2053,16 +2078,14 @@ class NttdGS extends GSController {
           local test_mode = GSTestMode();
           if (!GSAirport.BuildAirport(tile, airport_type, GSStation.STATION_NEW)) continue;
         }
-        local cargo_info = this._GetTileCargoInfo(tile, aw, ah, 4);
-        // Coverage is the number that decides whether an air route earns anything, and it was
-        // not in the reply that chooses the site. Measured: airports 16 to 28 tiles from their
-        // town earned nothing at all, one town of 4,379 people offering a single passenger,
-        // because a commuter airport reaches 4 tiles. `distance` is to the town centre, so
-        // `within_coverage` answers directly whether this spot will see the town.
+        local cargo_info = this._GetTileCargoInfo(tile, aw, ah, coverage);
+        // The town centre is only a landmark. Houses outside it can still supply
+        // or accept cargo; the cargo estimates above are the relevant evidence.
         spots.append({ tile = tile, x = x, y = y, distance = abs(dx) + abs(dy),
           width = aw, height = ah, cargo_acceptance = cargo_info,
-          coverage = GSAirport.GetAirportCoverageRadius(airport_type),
-          within_coverage = (abs(dx) + abs(dy)) <= GSAirport.GetAirportCoverageRadius(airport_type) });
+          coverage = coverage,
+          within_coverage = cx >= x - coverage && cx < x + aw + coverage
+            && cy >= y - coverage && cy < y + ah + coverage });
       }
     }
     // Sort by cargo acceptance count (desc), then distance (asc)
@@ -4958,14 +4981,11 @@ class NttdGS extends GSController {
     return { from = from_r, to = to_r };
   }
 
-  function _ServingStations(loc) {
-    // The company's stations near enough to be collecting here, nearest first.
-    //
-    // Inside a company mode, because GSStationList is EMPTY outside one, exactly as
-    // GSVehicleList is. Reports distance rather than asserting which one wins: catchment differs
-    // by station type, and the useful signal is "more than one of yours is in range", which is
-    // the situation that silently starves the route you just built.
-    local company_mode = GSCompanyMode(0);
+  function _NearbyStations(loc, company_id) {
+    // This is ONLY an anchor-to-anchor
+    // Manhattan-distance search within ten tiles, not a catchment, cargo
+    // capability or service check. Nearest anchors come first.
+    local company_mode = GSCompanyMode(company_id);
     local found = [];
     foreach (sid, _ in GSStationList(GSStation.STATION_ANY)) {
       local stile = GSStation.GetLocation(sid);
@@ -4977,6 +4997,7 @@ class NttdGS extends GSController {
         distance = distance
       });
     }
+    this._SortByDistance(found);
     return found;
   }
 
@@ -5674,6 +5695,14 @@ class NttdGS extends GSController {
   // INTERNAL HELPERS
   // ===========================================================================
 
+  function _CompletedQuarterIncome(company_id) {
+    local income = [];
+    for (local quarter = 1; quarter <= GSCompany.EARLIEST_QUARTER; quarter++) {
+      income.append(GSCompany.GetQuarterlyIncome(company_id, quarter));
+    }
+    return income;
+  }
+
   // Station spots, reachable ones first and nearest within that.
   //
   // Sorting on distance alone put an unusable spot at the head of the list, and the head of
@@ -5703,6 +5732,47 @@ class NttdGS extends GSController {
       while (j >= 0 && arr[j].distance > key.distance) { arr[j + 1] = arr[j]; j--; }
       arr[j + 1] = key;
     }
+  }
+
+  function _StationCargoInfo(station_id) {
+    // Acceptance is game state. A tile query at the station's anchor can miss
+    // houses covered by the rest of an airport, platform or joined station.
+    local accepted = GSCargoList_StationAccepting(station_id);
+    local tiles = GSTileList_StationType(station_id, GSStation.STATION_ANY);
+    local loc = tiles.Count() > 0 ? tiles.Begin() : GSBaseStation.GetLocation(station_id);
+    local min_x = GSMap.GetTileX(loc), max_x = min_x;
+    local min_y = GSMap.GetTileY(loc), max_y = min_y;
+    foreach (tile, _ in tiles) {
+      local x = GSMap.GetTileX(tile), y = GSMap.GetTileY(tile);
+      if (x < min_x) min_x = x;
+      if (x > max_x) max_x = x;
+      if (y < min_y) min_y = y;
+      if (y > max_y) max_y = y;
+    }
+    local origin = GSMap.GetTileIndex(min_x, min_y);
+    local coverage = GSStation.GetStationCoverageRadius(station_id);
+    local result = [];
+    foreach (cargo_id, _ in GSCargoList()) {
+      local accepts = accepted.HasItem(cargo_id);
+      local rated = GSStation.HasCargoRating(station_id, cargo_id);
+      // Production is an estimate over the station's bounding rectangle. An
+      // irregular or separated station can cover less than this rectangle.
+      local supply = tiles.Count() > 0 ? GSTile.GetCargoProduction(
+        origin, cargo_id, max_x - min_x + 1, max_y - min_y + 1, coverage
+      ) : 0;
+      if (accepts || supply > 0 || rated || GSStation.GetCargoWaiting(station_id, cargo_id) > 0) {
+        result.append({
+          cargo_id = cargo_id,
+          cargo_label = GSCargo.GetCargoLabel(cargo_id),
+          accepts = accepts,
+          produces = supply > 0,
+          supply = supply,
+          supply_is_estimate = true,
+          rated = rated
+        });
+      }
+    }
+    return result;
   }
 
   // Check cargo acceptance and production around a tile area.

@@ -2055,7 +2055,7 @@
       }
     },
     "find_airport_spots": {
-      "description": "Search near a town for places an airport of the given type would fit.",
+      "description": "Search near a town for places an airport of the given type would fit. cargo_acceptance estimates cargo around the full airport footprint using its coverage radius. within_coverage says only whether the town centre lies in that area; a false value does not rule out passenger-producing or accepting houses. After building, get_stations or get_station_info reports actual acceptance.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdFindAirportSpots",
@@ -2795,6 +2795,9 @@
         "fields": [
           "cargo_delivered_total",
           "company_value",
+          "completed_quarter_income",
+          "finance_date",
+          "finance_quarter",
           "hq_x",
           "hq_y",
           "id",
@@ -2805,7 +2808,8 @@
           "performance_rating",
           "q0_cargo",
           "q0_expenses",
-          "q0_income"
+          "q0_income",
+          "q1_income"
         ]
       }
     },
@@ -2820,8 +2824,12 @@
         "fields": [
           "balance",
           "company_id",
+          "completed_quarter_income",
+          "finance_date",
+          "finance_quarter",
           "loan",
           "max_loan",
+          "q0_income",
           "q1_expenses",
           "q1_income",
           "q1_value",
@@ -3015,7 +3023,7 @@
       }
     },
     "get_industries": {
-      "description": "List the industries on the map, with their locations, types and production.",
+      "description": "List industries with locations, types and recent production. produces_cargo and accepts_cargo describe the industry type even before production begins. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetIndustries",
@@ -3029,9 +3037,10 @@
           "is_processing",
           "is_raw",
           "name",
+          "nearby_stations",
+          "nearby_stations_company_id",
           "produces_cargo",
           "production",
-          "served_by",
           "type_id",
           "type_name",
           "x",
@@ -3040,7 +3049,7 @@
       }
     },
     "get_industry_info": {
-      "description": "Report one industry in detail: what it produces and accepts, recent production, and how much is waiting.",
+      "description": "Report one industry: its type-level produced and accepted cargo, recent production and accepted-cargo stockpiles. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetIndustryInfo",
@@ -3060,6 +3069,8 @@
           "is_processing",
           "is_raw",
           "name",
+          "nearby_stations",
+          "nearby_stations_company_id",
           "produces_cargo",
           "production",
           "type_id",
@@ -3246,7 +3257,7 @@
       }
     },
     "get_station_info": {
-      "description": "Report one station in detail: what is waiting, what it accepts, and its cargo ratings. entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access.",
+      "description": "Report one station, its waiting cargo and cargo ratings. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply estimate producing sites over the station footprint and coverage, not cargo units or guaranteed pickup (supply_is_estimate=true). entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetStationInfo",
@@ -3260,6 +3271,7 @@
       "returns": {
         "shape": "object",
         "fields": [
+          "cargo_acceptance",
           "cargo_waiting",
           "entry_tiles",
           "has_airport",
@@ -3292,7 +3304,7 @@
       }
     },
     "get_stations": {
-      "description": "List your stations, with what is waiting at each and how it is rated.",
+      "description": "List your stations and waiting cargo. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply are estimates over the station footprint and coverage; supply counts producing sites, not cargo units or guaranteed pickup (supply_is_estimate=true).",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetStations",
@@ -3315,7 +3327,7 @@
       }
     },
     "get_subsidies": {
-      "description": "List the subsidies on offer and those already awarded.",
+      "description": "List subsidy routes on offer and already awarded, including cargo, endpoint types/IDs/names, is_awarded and remaining_days until expiry in economy-days. This does not report a monetary subsidy value.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetSubsidies",
@@ -3323,13 +3335,16 @@
       "returns": {
         "shape": "list",
         "fields": [
+          "cargo_label",
           "cargo_type",
           "destination_index",
+          "destination_name",
           "destination_type",
           "id",
           "is_awarded",
-          "remaining",
+          "remaining_days",
           "source_index",
+          "source_name",
           "source_type"
         ]
       }
@@ -3447,7 +3462,7 @@
       }
     },
     "get_town_info": {
-      "description": "Report one town in detail: population, houses, what it accepts and how fast it is growing.",
+      "description": "Report one town: population, houses, past-month cargo production and growth rate. growth_requirements lists positive monthly town-growth goals grouped by TownEffect, with the cargo types that satisfy each effect. Town-growth goals are distinct from cargo acceptance at a station.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetTownInfo",
@@ -3461,11 +3476,11 @@
       "returns": {
         "shape": "object",
         "fields": [
-          "accepts_cargo",
           "exclusive_rights_company",
           "exclusive_rights_duration",
           "fund_buildings_duration",
           "growth_rate",
+          "growth_requirements",
           "has_statue",
           "houses",
           "id",
@@ -3502,7 +3517,7 @@
       }
     },
     "get_towns": {
-      "description": "List the towns on the map, with their locations and populations.",
+      "description": "List towns with their locations, populations, house counts, city flags and growth rates. growth_rate is economy-days between growth, not population gained per day.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetTowns",
@@ -3510,7 +3525,10 @@
       "returns": {
         "shape": "list",
         "fields": [
+          "growth_rate",
+          "houses",
           "id",
+          "is_city",
           "name",
           "population",
           "x",
@@ -3519,7 +3537,7 @@
       }
     },
     "get_vehicle_info": {
-      "description": "Report one vehicle in detail: where it is, what it carries, its orders, age, reliability and profit.",
+      "description": "Report one vehicle: position, cargo loads and capacities, indexed orders, age, current game state, running status and profit. Orders distinguish station, depot, waypoint and conditional entries.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetVehicleInfo",
@@ -3550,6 +3568,7 @@
           "orders",
           "profit_last_year",
           "profit_this_year",
+          "running",
           "state",
           "type",
           "x",
@@ -3574,7 +3593,7 @@
       }
     },
     "get_vehicles": {
-      "description": "List your vehicles, optionally of one type only, with their positions, cargo and orders.",
+      "description": "List your vehicles, optionally of one type, with positions, capacity, current game state, running status and indexed orders. running means the game reports VS_RUNNING; stopped vehicles outside a depot remain stopped. Orders include station/depot/waypoint/conditional discriminators.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetVehicles",
@@ -3608,8 +3627,10 @@
           "current_speed",
           "engine_id",
           "id",
+          "idle_reason",
           "in_depot",
           "is_articulated",
+          "lost",
           "max_age",
           "name",
           "order_count",
@@ -5623,7 +5644,7 @@
       }
     },
     "trace_route": {
-      "description": "Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal.",
+      "description": "Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal. line_exists is null when the bounded search is exhausted before deciding; exhausted=true is inconclusive, not proof that no connection exists.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdTraceRoute",

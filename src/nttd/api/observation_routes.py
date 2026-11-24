@@ -486,15 +486,10 @@ async def get_compact_state(session_id: str, company_id: int = -1) -> CompactSna
 
     # Subsidies
     compact_subsidies = [
-        CompactSubsidy(
-            id=s.id,
-            cargo_label=s.cargo_label,
-            src_name=s.src_name,
-            dst_name=s.dst_name,
-            value=s.value,
-            remaining_years=s.remaining_years,
-        )
-        for s in sorted(world.subsidies, key=lambda s: s.value, reverse=True)
+        CompactSubsidy(**s.model_dump())
+        for s in sorted(world.subsidies, key=lambda s: (
+            s.remaining_days is None, s.remaining_days if s.remaining_days is not None else 0, s.id,
+        ))
     ]
 
     # Recent actions

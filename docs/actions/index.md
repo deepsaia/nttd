@@ -37,8 +37,8 @@ Full detail in [observations.md](observations.md).
 - `get_game_settings(keys)` Read named game settings.
 - `get_groups()` List your vehicle groups, with their profits and how they nest.
 - `get_hangars()` List the hangar tiles of an airport, which is where aircraft are built and serviced.
-- `get_industries()` List the industries on the map, with their locations, types and production.
-- `get_industry_info(industry_id)` Report one industry in detail: what it produces and accepts, recent production, and how much is waiting.
+- `get_industries()` List industries with locations, types and recent production.
+- `get_industry_info(industry_id)` Report one industry: its type-level produced and accepted cargo, recent production and accepted-cargo stockpiles.
 - `get_infrastructure_costs()` Report how much track, road and station you own and what it costs to maintain each month.
 - `get_map_size()` Report the map dimensions in tiles.
 - `get_map_terrain([from_y, max_tiles, occupancy, to_y])` Report terrain across a band of the map: height, slope, and whether each tile is water, coast or buildable.
@@ -46,16 +46,16 @@ Full detail in [observations.md](observations.md).
 - `get_rail_types()` List the rail technologies this game has and which are available yet.
 - `get_road_types()` List the road technologies this game has, tram tracks included, and which are available yet.
 - `get_signs()` List the signs on the map.
-- `get_station_info(station_id)` Report one station in detail: what is waiting, what it accepts, and its cargo ratings.
-- `get_stations()` List your stations, with what is waiting at each and how it is rated.
-- `get_subsidies()` List the subsidies on offer and those already awarded.
+- `get_station_info(station_id)` Report one station, its waiting cargo and cargo ratings.
+- `get_stations()` List your stations and waiting cargo.
+- `get_subsidies()` List subsidy routes on offer and already awarded, including cargo, endpoint types/IDs/names, is_awarded and remaining_days until expiry in economy-days.
 - `get_tile_area(x1, x2, y1, y2, [max_tiles])` Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it.
 - `get_tile_info(tile|x,y)` Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to.
-- `get_town_info(town_id)` Report one town in detail: population, houses, what it accepts and how fast it is growing.
+- `get_town_info(town_id)` Report one town: population, houses, past-month cargo production and growth rate.
 - `get_town_rating(town_id)` Report how a town regards your company.
-- `get_towns()` List the towns on the map, with their locations and populations.
-- `get_vehicle_info(vehicle_id)` Report one vehicle in detail: where it is, what it carries, its orders, age, reliability and profit.
-- `get_vehicles([vehicle_type])` List your vehicles, optionally of one type only, with their positions, cargo and orders.
+- `get_towns()` List towns with their locations, populations, house counts, city flags and growth rates.
+- `get_vehicle_info(vehicle_id)` Report one vehicle: position, cargo loads and capacities, indexed orders, age, current game state, running status and profit.
+- `get_vehicles([vehicle_type])` List your vehicles, optionally of one type, with positions, capacity, current game state, running status and indexed orders.
 - `get_waypoints()` List your waypoints.
 - `ping()` Check that the GameScript is answering.
 - `scan_town_area(town_id, [radius])` Report the land around a town: what is buildable, what is already built, and where the roads run.

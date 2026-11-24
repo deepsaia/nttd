@@ -27,6 +27,7 @@ class RunEvaluation:
     cost_usd: float | None
     tokens: int | None
     cost_source: str
+    revenue_source: str = "unavailable"
 
 
 def session_directory(path: Path) -> Path:
@@ -50,7 +51,7 @@ def read_run(path: Path, company_id: int = 0) -> RunEvaluation:
         result = next((r for r in pd.read_parquet(result_path).to_dict("records")
                        if r["company_id"] == company_id), {})
     snapshots = pd.read_parquet(session / "snapshots.parquet").sort_values("game_date", kind="stable")
-    points = []
+    points, finances = [], []
     for row in snapshots.to_dict("records"):
         company = next((c for c in json.loads(row["snapshot_json"]).get("companies", [])
                         if c["id"] == company_id), None)
@@ -63,18 +64,33 @@ def read_run(path: Path, company_id: int = 0) -> RunEvaluation:
             "total_cargo": float(company["cargo_delivered_total"]),
             "performance_rating": float(company["performance_rating"]),
         })
+        finances.append(company)
     if not points:
         raise ValueError(f"{session}: no snapshots for company {company_id}")
     frame = pd.DataFrame(points)
-    frame["episode_revenue"] = cumulative_revenue(frame["game_date"], frame["quarter_income"])
+    explicit_periods = all(c.get("finance_quarter") is not None for c in finances)
+    historical_quarters = [c.get("completed_quarter_income", []) for c in finances]
+    last_completed = [c["q1_income"] if c.get("q1_income") is not None else c.get("income")
+                      for c in finances]
+    revenue_source = ("economy_quarter_history" if explicit_periods else
+                      "legacy_completed_quarters_inferred_periods" if any(v is not None for v in last_completed)
+                      else "current_quarter_only")
+    frame["episode_revenue"] = cumulative_revenue(
+        frame["game_date"].tolist(), frame["quarter_income"].tolist(),
+        finance_quarters=[c["finance_quarter"] for c in finances] if explicit_periods else None,
+        completed_quarter_income=historical_quarters,
+        last_completed_quarter_income=last_completed,
+        initial_income=float(frame["quarter_income"].iloc[0]),
+    )
     start = result.get("start_game_date")
     if start is None or pd.isna(start):
         start = frame["game_date"].iloc[0]
     frame["day"] = frame["game_date"] - int(start)
-    frame = frame[frame["day"] >= 0].groupby("day").last()[list(AXES)]
+    frame = frame[frame["day"] >= 0].groupby("day", sort=True).tail(1).set_index("day")[list(AXES)]
     if frame.empty:
         raise ValueError(f"{session}: no snapshots at or after the recorded start date")
-    frame = frame.reindex(range(int(frame.index.min()), int(frame.index.max()) + 1)).ffill()
+    # Carry observations over unsampled days, but preserve explicitly unknown values.
+    frame = frame.reindex(range(int(frame.index.min()), int(frame.index.max()) + 1), method="ffill")
     frame.index.name = "day"
     cost = float(result["total_cost_usd"]) if result.get("cost_is_reported") else None
     tokens = int(result["prompt_tokens"] + result["completion_tokens"]) if result.get("spend_is_reported") else None
@@ -90,7 +106,7 @@ def read_run(path: Path, company_id: int = 0) -> RunEvaluation:
                 cost = float(costs["cost_usd"].sum())
             tokens = int(costs["input_tokens"].sum() + costs["output_tokens"].sum())
             source = str(usage)
-    return RunEvaluation(session, frame, cost, tokens, source)
+    return RunEvaluation(session, frame, cost, tokens, source, revenue_source)
 
 
 def complete_mean(values: list[float | int | None]) -> float | None:
@@ -131,7 +147,8 @@ def evaluate(
         last = min(int(run.series.index.max()) for run in runs)
         if first > last:
             raise ValueError(f"{label}: runs have no overlapping game days")
-        mean = pd.concat([run.series.loc[first:last] for run in runs]).groupby(level=0).mean()
+        grouped = pd.concat([run.series.loc[first:last] for run in runs]).groupby(level=0)
+        mean = grouped.mean().where(grouped.count() == len(runs))
         data[label] = (mean, runs)
         summaries[label] = {
             "seeds": len(runs), "day": last, **mean.iloc[-1].to_dict(),
@@ -142,10 +159,12 @@ def evaluate(
         for run in runs:
             run_rows.append({"experiment": label, "session": str(run.path),
                              "day": int(run.series.index.max()), **run.series.iloc[-1].to_dict(),
-                             "cost_usd": run.cost_usd, "tokens": run.tokens, "cost_source": run.cost_source})
+                             "cost_usd": run.cost_usd, "tokens": run.tokens, "cost_source": run.cost_source,
+                             "revenue_source": run.revenue_source})
     table = pd.DataFrame.from_dict(summaries, orient="index")
-    fronts = pareto_fronts({label: tuple(row[list(AXES)]) for label, row in table.iterrows()})
-    table.insert(0, "front", pd.Series(fronts))
+    fronts = pareto_fronts({label: tuple(row[list(AXES)]) for label, row in table.iterrows()
+                           if row[list(AXES)].notna().all()})
+    table.insert(0, "front", pd.Series(fronts, dtype=float))
     table = table.sort_values(["front", "cost_usd"])
     table.index.name = "experiment"
     output = Path(output)
@@ -156,8 +175,11 @@ def evaluate(
     pd.concat(curves).to_csv(output / "curves.csv", index=False)
     note = ("Curves and ranks use each group's common game-day horizon (the day column). "
             "Day zero is the recorded result start, or the first snapshot if unavailable. "
+            "Revenue starts at the first financial observation and excludes its opening current-quarter revenue. "
             "Cost is reported total run spend, including any calls after the game ended; "
-            "missing spend is unavailable, not zero. See runs.csv for individual endpoints and cost sources.\n\n")
+            "missing spend or completed-quarter history is unavailable, not zero. "
+            "Means require every seed; conditions with missing metrics receive no Pareto rank. "
+            "Legacy quarter periods are inferred; see runs.csv for revenue and cost sources.\n\n")
     (output / "evaluation.md").write_text(note + markdown_table(table))
     fig = make_subplots(rows=2, cols=3, subplot_titles=[*TITLES.values(), "Reported LLM cost (USD)", "Pareto front"])
     by_front = table.groupby("front")
@@ -173,6 +195,8 @@ def evaluate(
         if costs:
             fig.add_trace(go.Box(y=costs, name=label, boxpoints="all", marker_color=color,
                                 legendgroup=label, showlegend=False), row=2, col=2)
+        if label not in fronts:
+            continue
         fig.add_trace(go.Scatter(x=[front_offsets[label]], y=[int(fronts[label])], mode="markers",
                                  name=label, text=[label], marker={"color": color, "size": 11},
                                  legendgroup=label, showlegend=False,
@@ -181,7 +205,7 @@ def evaluate(
     fig.update_layout(title="NTTD evaluation — mean over runs in each group", template="plotly_white",
                       height=850, width=1600, legend={"orientation": "h", "y": -0.18})
     fig.update_xaxes(visible=False, row=2, col=3)
-    fig.update_yaxes(tick0=1, dtick=1, range=[max(fronts.values()) + 0.5, 0.5],
+    fig.update_yaxes(tick0=1, dtick=1, range=[max(fronts.values(), default=1) + 0.5, 0.5],
                      title_text="Front (1 = not dominated)", row=2, col=3)
     fig.write_html(output / "metrics.html", include_plotlyjs=True)
     if png:

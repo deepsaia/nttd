@@ -41,9 +41,6 @@ class EndConditionChecker:
         self._start_time: float | None = start_time
         self._start_game_date: int | None = None
         self._heartbeat_count = 0
-        # Running totals for cargo delivered (accumulated across snapshots)
-        self._cargo_delivered: int = 0
-        self._prev_income: dict[int, int] = {}
 
     def start_clock(self, game_date: int | None = None) -> bool:
         """Start the scored clock. Returns True if this call started it.
@@ -124,8 +121,6 @@ class EndConditionChecker:
         self._start_time = None
         self._start_game_date = None
         self._heartbeat_count = 0
-        self._cargo_delivered = 0
-        self._prev_income = {}
 
     def check(self, snapshot: StateSnapshot) -> EndResult:
         """Return EndResult(triggered=True, reason=...) if any/all conditions are met."""
@@ -206,30 +201,26 @@ class EndConditionChecker:
         # ---- Revenue threshold (any single company) ----------------------
         if cfg.revenue_threshold.enabled:
             for company in snapshot.companies:
-                if company.income >= cfg.revenue_threshold.total_revenue:
+                if (company.episode_revenue is not None
+                        and company.episode_revenue >= cfg.revenue_threshold.total_revenue):
                     results.append(EndResult(
                         triggered=True,
                         reason=(
                             f"Company {company.id} ({company.name}) reached "
-                            f"revenue {company.income:,} >= {cfg.revenue_threshold.total_revenue:,}"
+                            f"episode revenue {company.episode_revenue:,} >= {cfg.revenue_threshold.total_revenue:,}"
                         ),
                     ))
                     break
 
-        # ---- Cargo threshold (cumulative income proxy) -------------------
-        # We approximate cargo delivered via the change in income since last heartbeat.
+        # ---- Cargo threshold (actual delivered units across companies) ---
         if cfg.cargo_threshold.enabled:
-            for company in snapshot.companies:
-                prev = self._prev_income.get(company.id, company.income)
-                delta = max(0, company.income - prev)
-                self._cargo_delivered += delta
-                self._prev_income[company.id] = company.income
-            if self._cargo_delivered >= cfg.cargo_threshold.total_cargo_delivered:
+            delivered = sum(company.cargo_delivered_total for company in snapshot.companies)
+            if delivered >= cfg.cargo_threshold.total_cargo_delivered:
                 results.append(EndResult(
                     triggered=True,
                     reason=(
-                        f"Cumulative cargo/revenue delivered "
-                        f"{self._cargo_delivered:,} >= {cfg.cargo_threshold.total_cargo_delivered:,}"
+                        f"Cargo delivered "
+                        f"{delivered:,} >= {cfg.cargo_threshold.total_cargo_delivered:,}"
                     ),
                 ))
 

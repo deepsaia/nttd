@@ -396,56 +396,77 @@ class Orchestrator:
         The game accepts an order to a station that no road or track reaches, and a depot
         that no road joins, and the vehicle then never arrives. The registry only groups
         orders, so it cannot tell. Two walks with trace_route answer it: one between
-        consecutive stations, asked until a path is found so a road built later turns the
-        route active, and one from each vehicle's own tile to the first station, asked
-        until that vehicle passes once. Aircraft need no track. Ships sail open water,
-        which the walk does not cover, so a ship route counts as connected.
+        consecutive orders, and one from each vehicle's tile to its first station.
+        Positive checks expire after a bounded interval and after infrastructure changes.
+        Aircraft need no track. Ship connectivity remains unknown because the walker
+        does not cover water.
         """
         stations = self.world.stations
         game_date = self.world.game.game_date
         registry = self.world.route_registry
+        registry.expire_connections(game_date)
         for route in self.world._derive_routes():
             if not route.vehicle_ids:
                 continue
-            if route.vehicle_type in ("aircraft", "ship"):
+            if route.vehicle_type == "aircraft":
                 if not route.track_confirmed_at:
                     registry.record_connection(route.route_id, True, game_date)
+                registry.record_vehicle_paths(route.route_id, route.vehicle_ids, [], game_date)
                 continue
             if route.vehicle_type not in ("train", "road"):
                 continue
             transport_type = "rail" if route.vehicle_type == "train" else "road"
             if not route.track_confirmed_at:
                 connected = await self.stations_joined(route, transport_type)
-                if connected is not None:
-                    registry.record_connection(route.route_id, connected, game_date)
-            first = stations.get(route.station_ids[0]) if route.station_ids else None
-            if first is None:
-                continue
+                registry.record_connection(route.route_id, connected, game_date)
             with_path: list[int] = []
             without_path: list[int] = []
+            unknown: list[int] = []
+            station_by_tile = {s.y * (self.world.game.map_width or 256) + s.x: s
+                               for s in stations.values()}
             for vid in registry.vehicles_to_check(route):
                 vehicle = self.world.vehicles.get(vid)
                 if vehicle is None:
+                    continue
+                first = next((station_by_tile.get(o.destination) for o in vehicle.orders
+                              if o.is_goto_station), None)
+                if first is None:
+                    unknown.append(vid)
                     continue
                 answer = await line_exists(self.client, vehicle.x, vehicle.y, first.x, first.y, transport_type)
                 if answer is True:
                     with_path.append(vid)
                 elif answer is False:
                     without_path.append(vid)
-            if with_path or without_path:
-                registry.record_vehicle_paths(route.route_id, with_path, without_path, game_date)
+                else:
+                    unknown.append(vid)
+            if with_path or without_path or unknown:
+                registry.record_vehicle_paths(route.route_id, with_path, without_path, game_date, unknown)
 
     async def stations_joined(self, route: Route, transport_type: str) -> bool | None:
         """Whether built road or track joins every consecutive pair of the route's stations.
 
         None when the game could not answer for some pair."""
-        stations = self.world.stations
-        for sid_a, sid_b in zip(route.station_ids, route.station_ids[1:]):
-            if sid_a == sid_b:
-                continue
-            a, b = stations.get(sid_a), stations.get(sid_b)
-            if a is None or b is None:
+        stations = {s.y * (self.world.game.map_width or 256) + s.x: s
+                    for s in self.world.stations.values()}
+        pairs: set[tuple[int, int]] = set()
+        for vid in route.vehicle_ids:
+            vehicle = self.world.vehicles.get(vid)
+            if vehicle is None:
                 return None
+            # A station-only walk does not establish that a waypoint, depot visit or
+            # conditional branch is runnable. Keep those itineraries inconclusive.
+            if any(o.is_goto_waypoint or o.is_goto_depot or o.is_conditional
+                   for o in vehicle.orders):
+                return None
+            stops = [o.destination for o in vehicle.orders if o.is_goto_station]
+            if any(tile not in stations for tile in stops) or not stops:
+                return None
+            # Orders repeat, so the return leg matters too. Different order sequences
+            # share a route report, but every vehicle's actual itinerary must work.
+            pairs.update((a, b) for a, b in zip(stops, stops[1:] + stops[:1]) if a != b)
+        for tile_a, tile_b in sorted(pairs):
+            a, b = stations[tile_a], stations[tile_b]
             answer = await line_exists(self.client, a.x, a.y, b.x, b.y, transport_type)
             if answer is not True:
                 return answer
@@ -514,8 +535,6 @@ class Orchestrator:
         Never fatal. A stale map is a worse map, not a broken run, so a failure here is
         logged and the action still stands.
         """
-        if self.tile_writer is None:
-            return
         if outcome.status is ActionStatus.REJECTED:
             # Refused before reaching the game, so nothing moved.
             return
@@ -528,6 +547,12 @@ class Orchestrator:
             self.world.game.map_height or 256,
         )
         if area is None:
+            return
+
+        # Even a partially failed build can alter connectivity. This is independent
+        # of whether map recording is enabled.
+        self.world.route_registry.invalidate_connections()
+        if self.tile_writer is None:
             return
 
         try:
