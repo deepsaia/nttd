@@ -121,7 +121,7 @@ def markdown_table(table: pd.DataFrame) -> str:
     for label, row in table.iterrows():
         cells = []
         for key, value in row.items():
-            cells.append("—" if pd.isna(value) else format(value, ",.2f" if key == "cost_usd" else ",.0f"))
+            cells.append("n/a" if pd.isna(value) else format(value, ",.2f" if key == "cost_usd" else ",.0f"))
         lines.append("| " + str(label).replace("|", "\\|") + " | " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
 
@@ -202,7 +202,7 @@ def evaluate(
                                  legendgroup=label, showlegend=False,
                                  hovertemplate="%{text}<br>Front %{y}<extra></extra>"),
                       row=2, col=3)
-    fig.update_layout(title="NTTD evaluation — mean over runs in each group", template="plotly_white",
+    fig.update_layout(title="NTTD evaluation: mean over runs in each group", template="plotly_white",
                       height=850, width=1600, legend={"orientation": "h", "y": -0.18})
     fig.update_xaxes(visible=False, row=2, col=3)
     fig.update_yaxes(tick0=1, dtick=1, range=[max(fronts.values(), default=1) + 0.5, 0.5],

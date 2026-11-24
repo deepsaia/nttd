@@ -112,14 +112,18 @@ def explain_timeouts(action_results: list[Any]) -> list[Any]:
     return explained
 
 
+def _reshape_vehicle_query(value: Any) -> Any:
+    """Use the observation state words without discarding query details."""
+    if not isinstance(value, dict) or "state" not in value:
+        return value
+    return {**value, "state": vehicle_state_of(value), "route_reachability": "unknown"}
+
+
 def reshape_query(name: str, reply: dict[str, Any]) -> dict[str, Any]:
     """Use the same state words in vehicle queries and observations; retain details."""
     if not reply.get("success") or name not in {"get_vehicle_info", "get_vehicles"}:
         return reply
     payload = reply.get("result")
-    def vehicle(value: Any) -> Any:
-        if not isinstance(value, dict) or "state" not in value:
-            return value
-        return {**value, "state": vehicle_state_of(value), "route_reachability": "unknown"}
-    result = [vehicle(item) for item in payload] if isinstance(payload, list) else vehicle(payload)
+    result = ([_reshape_vehicle_query(item) for item in payload]
+              if isinstance(payload, list) else _reshape_vehicle_query(payload))
     return {**reply, "result": result}
