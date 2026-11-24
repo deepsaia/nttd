@@ -499,6 +499,32 @@ def test_negative_or_unknown_answer_revokes_a_previous_connection(stations):
     assert route.status == 'unchecked'
 
 
+@pytest.mark.parametrize("vehicle_type", ["road", "aircraft"])
+def test_removed_station_clears_all_route_evidence_before_the_id_is_rebuilt(
+    stations: dict[int, Station], vehicle_type: str,
+) -> None:
+    registry = RouteRegistry()
+    vehicles = {1: _make_vehicle(1, 0, [10, 20], stations=stations, vtype=vehicle_type)}
+    route = registry.reconcile(vehicles, stations, game_date=100)[0]
+    rid = route.route_id
+    key = (rid, "vehicle", 1, 0)
+    registry.record_connection(rid, True, game_date=100)
+    registry.record_vehicle_paths(rid, [1], [], game_date=100)
+    registry.record_connection_check(key, True, game_date=100)
+
+    registry.reconcile(vehicles, {10: stations[10]}, game_date=101)
+
+    assert route.status == "removed"
+    assert route.vehicle_ids == []
+    assert rid not in registry._vehicles_with_path
+    assert key not in registry._connection_checks
+    rebuilt = next(r for r in registry.reconcile(vehicles, stations, game_date=102) if r.route_id == rid)
+    assert rebuilt.created_at == 102
+    assert rebuilt.status == "unchecked"
+    assert registry.vehicles_to_check(rebuilt) == [1]
+    assert registry.next_connection_check({key}, game_date=102) == key
+
+
 def test_negative_and_unknown_vehicle_answers_revoke_cached_success(stations):
     registry = RouteRegistry()
     route = registry.reconcile({1: _make_vehicle(1, 0, [10, 20], stations=stations)}, stations, 100)[0]

@@ -10,28 +10,49 @@ first station, and records the answers on the route, which is what the agents re
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
+
+import pytest
 
 from nttd.runtime.orchestrator import Orchestrator
 from nttd.schemas.station import Station
 from nttd.schemas.vehicle import Order, Vehicle
+from nttd.state.route_registry import RouteRegistry
 from nttd.state.world import WorldState
 
 
 class _TracingClient:
     """An admin client that answers trace_route from a table of joined station pairs."""
 
-    def __init__(self, joined: set[tuple[tuple[int, int], tuple[int, int]]], connected: bool = True) -> None:
+    def __init__(
+        self, joined: set[tuple[tuple[int, int], tuple[int, int]]], connected: bool = True,
+        *, reply: dict[str, Any] | None = None, bidirectional: bool = True,
+        delay: float = 0.0, invalidate: RouteRegistry | None = None,
+    ) -> None:
         self.connected = connected
         self.joined = joined
         self.asked: list[dict[str, Any]] = []
+        self.timeouts: list[float] = []
+        self.reply = reply
+        self.bidirectional = bidirectional
+        self.delay = delay
+        self.invalidate = invalidate
 
     async def send_gamescript(self, action: str, params: dict | None = None, timeout: float = 10.0) -> dict[str, Any]:
         assert action == "trace_route"
         params = params or {}
         self.asked.append(params)
+        self.timeouts.append(timeout)
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.invalidate is not None:
+            self.invalidate.invalidate_connections()
+            self.invalidate = None
+        if self.reply is not None:
+            return self.reply
         pair = ((params["from_x"], params["from_y"]), (params["to_x"], params["to_y"]))
-        exists = pair[0] == pair[1] or pair in self.joined or pair[::-1] in self.joined
+        exists = pair[0] == pair[1] or pair in self.joined or (self.bidirectional and pair[::-1] in self.joined)
         return {"success": True, "result": {"line_exists": exists, "transport_type": params["transport_type"]}}
 
 
@@ -137,6 +158,7 @@ def test_joining_the_depot_turns_the_route_active() -> None:
     assert world._derive_routes()[0].status == "unconnected"
 
     client.joined.add((DEPOT, (10, 10)))
+    world.route_registry.invalidate_connections()
     asyncio.run(orchestrator.confirm_route_connections())
 
     route = world._derive_routes()[0]
@@ -144,13 +166,16 @@ def test_joining_the_depot_turns_the_route_active() -> None:
     assert route.vehicles_without_path == []
 
 
-def test_a_vehicle_that_passed_is_not_walked_again_but_a_stuck_one_is() -> None:
+def test_a_vehicle_that_passed_is_cached_and_a_stuck_one_retries_after_backoff() -> None:
     world = _world("road", [1, 2], positions={7: DEPOT, 8: (10, 10)})
     client = _TracingClient({((10, 10), (40, 10))})
     orchestrator = _orchestrator(world, client)
 
     asyncio.run(orchestrator.confirm_route_connections())
     before = len(client.asked)
+    asyncio.run(orchestrator.confirm_route_connections())
+    assert len(client.asked) == before
+    world.game.game_date += world.route_registry.RETRY_INITIAL_DAYS
     asyncio.run(orchestrator.confirm_route_connections())
 
     walks = client.asked[before:]
@@ -170,8 +195,8 @@ def test_an_unconnected_route_is_asked_again_until_a_path_appears() -> None:
     route = world._derive_routes()[0]
     assert route.status == "active"
     assert route.track_confirmed_at == 530
-    # Failed outward leg, successful outward/return legs, and one vehicle access walk.
-    assert len(client.asked) == 4
+    # Both station legs and vehicle access are refreshed after their evidence expires.
+    assert len(client.asked) == 6
 
 
 def test_aircraft_need_no_track() -> None:
@@ -231,12 +256,10 @@ def test_infrastructure_mutation_invalidates_without_a_tile_recorder():
     assert world._derive_routes()[0].status == 'unconnected'
 
 
-def test_exhausted_search_leaves_connection_and_vehicle_path_unknown():
-    class Exhausted(_TracingClient):
-        async def send_gamescript(self, *args, **kwargs):
-            return {'success': True, 'result': {'line_exists': False, 'exhausted': True}}
+def test_exhausted_search_leaves_connection_and_vehicle_path_unknown() -> None:
     world = _world('road', [1, 2])
-    asyncio.run(_orchestrator(world, Exhausted(set())).confirm_route_connections())
+    client = _TracingClient(set(), reply={'success': True, 'result': {'line_exists': False, 'exhausted': True}})
+    asyncio.run(_orchestrator(world, client).confirm_route_connections())
     route = world._derive_routes()[0]
     assert route.status == 'unchecked'
     assert route.vehicles_without_path == []
@@ -251,23 +274,18 @@ def test_ship_connectivity_is_not_assumed():
     assert client.asked == []
 
 
-def test_a_one_way_outward_path_does_not_prove_a_repeating_service():
-    class Directed(_TracingClient):
-        async def send_gamescript(self, action, params=None, timeout=10):
-            params = params or {}
-            pair = ((params['from_x'], params['from_y']), (params['to_x'], params['to_y']))
-            return {'success': True, 'result': {'line_exists': pair[0] == pair[1] or pair in self.joined}}
+def test_a_one_way_outward_path_does_not_prove_a_repeating_service() -> None:
     world = _world('road', [1, 2])
-    asyncio.run(_orchestrator(world, Directed({((10, 10), (40, 10))})).confirm_route_connections())
+    client = _TracingClient({((10, 10), (40, 10))}, bidirectional=False)
+    asyncio.run(_orchestrator(world, client).confirm_route_connections())
     assert world._derive_routes()[0].status == 'unconnected'
 
 
-def test_explicit_null_connectivity_remains_unknown():
+def test_explicit_null_connectivity_remains_unknown() -> None:
     from nttd.bridge.trace_route import line_exists
-    class Unknown(_TracingClient):
-        async def send_gamescript(self, *args, **kwargs):
-            return {'success': True, 'result': {'line_exists': None}}
-    assert asyncio.run(line_exists(Unknown(set()), 10, 10, 40, 10, 'road')) is None
+    client = _TracingClient(set(), reply={'success': True, 'result': {'line_exists': None}})
+    assert asyncio.run(line_exists(client, 10, 10, 40, 10, 'road')) is None
+    assert client.timeouts == [20.0]
 
 
 def test_unmodeled_intermediate_orders_do_not_prove_a_station_only_route():
@@ -279,3 +297,149 @@ def test_unmodeled_intermediate_orders_do_not_prove_a_station_only_route():
         client = _TracingClient({((10, 10), (40, 10))})
         asyncio.run(_orchestrator(world, client).confirm_route_connections())
         assert world._derive_routes()[0].status == 'unchecked'
+
+
+@pytest.mark.parametrize("answer", [False, None])
+def test_failed_and_inconclusive_probes_back_off_on_the_game_clock(answer: bool | None) -> None:
+    world = _world("road", [1, 2])
+    client = _TracingClient(set(), reply={"success": True, "result": {"line_exists": answer}})
+    orchestrator = _orchestrator(world, client)
+    attempted_on: list[int] = []
+    for date in range(500, 597):
+        world.game.game_date = date
+        before = len(client.asked)
+        asyncio.run(orchestrator.confirm_route_connections())
+        asyncio.run(orchestrator.confirm_route_connections())
+        if len(client.asked) != before:
+            attempted_on.append(date)
+            assert len(client.asked) - before == 3
+        route = world._derive_routes()[0]
+        assert route.status == ("unconnected" if answer is False else "unchecked")
+    assert attempted_on == [500, 505, 515, 535, 565, 595]
+
+
+def test_large_itinerary_progresses_without_starving_another_route() -> None:
+    world = _world("road", [1, 2])
+    for sid in range(4, 10):
+        world.stations[sid] = Station(id=sid, company_id=0, x=10 * sid, y=100)
+    long_stops = [world.stations[sid] for sid in [1, 2, 3, 4, 5, 6, 7]]
+    short_stops = [world.stations[sid] for sid in [8, 9]]
+    joined: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    for vid, stops in [(7, long_stops), (8, short_stops)]:
+        orders = [Order(index=i, destination=s.y * 256 + s.x, is_goto_station=True)
+                  for i, s in enumerate(stops)]
+        world.vehicles[vid] = Vehicle(id=vid, company_id=0, type="road", x=stops[0].x, y=stops[0].y,
+                                      order_count=len(orders), orders=orders)
+        joined.update(((a.x, a.y), (b.x, b.y)) for a, b in zip(stops, stops[1:] + stops[:1]))
+    client = _TracingClient(joined)
+    orchestrator = _orchestrator(world, client)
+    orchestrator.ROUTE_CHECKS_PER_REFRESH = 4
+
+    for refresh in range(3):
+        before = len(client.asked)
+        asyncio.run(orchestrator.confirm_route_connections())
+        assert 0 < len(client.asked) - before <= 4
+        routes = {tuple(r.station_ids): r for r in world._derive_routes()}
+        if refresh == 0:
+            assert any(p["from_y"] == 10 for p in client.asked)
+            assert any(p["from_x"] == 80 for p in client.asked)
+        if refresh == 1:
+            assert routes[8, 9].status == "active"
+            assert routes[1, 2, 3, 4, 5, 6, 7].status == "unchecked"
+    assert len(client.asked) == 11
+    assert all(route.status == "active" for route in world._derive_routes())
+
+
+def test_background_trace_count_has_a_finite_upper_bound() -> None:
+    world = _world("road", [1, 2], positions={vid: (10, 10) for vid in range(40)})
+    client = _TracingClient({((10, 10), (40, 10))})
+    orchestrator = _orchestrator(world, client)
+
+    asyncio.run(orchestrator.confirm_route_connections())
+
+    assert len(client.asked) == 32
+    route = world._derive_routes()[0]
+    assert route.status == "unchecked"
+    assert len(route.vehicles_with_unknown_path) == 10
+    asyncio.run(orchestrator.confirm_route_connections())
+    assert len(client.asked) == 42
+    assert route.status == "active"
+
+
+def test_seven_vehicle_route_stays_confirmable_at_fifteen_day_steps() -> None:
+    world = _world("road", [1, 2], positions={vid: (10, 10) for vid in range(7)})
+    client = _TracingClient({((10, 10), (40, 10))})
+    orchestrator = _orchestrator(world, client)
+    for date in range(500, 591, 15):
+        world.game.game_date = date
+        asyncio.run(orchestrator.confirm_route_connections())
+        route = world._derive_routes()[0]
+        assert route.status == "active"
+        assert route.vehicles_with_unknown_path == []
+    assert len(client.asked) == 36
+
+
+def test_expiring_one_leg_preserves_newer_vehicle_and_station_evidence() -> None:
+    world = _world("road", [1, 2])
+    client = _TracingClient({((10, 10), (40, 10))})
+    orchestrator = _orchestrator(world, client)
+    orchestrator.ROUTE_CHECKS_PER_REFRESH = 1
+    for date in [500, 510, 520]:
+        world.game.game_date = date
+        asyncio.run(orchestrator.confirm_route_connections())
+    assert world._derive_routes()[0].status == "active"
+
+    world.game.game_date = 530
+    asyncio.run(orchestrator.confirm_route_connections())
+
+    assert len(client.asked) == 4
+    assert client.asked[-1] == client.asked[0]
+    assert world._derive_routes()[0].status == "active"
+
+
+def test_one_slow_probe_cannot_consume_multiple_timeout_windows() -> None:
+    world = _world("road", [1, 2])
+    client = _TracingClient(set(), delay=1.0)
+    orchestrator = _orchestrator(world, client)
+    orchestrator.ROUTE_CHECK_BUDGET_SECONDS = 0.01
+    started = time.monotonic()
+
+    asyncio.run(orchestrator.confirm_route_connections())
+
+    assert time.monotonic() - started < 0.5
+    assert len(client.asked) == 1
+    assert 0 < client.timeouts[0] <= 0.01
+    route = world._derive_routes()[0]
+    assert route.status == "unchecked"
+    assert route.vehicles_without_path == []
+    assert route.vehicles_with_unknown_path == [7]
+
+
+def test_an_in_flight_reply_cannot_restore_invalidated_evidence() -> None:
+    world = _world("road", [1, 2])
+    client = _TracingClient({((10, 10), (40, 10))}, invalidate=world.route_registry)
+    orchestrator = _orchestrator(world, client)
+
+    asyncio.run(orchestrator.confirm_route_connections())
+
+    assert len(client.asked) == 1
+    assert world._derive_routes()[0].status == "unchecked"
+    assert world.route_registry._connection_checks == {}
+    asyncio.run(orchestrator.confirm_route_connections())
+    assert len(client.asked) == 4
+    assert world._derive_routes()[0].status == "active"
+
+
+def test_changed_orders_bypass_retry_delay() -> None:
+    world = _world("road", [1, 2])
+    client = _TracingClient(set())
+    orchestrator = _orchestrator(world, client)
+    asyncio.run(orchestrator.confirm_route_connections())
+    assert world._derive_routes()[0].status == "unconnected"
+
+    world.vehicles[7].orders.reverse()
+    client.joined.add(((10, 10), (40, 10)))
+    asyncio.run(orchestrator.confirm_route_connections())
+
+    assert len(client.asked) == 6
+    assert world._derive_routes()[0].status == "active"

@@ -92,6 +92,26 @@ One per run, holding:
 - **The orchestrator**: the real-time loop, or the step gate for stepped mode.
 - **The recorder**: buffers to Parquet fragments, merged on stop.
 
+#### Automatic route diagnostics
+
+The orchestrator checks station-to-station legs, including the return leg, and each
+vehicle's access to its first station. These background checks share a limit of 32
+trace calls and five seconds per world refresh. Routes take turns; within a route,
+untried probes run before older due probes. Large itineraries accumulate evidence
+over successive refreshes instead of restarting their entire walk.
+
+A failed or inconclusive probe retries after 5, 10, 20, then at most 30 game days.
+Successful evidence expires after 30 game days. Infrastructure or order changes
+invalidate both evidence and retry delays immediately, and replies from checks
+already in flight cannot restore evidence invalidated during the request. Removing
+a route also removes its vehicle evidence and retry schedule.
+
+Deferred, expired, timed-out, and search-exhausted probes remain unknown. A very large
+fleet, a slow network, or infrequent refreshes can leave some routes partly unchecked
+under these finite limits; stale successful checks do not become current evidence.
+Explicit contestant trace queries retain their existing search limits and timeouts.
+This scheduling affects diagnostic refresh work only, not game rules or scoring.
+
 ### OpenTTD
 
 A dedicated server per session, on its own port, driven over the admin port plus a

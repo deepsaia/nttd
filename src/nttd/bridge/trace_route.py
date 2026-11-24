@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def line_exists(
     client: Any, from_x: int, from_y: int, to_x: int, to_y: int, transport_type: str,
+    *, timeout: float = 20.0,
 ) -> bool | None:
     """Whether a vehicle could travel it now, asked of the game rather than of the cache.
 
@@ -28,7 +29,7 @@ async def line_exists(
                 "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y,
                 "transport_type": transport_type,
             },
-            timeout=20.0,
+            timeout=timeout,
         )
     except Exception:
         logger.debug("Could not trace the existing line", exc_info=True)

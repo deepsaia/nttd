@@ -27,6 +27,7 @@ from nttd.schemas.game import RuntimeMode
 from nttd.schemas.route import Route
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.step_result import StepResult
+from nttd.state.route_registry import CheckKey
 from nttd.state.tile_footprint import affected_area
 from nttd.state.world import WorldState
 from nttd.utils.name_generator import generate_timestamp
@@ -390,22 +391,27 @@ class Orchestrator:
         except Exception:
             logger.exception("GS world refresh failed")
 
-    async def confirm_route_connections(self) -> None:
-        """Ask the game whether each route with vehicles can actually be run.
+    ROUTE_CHECKS_PER_REFRESH = 32
+    ROUTE_CHECK_BUDGET_SECONDS = 5.0
 
-        The game accepts an order to a station that no road or track reaches, and a depot
-        that no road joins, and the vehicle then never arrives. The registry only groups
-        orders, so it cannot tell. Two walks with trace_route answer it: one between
-        consecutive orders, and one from each vehicle's tile to its first station.
-        Positive checks expire after a bounded interval and after infrastructure changes.
-        Aircraft need no track. Ship connectivity remains unknown because the walker
-        does not cover water.
+    async def confirm_route_connections(self) -> None:
+        """Run a bounded, fair selection of due connectivity probes.
+
+        At most 32 probes share a five-second deadline. Each station leg is separate,
+        so long itineraries progress over multiple refreshes. Failed and inconclusive
+        probes retry after 5, 10, 20, then 30 game days; successful evidence lasts 30.
+        Deferred or expired answers remain unknown, including very large or slow fleets.
         """
         stations = self.world.stations
         game_date = self.world.game.game_date
         registry = self.world.route_registry
         registry.expire_connections(game_date)
-        for route in self.world._derive_routes():
+        routes = self.world._derive_routes()
+        station_by_tile = {s.y * (self.world.game.map_width or 256) + s.x: s for s in stations.values()}
+        probes: dict[CheckKey, tuple[int, int, int, int, str]] = {}
+        station_keys: dict[str, list[CheckKey] | None] = {}
+        vehicle_keys: dict[tuple[str, int], CheckKey | None] = {}
+        for route in routes:
             if not route.vehicle_ids:
                 continue
             if route.vehicle_type == "aircraft":
@@ -416,37 +422,79 @@ class Orchestrator:
             if route.vehicle_type not in ("train", "road"):
                 continue
             transport_type = "rail" if route.vehicle_type == "train" else "road"
-            if not route.track_confirmed_at:
-                connected = await self.stations_joined(route, transport_type)
-                registry.record_connection(route.route_id, connected, game_date)
-            with_path: list[int] = []
-            without_path: list[int] = []
-            unknown: list[int] = []
-            station_by_tile = {s.y * (self.world.game.map_width or 256) + s.x: s
-                               for s in stations.values()}
-            for vid in registry.vehicles_to_check(route):
+            pairs = self._station_pairs(route)
+            route_keys: list[CheckKey] = []
+            station_keys[route.route_id] = None if pairs is None else route_keys
+            for tile_a, tile_b in pairs or []:
+                a, b = station_by_tile[tile_a], station_by_tile[tile_b]
+                key = (route.route_id, "station", tile_a, tile_b)
+                probes[key] = (a.x, a.y, b.x, b.y, transport_type)
+                route_keys.append(key)
+            for vid in route.vehicle_ids:
                 vehicle = self.world.vehicles.get(vid)
+                vehicle_keys[route.route_id, vid] = None
                 if vehicle is None:
                     continue
                 first = next((station_by_tile.get(o.destination) for o in vehicle.orders
                               if o.is_goto_station), None)
                 if first is None:
-                    unknown.append(vid)
                     continue
-                answer = await line_exists(self.client, vehicle.x, vehicle.y, first.x, first.y, transport_type)
+                key = (route.route_id, "vehicle", vid, 0)
+                probes[key] = (vehicle.x, vehicle.y, first.x, first.y, transport_type)
+                vehicle_keys[route.route_id, vid] = key
+
+        keys = set(probes)
+        registry.retain_connection_checks(keys)
+        generation = registry.connection_generation
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.ROUTE_CHECK_BUDGET_SECONDS
+        for _ in range(self.ROUTE_CHECKS_PER_REFRESH):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            key = registry.next_connection_check(keys, game_date)
+            if key is None:
+                break
+            try:
+                answer = await asyncio.wait_for(
+                    line_exists(self.client, *probes[key], timeout=remaining), timeout=remaining,
+                )
+            except TimeoutError:
+                answer = None
+            # Actions can change infrastructure while a probe awaits its reply.
+            # Discard evidence collected against the earlier network generation.
+            if registry.connection_generation != generation:
+                return
+            registry.record_connection_check(key, answer, game_date)
+
+        for route in routes:
+            if route.route_id not in station_keys:
+                continue
+            required_keys = station_keys[route.route_id]
+            answers = [registry.connection_check_answer(key, game_date) for key in required_keys or []]
+            connected = (False if False in answers else
+                         True if required_keys is not None and all(answer is True for answer in answers) else None)
+            supporting_keys = [key for key in required_keys or []
+                               if registry.connection_check_answer(key, game_date) is connected]
+            registry.record_connection(
+                route.route_id, connected, registry.connection_checks_date(supporting_keys, game_date),
+            )
+            with_path: list[int] = []
+            without_path: list[int] = []
+            unknown: list[int] = []
+            for vid in route.vehicle_ids:
+                key = vehicle_keys[route.route_id, vid]
+                answer = registry.connection_check_answer(key, game_date) if key is not None else None
                 if answer is True:
                     with_path.append(vid)
                 elif answer is False:
                     without_path.append(vid)
                 else:
                     unknown.append(vid)
-            if with_path or without_path or unknown:
-                registry.record_vehicle_paths(route.route_id, with_path, without_path, game_date, unknown)
+            registry.record_vehicle_paths(route.route_id, with_path, without_path, game_date, unknown)
 
-    async def stations_joined(self, route: Route, transport_type: str) -> bool | None:
-        """Whether built road or track joins every consecutive pair of the route's stations.
-
-        None when the game could not answer for some pair."""
+    def _station_pairs(self, route: Route) -> list[tuple[int, int]] | None:
+        """Station legs in the repeating itineraries, or None for unsupported orders."""
         stations = {s.y * (self.world.game.map_width or 256) + s.x: s
                     for s in self.world.stations.values()}
         pairs: set[tuple[int, int]] = set()
@@ -465,12 +513,7 @@ class Orchestrator:
             # Orders repeat, so the return leg matters too. Different order sequences
             # share a route report, but every vehicle's actual itinerary must work.
             pairs.update((a, b) for a, b in zip(stops, stops[1:] + stops[:1]) if a != b)
-        for tile_a, tile_b in sorted(pairs):
-            a, b = stations[tile_a], stations[tile_b]
-            answer = await line_exists(self.client, a.x, a.y, b.x, b.y, transport_type)
-            if answer is not True:
-                return answer
-        return True
+        return sorted(pairs)
 
     def start_scored_clock(self) -> bool:
         """Start the scored wall-clock. Returns True if this call started it.

@@ -11,18 +11,22 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nttd.schemas.route import Route, make_route_id
+from nttd.state.connection_check import ConnectionCheck
 
 if TYPE_CHECKING:
     from nttd.schemas.station import Station
     from nttd.schemas.vehicle import Vehicle
 
 logger = logging.getLogger(__name__)
+CheckKey = tuple[str, str, int, int]
 
 
 class RouteRegistry:
 
     # About a minute in the realtime benchmark. Mutations invalidate sooner.
     CONNECTION_CACHE_DAYS = 30
+    RETRY_INITIAL_DAYS = 5
+    RETRY_MAX_DAYS = 30
 
     def __init__(self) -> None:
         self._routes: dict[str, Route] = {}
@@ -34,6 +38,9 @@ class RouteRegistry:
         # The game hands a sold vehicle's id to the next one bought. A drop in a vehicle's
         # age means a new vehicle under an old id, whose path has to be walked afresh.
         self._vehicle_age: dict[int, int] = {}
+        self._connection_checks: dict[CheckKey, ConnectionCheck] = {}
+        self._last_checked_route = ""
+        self.connection_generation = 0
 
     def reconcile(
         self,
@@ -97,6 +104,7 @@ class RouteRegistry:
             if route is None or route.status == "removed":
                 # A removed route comes back as a new one: its old confirmation may
                 # describe a station that no longer exists, so the path is asked again.
+                self._clear_route_checks(rid)
                 route = Route(
                     route_id=rid,
                     company_id=company_id,
@@ -118,18 +126,19 @@ class RouteRegistry:
             route.refresh_status()
 
         for rid, route in self._routes.items():
-            if rid in active_route_ids or route.status == "removed":
+            if rid in active_route_ids:
                 continue
-            if not all(sid in stations for sid in route.station_ids):
+            if route.vehicle_ids:
+                self.connection_generation += 1
+            self._clear_route_checks(rid)
+            if route.status == "removed" or not all(sid in stations for sid in route.station_ids):
                 route.status = "removed"
-                continue
             route.vehicle_ids = []
             route.vehicle_count = 0
             route.total_profit_this_year = 0
             route.total_profit_last_year = 0
             route.vehicles_without_path = []
             route.vehicles_with_unknown_path = []
-            self._vehicles_with_path.pop(rid, None)
             route.refresh_status()
 
         return [r for r in self._routes.values() if r.status != "removed"]
@@ -141,6 +150,7 @@ class RouteRegistry:
 
     def invalidate_connections(self, route_id: str | None = None) -> None:
         """Discard stale connectivity evidence without asserting a disconnection."""
+        self.connection_generation += 1
         for route in self._routes.values():
             if route.status == "removed" or route.vehicle_type == "aircraft":
                 continue
@@ -149,16 +159,59 @@ class RouteRegistry:
             route.track_confirmed_at = 0
             route.connection_checked_at = 0
             route.vehicles_without_path = []
-            self._vehicles_with_path.pop(route.route_id, None)
+            self._clear_route_checks(route.route_id)
             self._update_unknown_paths(route)
             route.refresh_status()
 
     def expire_connections(self, game_date: int) -> None:
-        """Recheck successful paths periodically, including unobserved world changes."""
+        """Expire dormant routes; live routes recompute their per-probe evidence."""
         for route in list(self._routes.values()):
-            if (route.track_confirmed_at
+            if (not route.vehicle_ids and route.track_confirmed_at
                     and game_date - route.connection_checked_at >= self.CONNECTION_CACHE_DAYS):
                 self.invalidate_connections(route.route_id)
+
+    def _clear_route_checks(self, route_id: str) -> None:
+        """Forget both positive vehicle evidence and outstanding retry schedules."""
+        self._vehicles_with_path.pop(route_id, None)
+        self._connection_checks = {
+            key: check for key, check in self._connection_checks.items() if key[0] != route_id
+        }
+
+    def retain_connection_checks(self, keys: set[CheckKey]) -> None:
+        """Remove probes for vehicles or itinerary legs that no longer exist."""
+        self._connection_checks = {key: check for key, check in self._connection_checks.items() if key in keys}
+
+    def next_connection_check(self, keys: set[CheckKey], game_date: int) -> CheckKey | None:
+        """Choose an oldest due probe, rotating among routes to avoid starvation."""
+        due: dict[str, list[tuple[int, CheckKey]]] = {}
+        for key in keys:
+            check = self._connection_checks.get(key)
+            if check is None or game_date >= check.next_check_at:
+                due.setdefault(key[0], []).append((check.checked_at if check else -1, key))
+        if not due:
+            return None
+        route_ids = sorted(due)
+        route_id = next((rid for rid in route_ids if rid > self._last_checked_route), route_ids[0])
+        self._last_checked_route = route_id
+        return min(due[route_id])[1]
+
+    def record_connection_check(self, key: CheckKey, answer: bool | None, game_date: int) -> None:
+        """Back off unsuccessful probes; cache successful ones for a bounded time."""
+        previous = self._connection_checks.get(key)
+        failures = min((previous.failures if previous else 0) + 1, 4) if answer is not True else 0
+        delay = (min(self.RETRY_INITIAL_DAYS * 2 ** (failures - 1), self.RETRY_MAX_DAYS)
+                 if failures else self.CONNECTION_CACHE_DAYS)
+        self._connection_checks[key] = ConnectionCheck(answer, game_date, game_date + delay, failures)
+
+    def connection_check_answer(self, key: CheckKey, game_date: int) -> bool | None:
+        """Expired or absent evidence stays unknown until its queued probe runs."""
+        check = self._connection_checks.get(key)
+        return check.answer if check is not None and game_date < check.next_check_at else None
+
+    def connection_checks_date(self, keys: list[CheckKey], game_date: int) -> int:
+        """Oldest observation supporting a combined connection claim."""
+        return min((self._connection_checks[key].checked_at for key in keys if key in self._connection_checks),
+                   default=game_date)
 
     def _update_unknown_paths(self, route: Route) -> None:
         passed = self._vehicles_with_path.get(route.route_id, set())
