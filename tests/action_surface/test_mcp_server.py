@@ -83,15 +83,12 @@ class TestTheToolSurface:
         assert server.instructions_for(mode, objective, 10)
 
     @pytest.mark.parametrize("mode", ["stepped", "heartbeat", "async_realtime"])
-    def test_an_unknown_objective_uses_the_default_and_still_serves_tools(
-        self, mode: str, caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        built = build("http://localhost:8000", "ses_test", None, "127.0.0.1", 8100,
-                      mode=mode, objective="ratings", episode_days=365)
-        assert built.instructions == server.instructions_for(mode, server.DEFAULT_OBJECTIVE, 365)
-        assert "Unknown objective 'ratings'" in caplog.text
-        assert set(tool.name for tool in asyncio.run(built.list_tools())) == TOOLS
-        assert _call(built, "list_commands", name="ping")["name"] == "ping"
+    def test_an_unknown_objective_prevents_server_startup(self, mode: str) -> None:
+        with pytest.raises(
+            ValueError, match="Unknown objective 'ratings'. Valid objectives: cargo, global, rating, value",
+        ):
+            build("http://localhost:8000", "ses_test", None, "127.0.0.1", 8100,
+                  mode=mode, objective="ratings", episode_days=365)
 
 
 class TestTheVocabularyIsInTheSchema:
