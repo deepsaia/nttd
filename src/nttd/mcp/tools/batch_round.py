@@ -52,6 +52,7 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
     actor_moves: dict[str, list[dict[str, Any]]] = {}
     observers: list[str] = []
     focus_requests: dict[str, dict[str, Any]] = {}
+    focus_errors: dict[str, str] = {}
     owners: dict[str, str] = {}
 
     for entry in entries:
@@ -117,9 +118,14 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
             outcome = session.focus.set_focus(owners[tag], snapshot or {}, args)
             if "error" in outcome:
                 results[tag] = outcome
-                readers.remove(tag)
+                focus_errors[tag] = outcome["error"]
+    readers = [tag for tag in readers if tag not in focus_errors]
     for tag, result in played.items():
         results[tag] = session.view(owners[tag], result)
+        if tag in focus_errors:
+            # The action has already run. Preserve both its receipt and the
+            # failed view change so the caller does not retry the action blindly.
+            results[tag] = {**results[tag], "focus_error": focus_errors[tag]}
     # An agent that both acted and read in one round gets its act result, already
     # cut to the focus it asked for.
     for tag in readers:

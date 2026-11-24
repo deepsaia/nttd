@@ -162,5 +162,7 @@ The server runs the reads first, then sends every agent's moves together with th
 in a random order, advances the game once, and answers `{"results": {agent_tag: result}}`.
 Each agent gets its own command results and the shared state after the round, cut to its
 own focus. An error in one entry is reported in that agent's result and leaves the
-others intact. With `--reward`, every agent that acted gets the whole change in money
+others intact. If an agent both acts and requests an invalid focus, its result retains
+the action receipts and reports the view-change failure in `focus_error`; its previous
+focus remains in effect. With `--reward`, every agent that acted gets the whole change in money
 minus loan; dividing it is the orchestrator's decision.

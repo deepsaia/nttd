@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 
 from nttd.mcp.game_session import GAME_ENDED_NOTE, GameSession
 from nttd.mcp.moves import MOVES_FORMAT_HINT
@@ -220,6 +221,33 @@ def test_focus_set_in_a_round_cuts_the_actors_of_the_same_round() -> None:
     assert len(reply["a"]["snapshot"]["towns"]) == 1
     assert len(reply["a"]["action_results"]) == 1
     assert game.calls("/state/full") == [], "the post-step snapshot serves the focus request too"
+
+
+@pytest.mark.parametrize("executor", ["alice", "daemon:worker"])
+def test_a_failed_focus_preserves_the_action_result_and_previous_owner_focus(executor: str) -> None:
+    game = FakeGame(mode="stepped")
+    played = session_for(game)
+    asyncio.run(played.start())
+    played.focus.set_focus("alice", played.last_snapshot or {}, {"towns": ["Weston"], "padding": 5})
+    reply = asyncio.run(run_round(played, [
+        {**entry(executor, "focus", towns=["Nowhere"]), "owner_tag": "alice"},
+        {**entry(executor, "act", moves=[{"command": "ping"}]), "owner_tag": "alice"},
+    ]))["results"][executor]
+
+    assert reply["focus_error"] == "Unknown town or industry: Nowhere"
+    assert reply["action_results"][0]["status"] == "success"
+    assert reply["action_results"][0]["action_type"] == "ping"
+    assert [town["name"] for town in reply["snapshot"]["towns"]] == ["Weston"]
+    assert len(game.calls("/step")) == 1
+
+
+def test_an_observe_in_the_same_round_does_not_hide_a_failed_focus() -> None:
+    played = session_for(FakeGame(mode="heartbeat"))
+    asyncio.run(played.start())
+    reply = asyncio.run(run_round(played, [
+        entry("alice", "observe"), entry("alice", "focus", towns=["Nowhere"]),
+    ]))["results"]["alice"]
+    assert reply == {"error": "Unknown town or industry: Nowhere"}
 
 
 def test_a_bad_query_does_not_fail_the_round() -> None:
