@@ -139,6 +139,9 @@ DATE = "- game date and number of game days remaining, out of the {days} game da
 
 def instructions_for(mode: str, objective: str, episode_days: int) -> str:
     """The connection text for a session's mode, objective and episode length."""
+    if objective not in OBJECTIVES:
+        logger.warning("Unknown objective %r; using %s for MCP instructions", objective, DEFAULT_OBJECTIVE)
+        objective = DEFAULT_OBJECTIVE
     realtime = mode == "async_realtime"
     return INSTRUCTIONS.format(
         objective=OBJECTIVES[objective],
