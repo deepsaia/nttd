@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 
 from nttd.api.participant_auth import TOKEN_HEADER
 from nttd.mcp.game_session import GAME_ENDED_NOTE, MISSING_RESULT_NOTE, GameSession
@@ -42,6 +43,8 @@ class FakeGame:
         self.closed = closed
         self.seen: list[tuple[str, str, Any]] = []
         self.step_number = 0
+        self.receipts: dict[str, dict[str, Any]] = {}
+        self.executed_envelopes: list[dict[str, Any]] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content) if request.content else None
@@ -71,13 +74,16 @@ class FakeGame:
                 },
             )
         if path.endswith("/actions/submit-batch"):
-            return httpx.Response(
-                200,
-                json=[
-                    {"action_id": env["action_id"], "action_type": env["action_type"], "status": "failed", "error": "x"}
-                    for env in body
-                ],
-            )
+            results = []
+            for env in body:
+                action_id = env["action_id"]
+                if action_id not in self.receipts:
+                    self.executed_envelopes.append(env)
+                    self.receipts[action_id] = {
+                        "action_id": action_id, "action_type": env["action_type"], "status": "failed", "error": "x",
+                    }
+                results.append(self.receipts[action_id])
+            return httpx.Response(200, json=results)
         if path.endswith("/state/full"):
             return httpx.Response(200, json=snapshot(self.money))
         if path.endswith("/state/gs/query"):
@@ -160,11 +166,11 @@ def test_a_stepped_round_is_one_step_with_named_commands() -> None:
 
     ((_, _, body),) = game.calls("/step")
     sent = body["actions"]
-    assert {entry["action_id"] for entry in sent} == {"a:0", "a:1", "b:2"} or {
-        entry["action_id"] for entry in sent
-    } == {"b:0", "a:1", "a:2"}
+    assert all(entry["action_id"].startswith(f"{played.command_run_id}:") for entry in sent)
+    command_suffixes = {entry["action_id"].split(":", 1)[1] for entry in sent}
+    assert command_suffixes in ({"a:0", "a:1", "b:2"}, {"b:0", "a:1", "a:2"})
     assert all(entry["params"]["company_id"] == 0 for entry in sent)
-    assert all(entry["metadata"]["participant_id"] == entry["action_id"].split(":")[0] for entry in sent)
+    assert all(entry["metadata"]["participant_id"] == entry["action_id"].split(":")[1] for entry in sent)
     assert "days" not in body
 
     assert [r["action_type"] for r in results["a"]["action_results"]] == ["set_loan", "ping"]
@@ -183,7 +189,7 @@ def test_results_pair_by_id_even_when_the_game_reorders_them() -> None:
     results = asyncio.run(played.play_round({"a": moves("set_loan", "ping", "build_dock")}))
     own = results["a"]["action_results"]
     assert [r["action_type"] for r in own] == ["set_loan", "ping", "build_dock"]
-    assert [r["action_id"] for r in own] == ["a:0", "a:1", "a:2"]
+    assert [r["action_id"] for r in own] == [f"{played.command_run_id}:a:{index}" for index in range(3)]
 
 
 def test_the_actor_order_is_random_but_seeded() -> None:
@@ -217,7 +223,7 @@ def test_a_clocked_round_submits_one_batch_per_actor_then_observes() -> None:
     assert len(batches) == 2
     envelopes = [env for _, _, body in batches for env in body]
     assert all(env["company_id"] == 0 and env["mode"] == "atomic" for env in envelopes)
-    assert all(env["metadata"]["participant_id"] == env["action_id"].split(":")[0] for env in envelopes)
+    assert all(env["metadata"]["participant_id"] == env["action_id"].split(":")[1] for env in envelopes)
     assert game.calls("/step") == []
     assert game.seen[-1][1] == f"{BASE}/state/full"
     assert [r["status"] for r in results["b"]["action_results"]] == ["failed", "failed"]
@@ -232,7 +238,31 @@ def test_a_command_the_game_did_not_answer_gets_a_placeholder() -> None:
     results = asyncio.run(played.play_round({"a": moves("ping")}))
     placeholder = results["a"]["action_results"][0]
     assert placeholder["status"] == "unknown" and placeholder["error"] == MISSING_RESULT_NOTE
-    assert placeholder["action_id"] == "a:0"
+    assert placeholder["action_id"] == f"{played.command_run_id}:a:0"
+
+
+@pytest.mark.parametrize("mode", ["heartbeat", "async_realtime"])
+def test_restarting_mcp_keeps_new_commands_distinct_and_envelope_retries_idempotent(mode: str) -> None:
+    game = FakeGame(mode=mode)
+    first = session(game, seed=3)
+    asyncio.run(first.start())
+    initial_result = asyncio.run(first.play_round({"crew_1": moves("set_loan")}))
+    first_batch = game.calls("/actions/submit-batch")[0][2]
+
+    restarted = session(game, seed=3)
+    asyncio.run(restarted.start())
+    next_result = asyncio.run(restarted.play_round({"crew_1": moves("ping")}))
+
+    assert len(game.executed_envelopes) == 2
+    assert [env["action_type"] for env in game.executed_envelopes] == ["set_loan", "ping"]
+    first_receipt = initial_result["crew_1"]["action_results"][0]
+    next_receipt = next_result["crew_1"]["action_results"][0]
+    assert first_receipt["action_id"] != next_receipt["action_id"]
+    assert next_receipt["action_type"] == "ping"
+
+    replay = asyncio.run(restarted.client.submit_batch(first_batch))
+    assert replay == [first_receipt]
+    assert len(game.executed_envelopes) == 2
 
 
 async def _answer(value: Any) -> Any:

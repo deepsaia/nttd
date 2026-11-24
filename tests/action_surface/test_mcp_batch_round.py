@@ -58,7 +58,7 @@ def test_act_plays_one_round_for_the_caller_and_starts_the_session_first() -> No
     reply = call(mcp, "act", moves=[{"command": "set_loan", "parameters": {"amount": 5}}])
     assert len(game.calls("/step/reset")) == 1
     ((_, _, body),) = game.calls("/step")
-    assert body["actions"][0]["action_id"] == "agent:0"
+    assert body["actions"][0]["action_id"] == f"{played.command_run_id}:agent:0"
     assert body["actions"][0]["metadata"] == {"participant_id": "agent"}
     assert reply["action_results"][0]["action_type"] == "set_loan"
     assert reply["snapshot"]["companies"][0]["revenue_last_quarter"] == 5
@@ -66,10 +66,10 @@ def test_act_plays_one_round_for_the_caller_and_starts_the_session_first() -> No
 
 def test_act_takes_the_agent_tag_when_given() -> None:
     game = FakeGame(mode="stepped")
-    mcp, _ = served(game)
+    mcp, played = served(game)
     call(mcp, "act", moves=[{"command": "set_loan", "parameters": {"amount": 5}}], agent_tag="crew_2")
     ((_, _, body),) = game.calls("/step")
-    assert body["actions"][0]["action_id"] == "crew_2:0"
+    assert body["actions"][0]["action_id"] == f"{played.command_run_id}:crew_2:0"
 
 
 def test_act_with_dry_run_only_validates() -> None:
@@ -293,7 +293,7 @@ def test_a_missing_agent_tag_in_an_entry_gets_the_default() -> None:
     reply = asyncio.run(run_round(played, [{"tool": "act", "args": {"moves": [{"command": "ping"}]}}]))["results"]
     assert list(reply) == ["solo"]
     ((_, _, body),) = game.calls("/step")
-    assert body["actions"][0]["action_id"] == "solo:0"
+    assert body["actions"][0]["action_id"] == f"{played.command_run_id}:solo:0"
 
 
 def test_the_act_schema_refuses_a_name_outside_the_playable_commands() -> None:

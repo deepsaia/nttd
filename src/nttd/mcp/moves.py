@@ -5,9 +5,9 @@ list is expected, or a boolean as the word "true". The readers here accept those
 shapes and return plain Python values, or an error text when the input cannot be
 read at all.
 
-A named command is ``{"action_id", "agent_tag", "command", "parameters"}``. The id is
-the agent tag plus a counter, unique within one server run, so the game echoes it on
-the result and the action log attributes the command to the agent.
+A named command is ``{"action_id", "agent_tag", "command", "parameters"}``. The id
+includes a unique server-run prefix, the agent tag and a counter. Restarting the
+MCP server cannot replay a different command from the game's idempotency cache.
 """
 
 from __future__ import annotations
@@ -93,16 +93,17 @@ def read_moves(raw_moves: Any) -> tuple[list[dict[str, Any]], str | None]:
 
 
 def name_commands(
-    moves: list[dict[str, Any]], agent_tag: str, first_index: int,
+    moves: list[dict[str, Any]], agent_tag: str, first_index: int, run_id: str,
 ) -> list[dict[str, Any]]:
     """Attach an id and the agent tag to each move.
 
-    Ids are ``<agent_tag>:<n>`` with n counting from ``first_index``. The caller keeps
-    the counter across calls so ids never repeat within a server run.
+    Ids are ``<run_id>:<agent_tag>:<n>``. The caller creates one run ID per server
+    session and advances the counter across calls. Retrying a named command keeps
+    its existing ID rather than naming the command again.
     """
     return [
         {
-            "action_id": f"{agent_tag}:{first_index + offset}",
+            "action_id": f"{run_id}:{agent_tag}:{first_index + offset}",
             "agent_tag": agent_tag,
             "command": move["command"],
             "parameters": move["parameters"],

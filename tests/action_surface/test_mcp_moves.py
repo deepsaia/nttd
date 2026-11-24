@@ -62,11 +62,11 @@ def test_typed_moves_from_a_schema_model_are_read_too() -> None:
 
 def test_named_commands_carry_a_unique_id_and_the_agent_tag() -> None:
     moves = [{"command": "set_loan", "parameters": {"amount": 5}}, {"command": "ping", "parameters": {}}]
-    named = name_commands(moves, "crew_3", 7)
-    assert [c["action_id"] for c in named] == ["crew_3:7", "crew_3:8"]
+    named = name_commands(moves, "crew_3", 7, "run_1")
+    assert [c["action_id"] for c in named] == ["run_1:crew_3:7", "run_1:crew_3:8"]
     assert {c["agent_tag"] for c in named} == {"crew_3"}
     assert named[0]["command"] == "set_loan" and named[0]["parameters"] == {"amount": 5}
-    assert name_commands([], "crew_3", 0) == []
+    assert name_commands([], "crew_3", 0, "run_1") == []
 
 
 def test_unknown_move_fields_do_not_silently_become_empty_parameters() -> None:

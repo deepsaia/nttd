@@ -140,9 +140,11 @@ the command results stay complete.
 ## Several agents
 
 Every tool except `batch_round` takes an optional `agent_tag`. It names the caller for
-the focus, for the `action_id` of each command (`<tag>:<n>`), and for the `agent_id`
-column of the session's action log. A single agent leaves it empty and gets the default
-tag.
+the focus, for the `action_id` of each command (`<run_id>:<tag>:<n>`), and for the
+`agent_id` column of the session's action log. Each MCP server session creates a unique
+`run_id`, independent of the gameplay seed, so reconnecting to a live game does not
+reuse earlier command IDs. Retrying an existing command envelope keeps its original
+ID and remains idempotent. A single agent leaves its tag empty and gets the default tag.
 
 Several agents calling `act` one after another each make their own step in a stepped
 session. An orchestrator that wants its agents to act in the same moment sends their

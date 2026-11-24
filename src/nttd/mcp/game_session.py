@@ -12,6 +12,7 @@ import difflib
 import logging
 import random
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -58,6 +59,9 @@ class GameSession:
         self.started = False
         self.step_count = 0
         self.command_count = 0
+        # Independent of the gameplay seed: a new MCP process must not replay
+        # another process's action IDs against the same live backend session.
+        self.command_run_id = uuid4().hex
         self.terminated = False
         self.end_reason: str | None = None
         self.last_net_worth: float | None = None
@@ -182,7 +186,7 @@ class GameSession:
 
     def name(self, tag: str, moves: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Give the moves of one agent their ids, advancing the server counter."""
-        named = name_commands(moves, tag, self.command_count)
+        named = name_commands(moves, tag, self.command_count, self.command_run_id)
         self.command_count += len(named)
         return named
 
