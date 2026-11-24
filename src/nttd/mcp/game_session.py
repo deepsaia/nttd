@@ -118,7 +118,15 @@ class GameSession:
         return self.focus.apply(tag, result)
 
     async def query(self, name: str, parameters: dict[str, Any]) -> dict[str, Any]:
-        return reshape_query(name, await self.client.query(name, parameters or {}))
+        if self.terminated:
+            return self.ended_result()
+        try:
+            reply = await self.client.query(name, parameters or {})
+        except httpx.HTTPStatusError as exc:
+            if self.session_closed(exc):
+                return self.ended_result()
+            raise
+        return reshape_query(name, reply)
 
     async def validate(self, moves: list[dict[str, Any]]) -> dict[str, Any]:
         """The game's own check of the commands, without running them."""
@@ -184,7 +192,7 @@ class GameSession:
             "action": command["command"],
             "params": {**command["parameters"], "company_id": self.company_id},
             "action_id": command["action_id"],
-            "metadata": {"participant_id": command["agent_tag"]},
+            "metadata": {"participant_id": command.get("owner_tag", command["agent_tag"])},
         }
 
     def envelope(self, command: dict[str, Any]) -> dict[str, Any]:
@@ -195,11 +203,12 @@ class GameSession:
             "action_type": command["command"],
             "parameters": command["parameters"],
             "mode": "atomic",
-            "metadata": {"participant_id": command["agent_tag"]},
+            "metadata": {"participant_id": command.get("owner_tag", command["agent_tag"])},
         }
 
     async def play_round(
-        self, actor_moves: dict[str, list[dict[str, Any]]]
+        self, actor_moves: dict[str, list[dict[str, Any]]], *,
+        owners: dict[str, str] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Run the commands of one round and return one raw result per actor.
 
@@ -208,12 +217,17 @@ class GameSession:
         submitted batch and a snapshot is read after the last one. The snapshot after
         the round is kept in ``last_snapshot``. Results are not cut to any focus; the
         caller does that with ``view`` once every focus change of the round is in.
+        Delegated executors keep distinct action IDs but use their creator's
+        participant identity. A shared round reward is emitted once per creator.
         """
         actors = list(actor_moves)
         self.rng.shuffle(actors)
         if self.terminated:
             return {tag: self.ended_result() for tag in actors}
         commands = {tag: self.name(tag, actor_moves[tag]) for tag in actors}
+        for tag, moves in commands.items():
+            for command in moves:
+                command["owner_tag"] = (owners or {}).get(tag, tag)
         try:
             if self.mode == STEPPED:
                 reply = await self.client.step(
@@ -253,6 +267,7 @@ class GameSession:
             if isinstance(result, dict)
         }
         reward = self.settle_reward(snapshot)
+        rewarded_owners: set[str] = set()
         outcome: dict[str, dict[str, Any]] = {}
         for tag in actors:
             own = explain_timeouts(
@@ -263,8 +278,10 @@ class GameSession:
                 "action_results": own,
                 **round_info,
             }
-            if reward is not None:
+            owner = (owners or {}).get(tag, tag)
+            if reward is not None and owner not in rewarded_owners:
                 result["reward"] = reward
+                rewarded_owners.add(owner)
             outcome[tag] = result
         return outcome
 
