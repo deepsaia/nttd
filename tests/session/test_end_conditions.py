@@ -20,9 +20,11 @@ import time
 
 from nttd.config.scenario_config import (
     BankruptcyConfig,
+    CargoThresholdConfig,
     EndConditionsConfig,
     GameDateLimitConfig,
     MaxHeartbeatsConfig,
+    RevenueThresholdConfig,
     TimeLimitConfig,
 )
 from nttd.runtime.end_conditions import EndConditionChecker
@@ -210,3 +212,46 @@ def test_no_conditions_never_triggers() -> None:
     checker = EndConditionChecker(EndConditionsConfig(time_limit=TimeLimitConfig(enabled=False)))
     for _ in range(5):
         assert checker.check(_snapshot()).triggered is False
+
+
+def test_cargo_threshold_uses_actual_units_not_revenue_changes() -> None:
+    checker = EndConditionChecker(EndConditionsConfig(
+        time_limit=TimeLimitConfig(enabled=False),
+        cargo_threshold=CargoThresholdConfig(enabled=True, total_cargo_delivered=100),
+    ))
+    company = Company(id=0, income=0, cargo_delivered_total=20)
+    assert not checker.check(_snapshot(companies=[company])).triggered
+    company.income = 1000
+    assert not checker.check(_snapshot(companies=[company])).triggered
+    # Re-reading a total must not count the same deliveries twice.
+    for _ in range(10):
+        assert not checker.check(_snapshot(companies=[company])).triggered
+    company.income = 0
+    company.cargo_delivered_total = 100
+    assert checker.check(_snapshot(companies=[company])).triggered
+
+
+def test_cargo_threshold_retains_aggregation_across_companies() -> None:
+    checker = EndConditionChecker(EndConditionsConfig(
+        time_limit=TimeLimitConfig(enabled=False),
+        cargo_threshold=CargoThresholdConfig(enabled=True, total_cargo_delivered=100),
+    ))
+    assert checker.check(_snapshot(companies=[
+        Company(id=0, cargo_delivered_total=40), Company(id=1, cargo_delivered_total=60),
+    ])).triggered
+
+
+def test_revenue_threshold_requires_known_episode_total_for_one_company() -> None:
+    checker = EndConditionChecker(EndConditionsConfig(
+        time_limit=TimeLimitConfig(enabled=False),
+        revenue_threshold=RevenueThresholdConfig(enabled=True, total_revenue=100),
+    ))
+    company = Company(id=0, income=1000, episode_revenue=None)
+    assert not checker.check(_snapshot(companies=[company])).triggered
+    company.episode_revenue = 60
+    assert not checker.check(_snapshot(companies=[company, Company(id=1, episode_revenue=60)])).triggered
+    company.income = 0
+    company.episode_revenue = 100
+    result = checker.check(_snapshot(companies=[company]))
+    assert result.triggered
+    assert "episode revenue 100" in result.reason

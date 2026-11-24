@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from nttd.schemas.subsidy import Subsidy
+
 
 class CompactVehicleCounts(BaseModel):
     total: int = 0
@@ -14,7 +16,7 @@ class CompactCompany(BaseModel):
     balance: int = 0
     loan: int = 0
     income: int = 0
-    profit_last_year: int = 0
+    profit_last_year: int | None = None
     company_value: int = 0
     profit_trend: list[int] = Field(default_factory=list)
 
@@ -28,13 +30,8 @@ class CompactRoute(BaseModel):
     total_profit_this_year: int = 0
 
 
-class CompactSubsidy(BaseModel):
-    id: int
-    cargo_label: str = ""
-    src_name: str = ""
-    dst_name: str = ""
-    value: int = 0
-    remaining_years: int = 0
+class CompactSubsidy(Subsidy):
+    """Keep the actual route, expiry and award status even when names are unknown."""
 
 
 class CompactStation(BaseModel):

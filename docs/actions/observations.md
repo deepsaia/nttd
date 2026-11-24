@@ -19,7 +19,7 @@ Every action on one line, across all three pages: [index.md](index.md).
 
 ### `find_airport_spots`
 
-Search near a town for places an airport of the given type would fit.
+Search near a town for places an airport of the given type would fit. cargo_acceptance estimates cargo around the full airport footprint using its coverage radius. within_coverage says only whether the town centre lies in that area; a false value does not rule out passenger-producing or accepting houses. After building, get_stations or get_station_info reports actual acceptance.
 
 - `airport_type` (integer, default 0) Which airport layout to build. Availability depends on the year and the map.
 - `max_results` (integer, default 5) How many results to return at most.
@@ -186,7 +186,7 @@ List the companies in the game, with their names, values and performance ratings
 
 Takes no parameters.
 
-Returns a list of `cargo_delivered_total`, `company_value`, `hq_x`, `hq_y`, `id`, `loan`, `max_loan`, `money`, `name`, `performance_rating`, `q0_cargo`, `q0_expenses`, `q0_income`.
+Returns a list of `cargo_delivered_total`, `company_value`, `completed_quarter_income`, `finance_date`, `finance_quarter`, `hq_x`, `hq_y`, `id`, `loan`, `max_loan`, `money`, `name`, `performance_rating`, `q0_cargo`, `q0_expenses`, `q0_income`, `q1_income`.
 
 ### `get_company_finance`
 
@@ -194,7 +194,7 @@ Report your company's money, loan, income, expenses and value.
 
 Takes no parameters.
 
-Returns `balance`, `company_id`, `loan`, `max_loan`, `q1_expenses`, `q1_income`, `q1_value`, `q2_expenses`, `q2_income`, `q2_value`.
+Returns `balance`, `company_id`, `completed_quarter_income`, `finance_date`, `finance_quarter`, `loan`, `max_loan`, `q0_income`, `q1_expenses`, `q1_income`, `q1_value`, `q2_expenses`, `q2_income`, `q2_value`.
 
 ### `get_date`
 
@@ -256,19 +256,19 @@ Returns a list of `airport_type`, `airport_x`, `airport_y`, `hangar_tile`, `hang
 
 ### `get_industries`
 
-List the industries on the map, with their locations, types and production.
+List industries with locations, types and recent production. produces_cargo and accepts_cargo describe the industry type even before production begins. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service.
 
 Takes no parameters.
 
-Returns a list of `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `produces_cargo`, `production`, `served_by`, `type_id`, `type_name`, `x`, `y`.
+Returns a list of `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `nearby_stations`, `nearby_stations_company_id`, `produces_cargo`, `production`, `type_id`, `type_name`, `x`, `y`.
 
 ### `get_industry_info`
 
-Report one industry in detail: what it produces and accepts, recent production, and how much is waiting.
+Report one industry: its type-level produced and accepted cargo, recent production and accepted-cargo stockpiles. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service.
 
 - `industry_id` (integer, required) Which industry.
 
-Returns `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `produces_cargo`, `production`, `type_id`, `type_name`, `x`, `y`.
+Returns `accepted`, `accepts_cargo`, `id`, `is_processing`, `is_raw`, `name`, `nearby_stations`, `nearby_stations_company_id`, `produces_cargo`, `production`, `type_id`, `type_name`, `x`, `y`.
 
 Each `accepted` carries `cargo_id`, `cargo_label`, `stockpile`.
 
@@ -337,18 +337,18 @@ Returns a list of `id`, `name`, `x`, `y`.
 
 ### `get_station_info`
 
-Report one station in detail: what is waiting, what it accepts, and its cargo ratings. entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access.
+Report one station, its waiting cargo and cargo ratings. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply estimate producing sites over the station footprint and coverage, not cargo units or guaranteed pickup (supply_is_estimate=true). entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access.
 
 - `station_id` (integer, required) Which station.
 
-Returns `cargo_waiting`, `entry_tiles`, `has_airport`, `has_bus`, `has_dock`, `has_rail`, `has_truck`, `id`, `name`, `platform_axis`, `x`, `y`.
+Returns `cargo_acceptance`, `cargo_waiting`, `entry_tiles`, `has_airport`, `has_bus`, `has_dock`, `has_rail`, `has_truck`, `id`, `name`, `platform_axis`, `x`, `y`.
 
 Each `cargo_waiting` carries `cargo_id`, `cargo_label`, `rating`, `waiting`.
 Each `entry_tiles` carries `enterable`, `has_rail`, `tile`, `usable`, `x`, `y`.
 
 ### `get_stations`
 
-List your stations, with what is waiting at each and how it is rated.
+List your stations and waiting cargo. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply are estimates over the station footprint and coverage; supply counts producing sites, not cargo units or guaranteed pickup (supply_is_estimate=true).
 
 Takes no parameters.
 
@@ -356,11 +356,11 @@ Returns a list of `cargo_acceptance`, `cargo_waiting`, `has_airport`, `has_bus`,
 
 ### `get_subsidies`
 
-List the subsidies on offer and those already awarded.
+List subsidy routes on offer and already awarded, including cargo, endpoint types/IDs/names, is_awarded and remaining_days until expiry in economy-days. This does not report a monetary subsidy value.
 
 Takes no parameters.
 
-Returns a list of `cargo_type`, `destination_index`, `destination_type`, `id`, `is_awarded`, `remaining`, `source_index`, `source_type`.
+Returns a list of `cargo_label`, `cargo_type`, `destination_index`, `destination_name`, `destination_type`, `id`, `is_awarded`, `remaining_days`, `source_index`, `source_name`, `source_type`.
 
 ### `get_tile_area`
 
@@ -388,11 +388,11 @@ Returns `has_tree`, `height`, `is_bridge`, `is_buildable`, `is_coast`, `is_rail`
 
 ### `get_town_info`
 
-Report one town in detail: population, houses, what it accepts and how fast it is growing.
+Report one town: population, houses, past-month cargo production and growth rate. growth_requirements lists positive monthly town-growth goals grouped by TownEffect, with the cargo types that satisfy each effect. Town-growth goals are distinct from cargo acceptance at a station.
 
 - `town_id` (integer, required) Which town.
 
-Returns `accepts_cargo`, `exclusive_rights_company`, `exclusive_rights_duration`, `fund_buildings_duration`, `growth_rate`, `has_statue`, `houses`, `id`, `is_city`, `name`, `population`, `produces_cargo`, `road_layout`, `x`, `y`.
+Returns `exclusive_rights_company`, `exclusive_rights_duration`, `fund_buildings_duration`, `growth_rate`, `growth_requirements`, `has_statue`, `houses`, `id`, `is_city`, `name`, `population`, `produces_cargo`, `road_layout`, `x`, `y`.
 
 ### `get_town_rating`
 
@@ -404,30 +404,30 @@ Returns `company_id`, `detailed_rating`, `rating`, `town_id`.
 
 ### `get_towns`
 
-List the towns on the map, with their locations and populations.
+List towns with their locations, populations, house counts, city flags and growth rates. growth_rate is economy-days between growth, not population gained per day.
 
 Takes no parameters.
 
-Returns a list of `id`, `name`, `population`, `x`, `y`.
+Returns a list of `growth_rate`, `houses`, `id`, `is_city`, `name`, `population`, `x`, `y`.
 
 ### `get_vehicle_info`
 
-Report one vehicle in detail: where it is, what it carries, its orders, age, reliability and profit.
+Report one vehicle: position, cargo loads and capacities, indexed orders, age, current game state, running status and profit. Orders distinguish station, depot, waypoint and conditional entries.
 
 - `vehicle_id` (integer, required) Which vehicle.
 
-Returns `age`, `age_left`, `cargo`, `current_speed`, `engine_id`, `has_shared_orders`, `id`, `idle_reason`, `in_depot`, `is_articulated`, `length`, `lost`, `max_age`, `name`, `orders`, `profit_last_year`, `profit_this_year`, `state`, `type`, `x`, `y`.
+Returns `age`, `age_left`, `cargo`, `current_speed`, `engine_id`, `has_shared_orders`, `id`, `idle_reason`, `in_depot`, `is_articulated`, `length`, `lost`, `max_age`, `name`, `orders`, `profit_last_year`, `profit_this_year`, `running`, `state`, `type`, `x`, `y`.
 
 Each `orders` carries `destination`, `flags`, `index`, `is_conditional`, `is_goto_depot`, `is_goto_station`, `is_goto_waypoint`.
 Each `cargo` carries `cargo_id`, `capacity`, `loaded`.
 
 ### `get_vehicles`
 
-List your vehicles, optionally of one type only, with their positions, cargo and orders.
+List your vehicles, optionally of one type, with positions, capacity, current game state, running status and indexed orders. running means the game reports VS_RUNNING; stopped vehicles outside a depot remain stopped. Orders include station/depot/waypoint/conditional discriminators.
 
 - `vehicle_type` (string or integer, optional) One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.
 
-Returns a list of `age`, `capacity`, `current_speed`, `engine_id`, `id`, `in_depot`, `is_articulated`, `max_age`, `name`, `order_count`, `orders`, `profit_last_year`, `profit_this_year`, `running`, `running_cost`, `state`, `type`, `x`, `y`.
+Returns a list of `age`, `capacity`, `current_speed`, `engine_id`, `id`, `idle_reason`, `in_depot`, `is_articulated`, `lost`, `max_age`, `name`, `order_count`, `orders`, `profit_last_year`, `profit_this_year`, `running`, `running_cost`, `state`, `type`, `x`, `y`.
 
 ### `get_waypoints`
 
@@ -459,7 +459,7 @@ Each `water` carries `x`, `y`.
 
 ### `trace_route`
 
-Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal.
+Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal. line_exists is null when the bounded search is exhausted before deciding; exhausted=true is inconclusive, not proof that no connection exists.
 
 Supply one of: `tile_from` or `from_x` and `from_y`.
 

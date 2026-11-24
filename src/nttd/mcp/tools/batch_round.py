@@ -24,6 +24,9 @@ Carries every agent's call for one round as {agent_tag, tool, args} entries,
 where tool is one of observe, act, query, list_commands, focus. Reads run first,
 all moves are sent together with the agents in a random order, and the game
 advances exactly once. Replies with per-agent results keyed by agent_tag.
+For delegated calls, owner_tag names the creator whose focus and participant
+context apply; agent_tag remains the executor receiving the result. Correlated
+callbacks, if used, must also target that executor.
 A single agent never needs this tool.
 """
 
@@ -49,9 +52,11 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
     actor_moves: dict[str, list[dict[str, Any]]] = {}
     observers: list[str] = []
     focus_requests: dict[str, dict[str, Any]] = {}
+    owners: dict[str, str] = {}
 
     for entry in entries:
         tag = session.tag(entry.get("agent_tag"))
+        owners[tag] = session.tag(entry.get("owner_tag", tag))
         tool = entry.get("tool", "")
         args = entry.get("args") or {}
         try:
@@ -59,7 +64,7 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
                 observers.append(tag)
             elif tool == "focus":
                 if coerce_flag(args.get("clear")):
-                    session.focus.clear(tag)
+                    session.focus.clear(owners[tag])
                     observers.append(tag)
                 else:
                     focus_requests[tag] = {key: args.get(key) for key in FOCUS_KEYS}
@@ -84,7 +89,7 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
     snapshot: dict[str, Any] | None = None
     if actor_moves:
         try:
-            played = await session.play_round(actor_moves)
+            played = await session.play_round(actor_moves, owners=owners)
             if not session.terminated:
                 snapshot = session.last_snapshot
         except Exception as exc:
@@ -109,17 +114,17 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
             readers = []
     for tag, args in focus_requests.items():
         if tag in readers:
-            outcome = session.focus.set_focus(tag, snapshot or {}, args)
+            outcome = session.focus.set_focus(owners[tag], snapshot or {}, args)
             if "error" in outcome:
                 results[tag] = outcome
                 readers.remove(tag)
     for tag, result in played.items():
-        results[tag] = session.view(tag, result)
+        results[tag] = session.view(owners[tag], result)
     # An agent that both acted and read in one round gets its act result, already
     # cut to the focus it asked for.
     for tag in readers:
         if tag not in played:
-            results[tag] = session.view(tag, snapshot or {})
+            results[tag] = session.view(owners[tag], snapshot or {})
 
     logger.info(
         "[round] entries=%d actors=%d observers=%d focus=%d step=%d terminated=%s",
@@ -131,7 +136,7 @@ async def run_round(session: GameSession, entries: list[dict[str, Any]]) -> dict
 def register(mcp: FastMCP, session: GameSession) -> None:
     """Register the round envelope."""
 
-    @mcp.tool(description=BATCH_ROUND)
+    @mcp.tool(description=BATCH_ROUND, meta={"terralingua/owner_tag": True})
     async def batch_round(entries: list[dict[str, Any]]) -> str:
         await session.ensure_started()
         return json.dumps(await run_round(session, entries))

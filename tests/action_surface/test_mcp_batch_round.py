@@ -140,6 +140,35 @@ def test_a_round_runs_reads_then_one_step_and_answers_every_agent() -> None:
     assert reply["h"] == {"error": "Unknown tool: nothing"}
 
 
+def test_daemon_and_creator_share_context_and_reward_but_keep_separate_results() -> None:
+    game = FakeGame(mode="stepped")
+    mcp, played = served(game, reward=True)
+    asyncio.run(played.start())
+    played.focus.set_focus("alice", played.last_snapshot or {}, {"towns": ["Weston"], "padding": 5})
+    game.money += 100
+    reply = call(mcp, "batch_round", entries=[
+        entry("alice", "act", moves=[{"command": "ping"}]),
+        {
+            **entry("daemon:act", "act", moves=[{"command": "set_loan", "parameters": {"amount": 5}}]),
+            "owner_tag": "alice",
+        },
+        {**entry("daemon:observe", "observe"), "owner_tag": "alice"},
+    ])["results"]
+
+    assert set(reply) == {"alice", "daemon:act", "daemon:observe"}
+    ((_, _, body),) = game.calls("/step")
+    assert len(body["actions"]) == 2
+    assert all(action["metadata"]["participant_id"] == "alice" for action in body["actions"])
+    assert reply["alice"]["action_results"][0]["action_type"] == "ping"
+    assert reply["daemon:act"]["action_results"][0]["action_type"] == "set_loan"
+    for tag in ("alice", "daemon:act"):
+        assert [town["name"] for town in reply[tag]["snapshot"]["towns"]] == ["Weston"]
+    assert [town["name"] for town in reply["daemon:observe"]["towns"]] == ["Weston"]
+    assert [result["reward"] for result in reply.values() if "reward" in result] == [100.0]
+    batch_tool = next(tool for tool in asyncio.run(mcp.list_tools()) if tool.name == "batch_round")
+    assert batch_tool.meta == {"terralingua/owner_tag": True}
+
+
 def test_a_round_sets_focus_and_returns_the_focused_view_with_one_fetch() -> None:
     game = FakeGame(mode="stepped")
     played = session_for(game, seed=1)
@@ -217,11 +246,32 @@ def test_a_game_refusal_is_reported_to_every_actor_of_the_round() -> None:
     game.closed = True
     reply = asyncio.run(
         run_round(
-            played, [entry("a", "act", moves=[{"command": "ping"}]), entry("b", "act", moves=[{"command": "ping"}])]
+            played, [
+                entry("a", "act", moves=[{"command": "ping"}]),
+                entry("b", "act", moves=[{"command": "ping"}]),
+                entry("c", "query", query="get_date"),
+            ]
         )
     )["results"]
-    assert reply["a"]["error"] == "nttd returned 404" and reply["b"] == reply["a"]
+    assert reply["a"]["error"] == "nttd returned 404" and reply["b"] == reply["c"] == reply["a"]
     assert not played.terminated, "a 404 ends only a game that keeps its own clock"
+
+
+def test_a_query_only_round_reports_the_closed_game_to_agents_and_daemons() -> None:
+    game = FakeGame(mode="async_realtime")
+    mcp, played = served(game)
+    asyncio.run(played.start())
+    game.closed = True
+
+    reply = call(mcp, "batch_round", entries=[
+        entry("alice", "query", query="get_date"),
+        {**entry("daemon:watch", "query", query="get_date"), "owner_tag": "alice"},
+    ])["results"]
+    ended = {"terminated": True, "end_reason": "session closed", "note": GAME_ENDED_NOTE}
+    assert reply == {"alice": ended, "daemon:watch": ended}
+    assert played.terminated
+    assert call(mcp, "query", query="get_date") == ended
+    assert len(game.calls("/state/gs/query")) == 1
 
 
 def test_after_the_end_actors_and_readers_learn_the_game_ended() -> None:

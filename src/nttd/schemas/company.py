@@ -7,8 +7,8 @@ class Company(BaseModel):
     ``performance_rating`` is OpenTTD's own 0-1000 composite (40% annual cargo
     delivered, 10% profitable vehicles, 10% station coverage, 10% vehicle profit,
     5%+5% quarterly revenue, 5% cargo diversity, 5% cash, 5% no-loan). It is the
-    primary benchmark score because it is game-authoritative and hard to game,
-    unlike raw company value which is inflated by simply drawing a loan.
+    game-authoritative rating. Company value is a separate metric: borrowing
+    increases cash and debt equally, so it does not directly increase value.
 
     A rating of -1 means OpenTTD has not yet computed one -- it needs a full
     quarter of history, so early in a session it is legitimately absent.
@@ -23,12 +23,22 @@ class Company(BaseModel):
     max_loan: int = 0
     value: int = 0
     income: int = 0
-    profit_last_year: int = 0
+    # The admin protocol does not report annual profit. Do not manufacture zero
+    # from a missing quarterly field or mislabel annual net cash flow as profit.
+    profit_last_year: int | None = None
+    annual_net_income: int | None = None
     is_ai: bool = False
     is_active: bool = True
     # Scoring fields, emitted by the GS get_companies handler.
     performance_rating: int = -1
     q0_income: int = 0
+    q1_income: int | None = None
+    finance_date: int | None = None
+    finance_quarter: int | None = None
+    completed_quarter_income: list[int | None] = []
+    # Since the session's first financial observation, excluding pre-existing
+    # current-quarter revenue. None means an intervening quarter is unavailable.
+    episode_revenue: int | None = None
     q0_expenses: int = 0
     q0_cargo: int = 0
     # The quarter in progress resets to zero at every boundary, and a run ends on one, so

@@ -35,9 +35,11 @@ def test_every_vehicle_carries_its_state_as_a_word() -> None:
         "broken_down",
         "crashed",
         "halted",
-        "no_path",
+        "running",
     ]
-    assert out["vehicles"][0] == {"id": 1, "state": "running", "current_speed": 30}
+    assert out["vehicles"][0] == {"id": 1, "state": "running", "current_speed": 30,
+                                   "route_reachability": "unknown"}
+    assert out["vehicles"][-1]["route_reachability"] == "no_path"
     assert snapshot["vehicles"][0]["state"] == 0
 
 
@@ -53,7 +55,7 @@ def test_reshape_applies_both_changes_and_leaves_other_replies_alone() -> None:
     snapshot = {"companies": [{"income": 1}], "vehicles": [{"id": 1, "state": 1}], "routes": []}
     out = reshape(snapshot)
     assert out["companies"][0] == {"revenue_last_quarter": 1}
-    assert out["vehicles"][0] == {"id": 1, "state": "stopped"}
+    assert out["vehicles"][0] == {"id": 1, "state": "stopped", "route_reachability": "unknown"}
     assert reshape({"queried": "get_date"}) == {"queried": "get_date"}
 
 
@@ -71,3 +73,18 @@ def test_a_search_timeout_is_explained() -> None:
     assert explained[0]["error"].endswith(TIMEOUT_NOTE)
     assert explained[1] == results[1]
     assert explained[2] == "not a dict"
+
+
+def test_path_problem_does_not_hide_stopped_broken_or_crashed_state():
+    from nttd.mcp.snapshot import reshape_query
+    for state, word in [(1, 'stopped'), (4, 'broken_down'), (5, 'crashed')]:
+        vehicle = {'id': 9, 'state': state, 'current_speed': 0}
+        observed = reshape({'vehicles': [vehicle], 'routes': [{'vehicle_ids': [9], 'vehicles_without_path': [9]}]})
+        queried = reshape_query('get_vehicle_info', {'success': True, 'result': vehicle})
+        assert observed['vehicles'][0]['state'] == queried['result']['state'] == word
+        assert observed['vehicles'][0]['route_reachability'] == 'no_path'
+        assert queried['result']['route_reachability'] == 'unknown'
+
+
+def test_missing_state_is_unknown_not_halted():
+    assert reshape({'vehicles': [{'id': 1, 'state': None}]})['vehicles'][0]['state'] == 'unknown'

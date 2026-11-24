@@ -62,14 +62,12 @@ class TestAVehicleSaysWhyItIsNotMoving:
             assert reason in _GS, reason
 
 
-class TestAnIndustrySaysWhichStationCollects:
-    """A leftover station four tiles away took 422 units of wood for 120 days while the station
-    the train served showed nothing. An industry delivers to ONE station, and not necessarily
-    the nearest or the newest.
-    """
+class TestAnIndustryListsNearbyStationsWithoutClaimingService:
+    """Proximity is a useful hint, but does not establish catchment or collection."""
 
     def test_industries_report_the_stations_in_range(self) -> None:
-        assert "served_by" in _returns("get_industries")
+        assert "nearby_stations" in _returns("get_industries")
+        assert "served_by" not in _returns("get_industries")
 
     def test_it_lists_them_rather_than_naming_a_winner(self) -> None:
         """Catchment differs by station type. More than one in range is the warning worth
@@ -80,15 +78,15 @@ class TestAnIndustrySaysWhichStationCollects:
     def test_the_station_list_is_read_inside_a_company_mode(self) -> None:
         """GSStationList is EMPTY outside one, exactly as GSVehicleList is. That trap cost an
         hour and made four counters read zero while the game reported 222 units delivered."""
-        serving = _GS[_GS.index("function _ServingStations"):]
+        serving = _GS[_GS.index("function _NearbyStations"):]
         serving = serving[:serving.index("function _IsLost")]
         # Comments stripped: the explanation names GSStationList before the code reaches it, and
         # matching prose would pass whatever the code did.
         code = "\n".join(
             line for line in serving.splitlines() if not line.strip().startswith("//")
         )
-        assert "GSCompanyMode(0)" in code
-        assert code.index("GSCompanyMode(0)") < code.index("GSStationList")
+        assert "GSCompanyMode(company_id)" in code
+        assert code.index("GSCompanyMode(company_id)") < code.index("GSStationList")
 
 
 class TestTheAirportFinderReportsWhatDecidesTheRoute:

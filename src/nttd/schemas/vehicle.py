@@ -17,6 +17,7 @@ class Order(BaseModel):
     is_goto_station: bool = False
     is_goto_depot: bool = False
     is_goto_waypoint: bool = False
+    is_conditional: bool = False
 
 
 class Vehicle(BaseModel):
@@ -33,8 +34,8 @@ class Vehicle(BaseModel):
     max_age: int = 0
     capacity: int = 0
     current_speed: int = 0
-    state: int = 0
-    running: bool = True
+    state: int | None = None
+    running: bool | None = None
     in_depot: bool = False
     order_count: int = 0
     orders: list[Order] = []

@@ -172,7 +172,7 @@ class Situation:
         profits = [v.profit_this_year for v in self._vehicles]
         return {
             "income": income,
-            "profit_last_year": c.profit_last_year if c else 0,
+            "profit_last_year": c.profit_last_year if c else None,
             "vehicles_earning": sum(1 for p in profits if p > 0),
             "vehicles_losing": sum(1 for p in profits if p < 0),
             "fleet_profit_this_year": sum(profits),

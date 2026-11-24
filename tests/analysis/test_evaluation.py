@@ -126,3 +126,49 @@ def test_png_failure_keeps_html_and_returns_cli_error(tmp_path, monkeypatch):
     assert "PNG export failed" in result.output
     assert (out / "metrics.html").exists()
     assert (out / "evaluation.json").exists()
+
+
+def test_completed_history_corrects_quarter_undersampling_and_opening_balance(tmp_path):
+    path = record(tmp_path, "run", [10, 20, 30])
+    snapshots = pd.read_parquet(path / "snapshots.parquet")
+    for row, (quarter, current, history) in enumerate([(10, 100, []), (10, 150, []), (11, 20, [300])]):
+        snapshot = json.loads(snapshots.loc[row, "snapshot_json"])
+        snapshot["companies"][0].update(finance_quarter=quarter, q0_income=current,
+                                        completed_quarter_income=history)
+        snapshots.loc[row, "snapshot_json"] = json.dumps(snapshot)
+    snapshots.to_parquet(path / "snapshots.parquet")
+    run = read_run(path)
+    assert run.revenue_source == "economy_quarter_history"
+    assert run.series["episode_revenue"].tolist() == [0, 50, 220]
+
+
+def test_unknown_history_stays_unknown_in_curves_means_and_rank(tmp_path):
+    complete = record(tmp_path, "complete", [10, 20, 30, 40])
+    missing = record(tmp_path, "missing", [10, 20, 30, 40])
+    for path in [complete, missing]:
+        snapshots = pd.read_parquet(path / "snapshots.parquet")
+        for row in range(4):
+            snapshot = json.loads(snapshots.loc[row, "snapshot_json"])
+            snapshot["companies"][0].update(
+                finance_quarter=10 if row < 2 else 11,
+                completed_quarter_income=[200] if path == complete and row >= 2 else [],
+            )
+            snapshots.loc[row, "snapshot_json"] = json.dumps(snapshot)
+        snapshots.iloc[[0, 1, 3]].to_parquet(path / "snapshots.parquet")
+    run = read_run(missing)
+    assert run.series["episode_revenue"].iloc[:3].tolist() == [0, 10, 10]
+    assert pd.isna(run.series["episode_revenue"].iloc[3])
+    table = evaluate({"known": [complete], "partial": [complete, missing]}, tmp_path / "out")
+    assert table.loc["partial", "seeds"] == 2
+    assert pd.isna(table.loc["partial", "episode_revenue"])
+    assert pd.isna(table.loc["partial", "front"])
+    assert table.loc["known", "episode_revenue"] == 230
+    assert table.loc["known", "front"] == 1
+    assert table.loc["partial", "company_value"] == 40
+
+
+def test_legacy_snapshot_without_completed_history_is_not_exact_after_rollover(tmp_path):
+    path = record(tmp_path, "run", [10, 20], start=715965)
+    run = read_run(path)
+    assert run.revenue_source == "current_quarter_only"
+    assert pd.isna(run.series["episode_revenue"].iloc[-1])

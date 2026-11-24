@@ -157,6 +157,8 @@ class TestRecordConnection:
         route = registry.reconcile(vehicles, stations, game_date=100)[0]
 
         registry.record_connection(route.route_id, True, game_date=101)
+        assert route.status == "unchecked"  # Vehicle access has not been checked yet.
+        registry.record_vehicle_paths(route.route_id, [1], [], game_date=101)
         assert route.status == "active"
         assert route.track_confirmed_at == 101
         assert route.connection_checked_at == 101
@@ -181,6 +183,7 @@ class TestRecordConnection:
         registry.record_connection(route.route_id, False, game_date=101)
 
         registry.record_connection(route.route_id, True, game_date=150)
+        registry.record_vehicle_paths(route.route_id, [1], [], game_date=150)
         assert route.status == "active"
         assert route.track_confirmed_at == 150
 
@@ -468,3 +471,69 @@ class TestLookups:
         assert len(registry.get_routes(company_id=0)) == 1
         assert len(registry.get_routes(company_id=1)) == 1
         assert len(registry.get_routes()) == 2
+
+
+def test_reverse_order_vehicles_share_a_complete_route_report(stations):
+    registry = RouteRegistry()
+    a = _make_vehicle(1, 0, [10, 20], stations=stations)
+    b = _make_vehicle(2, 0, [20, 10], stations=stations)
+    a.profit_this_year, b.profit_this_year = 100, 200
+    routes = registry.reconcile({1: a, 2: b}, stations, game_date=100)
+    assert len(routes) == 1
+    assert routes[0].vehicle_ids == [1, 2]
+    assert routes[0].vehicle_count == 2
+    assert routes[0].total_profit_this_year == 300
+    assert registry.route_for_vehicle(1) is registry.route_for_vehicle(2)
+
+
+def test_negative_or_unknown_answer_revokes_a_previous_connection(stations):
+    registry = RouteRegistry()
+    route = registry.reconcile({1: _make_vehicle(1, 0, [10, 20], stations=stations)}, stations, 100)[0]
+    registry.record_vehicle_paths(route.route_id, [1], [], 100)
+    registry.record_connection(route.route_id, True, 100)
+    assert route.status == 'active'
+    registry.record_connection(route.route_id, False, 101)
+    assert route.status == 'unconnected'
+    assert route.track_confirmed_at == 0
+    registry.record_connection(route.route_id, None, 102)
+    assert route.status == 'unchecked'
+
+
+def test_negative_and_unknown_vehicle_answers_revoke_cached_success(stations):
+    registry = RouteRegistry()
+    route = registry.reconcile({1: _make_vehicle(1, 0, [10, 20], stations=stations)}, stations, 100)[0]
+    registry.record_connection(route.route_id, True, 100)
+    registry.record_vehicle_paths(route.route_id, [1], [], 100)
+    registry.record_vehicle_paths(route.route_id, [], [1], 101)
+    assert route.status == 'unconnected'
+    assert registry.vehicles_to_check(route) == [1]
+    registry.record_vehicle_paths(route.route_id, [], [], 102, unknown=[1])
+    assert route.status == 'unchecked'
+    assert route.vehicles_without_path == []
+    assert route.vehicles_with_unknown_path == [1]
+
+
+def test_same_station_set_changed_orders_invalidates_connectivity(stations):
+    registry = RouteRegistry()
+    vehicle = _make_vehicle(1, 0, [10, 20, 30], stations=stations)
+    route = registry.reconcile({1: vehicle}, stations, 100)[0]
+    registry.record_connection(route.route_id, True, 100)
+    registry.record_vehicle_paths(route.route_id, [1], [], 100)
+    vehicle.orders.reverse()
+    again = registry.reconcile({1: vehicle}, stations, 101)[0]
+    assert again.route_id == route.route_id
+    assert again.status == 'unchecked'
+    assert registry.vehicles_to_check(again) == [1]
+
+
+def test_new_vehicle_itinerary_invalidates_shared_station_set_confirmation(stations):
+    registry = RouteRegistry()
+    a = _make_vehicle(1, 0, [10, 20, 30], stations=stations)
+    route = registry.reconcile({1: a}, stations, 100)[0]
+    registry.record_connection(route.route_id, True, 100)
+    registry.record_vehicle_paths(route.route_id, [1], [], 100)
+    b = _make_vehicle(2, 0, [10, 30, 20], stations=stations)
+    again = registry.reconcile({1: a, 2: b}, stations, 101)[0]
+    assert again.vehicle_ids == [1, 2]
+    assert again.status == 'unchecked'
+    assert again.track_confirmed_at == 0

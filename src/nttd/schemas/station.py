@@ -13,6 +13,7 @@ class CargoAcceptance(BaseModel):
     accepts: bool = False
     produces: bool = False
     supply: int = 0
+    supply_is_estimate: bool = True
     rated: bool = False
 
 
