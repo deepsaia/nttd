@@ -5371,7 +5371,7 @@ class NttdGS extends GSController {
       return { success = false, error = "Invalid company ID" };
 
     local expense_type = ("expense_type" in p) ? p.expense_type : GSCompany.EXPENSES_OTHER;
-    local ok = GSCompany.ChangeBankBalance(p.company_id, p.delta, expense_type);
+    local ok = GSCompany.ChangeBankBalance(p.company_id, p.delta, expense_type, GSMap.TILE_INVALID);
     if (!ok) return this._Refused();
     return { success = true, result = {
       company_id = p.company_id,
