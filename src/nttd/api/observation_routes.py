@@ -6,13 +6,16 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 import nttd.api.dependencies as deps
+from nttd.actions.validation import validate_parameters
 from nttd.api.participant_auth import (
     AuthorizationHeader,
     ParticipantToken,
     apply_company_scope,
     extract_token,
 )
+from nttd.bridge.trace_route import line_exists
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS, READ_ONLY_GS_ACTIONS
+from nttd.pathfinding import service as pf_service
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
     CompactRecentAction,
@@ -148,8 +151,6 @@ async def plan_route(
     would be a number that looks authoritative and is not. Length, bridges and tunnels are
     what predict the bill; ask ``estimate_cost`` for money.
     """
-    from nttd.pathfinding import service as pf_service  # noqa: PLC0415
-
     runtime = deps.get_runtime(session_id)
     width = runtime.world.game.map_width
     height = runtime.world.game.map_height
@@ -187,8 +188,8 @@ async def plan_route(
         # adjacency in the tile cache, because adjacency is not connectivity: track beside a
         # platform pointing away from it is adjacent and useless.
         "can_build": bool(found.get("found")),
-        "line_exists": await _line_already_exists(
-            runtime, from_x, from_y, to_x, to_y, transport_type,
+        "line_exists": await line_exists(
+            runtime.admin_client, from_x, from_y, to_x, to_y, transport_type,
         ),
         "transport_type": transport_type,
         "from": [from_x, from_y],
@@ -206,19 +207,18 @@ async def plan_route(
         "searched_tiles": found.get("tiles_explored", 0),
         "search_ms": found.get("estimated_time_ms", 0),
     }
-    if not answer["can_build"] and not answer["line_exists"]:
-        # Why it gave up, in the two ways it can. Hitting the iteration ceiling is a
-        # different problem from there being no route, and an agent that cannot tell them
-        # apart abandons a corridor that only needed a longer search.
-        #
-        # Not said when the line already exists: "no route" about a standing line is the
-        # misreport this pair of fields was added to prevent.
-        answer["reason"] = (
-            "the search hit its iteration limit, so raise max_iterations before "
-            "concluding there is no route"
+    if not answer["can_build"] and answer["line_exists"] is not True:
+        planning_reason = (
+            "The build search reached its iteration limit. Build feasibility is unknown."
             if found.get("iterations", 0) >= max_iterations
-            else "no route exists for this transport type between these points"
+            else "The build planner found no new route between these points."
         )
+        connection_reason = (
+            "Existing connectivity is unknown."
+            if answer["line_exists"] is None
+            else "No existing connection was found for this transport type."
+        )
+        answer["reason"] = f"{planning_reason} {connection_reason}"
     if include_path:
         answer["path"] = path
     return answer
@@ -378,36 +378,6 @@ async def _price_the_town_routes(
         route["income_per_unit"] = priced[distance]
 
 
-async def _line_already_exists(
-    runtime: Any, from_x: int, from_y: int, to_x: int, to_y: int, transport_type: str,
-) -> bool | None:
-    """Whether a vehicle could travel it now, asked of the game rather than of the cache.
-
-    None rather than False when the question cannot be put: a ship travels over open water
-    so a track walk does not describe it, and a game that is not connected has no answer.
-    False would read as "there is no line", which is a claim this has not earned.
-    """
-    if transport_type not in ("rail", "road"):
-        return None
-    if not runtime.admin_client.connected:
-        return None
-    try:
-        reply = await runtime.admin_client.send_gamescript(
-            "trace_route",
-            {
-                "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y,
-                "transport_type": transport_type,
-            },
-            timeout=20.0,
-        )
-    except Exception:
-        logger.debug("Could not trace the existing line", exc_info=True)
-        return None
-    if not reply.get("success"):
-        return None
-    return bool((reply.get("result") or {}).get("line_exists"))
-
-
 async def _cargo_ids(runtime: Any) -> dict[str, int]:
     """Cargo label to id, which is what the planner reports and the pricer needs."""
     reply = await runtime.admin_client.send_gamescript("get_cargo_types", {}, timeout=10.0)
@@ -514,15 +484,10 @@ async def get_compact_state(session_id: str, company_id: int = -1) -> CompactSna
 
     # Subsidies
     compact_subsidies = [
-        CompactSubsidy(
-            id=s.id,
-            cargo_label=s.cargo_label,
-            src_name=s.src_name,
-            dst_name=s.dst_name,
-            value=s.value,
-            remaining_years=s.remaining_years,
-        )
-        for s in sorted(world.subsidies, key=lambda s: s.value, reverse=True)
+        CompactSubsidy(**s.model_dump())
+        for s in sorted(world.subsidies, key=lambda s: (
+            s.remaining_days is None, s.remaining_days if s.remaining_days is not None else 0, s.id,
+        ))
     ]
 
     # Recent actions
@@ -616,4 +581,7 @@ async def gs_query(
 
     scoped = dict(params or {})
     apply_company_scope(runtime, scoped, extract_token(x_participant_token, authorization))
+    error = validate_parameters(action, scoped, allow_company=True)
+    if error:
+        return {"success": False, "error": error, "error_name": "INVALID_PARAMETERS", "command": action}
     return await runtime.admin_client.send_gamescript(action, scoped)

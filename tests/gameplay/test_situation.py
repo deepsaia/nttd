@@ -136,7 +136,9 @@ class TestRouteHealth:
     def test_stations_without_track_are_not_a_route(self) -> None:
         """The state the old loop treated as done: both stations exist, so it moved on
         to the next pair and left this one earning nothing."""
-        health = _situation(routes=[self._route(track_confirmed_at=0)]).report()["routes"][0]
+        health = _situation(routes=[self._route(
+            track_confirmed_at=0, connection_checked_at=700_000,
+        )]).report()["routes"][0]
         assert not health["working"]
         assert "a connection between the stations" in health["missing"]
 
@@ -153,11 +155,39 @@ class TestRouteHealth:
         earning route as unfinished.
         """
         health = _situation(routes=[
-            self._route(station_ids=[1], depot_tile=0, vehicle_count=0, track_confirmed_at=0),
+            self._route(station_ids=[1], depot_tile=0, vehicle_count=0,
+                        track_confirmed_at=0, connection_checked_at=700_000),
         ]).report()["routes"][0]
         assert sorted(health["missing"]) == [
             "a connection between the stations", "a second station", "a vehicle",
         ]
+
+    def test_vehicle_without_station_access_is_not_working(self) -> None:
+        route = self._route(vehicle_ids=[7], vehicles_without_path=[7])
+        report = _situation(routes=[route]).report()
+        health = report["routes"][0]
+        assert health["working"] is False
+        assert health["missing"] == ["station access for vehicles 7"]
+        assert health["unchecked"] == []
+        assert any("station access for vehicles 7" in p["detail"] for p in report["problems"])
+
+    def test_unknown_connection_does_not_report_missing_track(self) -> None:
+        route = self._route(track_confirmed_at=0, vehicles_with_unknown_path=[7])
+        report = _situation(routes=[route]).report()
+        health = report["routes"][0]
+        assert health["working"] is None
+        assert health["missing"] == []
+        assert health["unchecked"] == ["the connection between the stations", "station access for vehicles 7"]
+        assert not any("unfinished" in p["problem"] for p in report["problems"])
+        assert any("unchecked connectivity" in p["problem"] for p in report["problems"])
+
+    def test_unknown_vehicle_access_does_not_override_a_missing_station_leg(self) -> None:
+        route = self._route(track_confirmed_at=0, connection_checked_at=700_000,
+                            vehicles_with_unknown_path=[7])
+        health = _situation(routes=[route]).report()["routes"][0]
+        assert health["working"] is False
+        assert health["missing"] == ["a connection between the stations"]
+        assert health["unchecked"] == ["station access for vehicles 7"]
 
 
 class TestProblems:

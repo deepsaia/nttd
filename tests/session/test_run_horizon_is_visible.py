@@ -69,3 +69,84 @@ def test_a_run_not_bounded_by_days_reports_zero_rather_than_a_guess() -> None:
 
     assert checker.game_days_total == 0
     assert checker.game_days_remaining == 0
+
+
+def test_realtime_remaining_days_use_the_scored_duration(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from nttd.config.scenario_config import TimeLimitConfig
+    from nttd.runtime.orchestrator import _SECS_PER_GAME_DAY, Orchestrator
+    from nttd.state.world import WorldState
+
+    now = [1000.0]
+    monkeypatch.setattr("nttd.runtime.end_conditions.time.time", lambda: now[0])
+    orchestrator = Orchestrator(WorldState(), MagicMock())
+    orchestrator.configure_end_conditions(EndConditionsConfig(
+        time_limit=TimeLimitConfig(enabled=True, wall_minutes=12),
+        max_heartbeats=MaxHeartbeatsConfig(enabled=False),
+    ))
+    total = round(720 / _SECS_PER_GAME_DAY)
+    game = orchestrator.world.snapshot().game
+    assert game.game_days_total == game.game_days_remaining == game.episode_days == total
+
+    # Provisioning time must not consume the game budget.
+    now[0] += 500
+    orchestrator._publish_horizon()
+    assert orchestrator.world.snapshot().game.game_days_remaining == total
+    orchestrator.start_scored_clock()
+
+    now[0] += 360
+    orchestrator._end_checker.check(orchestrator.world.snapshot())
+    orchestrator._publish_horizon()
+    assert orchestrator.world.snapshot().game.game_days_remaining == 183
+    assert orchestrator.world.game.game_days_total == total
+
+    # A partial final day is not reported as an already-finished episode.
+    now[0] += 359.9
+    orchestrator._publish_horizon()
+    assert orchestrator.world.snapshot().game.game_days_remaining == 1
+    now[0] += 0.1
+    orchestrator._publish_horizon()
+    assert orchestrator.world.snapshot().game.game_days_remaining == 0
+    now[0] += 100
+    orchestrator._publish_horizon()
+    assert orchestrator.world.snapshot().game.game_days_remaining == 0
+
+
+def test_remaining_days_respect_the_game_days_per_interval() -> None:
+    from nttd.config.scenario_config import TimeLimitConfig
+    from nttd.schemas.snapshot import StateSnapshot
+
+    checker = EndConditionChecker(EndConditionsConfig(
+        time_limit=TimeLimitConfig(enabled=False),
+        max_heartbeats=MaxHeartbeatsConfig(enabled=True, count=10),
+    ))
+    assert checker.remaining_episode_days(3, 2.0) == 30
+    for _ in range(3):
+        checker.check(StateSnapshot())
+    assert checker.remaining_episode_days(3, 2.0) == 21
+
+
+def test_remaining_days_combine_enabled_limits_like_the_total(monkeypatch) -> None:
+    from nttd.config.scenario_config import TimeLimitConfig
+    from nttd.schemas.snapshot import StateSnapshot
+
+    monkeypatch.setattr("nttd.runtime.end_conditions.time.time", lambda: 1060.0)
+    for logic, expected in [("any", 27), ("all", 330)]:
+        checker = EndConditionChecker(EndConditionsConfig(
+            logic=logic,
+            time_limit=TimeLimitConfig(enabled=True, wall_minutes=12),
+            max_heartbeats=MaxHeartbeatsConfig(enabled=True, count=10),
+        ), start_time=1000.0)
+        checker.check(StateSnapshot())
+        assert checker.remaining_episode_days(3, 2.0) == expected
+
+
+def test_remaining_days_without_a_duration_bound_keep_the_existing_zero() -> None:
+    from nttd.config.scenario_config import TimeLimitConfig
+
+    checker = EndConditionChecker(EndConditionsConfig(
+        time_limit=TimeLimitConfig(enabled=False),
+        max_heartbeats=MaxHeartbeatsConfig(enabled=False),
+    ))
+    assert checker.remaining_episode_days(1, 2.0) == 0

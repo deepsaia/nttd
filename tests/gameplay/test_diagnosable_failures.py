@@ -62,14 +62,12 @@ class TestAVehicleSaysWhyItIsNotMoving:
             assert reason in _GS, reason
 
 
-class TestAnIndustrySaysWhichStationCollects:
-    """A leftover station four tiles away took 422 units of wood for 120 days while the station
-    the train served showed nothing. An industry delivers to ONE station, and not necessarily
-    the nearest or the newest.
-    """
+class TestAnIndustryListsNearbyStationsWithoutClaimingService:
+    """Proximity is a useful hint, but does not establish catchment or collection."""
 
     def test_industries_report_the_stations_in_range(self) -> None:
-        assert "served_by" in _returns("get_industries")
+        assert "nearby_stations" in _returns("get_industries")
+        assert "served_by" not in _returns("get_industries")
 
     def test_it_lists_them_rather_than_naming_a_winner(self) -> None:
         """Catchment differs by station type. More than one in range is the warning worth
@@ -80,15 +78,15 @@ class TestAnIndustrySaysWhichStationCollects:
     def test_the_station_list_is_read_inside_a_company_mode(self) -> None:
         """GSStationList is EMPTY outside one, exactly as GSVehicleList is. That trap cost an
         hour and made four counters read zero while the game reported 222 units delivered."""
-        serving = _GS[_GS.index("function _ServingStations"):]
+        serving = _GS[_GS.index("function _NearbyStations"):]
         serving = serving[:serving.index("function _IsLost")]
         # Comments stripped: the explanation names GSStationList before the code reaches it, and
         # matching prose would pass whatever the code did.
         code = "\n".join(
             line for line in serving.splitlines() if not line.strip().startswith("//")
         )
-        assert "GSCompanyMode(0)" in code
-        assert code.index("GSCompanyMode(0)") < code.index("GSStationList")
+        assert "GSCompanyMode(company_id)" in code
+        assert code.index("GSCompanyMode(company_id)") < code.index("GSStationList")
 
 
 class TestTheAirportFinderReportsWhatDecidesTheRoute:
@@ -160,7 +158,7 @@ class TestJoiningADepotIsOneAction:
     def test_it_refuses_a_platform_rather_than_failing_obscurely(self) -> None:
         """A station platform sets the rail bit but can never take a track piece, and every
         attempt there returns a bare ERR_AREA_NOT_CLEAR."""
-        assert "that neighbour is a station platform, not running line" in _GS
+        assert "the depot faces the side of a station platform" in _GS
 
     def test_a_failure_lists_what_it_tried(self) -> None:
         assert "tried" in _returns("connect_depot")
@@ -200,33 +198,14 @@ class TestTheTerrainSeparatesTrackFromPlatform:
 
 
 class TestThePreFlightChecksAnswerTheQuestionAsked:
-    """Two checks an agent makes before spending, both of which lied.
-
-    trace_route walks existing track. Its TRACK geometry was always right: each step asks the
-    game whether a vehicle can come from the previous tile, through this one, to the next, so a
-    curve that does not join is rejected. What it got wrong was the very first hop, where there
-    is no previous tile and it invented one.
-
-    plan_route plans a BUILD. It was called check_connection, which is a different question, and
-    the name is why it was reached for as a connectivity test and answered zero on water.
-    """
-
-    def test_the_first_hop_no_longer_invents_an_approach(self) -> None:
-        """The measured failure: a depot the game reported connected, whose train then ran at
-        107 km/h, traced as line_exists false with tiles_reachable 1."""
-        assert "if (node.tile == start) {" in _GS
-        walk = _GS[_GS.index("function CmdTraceRoute"):]
-        walk = walk[:walk.index("local reachable = 0")]
-        # Adjacency for the first hop, the full triple test after it.
-        assert "joined = is_track;" in walk
-        assert "GSRail.AreTilesConnected(prev, node.tile, next)" in walk
+    """Existing-track checks and construction plans have distinct contracts."""
 
     def test_it_says_what_it_does_not_model(self) -> None:
         """A check that cannot be exact has to say so, or it gets trusted as if it were."""
-        described = _ACTIONS["trace_route"]["description"]
-        for limit in ("platform", "reverse", "signals"):
+        described = _ACTIONS["trace_route"]["description"].lower()
+        for limit in ("platform", "signals", "vehicle compatibility"):
             assert limit in described, limit
-        assert "lost" in described, "points at the one exact answer there is"
+        assert "does not guarantee successful vehicle operation" in described
 
     def test_the_build_planner_is_named_for_what_it_plans(self) -> None:
         from nttd.api import observation_routes

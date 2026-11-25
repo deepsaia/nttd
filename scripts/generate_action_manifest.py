@@ -92,10 +92,9 @@ _DISPATCH_WITH_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cm
 _DISPATCH_NO_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cmd\w+)\(\)')
 _DISPATCH_INLINE = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+\{')
 
-# The parameter list is optional: a handler that takes nothing, such as CmdGetTowns, still
-# has a body worth reading for the shape of its reply. Matching only `(p)` left those
-# fifteen handlers with an empty body and so no documented return.
-_FUNCTION = re.compile(r'\n  function (Cmd\w+)\((?:p(?:\s*=\s*\{\})?)?\)\s*\{')
+# Read handlers with no arguments, a parameter table, or additional internal arguments.
+# Published parameters come from accesses to p, not from these internal controls.
+_FUNCTION = re.compile(r'\n  function (Cmd\w+)\([^)]*\)\s*\{')
 
 # local x = ("name" in p) ? p.name : default;
 _OPTIONAL = re.compile(r'"([a-z_0-9]+)"\s+in\s+p\)?\s*\?\s*p\.[a-z_0-9]+\s*:\s*([^;,\)]+)')
@@ -466,6 +465,8 @@ def _entry(
     one_of = [
         [_branch(branch) for branch in group] for group in prose.get("one_of", [])
     ] + list(derived)
+    optional = prose.get("optional_one_of", [])
+    one_of = [group for i, group in enumerate(one_of) if group not in optional and group not in one_of[:i]]
     alternatives = {param for group in one_of for branch in group for param in branch}
     for param in alternatives & set(params):
         params[param]["required"] = False
@@ -484,10 +485,16 @@ def _entry(
     }
     if one_of:
         entry["one_of"] = one_of
+    if optional:
+        entry["optional_one_of"] = optional
     for param, meta in sorted(params.items()):
         entry["parameters"][param] = _parameter(name, param, meta, prose, written)
     if returns:
         entry["returns"] = dict(returns)
+        if "return_fields" in prose:
+            entry["returns"]["fields"] = prose["return_fields"]
+        if "return_items" in prose:
+            entry["returns"].setdefault("nested", {}).update(prose["return_items"])
         described = (prose.get("returns") or {})
         if described:
             entry["returns"]["fields"] = {
@@ -544,10 +551,16 @@ def _parameter(
     published: dict[str, Any] = dict(meta)
     published["description"] = override.get("description") or shared.get("description", "")
     published["type"] = override.get("type") or shared.get("type", "")
+    if "schema" in shared or "schema" in override:
+        published["schema"] = {**shared.get("schema", {}), **override.get("schema", {})}
 
     values = _enum_for(action, param, written)
     if values:
         published["enum"] = values
+        # Bit flags allow combinations; ordinary enum arguments require a named value.
+        members = values["values"]
+        if not any(key.startswith(("OF_", "SLOPE_", "RAILTRACK_")) for key in members):
+            published.setdefault("schema", {})["enum"] = sorted(set(members.values()))
     return published
 
 
@@ -605,7 +618,7 @@ def problems(manifest: dict[str, Any], written: dict[str, Any]) -> list[str]:
                     f"descriptions.json overrides '{name}.{param}', "
                     f"which that action does not take"
                 )
-        for group in prose.get("one_of") or []:
+        for group in (prose.get("one_of") or []) + (prose.get("optional_one_of") or []):
             for param in [p for branch in group for p in _branch(branch)]:
                 if param not in entry["parameters"]:
                     found.append(
@@ -936,7 +949,8 @@ def _markdown_returns(entry: dict[str, Any]) -> list[str]:
 
 def _markdown_facts(meta: dict[str, Any]) -> str:
     """Type, requiredness and default, compressed into one parenthesis."""
-    facts = [meta.get("type") or "value"]
+    kind = meta.get("type") or "value"
+    facts = [" or ".join(kind) if isinstance(kind, list) else kind]
     if meta.get("required"):
         facts.append("required")
     elif "default" in meta:

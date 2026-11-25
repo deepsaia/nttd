@@ -26,6 +26,7 @@ Commands:
   nttd verify                Self-check a submission bundle
   nttd publish               File a bundle on the board as a pull request
   nttd analyze               Generate session analysis reports
+  nttd evaluate              Evaluate recorded runs and plot comparison curves
   nttd monitor               Watch sessions in a browser while they run
   nttd runex                 Run an experiment against a live session
 """
@@ -35,6 +36,7 @@ import typer
 from nttd.cli.actions_command import actions
 from nttd.cli.analyze_command import analyze
 from nttd.cli.benchmark_command import benchmark
+from nttd.cli.evaluate_command import evaluate
 from nttd.cli.mcp_command import mcp
 from nttd.cli.monitor_command import monitor
 from nttd.cli.package_command import package
@@ -61,6 +63,7 @@ app.command()(package)
 app.command()(publish)
 app.command()(verify)
 app.command()(analyze)
+app.command()(evaluate)
 app.command()(actions)
 app.command()(mcp)
 app.command(

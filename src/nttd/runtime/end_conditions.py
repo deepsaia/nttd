@@ -5,6 +5,7 @@ Logic "any" (default): simulation stops when the first enabled condition is met.
 Logic "all": simulation stops when every enabled condition is simultaneously met.
 """
 import logging
+import math
 import time
 from dataclasses import dataclass
 
@@ -40,9 +41,6 @@ class EndConditionChecker:
         self._start_time: float | None = start_time
         self._start_game_date: int | None = None
         self._heartbeat_count = 0
-        # Running totals for cargo delivered (accumulated across snapshots)
-        self._cargo_delivered: int = 0
-        self._prev_income: dict[int, int] = {}
 
     def start_clock(self, game_date: int | None = None) -> bool:
         """Start the scored clock. Returns True if this call started it.
@@ -77,6 +75,21 @@ class EndConditionChecker:
             return 0
         return int(cfg.max_heartbeats.count or 0)
 
+    def episode_days(self, interval_days: int, secs_per_game_day: float) -> int:
+        """How many game days the run lasts, or 0 when no step or time bound is set.
+
+        With both bounds set, logic "any" ends at the first one and "all" at the last.
+        """
+        cfg = self._config
+        bounds: list[int] = []
+        if cfg.max_heartbeats.enabled:
+            bounds.append(int(cfg.max_heartbeats.count or 0) * interval_days)
+        if cfg.time_limit.enabled:
+            bounds.append(round(cfg.time_limit.wall_minutes * 60 / secs_per_game_day))
+        if not bounds:
+            return 0
+        return max(bounds) if cfg.logic == "all" else min(bounds)
+
     @property
     def game_days_remaining(self) -> int:
         """What is left of that budget. A contestant plans against this, so it is public."""
@@ -85,12 +98,29 @@ class EndConditionChecker:
             return 0
         return max(0, total - int(self._heartbeat_count or 0))
 
+    def remaining_episode_days(self, interval_days: int, secs_per_game_day: float) -> int:
+        """Remaining configured duration, expressed only in game days.
+
+        Use the scored clock for timed runs, not the number of checks made by
+        the real-time loop. A partial final day stays positive until expiry.
+        """
+        cfg = self._config
+        bounds: list[int] = []
+        if cfg.max_heartbeats.enabled:
+            bounds.append(self.game_days_remaining * interval_days)
+        if cfg.time_limit.enabled:
+            total_seconds = cfg.time_limit.wall_minutes * 60
+            elapsed = 0.0 if self._start_time is None else max(0.0, time.time() - self._start_time)
+            remaining = math.ceil(max(0.0, total_seconds - elapsed) / secs_per_game_day)
+            bounds.append(min(round(total_seconds / secs_per_game_day), remaining))
+        if not bounds:
+            return 0
+        return max(bounds) if cfg.logic == "all" else min(bounds)
+
     def reset(self) -> None:
         self._start_time = None
         self._start_game_date = None
         self._heartbeat_count = 0
-        self._cargo_delivered = 0
-        self._prev_income = {}
 
     def check(self, snapshot: StateSnapshot) -> EndResult:
         """Return EndResult(triggered=True, reason=...) if any/all conditions are met."""
@@ -171,30 +201,26 @@ class EndConditionChecker:
         # ---- Revenue threshold (any single company) ----------------------
         if cfg.revenue_threshold.enabled:
             for company in snapshot.companies:
-                if company.income >= cfg.revenue_threshold.total_revenue:
+                if (company.episode_revenue is not None
+                        and company.episode_revenue >= cfg.revenue_threshold.total_revenue):
                     results.append(EndResult(
                         triggered=True,
                         reason=(
                             f"Company {company.id} ({company.name}) reached "
-                            f"revenue {company.income:,} >= {cfg.revenue_threshold.total_revenue:,}"
+                            f"episode revenue {company.episode_revenue:,} >= {cfg.revenue_threshold.total_revenue:,}"
                         ),
                     ))
                     break
 
-        # ---- Cargo threshold (cumulative income proxy) -------------------
-        # We approximate cargo delivered via the change in income since last heartbeat.
+        # ---- Cargo threshold (actual delivered units across companies) ---
         if cfg.cargo_threshold.enabled:
-            for company in snapshot.companies:
-                prev = self._prev_income.get(company.id, company.income)
-                delta = max(0, company.income - prev)
-                self._cargo_delivered += delta
-                self._prev_income[company.id] = company.income
-            if self._cargo_delivered >= cfg.cargo_threshold.total_cargo_delivered:
+            delivered = sum(company.cargo_delivered_total for company in snapshot.companies)
+            if delivered >= cfg.cargo_threshold.total_cargo_delivered:
                 results.append(EndResult(
                     triggered=True,
                     reason=(
-                        f"Cumulative cargo/revenue delivered "
-                        f"{self._cargo_delivered:,} >= {cfg.cargo_threshold.total_cargo_delivered:,}"
+                        f"Cargo delivered "
+                        f"{delivered:,} >= {cfg.cargo_threshold.total_cargo_delivered:,}"
                     ),
                 ))
 

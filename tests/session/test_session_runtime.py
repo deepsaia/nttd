@@ -15,6 +15,7 @@ Run with: uv run pytest tests/test_session_runtime.py -v
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -117,3 +118,43 @@ async def test_dedicated_and_config_flags_still_present(
 def test_map_seed_defaults_to_none(runtime: SessionRuntime) -> None:
     """map_seed is provenance state; unset until SessionManager assigns it."""
     assert runtime.map_seed is None
+
+
+@pytest.mark.parametrize("mode", ["async_realtime", "heartbeat", "stepped"])
+async def test_start_reports_the_mode_before_the_loop_runs(
+    runtime: SessionRuntime, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    from nttd.api import control_routes
+    from nttd.mcp.server import instructions_for
+
+    monkeypatch.setattr(control_routes.deps, "get_runtime", lambda _: runtime)
+    runtime.start_orchestrator(mode)
+    try:
+        status = control_routes.get_status(runtime.session_id)
+        assert status.mode == mode
+        assert runtime.world.snapshot().game.mode == mode
+        assert instructions_for(status.mode, "global", 365) == instructions_for(mode, "global", 365)
+        assert (runtime.orchestrator_task is None) == (mode == "stepped")
+    finally:
+        if runtime.orchestrator_task is not None:
+            runtime.orchestrator_task.cancel()
+            await asyncio.gather(runtime.orchestrator_task, return_exceptions=True)
+
+
+def test_invalid_mode_does_not_change_reported_mode(runtime: SessionRuntime) -> None:
+    previous = runtime.world.game.mode
+    runtime.start_orchestrator("invalid")
+    assert runtime.world.game.mode == previous
+    assert runtime.orchestrator_task is None
+
+
+async def test_rejected_restart_keeps_the_running_mode(runtime: SessionRuntime) -> None:
+    runtime.start_orchestrator("async_realtime")
+    task = runtime.orchestrator_task
+    try:
+        runtime.start_orchestrator("heartbeat")
+        assert runtime.world.game.mode == "async_realtime"
+        assert runtime.orchestrator_task is task
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

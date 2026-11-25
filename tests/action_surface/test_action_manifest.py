@@ -41,6 +41,23 @@ def _load_generator() -> ModuleType:
     return module
 
 
+def test_internal_handler_arguments_do_not_hide_or_expose_gameplay_parameters() -> None:
+    generator = _load_generator()
+    source = '''
+  function CmdConnectRail(p, estimate_only = false) {
+    local from_x = p.from_x;
+    local rail_type = ("rail_type" in p) ? p.rail_type : 0;
+    return { success = !estimate_only, result = { rail_type = rail_type } };
+  }
+'''
+    bodies = generator._function_bodies(source)
+    assert "CmdConnectRail" in bodies
+    parameters = generator._parameters(bodies["CmdConnectRail"])
+    assert parameters["from_x"]["required"] is True
+    assert parameters["rail_type"]["default"] == 0
+    assert "estimate_only" not in parameters
+
+
 @pytest.fixture(scope="module")
 def manifest() -> dict[str, Any]:
     return json.loads(_MANIFEST.read_text())
@@ -722,4 +739,4 @@ class TestHandlersTheDispatchTableNeverReaches:
         and that framing is why the redundant primitives looked like a missing feature."""
         description = actions["build_path"]["description"]
         assert "route you have already chosen" in description
-        assert "nothing has to reason about track orientation" in description
+        assert "neighboring path steps to determine their orientation" in description

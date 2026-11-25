@@ -54,7 +54,7 @@ local RL policy and `$0.00` from a silent entry are not the same claim.
 Three ways in, all reaching the same routes:
 
 - **HTTP (REST)**: the primary surface. `GET /state/full`, `POST /actions/submit`.
-- **MCP**: five tools over the same routes, for agents built around a tool-calling
+- **MCP**: six tools over the same routes, for agents built around a tool-calling
   loop. The action vocabulary arrives as an enum in the tool schema rather than in a
   prompt, so a client cannot send a name the game does not have. stdio and streamable
   HTTP, because an agent that spawns its tools and a framework that connects to a
@@ -91,6 +91,26 @@ One per run, holding:
   for the life of a scored run.
 - **The orchestrator**: the real-time loop, or the step gate for stepped mode.
 - **The recorder**: buffers to Parquet fragments, merged on stop.
+
+#### Automatic route diagnostics
+
+The orchestrator checks station-to-station legs, including the return leg, and each
+vehicle's access to its first station. These background checks share a limit of 32
+trace calls and five seconds per world refresh. Routes take turns; within a route,
+untried probes run before older due probes. Large itineraries accumulate evidence
+over successive refreshes instead of restarting their entire walk.
+
+A failed or inconclusive probe retries after 5, 10, 20, then at most 30 game days.
+Successful evidence expires after 30 game days. Infrastructure or order changes
+invalidate both evidence and retry delays immediately, and replies from checks
+already in flight cannot restore evidence invalidated during the request. Removing
+a route also removes its vehicle evidence and retry schedule.
+
+Deferred, expired, timed-out, and search-exhausted probes remain unknown. A very large
+fleet, a slow network, or infrequent refreshes can leave some routes partly unchecked
+under these finite limits; stale successful checks do not become current evidence.
+Explicit contestant trace queries retain their existing search limits and timeouts.
+This scheduling affects diagnostic refresh work only, not game rules or scoring.
 
 ### OpenTTD
 

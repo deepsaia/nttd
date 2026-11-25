@@ -37,3 +37,9 @@ class GameState(BaseModel):
     # having none left.
     game_days_total: int = 0
     game_days_remaining: int = 0
+    # What the company is asked to achieve, from the scenario's objective.
+    objective: str = "global"
+    # How many game days the run lasts: steps times days per step when it is bounded by
+    # steps, the wall-clock limit at the game's fixed economy clock when it is bounded by
+    # time. Zero when neither bounds it.
+    episode_days: int = 0

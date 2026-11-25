@@ -18,6 +18,7 @@ from nttd.runtime.participant_registry import ParticipantRegistry
 from nttd.runtime.participant_report import ParticipantReport
 from nttd.runtime.scored_lock import ScoredLock
 from nttd.runtime.step_gate import StepGate
+from nttd.schemas.game import RuntimeMode
 from nttd.state.agent_registry import AgentRegistry
 from nttd.state.snapshot_broker import AgentSnapshotBroker
 from nttd.state.snapshot_class import SnapshotClassRegistry
@@ -359,6 +360,14 @@ class SessionRuntime:
             logger.warning("Orchestrator already running for session %s", self.session_id)
             return
 
+        try:
+            selected_mode = RuntimeMode(mode)
+        except ValueError:
+            logger.warning("Unknown orchestrator mode %r, not starting", mode)
+            return
+
+        # Publish before scheduling the loop: MCP clients read /status at startup.
+        self.world.set_mode(selected_mode)
         self.orchestrator.stop()  # reset running flag
 
         if mode == "stepped":
@@ -382,10 +391,6 @@ class SessionRuntime:
                 self.orchestrator.run_async_realtime(),
                 name=f"orchestrator-{self.session_id}",
             )
-        else:
-            logger.warning("Unknown orchestrator mode %r, not starting", mode)
-            return
-
         logger.info("Orchestrator started for session %s in %s mode", self.session_id, mode)
 
     async def shutdown(self) -> None:

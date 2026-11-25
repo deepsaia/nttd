@@ -421,8 +421,23 @@
       "description": "Which vehicle."
     },
     "vehicle_type": {
-      "type": "string",
-      "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order."
+      "type": [
+        "string",
+        "integer"
+      ],
+      "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.",
+      "schema": {
+        "enum": [
+          "train",
+          "road",
+          "ship",
+          "aircraft",
+          0,
+          1,
+          2,
+          3
+        ]
+      }
     },
     "wagon": {
       "type": "integer",
@@ -569,7 +584,14 @@
       "description": "Bridge the gap between two tiles. The ends must be in line and at the same height, with the span clear between them.",
       "parameters": {
         "transport_type": {
-          "description": "What crosses the bridge: rail, water, or road. Anything else is treated as road."
+          "description": "What the structure carries: rail, road, water. Other values are rejected.",
+          "schema": {
+            "enum": [
+              "rail",
+              "road",
+              "water"
+            ]
+          }
         }
       }
     },
@@ -595,10 +617,111 @@
       "description": "Build one-way road between two tiles, covering both end tiles fully rather than stopping at their edges. Use this when the road must meet what is already there."
     },
     "build_path": {
-      "description": "Lay a route you have already chosen, tile by tile. This is how you build a line of your own design: give the tiles and nttd works out how each piece must sit, including the three-tile context rail needs, so nothing has to reason about track orientation. Bridges and tunnels are steps like any other. Steps that only pass over infrastructure already there are skipped rather than paid for. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed. Use connect_rail or connect_road instead when you would rather nttd chose the route.",
+      "description": "Build a route you have already chosen from its tile steps. Rail pieces use neighboring path steps to determine their orientation. Bridges and tunnels are explicit steps. The result reports new construction, existing pieces, skipped steps, and refusals. Road and rail paths also check actual connections, including skipped steps. A refusal or a gap makes the result partial. Water paths report construction refusals. Use connect_rail or connect_road to let the build planner choose the path.",
       "parameters": {
         "transport_type": {
-          "description": "What the path carries: rail or road. Anything else is treated as road."
+          "description": "What the path carries: rail, road or water. Other values are rejected.",
+          "schema": {
+            "enum": [
+              "rail",
+              "road",
+              "water"
+            ]
+          }
+        },
+        "steps": {
+          "description": "At least two path steps. Each contains integer x/y and an optional action (default move). Bridge steps also require bridge_from_x/y; tunnel steps require tunnel_from_x/y.",
+          "schema": {
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y"
+              ],
+              "properties": {
+                "x": {
+                  "type": "integer"
+                },
+                "y": {
+                  "type": "integer"
+                },
+                "bridge_from_x": {
+                  "type": "integer"
+                },
+                "bridge_from_y": {
+                  "type": "integer"
+                },
+                "bridge_type": {
+                  "type": "integer"
+                },
+                "tunnel_from_x": {
+                  "type": "integer"
+                },
+                "tunnel_from_y": {
+                  "type": "integer"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "start",
+                    "end",
+                    "move",
+                    "build_road",
+                    "build_rail",
+                    "build_bridge",
+                    "build_tunnel",
+                    "build_canal",
+                    "build_lock"
+                  ],
+                  "default": "move"
+                },
+                "length": {
+                  "type": "integer",
+                  "description": "Span length supplied by the nttd pathfinder; execution uses the endpoint coordinates."
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "action": {
+                        "const": "build_bridge"
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "bridge_from_x",
+                      "bridge_from_y"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "action": {
+                        "const": "build_tunnel"
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "tunnel_from_x",
+                      "tunnel_from_y"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
         }
       }
     },
@@ -647,7 +770,13 @@
       "description": "Bore a tunnel into the hillside at the given tile. OpenTTD picks the far end itself, following the slope until the land rises again, so the exit is reported back rather than chosen.",
       "parameters": {
         "transport_type": {
-          "description": "What runs through the tunnel: rail or road. Anything else is treated as rail."
+          "description": "What the structure carries: rail, road. Other values are rejected.",
+          "schema": {
+            "enum": [
+              "rail",
+              "road"
+            ]
+          }
         }
       }
     },
@@ -673,7 +802,18 @@
       "description": "Set a company's standing with a town directly. Operator-tier: it overrides the reputation a contestant is supposed to earn."
     },
     "clone_vehicle": {
-      "description": "Build a copy of an existing vehicle, optionally sharing the original's orders. Give depot_tile or depot_x and depot_y to say which depot builds the copy; without them the vehicle's current tile is used, which only works while it is parked in a depot."
+      "description": "Build a copy of an existing vehicle, optionally sharing the original's orders. Give depot_tile or depot_x and depot_y to say which depot builds the copy; without them the vehicle's current tile is used, which only works while it is parked in a depot.",
+      "optional_one_of": [
+        [
+          [
+            "depot_tile"
+          ],
+          [
+            "depot_x",
+            "depot_y"
+          ]
+        ]
+      ]
     },
     "connect_rail": {
       "description": "Lay track between two tiles, finding the route itself. This is the pathfinding build: it handles curves, and the hint parameters name the tiles to join up with at each end so the result connects to your station rather than merely reaching it. It succeeds only if every segment was laid, because one gap means no route. A partial build keeps whatever it managed and reports which segments failed, so read the status rather than taking a reply as a working line."
@@ -694,7 +834,7 @@
       "description": "Create a group to organise vehicles of one type. Groups carry their own profit figures and can drive automatic replacement.",
       "parameters": {
         "vehicle_type": {
-          "description": "One of train, road, ship or aircraft. An unrecognised value silently becomes train."
+          "description": "One of train, road, ship or aircraft, or the corresponding integer 0, 1, 2 or 3."
         }
       }
     },
@@ -708,18 +848,25 @@
       "description": "Clear whatever is on the tile. Works on your own structures and on trees and rocks, and costs money."
     },
     "estimate_cost": {
-      "description": "Report what an action would cost without doing it. The action runs in test mode, so nothing is built and no money moves. A failure here is a genuine refusal and worth reading before committing.",
+      "description": "Estimate an action's cost without performing it. Nothing is built and no money moves. Road estimates can charge clearing shared tiles more than once. A failed estimate includes the tested command's refusal.",
       "parameters": {
         "action": {
           "description": "Name of the action to price, exactly as it would be submitted."
+        },
+        "params": {
+          "description": "Parameters of the action being estimated, with the same requirements as a normal command. The server supplies the company automatically; do not include company_id."
         }
-      }
+      },
+      "return_fields": [
+        "action",
+        "estimated_cost"
+      ]
     },
     "expand_town": {
       "description": "Grow a town by a number of houses at once. Operator-tier."
     },
     "find_airport_spots": {
-      "description": "Search near a town for places an airport of the given type would fit."
+      "description": "Search near a town for places an airport of the given type would fit. cargo_acceptance estimates cargo around the full airport footprint using its coverage radius. within_coverage says only whether the town centre lies in that area; a false value does not rule out passenger-producing or accepting houses. After building, get_stations or get_station_info reports actual acceptance."
     },
     "find_bus_stop_spots": {
       "description": "Search near a town for roadside tiles a bus or truck stop could be built on."
@@ -737,7 +884,13 @@
       "description": "Find a tile near the given one where a rail depot would fit."
     },
     "find_station_spot": {
-      "description": "Find somewhere to put a station serving a given industry or town."
+      "description": "Find somewhere to put a station serving a given industry or town.",
+      "one_of": [
+        [
+          "industry_id",
+          "town_id"
+        ]
+      ]
     },
     "find_water_depot_spots": {
       "description": "Search near a town for water a ship depot could be built on."
@@ -779,7 +932,16 @@
       "description": "Report income and costs split by category, which is where a fleet that runs at a loss becomes visible."
     },
     "get_game_settings": {
-      "description": "Read named game settings. An unknown name reads back as null rather than failing the call."
+      "description": "Read named game settings. An unknown name reads back as null rather than failing the call.",
+      "parameters": {
+        "keys": {
+          "schema": {
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
     },
     "get_groups": {
       "description": "List your vehicle groups, with their profits and how they nest."
@@ -788,10 +950,10 @@
       "description": "List the hangar tiles of an airport, which is where aircraft are built and serviced."
     },
     "get_industries": {
-      "description": "List the industries on the map, with their locations, types and production."
+      "description": "List industries with locations, types and recent production. produces_cargo and accepts_cargo describe the industry type even before production begins. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service."
     },
     "get_industry_info": {
-      "description": "Report one industry in detail: what it produces and accepts, recent production, and how much is waiting."
+      "description": "Report one industry: its type-level produced and accepted cargo, recent production and accepted-cargo stockpiles. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service."
     },
     "get_infrastructure_costs": {
       "description": "Report how much track, road and station you own and what it costs to maintain each month."
@@ -815,34 +977,48 @@
       "description": "List the signs on the map."
     },
     "get_station_info": {
-      "description": "Report one station in detail: what is waiting, what it accepts, and its cargo ratings."
+      "description": "Report one station, its waiting cargo and cargo ratings. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply estimate producing sites over the station footprint and coverage, not cargo units or guaranteed pickup (supply_is_estimate=true). entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access."
     },
     "get_stations": {
-      "description": "List your stations, with what is waiting at each and how it is rated."
+      "description": "List your stations and waiting cargo. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply are estimates over the station footprint and coverage; supply counts producing sites, not cargo units or guaranteed pickup (supply_is_estimate=true)."
     },
     "get_subsidies": {
-      "description": "List the subsidies on offer and those already awarded."
+      "description": "List subsidy routes on offer and already awarded, including cargo, endpoint types/IDs/names, is_awarded and remaining_days until expiry in economy-days. This does not report a monetary subsidy value."
     },
     "get_tile_area": {
-      "description": "Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it. This is the right tool for almost any question about a piece of ground, including whether your own track is already there. Bounds are INCLUSIVE, so a single tile is x1 equal to x2. max_tiles bounds the reply and the request is REFUSED, not truncated, if the area exceeds it; the default is 400."
+      "description": "Report a rectangle of ground, tile by tile: height, slope, whether it is buildable, water or coast, whether it already carries road, rail, a station, a tree, a bridge or a tunnel, and who owns it. This is the right tool for almost any question about a piece of ground, including whether your own track is already there. Bounds are INCLUSIVE, so a single tile is x1 equal to x2. max_tiles bounds the reply and the request is REFUSED, not truncated, if the area exceeds it; the default is 400.",
+      "parameters": {
+        "max_tiles": {
+          "schema": {
+            "minimum": 1
+          }
+        }
+      }
     },
     "get_tile_info": {
       "description": "Report one tile in detail: height, slope, what is on it, who owns it and which town it belongs to."
     },
     "get_town_info": {
-      "description": "Report one town in detail: population, houses, what it accepts and how fast it is growing."
+      "description": "Report one town: population, houses, past-month cargo production and growth rate. growth_requirements lists positive monthly town-growth goals grouped by TownEffect, with the cargo types that satisfy each effect. Town-growth goals are distinct from cargo acceptance at a station."
     },
     "get_town_rating": {
       "description": "Report how a town regards your company. A poor rating blocks building there, and planting trees is the usual remedy."
     },
     "get_towns": {
-      "description": "List the towns on the map, with their locations and populations."
+      "description": "List towns with their locations, populations, house counts, city flags and growth rates. growth_rate is economy-days between growth, not population gained per day."
     },
     "get_vehicle_info": {
-      "description": "Report one vehicle in detail: where it is, what it carries, its orders, age, reliability and profit."
+      "description": "Report one vehicle: position, cargo loads and capacities, indexed orders, age, current game state, running status and profit. Orders distinguish station, depot, waypoint and conditional entries.",
+      "return_items": {
+        "cargo": [
+          "cargo_id",
+          "capacity",
+          "loaded"
+        ]
+      }
     },
     "get_vehicles": {
-      "description": "List your vehicles, optionally of one type only, with their positions, cargo and orders."
+      "description": "List your vehicles, optionally of one type, with positions, capacity, current game state, running status and indexed orders. running means the game reports VS_RUNNING; stopped vehicles outside a depot remain stopped. Orders include station/depot/waypoint/conditional discriminators."
     },
     "get_waypoints": {
       "description": "List your waypoints."
@@ -1041,15 +1217,29 @@
       "category": "query"
     },
     "trace_route": {
-      "description": "Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal.",
+      "description": "Check a physical rail or road connection over existing infrastructure. Rail checks require connected entry and exit directions, including at platforms and depots. Bridges and tunnels preserve the direction of travel. Optional station IDs search matching station tiles instead of one coordinate anchor. Otherwise, endpoints are exact tiles. Signals, train reversal, traffic rules, vehicle compatibility, and service orders are not evaluated. A connection does not guarantee successful vehicle operation. line_exists is true when a path is found, false when the completed search finds none, and null when the search limit leaves the answer unknown.",
       "parameters": {
+        "from_station_id": {
+          "description": "Optional starting station ID. Search its rail or road station tiles instead of the starting coordinate.",
+          "type": "integer"
+        },
+        "to_station_id": {
+          "description": "Optional destination station ID. Accept its rail or road station tiles instead of the destination coordinate.",
+          "type": "integer"
+        },
         "transport_type": {
-          "description": "rail or road. Defaults to rail."
+          "description": "rail or road. Defaults to rail.",
+          "schema": {
+            "enum": [
+              "rail",
+              "road"
+            ]
+          }
         }
       }
     },
     "connect_depot": {
-      "description": "Join a rail depot to the running line beside it. A depot is not connected by building it: the neighbouring track needs a curve piece facing the depot's entrance, and connect_rail cannot supply one because it lays rail on both endpoints and so fails against the depot itself. Reports which tile it joined to and whether the connection already existed. Refuses when the only neighbouring rail is a station platform, which can never take a track piece."
+      "description": "Join a rail depot through its actual front tile to adjacent running track. Track beside the rear or side does not connect the depot. Reports the front tile and whether the connection already existed. A platform already facing the door can connect; track cannot be added to a platform facing the wrong way."
     }
   }
 }

@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING, Any
 from nttd.actions.gate import admit
 from nttd.actions.gs_reply import result_from_reply
 from nttd.actions.tracker import ActionTracker
+from nttd.actions.validation import validate_parameters
 from nttd.bridge.admin_client import AdminClient
+from nttd.bridge.trace_route import line_exists
 from nttd.config.scenario_config import EndConditionsConfig, ScenarioConfig
 from nttd.constants import TICK_DEPENDENT_ACTIONS
 from nttd.runtime.company_lock import CompanyLockManager
@@ -22,8 +24,10 @@ from nttd.runtime.end_conditions import EndConditionChecker
 from nttd.schemas.action_envelope import ActionEnvelope, ActionMode
 from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.game import RuntimeMode
+from nttd.schemas.route import Route
 from nttd.schemas.snapshot import StateSnapshot
 from nttd.schemas.step_result import StepResult
+from nttd.state.route_registry import CheckKey
 from nttd.state.tile_footprint import affected_area
 from nttd.state.world import WorldState
 from nttd.utils.name_generator import generate_timestamp
@@ -149,8 +153,17 @@ class Orchestrator:
         is time for it to pay for itself, and a run that hides its own length forces that
         decision to be made blind.
         """
-        self.world.game.game_days_total = self._end_checker.game_days_total
-        self.world.game.game_days_remaining = self._end_checker.game_days_remaining
+        self.world.game.game_days_total = self._end_checker.episode_days(
+            self._heartbeat_interval_days, self._secs_per_game_day,
+        )
+        self.world.game.game_days_remaining = self._end_checker.remaining_episode_days(
+            self._heartbeat_interval_days, self._secs_per_game_day,
+        )
+        self.world.game.episode_days = self.world.game.game_days_total
+
+    def set_objective(self, objective: str) -> None:
+        """Put the scenario's objective onto the world, where the status reads it."""
+        self.world.game.objective = objective
 
     def _on_game_event(self, data: dict[str, Any]) -> None:
         """Handle unsolicited GS game events: refresh what moved, then record it."""
@@ -233,6 +246,7 @@ class Orchestrator:
         self._action_window_seconds = config.heartbeat.action_window_seconds
         self._snapshot_interval_days = config.runtime.snapshot_interval_days
         self._end_checker = EndConditionChecker(config.end_conditions)
+        self.set_objective(config.objective)
         # The economy clock rate is fixed -- there is no game-speed multiplier to
         # scale this by. config.heartbeat.game_speed is retained for config
         # compatibility but has no effect on timing.
@@ -245,6 +259,7 @@ class Orchestrator:
             config.runtime.snapshot_interval_days,
             config.end_conditions.logic,
         )
+        self._publish_horizon()
 
     def add_observer(self, callback: Any) -> None:
         self._observers.append(callback)
@@ -258,6 +273,7 @@ class Orchestrator:
 
     def set_heartbeat_interval(self, days: int) -> None:
         self._heartbeat_interval_days = days
+        self._publish_horizon()
 
     def stop(self) -> None:
         self._running = False
@@ -352,6 +368,8 @@ class Orchestrator:
                 if r.get("success") and isinstance(r.get("result"), dict):
                     self.world.apply_gs_infrastructure(company.id, r["result"])
 
+            await self.confirm_route_connections()
+
             # Cargo flows use GSCargoMonitor counters that accumulate between reads.
             # Refresh on staggered cycles (same cadence as towns/industries).
             if self._refresh_cycle % _STAGGER_INTERVAL == 0:
@@ -372,6 +390,134 @@ class Orchestrator:
 
         except Exception:
             logger.exception("GS world refresh failed")
+
+    ROUTE_CHECKS_PER_REFRESH = 32
+    ROUTE_CHECK_BUDGET_SECONDS = 5.0
+
+    async def confirm_route_connections(self) -> None:
+        """Run a bounded, fair selection of due connectivity probes.
+
+        At most 32 probes share a five-second deadline. Each station leg is separate,
+        so long itineraries progress over multiple refreshes. Failed and inconclusive
+        probes retry after 5, 10, 20, then 30 game days; successful evidence lasts 30.
+        Deferred or expired answers remain unknown, including very large or slow fleets.
+        """
+        stations = self.world.stations
+        game_date = self.world.game.game_date
+        registry = self.world.route_registry
+        registry.expire_connections(game_date)
+        routes = self.world._derive_routes()
+        station_by_tile = {s.y * (self.world.game.map_width or 256) + s.x: s for s in stations.values()}
+        probes: dict[CheckKey, tuple[int, int, int, int, str]] = {}
+        probe_stations: dict[CheckKey, dict[str, int]] = {}
+        station_keys: dict[str, list[CheckKey] | None] = {}
+        vehicle_keys: dict[tuple[str, int], CheckKey | None] = {}
+        for route in routes:
+            if not route.vehicle_ids:
+                continue
+            if route.vehicle_type == "aircraft":
+                if not route.track_confirmed_at:
+                    registry.record_connection(route.route_id, True, game_date)
+                registry.record_vehicle_paths(route.route_id, route.vehicle_ids, [], game_date)
+                continue
+            if route.vehicle_type not in ("train", "road"):
+                continue
+            transport_type = "rail" if route.vehicle_type == "train" else "road"
+            pairs = self._station_pairs(route)
+            route_keys: list[CheckKey] = []
+            station_keys[route.route_id] = None if pairs is None else route_keys
+            for tile_a, tile_b in pairs or []:
+                a, b = station_by_tile[tile_a], station_by_tile[tile_b]
+                key = (route.route_id, "station", tile_a, tile_b)
+                probes[key] = (a.x, a.y, b.x, b.y, transport_type)
+                probe_stations[key] = {"from_station_id": a.id, "to_station_id": b.id}
+                route_keys.append(key)
+            for vid in route.vehicle_ids:
+                vehicle = self.world.vehicles.get(vid)
+                vehicle_keys[route.route_id, vid] = None
+                if vehicle is None:
+                    continue
+                first = next((station_by_tile.get(o.destination) for o in vehicle.orders
+                              if o.is_goto_station), None)
+                if first is None:
+                    continue
+                key = (route.route_id, "vehicle", vid, 0)
+                probes[key] = (vehicle.x, vehicle.y, first.x, first.y, transport_type)
+                probe_stations[key] = {"to_station_id": first.id}
+                vehicle_keys[route.route_id, vid] = key
+
+        keys = set(probes)
+        registry.retain_connection_checks(keys)
+        generation = registry.connection_generation
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.ROUTE_CHECK_BUDGET_SECONDS
+        for _ in range(self.ROUTE_CHECKS_PER_REFRESH):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            key = registry.next_connection_check(keys, game_date)
+            if key is None:
+                break
+            try:
+                answer = await asyncio.wait_for(
+                    line_exists(self.client, *probes[key], timeout=remaining, **probe_stations[key]),
+                    timeout=remaining,
+                )
+            except TimeoutError:
+                answer = None
+            # Actions can change infrastructure while a probe awaits its reply.
+            # Discard evidence collected against the earlier network generation.
+            if registry.connection_generation != generation:
+                return
+            registry.record_connection_check(key, answer, game_date)
+
+        for route in routes:
+            if route.route_id not in station_keys:
+                continue
+            required_keys = station_keys[route.route_id]
+            answers = [registry.connection_check_answer(key, game_date) for key in required_keys or []]
+            connected = (False if False in answers else
+                         True if required_keys is not None and all(answer is True for answer in answers) else None)
+            supporting_keys = [key for key in required_keys or []
+                               if registry.connection_check_answer(key, game_date) is connected]
+            registry.record_connection(
+                route.route_id, connected, registry.connection_checks_date(supporting_keys, game_date),
+            )
+            with_path: list[int] = []
+            without_path: list[int] = []
+            unknown: list[int] = []
+            for vid in route.vehicle_ids:
+                key = vehicle_keys[route.route_id, vid]
+                answer = registry.connection_check_answer(key, game_date) if key is not None else None
+                if answer is True:
+                    with_path.append(vid)
+                elif answer is False:
+                    without_path.append(vid)
+                else:
+                    unknown.append(vid)
+            registry.record_vehicle_paths(route.route_id, with_path, without_path, game_date, unknown)
+
+    def _station_pairs(self, route: Route) -> list[tuple[int, int]] | None:
+        """Station legs in the repeating itineraries, or None for unsupported orders."""
+        stations = {s.y * (self.world.game.map_width or 256) + s.x: s
+                    for s in self.world.stations.values()}
+        pairs: set[tuple[int, int]] = set()
+        for vid in route.vehicle_ids:
+            vehicle = self.world.vehicles.get(vid)
+            if vehicle is None:
+                return None
+            # A station-only walk does not establish that a waypoint, depot visit or
+            # conditional branch is runnable. Keep those itineraries inconclusive.
+            if any(o.is_goto_waypoint or o.is_goto_depot or o.is_conditional
+                   for o in vehicle.orders):
+                return None
+            stops = [o.destination for o in vehicle.orders if o.is_goto_station]
+            if any(tile not in stations for tile in stops) or not stops:
+                return None
+            # Orders repeat, so the return leg matters too. Different order sequences
+            # share a route report, but every vehicle's actual itinerary must work.
+            pairs.update((a, b) for a, b in zip(stops, stops[1:] + stops[:1]) if a != b)
+        return sorted(pairs)
 
     def start_scored_clock(self) -> bool:
         """Start the scored wall-clock. Returns True if this call started it.
@@ -436,8 +582,6 @@ class Orchestrator:
         Never fatal. A stale map is a worse map, not a broken run, so a failure here is
         logged and the action still stands.
         """
-        if self.tile_writer is None:
-            return
         if outcome.status is ActionStatus.REJECTED:
             # Refused before reaching the game, so nothing moved.
             return
@@ -450,6 +594,12 @@ class Orchestrator:
             self.world.game.map_height or 256,
         )
         if area is None:
+            return
+
+        # Even a partially failed build can alter connectivity. This is independent
+        # of whether map recording is enabled.
+        self.world.route_registry.invalidate_connections()
+        if self.tile_writer is None:
             return
 
         try:
@@ -494,11 +644,37 @@ class Orchestrator:
                 return tiles
             tiles.extend(band)
             band_start = band_end + 1
+        tiles.extend(await self.far_ends_of(tiles))
         return tiles
+
+    async def far_ends_of(self, tiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The other end of every bridge or tunnel in tiles that the area left out.
+
+        A tunnel can run dozens of tiles, so its far portal is usually outside the
+        neighbourhood a build refreshes. Each end tile names its other end.
+        """
+        have = {(t.get("x"), t.get("y")) for t in tiles}
+        far: list[dict[str, Any]] = []
+        for tile in tiles:
+            other = tile.get("other_end")
+            if not isinstance(other, list) or len(other) != 2:
+                continue
+            x, y = int(other[0]), int(other[1])
+            if (x, y) in have:
+                continue
+            have.add((x, y))
+            reply = await self.client.send_gamescript(
+                "get_tile_area", {"x1": x, "y1": y, "x2": x, "y2": y, "max_tiles": 1}, timeout=20.0,
+            )
+            band = reply.get("result")
+            if reply.get("success") and isinstance(band, list):
+                far.extend(band)
+        return far
 
     def _record_action(
         self, envelope: ActionEnvelope, status: ActionStatus, error: str = "",
         changed: dict[str, Any] | None = None,
+        outcome: ActionResult | None = None,
     ) -> None:
         """Write an action to the session's audit log.
 
@@ -524,8 +700,9 @@ class Orchestrator:
                         "submitted_at": datetime.now(timezone.utc).isoformat(),
                     },
                 ),
-                result=ActionResult(
+                result=outcome or ActionResult(
                     action_id=envelope.action_id,
+                    action_type=envelope.action_type,
                     status=status,
                     error=error,
                     changed_entities=changed or {},
@@ -558,12 +735,15 @@ class Orchestrator:
                 continue
 
             company_id = gs_params.get("company_id", -1)
+            # A caller may name its own action, so the result and the action log
+            # carry the id and the agent it already knows. Otherwise one is minted.
             envelope = ActionEnvelope(
-                action_id=f"hb_{uuid.uuid4().hex[:8]}",
+                action_id=str(action.get("action_id") or f"hb_{uuid.uuid4().hex[:8]}"),
                 company_id=company_id,
                 action_type=gs_action,
                 parameters=gs_params,
                 mode=ActionMode.ATOMIC,
+                metadata=dict(action.get("metadata") or {}),
             )
             if self.action_tracker:
                 self.action_tracker.submit(envelope)
@@ -585,6 +765,18 @@ class Orchestrator:
                     status=admission.status,
                     error=admission.error,
                 ))
+                continue
+
+            validation_error = validate_parameters(gs_action, gs_params, allow_company=True)
+            if validation_error:
+                outcome = ActionResult(
+                    action_id=envelope.action_id, action_type=gs_action,
+                    status=ActionStatus.REJECTED, error=validation_error, error_name="INVALID_PARAMETERS",
+                )
+                if self.action_tracker:
+                    self.action_tracker.store_result(outcome)
+                self._record_action(envelope, outcome.status, outcome.error, outcome=outcome)
+                outcomes.append(outcome)
                 continue
 
             if not self.client.connected:
@@ -614,6 +806,7 @@ class Orchestrator:
                     # copies of one mapping, which is why the stepped path knew nothing
                     # about partial builds or error codes while the other did.
                     outcome = result_from_reply(envelope.action_id, result)
+                    outcome.action_type = gs_action
                     if self.action_tracker:
                         self.action_tracker.update_result(
                             envelope.action_id, outcome.status, outcome.error,
@@ -621,10 +814,11 @@ class Orchestrator:
                         )
                     self._record_action(
                         envelope, outcome.status, outcome.error,
-                        changed=outcome.changed_entities,
+                        changed=outcome.changed_entities, outcome=outcome,
                     )
                     await self.refresh_changed_tiles(envelope, outcome)
-                    outcome.action_type = gs_action
+                    if self.action_tracker:
+                        self.action_tracker.store_result(outcome)
                     outcomes.append(outcome)
                     if outcome.status == ActionStatus.SUCCESS:
                         logger.info("Action %s succeeded", gs_action)
@@ -978,6 +1172,7 @@ class Orchestrator:
         """Set end conditions programmatically (without a full ScenarioConfig)."""
         self._end_checker = EndConditionChecker(config)
         logger.info("End conditions configured: logic=%s", config.logic)
+        self._publish_horizon()
 
     async def run_async_realtime(self) -> None:
         """Game runs continuously, GS refresh every 10s, snapshots pushed every 2s.

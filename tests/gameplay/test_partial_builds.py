@@ -248,9 +248,7 @@ class TestBuildPathDoesNotSkipWhatItCannotDo:
     """
 
     def _handler(self, gamescript: str) -> str:
-        start = gamescript.index("function CmdBuildPath(p)")
-        end = gamescript.index("function CmdDemolishTile(p)")
-        return gamescript[start:end]
+        return _function_body(gamescript, "CmdBuildPath")
 
     def test_an_unknown_transport_type_is_refused(self, gamescript: str) -> None:
         body = self._handler(gamescript)

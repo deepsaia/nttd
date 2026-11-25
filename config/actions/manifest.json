@@ -101,6 +101,19 @@
               "AT_METROPOLITAN": 3,
               "AT_SMALL": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
           }
         },
         "tile": {
@@ -174,8 +187,15 @@
         "transport_type": {
           "required": false,
           "default": "road",
-          "description": "What crosses the bridge: rail, water, or road. Anything else is treated as road.",
-          "type": "string"
+          "description": "What the structure carries: rail, road, water. Other values are rejected.",
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road",
+              "water"
+            ]
+          }
         }
       },
       "returns": {
@@ -458,7 +478,7 @@
       }
     },
     "build_path": {
-      "description": "Lay a route you have already chosen, tile by tile. This is how you build a line of your own design: give the tiles and nttd works out how each piece must sit, including the three-tile context rail needs, so nothing has to reason about track orientation. Bridges and tunnels are steps like any other. Steps that only pass over infrastructure already there are skipped rather than paid for. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed. Use connect_rail or connect_road instead when you would rather nttd chose the route.",
+      "description": "Build a route you have already chosen from its tile steps. Rail pieces use neighboring path steps to determine their orientation. Bridges and tunnels are explicit steps. The result reports new construction, existing pieces, skipped steps, and refusals. Road and rail paths also check actual connections, including skipped steps. A refusal or a gap makes the result partial. Water paths report construction refusals. Use connect_rail or connect_road to let the build planner choose the path.",
       "tier": "participant",
       "category": "marine",
       "gamescript_function": "CmdBuildPath",
@@ -477,14 +497,112 @@
         },
         "steps": {
           "required": true,
-          "description": "The path to lay, as objects carrying x, y and an action. At least two are needed.",
-          "type": "array"
+          "description": "At least two path steps. Each contains integer x/y and an optional action (default move). Bridge steps also require bridge_from_x/y; tunnel steps require tunnel_from_x/y.",
+          "type": "array",
+          "schema": {
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y"
+              ],
+              "properties": {
+                "x": {
+                  "type": "integer"
+                },
+                "y": {
+                  "type": "integer"
+                },
+                "bridge_from_x": {
+                  "type": "integer"
+                },
+                "bridge_from_y": {
+                  "type": "integer"
+                },
+                "bridge_type": {
+                  "type": "integer"
+                },
+                "tunnel_from_x": {
+                  "type": "integer"
+                },
+                "tunnel_from_y": {
+                  "type": "integer"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "start",
+                    "end",
+                    "move",
+                    "build_road",
+                    "build_rail",
+                    "build_bridge",
+                    "build_tunnel",
+                    "build_canal",
+                    "build_lock"
+                  ],
+                  "default": "move"
+                },
+                "length": {
+                  "type": "integer",
+                  "description": "Span length supplied by the nttd pathfinder; execution uses the endpoint coordinates."
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "action": {
+                        "const": "build_bridge"
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "bridge_from_x",
+                      "bridge_from_y"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "action": {
+                        "const": "build_tunnel"
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "tunnel_from_x",
+                      "tunnel_from_y"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
         },
         "transport_type": {
           "required": false,
           "default": "road",
-          "description": "What the path carries: rail or road. Anything else is treated as road.",
-          "type": "string"
+          "description": "What the path carries: rail, road or water. Other values are rejected.",
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road",
+              "water"
+            ]
+          }
         }
       },
       "returns": {
@@ -494,6 +612,7 @@
           "errors",
           "existing",
           "failed",
+          "gaps",
           "skipped",
           "status",
           "total_steps"
@@ -593,6 +712,21 @@
               "SIGNALTYPE_PBS_ONEWAY": 5,
               "SIGNALTYPE_TWOWAY": 8
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              8,
+              9,
+              10,
+              11,
+              255
+            ]
           }
         },
         "tile": {
@@ -1030,15 +1164,6 @@
             "depot_x",
             "depot_y"
           ]
-        ],
-        [
-          [
-            "depot_tile"
-          ],
-          [
-            "depot_x",
-            "depot_y"
-          ]
         ]
       ],
       "returns": {
@@ -1068,8 +1193,14 @@
         "transport_type": {
           "required": false,
           "default": "rail",
-          "description": "What runs through the tunnel: rail or road. Anything else is treated as rail.",
-          "type": "string"
+          "description": "What the structure carries: rail, road. Other values are rejected.",
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road"
+            ]
+          }
         },
         "x": {
           "required": false,
@@ -1183,15 +1314,6 @@
             "depot_x",
             "depot_y"
           ]
-        ],
-        [
-          [
-            "depot_tile"
-          ],
-          [
-            "depot_x",
-            "depot_y"
-          ]
         ]
       ],
       "returns": {
@@ -1237,6 +1359,23 @@
               "EXPENSES_TRAIN_INC": 7,
               "EXPENSES_TRAIN_RUN": 2
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
           }
         }
       },
@@ -1307,7 +1446,7 @@
           "type": "integer"
         }
       },
-      "one_of": [
+      "optional_one_of": [
         [
           [
             "depot_tile"
@@ -1327,7 +1466,7 @@
       }
     },
     "connect_depot": {
-      "description": "Join a rail depot to the running line beside it. A depot is not connected by building it: the neighbouring track needs a curve piece facing the depot's entrance, and connect_rail cannot supply one because it lays rail on both endpoints and so fails against the depot itself. Reports which tile it joined to and whether the connection already existed. Refuses when the only neighbouring rail is a station platform, which can never take a track piece.",
+      "description": "Join a rail depot through its actual front tile to adjacent running track. Track beside the rear or side does not connect the depot. Reports the front tile and whether the connection already existed. A platform already facing the door can connect; track cannot be added to a platform facing the wrong way.",
       "tier": "participant",
       "category": "rail",
       "gamescript_function": "CmdConnectDepot",
@@ -1365,7 +1504,6 @@
           "already_connected",
           "joined_at",
           "tile",
-          "track",
           "tried"
         ],
         "nested": {
@@ -1721,8 +1859,23 @@
         "vehicle_type": {
           "required": false,
           "default": "train",
-          "description": "One of train, road, ship or aircraft. An unrecognised value silently becomes train.",
-          "type": "string"
+          "description": "One of train, road, ship or aircraft, or the corresponding integer 0, 1, 2 or 3.",
+          "type": [
+            "string",
+            "integer"
+          ],
+          "schema": {
+            "enum": [
+              "train",
+              "road",
+              "ship",
+              "aircraft",
+              0,
+              1,
+              2,
+              3
+            ]
+          }
         }
       },
       "returns": {
@@ -1758,6 +1911,12 @@
               "SPT_INDUSTRY": 0,
               "SPT_TOWN": 1
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1
+            ]
           }
         },
         "to_id": {
@@ -1775,6 +1934,12 @@
               "SPT_INDUSTRY": 0,
               "SPT_TOWN": 1
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1
+            ]
           }
         }
       },
@@ -1839,7 +2004,7 @@
       }
     },
     "estimate_cost": {
-      "description": "Report what an action would cost without doing it. The action runs in test mode, so nothing is built and no money moves. A failure here is a genuine refusal and worth reading before committing.",
+      "description": "Estimate an action's cost without performing it. Nothing is built and no money moves. Road estimates can charge clearing shared tiles more than once. A failed estimate includes the tested command's refusal.",
       "tier": "participant",
       "category": "planning",
       "gamescript_function": "CmdEstimateCost",
@@ -1851,7 +2016,7 @@
         },
         "params": {
           "required": true,
-          "description": "The parameters of the action being estimated, exactly as they would be submitted.",
+          "description": "Parameters of the action being estimated, with the same requirements as a normal command. The server supplies the company automatically; do not include company_id.",
           "type": "object"
         }
       },
@@ -1859,16 +2024,7 @@
         "shape": "object",
         "fields": [
           "action",
-          "depot_x",
-          "depot_y",
-          "dest_tile",
-          "estimated_cost",
-          "from_x",
-          "from_y",
-          "to_x",
-          "to_y",
-          "x",
-          "y"
+          "estimated_cost"
         ]
       }
     },
@@ -1899,7 +2055,7 @@
       }
     },
     "find_airport_spots": {
-      "description": "Search near a town for places an airport of the given type would fit.",
+      "description": "Search near a town for places an airport of the given type would fit. cargo_acceptance estimates cargo around the full airport footprint using its coverage radius. within_coverage says only whether the town centre lies in that area; a false value does not rule out passenger-producing or accepting houses. After building, get_stations or get_station_info reports actual acceptance.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdFindAirportSpots",
@@ -1922,6 +2078,19 @@
               "AT_METROPOLITAN": 3,
               "AT_SMALL": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
           }
         },
         "max_results": {
@@ -2288,6 +2457,16 @@
           "type": "integer"
         }
       },
+      "one_of": [
+        [
+          [
+            "industry_id"
+          ],
+          [
+            "town_id"
+          ]
+        ]
+      ],
       "returns": {
         "shape": "object",
         "fields": [
@@ -2406,6 +2585,15 @@
               "ROAD_LAYOUT_ORIGINAL": 0,
               "ROAD_LAYOUT_RANDOM": 4
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
           }
         },
         "size": {
@@ -2422,6 +2610,13 @@
               "TOWN_SIZE_MEDIUM": 1,
               "TOWN_SIZE_SMALL": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2
+            ]
           }
         },
         "tile": {
@@ -2600,6 +2795,9 @@
         "fields": [
           "cargo_delivered_total",
           "company_value",
+          "completed_quarter_income",
+          "finance_date",
+          "finance_quarter",
           "hq_x",
           "hq_y",
           "id",
@@ -2610,7 +2808,8 @@
           "performance_rating",
           "q0_cargo",
           "q0_expenses",
-          "q0_income"
+          "q0_income",
+          "q1_income"
         ]
       }
     },
@@ -2625,8 +2824,12 @@
         "fields": [
           "balance",
           "company_id",
+          "completed_quarter_income",
+          "finance_date",
+          "finance_quarter",
           "loan",
           "max_loan",
+          "q0_income",
           "q1_expenses",
           "q1_income",
           "q1_value",
@@ -2697,7 +2900,22 @@
           "required": false,
           "default": "train",
           "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.",
-          "type": "string"
+          "type": [
+            "string",
+            "integer"
+          ],
+          "schema": {
+            "enum": [
+              "train",
+              "road",
+              "ship",
+              "aircraft",
+              0,
+              1,
+              2,
+              3
+            ]
+          }
         }
       },
       "returns": {
@@ -2754,7 +2972,12 @@
         "keys": {
           "required": true,
           "description": "Names of game settings to read. An unknown name reads back as null rather than failing the call.",
-          "type": "array"
+          "type": "array",
+          "schema": {
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "returns": {
@@ -2800,7 +3023,7 @@
       }
     },
     "get_industries": {
-      "description": "List the industries on the map, with their locations, types and production.",
+      "description": "List industries with locations, types and recent production. produces_cargo and accepts_cargo describe the industry type even before production begins. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetIndustries",
@@ -2814,9 +3037,10 @@
           "is_processing",
           "is_raw",
           "name",
+          "nearby_stations",
+          "nearby_stations_company_id",
           "produces_cargo",
           "production",
-          "served_by",
           "type_id",
           "type_name",
           "x",
@@ -2825,7 +3049,7 @@
       }
     },
     "get_industry_info": {
-      "description": "Report one industry in detail: what it produces and accepts, recent production, and how much is waiting.",
+      "description": "Report one industry: its type-level produced and accepted cargo, recent production and accepted-cargo stockpiles. nearby_stations lists station anchors belonging to nearby_stations_company_id within ten Manhattan tiles of the industry anchor, nearest first; it does not establish station catchment, cargo capability, collection or vehicle service.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetIndustryInfo",
@@ -2845,6 +3069,8 @@
           "is_processing",
           "is_raw",
           "name",
+          "nearby_stations",
+          "nearby_stations_company_id",
           "produces_cargo",
           "production",
           "type_id",
@@ -3031,7 +3257,7 @@
       }
     },
     "get_station_info": {
-      "description": "Report one station in detail: what is waiting, what it accepts, and its cargo ratings.",
+      "description": "Report one station, its waiting cargo and cargo ratings. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply estimate producing sites over the station footprint and coverage, not cargo units or guaranteed pickup (supply_is_estimate=true). entry_tiles describes rail-platform entrances only; it is empty for a station without rail and says nothing about road access.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetStationInfo",
@@ -3045,6 +3271,7 @@
       "returns": {
         "shape": "object",
         "fields": [
+          "cargo_acceptance",
           "cargo_waiting",
           "entry_tiles",
           "has_airport",
@@ -3077,7 +3304,7 @@
       }
     },
     "get_stations": {
-      "description": "List your stations, with what is waiting at each and how it is rated.",
+      "description": "List your stations and waiting cargo. cargo_acceptance.accepts is the game's actual station acceptance. produces and supply are estimates over the station footprint and coverage; supply counts producing sites, not cargo units or guaranteed pickup (supply_is_estimate=true).",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetStations",
@@ -3100,7 +3327,7 @@
       }
     },
     "get_subsidies": {
-      "description": "List the subsidies on offer and those already awarded.",
+      "description": "List subsidy routes on offer and already awarded, including cargo, endpoint types/IDs/names, is_awarded and remaining_days until expiry in economy-days. This does not report a monetary subsidy value.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetSubsidies",
@@ -3108,13 +3335,16 @@
       "returns": {
         "shape": "list",
         "fields": [
+          "cargo_label",
           "cargo_type",
           "destination_index",
+          "destination_name",
           "destination_type",
           "id",
           "is_awarded",
-          "remaining",
+          "remaining_days",
           "source_index",
+          "source_name",
           "source_type"
         ]
       }
@@ -3129,7 +3359,10 @@
           "required": false,
           "default": 400,
           "description": "How many tiles to report at most. Guards against asking for more than a reply can carry.",
-          "type": "integer"
+          "type": "integer",
+          "schema": {
+            "minimum": 1
+          }
         },
         "x1": {
           "required": true,
@@ -3164,6 +3397,7 @@
           "is_bridge",
           "is_station",
           "is_tunnel",
+          "other_end",
           "owner",
           "slope",
           "water",
@@ -3228,7 +3462,7 @@
       }
     },
     "get_town_info": {
-      "description": "Report one town in detail: population, houses, what it accepts and how fast it is growing.",
+      "description": "Report one town: population, houses, past-month cargo production and growth rate. growth_requirements lists positive monthly town-growth goals grouped by TownEffect, with the cargo types that satisfy each effect. Town-growth goals are distinct from cargo acceptance at a station.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetTownInfo",
@@ -3242,11 +3476,11 @@
       "returns": {
         "shape": "object",
         "fields": [
-          "accepts_cargo",
           "exclusive_rights_company",
           "exclusive_rights_duration",
           "fund_buildings_duration",
           "growth_rate",
+          "growth_requirements",
           "has_statue",
           "houses",
           "id",
@@ -3283,7 +3517,7 @@
       }
     },
     "get_towns": {
-      "description": "List the towns on the map, with their locations and populations.",
+      "description": "List towns with their locations, populations, house counts, city flags and growth rates. growth_rate is economy-days between growth, not population gained per day.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetTowns",
@@ -3291,7 +3525,10 @@
       "returns": {
         "shape": "list",
         "fields": [
+          "growth_rate",
+          "houses",
           "id",
+          "is_city",
           "name",
           "population",
           "x",
@@ -3300,7 +3537,7 @@
       }
     },
     "get_vehicle_info": {
-      "description": "Report one vehicle in detail: where it is, what it carries, its orders, age, reliability and profit.",
+      "description": "Report one vehicle: position, cargo loads and capacities, indexed orders, age, current game state, running status and profit. Orders distinguish station, depot, waypoint and conditional entries.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetVehicleInfo",
@@ -3331,6 +3568,7 @@
           "orders",
           "profit_last_year",
           "profit_this_year",
+          "running",
           "state",
           "type",
           "x",
@@ -3345,21 +3583,40 @@
             "is_goto_depot",
             "is_goto_station",
             "is_goto_waypoint"
+          ],
+          "cargo": [
+            "cargo_id",
+            "capacity",
+            "loaded"
           ]
         }
       }
     },
     "get_vehicles": {
-      "description": "List your vehicles, optionally of one type only, with their positions, cargo and orders.",
+      "description": "List your vehicles, optionally of one type, with positions, capacity, current game state, running status and indexed orders. running means the game reports VS_RUNNING; stopped vehicles outside a depot remain stopped. Orders include station/depot/waypoint/conditional discriminators.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdGetVehicles",
       "parameters": {
         "vehicle_type": {
           "required": false,
-          "default": null,
           "description": "One of train, road, ship or aircraft. The integers 0 to 3 mean the same, in that order.",
-          "type": "string"
+          "type": [
+            "string",
+            "integer"
+          ],
+          "schema": {
+            "enum": [
+              "train",
+              "road",
+              "ship",
+              "aircraft",
+              0,
+              1,
+              2,
+              3
+            ]
+          }
         }
       },
       "returns": {
@@ -3370,8 +3627,10 @@
           "current_speed",
           "engine_id",
           "id",
+          "idle_reason",
           "in_depot",
           "is_articulated",
+          "lost",
           "max_age",
           "name",
           "order_count",
@@ -3759,6 +4018,18 @@
               "TOWN_ACTION_FUND_BUILDINGS": 5,
               "TOWN_ACTION_ROAD_REBUILD": 3
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
           }
         },
         "town_id": {
@@ -4922,6 +5193,16 @@
               "TE_PASSENGERS": 1,
               "TE_WATER": 4
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
           }
         },
         "town_id": {
@@ -5026,6 +5307,18 @@
               "CF_MORE_THAN": 4,
               "CF_NOT_EQUALS": 1
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
           }
         },
         "order_pos": {
@@ -5099,6 +5392,18 @@
               "OC_REQUIRES_SERVICE": 4,
               "OC_UNCONDITIONALLY": 5
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
           }
         },
         "order_pos": {
@@ -5194,6 +5499,13 @@
               "STOPLOCATION_MIDDLE": 1,
               "STOPLOCATION_NEAR": 0
             }
+          },
+          "schema": {
+            "enum": [
+              0,
+              1,
+              2
+            ]
           }
         },
         "vehicle_id": {
@@ -5332,11 +5644,17 @@
       }
     },
     "trace_route": {
-      "description": "Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal.",
+      "description": "Check a physical rail or road connection over existing infrastructure. Rail checks require connected entry and exit directions, including at platforms and depots. Bridges and tunnels preserve the direction of travel. Optional station IDs search matching station tiles instead of one coordinate anchor. Otherwise, endpoints are exact tiles. Signals, train reversal, traffic rules, vehicle compatibility, and service orders are not evaluated. A connection does not guarantee successful vehicle operation. line_exists is true when a path is found, false when the completed search finds none, and null when the search limit leaves the answer unknown.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdTraceRoute",
       "parameters": {
+        "from_station_id": {
+          "required": false,
+          "default": null,
+          "description": "Optional starting station ID. Search its rail or road station tiles instead of the starting coordinate.",
+          "type": "integer"
+        },
         "from_x": {
           "required": false,
           "via": "tile_resolver",
@@ -5355,6 +5673,12 @@
           "description": "How hard the pathfinder may try before giving up. Raising it costs time, not money.",
           "type": "integer"
         },
+        "road_type": {
+          "required": false,
+          "default": 0,
+          "description": "Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.",
+          "type": "integer"
+        },
         "tile_from": {
           "required": false,
           "via": "tile_resolver",
@@ -5365,6 +5689,12 @@
           "required": false,
           "via": "tile_resolver",
           "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
+        "to_station_id": {
+          "required": false,
+          "default": null,
+          "description": "Optional destination station ID. Accept its rail or road station tiles instead of the destination coordinate.",
           "type": "integer"
         },
         "to_x": {
@@ -5383,7 +5713,13 @@
           "required": false,
           "default": "rail",
           "description": "rail or road. Defaults to rail.",
-          "type": "string"
+          "type": "string",
+          "schema": {
+            "enum": [
+              "rail",
+              "road"
+            ]
+          }
         }
       },
       "one_of": [

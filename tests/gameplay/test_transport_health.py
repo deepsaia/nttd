@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from typing import Any
 
 import pytest
@@ -152,10 +153,8 @@ def test_a_timeout_does_not_strand_the_partial_reply() -> None:
     50 KB stranded for one timing-out get_map_terrain, and a policy that retries such a scan
     stranded that again every attempt.
 
-    Note the fix cannot live in the `finally` beside the other two pops, which is the obvious
-    place: `finally` runs before `return self._merge_chunks(...)`, so popping there would throw
-    away the chunks of every successful reply. This asserts the success path still works, for
-    exactly that reason.
+    Successful replies must be merged before cleanup, while every other exit releases
+    whichever chunks arrived.
     """
     client = _client()
 
@@ -187,6 +186,36 @@ def test_a_successful_reply_still_reaches_the_caller() -> None:
     assert reply["success"] is True
     assert reply["result"] == [1, 2, 3]
     assert client._gs_responses == {}
+    assert client._gs_events == {}
+    assert client._gs_totals == {}
+
+
+@pytest.mark.parametrize("during_send", [False, True])
+def test_cancellation_releases_partial_replies_and_propagates(during_send: bool) -> None:
+    client = _client()
+    client._send = partial(_send_partial_for_cancellation, client, during_send)
+
+    asyncio.run(_cancel_gamescript(client))
+
+    assert client._gs_responses == {}
+    assert client._gs_events == {}
+    assert client._gs_totals == {}
+
+
+async def _send_partial_for_cancellation(client: AdminClient, during_send: bool, packet: Any) -> None:
+    correlation_id = next(iter(client._gs_responses))
+    client._gs_responses[correlation_id].append({"partial": "x" * 1000})
+    if during_send:
+        await asyncio.Event().wait()
+
+
+async def _cancel_gamescript(client: AdminClient) -> None:
+    task = asyncio.create_task(client.send_gamescript("get_map_terrain"))
+    await asyncio.sleep(0)
+    assert client._gs_responses["gs_1"], "the request must reach the awaited phase before cancellation"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 async def _noop() -> None:

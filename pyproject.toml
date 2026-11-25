@@ -26,6 +26,7 @@ dependencies = [
     "uvicorn>=0.34.0",
     "websockets>=14.0",
     "pydantic>=2.10.0",
+    "jsonschema>=4.26.0",
     "httpx>=0.28.0",
     "requests>=2.32.5",
     # OpenTTD admin protocol and config
@@ -42,6 +43,8 @@ dependencies = [
     # a dependency of seaborn, so removing seaborn broke `nttd analyze` on a fresh install.
     # An undeclared dependency that happens to be present is a working install by luck.
     "pandas>=2.2",
+    # Pareto ranking of results over the benchmark axes, nttd.analysis.pareto.
+    "moocore>=0.3",
     "plotly>=6.6.0",
     "kaleido>=1.2.0",
     # imageio[pyav] rather than plain imageio: the video report imports av directly, and the
@@ -53,8 +56,8 @@ dependencies = [
     # RL and ES surface: nttd.rl.env and nttd.rl.multi_env
     "gymnasium>=1.0.0",
     "numpy>=2.0",
-    # MCP surface
-    "mcp[cli]>=1.9",
+    # Uses the SDK v1 FastMCP API; v2 removes mcp.server.fastmcp.
+    "mcp[cli]>=1.9,<2",
     # Tests and lint
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",

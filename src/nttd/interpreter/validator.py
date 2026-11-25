@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from nttd.config import action_manifest
+from nttd.actions.validation import validate_parameters
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS
 from nttd.interpreter.action_schema import AgentAction
 
@@ -30,34 +30,7 @@ def _validate_params(action: AgentAction) -> str | None:
     needs the real shape, and generating it from the manifest means the advice cannot
     contradict the game.
     """
-    required = action_manifest.required_parameters(action.action_type)
-    missing = [name for name in required if name not in action.parameters]
-    if missing:
-        message = f"{action.action_type} missing required params: {', '.join(missing)}"
-        # Only when it adds something. Repeating the missing list back is noise, but an
-        # agent that sent the wrong shape entirely needs to see the right one.
-        accepted = action_manifest.accepted_parameters(action.action_type)
-        if set(accepted) != set(missing):
-            message += f" (accepts: {', '.join(accepted)})"
-        return message
-
-    return _validate_alternatives(action)
-
-
-def _validate_alternatives(action: AgentAction) -> str | None:
-    """Report an alternation the action satisfies no branch of.
-
-    Several actions accept a choice: ``add_order`` takes a station id or a destination
-    tile, and every action resolving a tile takes ``tile`` or an ``x,y`` pair. None of
-    those parameters is required on its own, so checking requiredness alone lets an
-    action through that names no destination at all.
-    """
-    for group in action_manifest.alternatives(action.action_type):
-        if any(all(name in action.parameters for name in branch) for branch in group):
-            continue
-        options = " or ".join(", ".join(branch) for branch in group)
-        return f"{action.action_type} needs one of: {options}"
-    return None
+    return validate_parameters(action.action_type, action.parameters, allow_company=True)
 
 
 def validate_actions(actions: list[AgentAction]) -> dict[int, str]:
