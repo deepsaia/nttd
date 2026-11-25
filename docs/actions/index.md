@@ -59,7 +59,7 @@ Full detail in [observations.md](observations.md).
 - `get_waypoints()` List your waypoints.
 - `ping()` Check that the GameScript is answering.
 - `scan_town_area(town_id, [radius])` Report the land around a town: what is buildable, what is already built, and where the roads run.
-- `trace_route(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, road_type, transport_type])` Walk existing track from one point to another and say whether the chain of pieces joins up.
+- `trace_route(tile_from|from_x,from_y, tile_to|to_x,to_y, [from_station_id, max_iterations, road_type, to_station_id, transport_type])` Check a physical rail or road connection over existing infrastructure.
 
 ## Actions
 
@@ -75,7 +75,7 @@ Full detail in [actions.md](actions.md).
 - `build_lock(tile|x,y)` Build a lock so ships can change height.
 - `build_one_way_road(x1, x2, y1, y2)` Build road between two tiles that may be driven in one direction only, running from the first tile to the second.
 - `build_one_way_road_full(x1, x2, y1, y2)` Build one-way road between two tiles, covering both end tiles fully rather than stopping at their edges.
-- `build_path(steps, [rail_type, road_type, transport_type])` Lay a route you have already chosen, tile by tile.
+- `build_path(steps, [rail_type, road_type, transport_type])` Build a route you have already chosen from its tile steps.
 - `build_rail_depot(tile|x,y, [direction, rail_type])` Build a rail depot at a tile, entered from the neighbour picked by direction.
 - `build_rail_signal(tile|x,y, [signal_type])` Place a signal on a track tile.
 - `build_rail_station(tile|x,y, [direction, num_platforms, platform_length, rail_type])` Build a rail station with its north corner at the given tile.
@@ -89,7 +89,7 @@ Full detail in [actions.md](actions.md).
 - `build_water_depot(tile|x,y, [direction])` Build a ship depot on water.
 - `buy_vehicle(engine_id, depot_tile|depot_x,depot_y)` Build a vehicle of any type in a depot.
 - `clone_vehicle(vehicle_id, [depot_tile, depot_x, depot_y, share_orders])` Build a copy of an existing vehicle, optionally sharing the original's orders.
-- `connect_depot(tile|x,y)` Join a rail depot to the running line beside it.
+- `connect_depot(tile|x,y)` Join a rail depot through its actual front tile to adjacent running track.
 - `connect_rail(tile_from|from_x,from_y, tile_to|to_x,to_y, [from_hint_x, from_hint_y, max_iterations, rail_type, to_hint_x, to_hint_y])` Lay track between two tiles, finding the route itself.
 - `connect_road(tile_from|from_x,from_y, tile_to|to_x,to_y, [max_iterations, road_type])` Build road between two tiles, finding the route itself.
 - `convert_rail(tile|x,y, [rail_type, x1, x2, y1, y2])` Convert existing track in a rectangle to another rail type.
@@ -98,7 +98,7 @@ Full detail in [actions.md](actions.md).
 - `create_group([parent_group_id, vehicle_type])` Create a group to organise vehicles of one type.
 - `delete_group(group_id)` Delete a group.
 - `demolish_tile(tile|x,y)` Clear whatever is on the tile.
-- `estimate_cost(action, params)` Report what an action would cost without doing it.
+- `estimate_cost(action, params)` Estimate an action's cost without performing it.
 - `insert_order(vehicle_id, station_id|dest_tile|destination, order_index|order_position, [order_flags])` Insert an order at a position, pushing later orders down.
 - `level_tiles(x1, x2, y1, y2)` Flatten the rectangle between two corners to a single height.
 - `lower_tile(slope, tile|x,y)` Lower the named corners of a tile by one step.

@@ -13,7 +13,13 @@ can sail here".
 
 from __future__ import annotations
 
-from nttd.api.observation_routes import _work
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from nttd.api import observation_routes
+from nttd.api.observation_routes import _work, plan_route
 
 
 def test_work_counts_each_kind_of_construction() -> None:
@@ -59,3 +65,32 @@ def test_a_route_over_existing_track_is_distinguishable_from_a_new_one() -> None
     mostly_new = _work([{"action": "build_rail"}] * 30 + [{"action": "move"}])
     assert mostly_built["move"] > mostly_built.get("build_rail", 0)
     assert mostly_new["build_rail"] > mostly_new.get("move", 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connected", [True, False, None])
+@pytest.mark.parametrize("exhausted", [True, False])
+async def test_failed_build_plan_preserves_the_connectivity_answer(
+    monkeypatch: pytest.MonkeyPatch, connected: bool | None, exhausted: bool,
+) -> None:
+    runtime = SimpleNamespace(
+        world=SimpleNamespace(game=SimpleNamespace(map_width=256, map_height=256)),
+        admin_client=object(),
+    )
+    monkeypatch.setattr(observation_routes.deps, "get_runtime", lambda _: runtime)
+    monkeypatch.setattr(observation_routes.pf_service, "get_cache", lambda _: object())
+    monkeypatch.setattr(observation_routes.pf_service, "pathfind", AsyncMock(return_value={
+        "found": False, "iterations": 100 if exhausted else 20,
+    }))
+    monkeypatch.setattr(observation_routes, "line_exists", AsyncMock(return_value=connected))
+
+    result = await plan_route("session", 10, 10, 40, 10, max_iterations=100)
+
+    assert result["can_build"] is False
+    assert result["line_exists"] is connected
+    if connected is True:
+        assert "reason" not in result
+    else:
+        assert ("Existing connectivity is unknown." in result["reason"]) is (connected is None)
+        assert ("No existing connection was found" in result["reason"]) is (connected is False)
+        assert ("Build feasibility is unknown." in result["reason"]) is exhausted

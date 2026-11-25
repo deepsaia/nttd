@@ -157,10 +157,10 @@ def test_finance_observations_have_authoritative_quarter_history(airport_world: 
     assert company["profit_last_year"] is None
 
 
-def test_capped_trace_does_not_report_disconnection(airport_world: tuple[httpx.Client, str]) -> None:
+def test_trace_from_empty_tile_is_known_disconnected(airport_world: tuple[httpx.Client, str]) -> None:
     client, sid = airport_world
     params = {"from_x": 10, "from_y": 10, "to_x": 11, "to_y": 11, "transport_type": "rail"}
     capped = gs_query(client, sid, "trace_route", {**params, "max_iterations": 1})
-    assert capped["exhausted"] is True and capped["line_exists"] is None, capped
+    assert capped["exhausted"] is False and capped["line_exists"] is False, capped
     completed = gs_query(client, sid, "trace_route", {**params, "max_iterations": 10})
     assert completed["exhausted"] is False and completed["line_exists"] is False, completed

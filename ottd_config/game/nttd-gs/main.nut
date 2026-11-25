@@ -1007,21 +1007,85 @@ class NttdGS extends GSController {
     return { success = true, result = towns };
   }
 
-  // Whether a vehicle can travel from one tile to another over track that ALREADY EXISTS.
-  //
-  // A different question from the build planner behind /state/path, and the one that decides
-  // whether a route earns anything. The planner routes AROUND occupied tiles, correctly for
-  // its own purpose, so once a line is standing the corridor it would have used is blocked
-  // and it reports no path over a route that works. Measured: a corridor answered connected
-  // true before the build and connected false afterwards, with the line standing.
-  //
-  // Answered by walking the game's own AreTilesConnected rather than by testing has_rail on
-  // adjacent tiles. Adjacency is not connectivity: track laid without a hint sits beside a
-  // platform pointing away from it, and every cheap approximation of this in the project so
-  // far has reported a dead route as a working one.
-  //
-  // Bounded by the size of the rail network rather than the map, because it only ever steps
-  // onto tiles that already carry track.
+  // The other end of an existing bridge or tunnel of the requested transport type.
+  function _TransportSpanEnd(tile, kind) {
+    if (!GSMap.IsValidTile(tile)) return null;
+    local transport = kind == "rail" ? GSTile.TRANSPORT_RAIL : GSTile.TRANSPORT_ROAD;
+    if (!GSTile.HasTransportType(tile, transport)) return null;
+    if (kind == "road" && !GSRoad.HasRoadType(tile, GSRoad.GetCurrentRoadType())) return null;
+    if (GSBridge.IsBridgeTile(tile)) return GSBridge.GetOtherBridgeEnd(tile);
+    if (GSTunnel.IsTunnelTile(tile)) return GSTunnel.GetOtherTunnelEnd(tile);
+    return null;
+  }
+
+  // Direction in map coordinates: +x, +y, -x, -y. Spans may cover several tiles.
+  function _TravelDirection(from_tile, to_tile) {
+    local dx = GSMap.GetTileX(to_tile) - GSMap.GetTileX(from_tile);
+    local dy = GSMap.GetTileY(to_tile) - GSMap.GetTileY(from_tile);
+    if (dy == 0 && dx != 0) return dx > 0 ? 0 : 2;
+    if (dx == 0 && dy != 0) return dy > 0 ? 1 : 3;
+    return -1;
+  }
+
+  // Whether the rail on a tile reaches the edge facing an adjacent tile.
+  function _RailFaces(tile, neighbour) {
+    if (!GSMap.IsValidTile(tile) || !GSMap.IsValidTile(neighbour)
+        || GSMap.DistanceManhattan(tile, neighbour) != 1) return false;
+    local dir = this._TravelDirection(tile, neighbour);
+    local other = this._TransportSpanEnd(tile, "rail");
+    if (other != null) return dir == this._TravelDirection(other, tile);
+    if (GSRail.IsRailDepotTile(tile)) return GSRail.GetRailDepotFrontTile(tile) == neighbour;
+    if (!GSRail.IsRailTile(tile)) return false;
+    local masks = [
+      GSRail.RAILTRACK_NE_SW | GSRail.RAILTRACK_NW_SW | GSRail.RAILTRACK_SW_SE,
+      GSRail.RAILTRACK_NW_SE | GSRail.RAILTRACK_NE_SE | GSRail.RAILTRACK_SW_SE,
+      GSRail.RAILTRACK_NE_SW | GSRail.RAILTRACK_NW_NE | GSRail.RAILTRACK_NE_SE,
+      GSRail.RAILTRACK_NW_SE | GSRail.RAILTRACK_NW_NE | GSRail.RAILTRACK_NW_SW,
+    ];
+    return dir >= 0 && (GSRail.GetRailTracks(tile) & masks[dir]) != 0;
+  }
+
+  // Check both sides of an edge. A span joins its actual endpoints only.
+  function _TransportTilesJoined(from_tile, to_tile, kind) {
+    if (!GSMap.IsValidTile(from_tile) || !GSMap.IsValidTile(to_tile)) return false;
+    local other = this._TransportSpanEnd(from_tile, kind);
+    if (other != null && other == to_tile) {
+      return this._TransportSpanEnd(to_tile, kind) == from_tile;
+    }
+    if (GSMap.DistanceManhattan(from_tile, to_tile) != 1) return false;
+    if (kind == "road") return GSRoad.AreRoadTilesConnected(from_tile, to_tile);
+    return this._RailFaces(from_tile, to_tile) && this._RailFaces(to_tile, from_tile);
+  }
+
+  // Edge attachment and the turn through a tile are separate checks.
+  // AreTilesConnected reads only the middle tile's ordinary rail track bits.
+  function _RailTurnExists(prev_tile, tile, next_tile) {
+    if (prev_tile == null) return true;
+    if (prev_tile == next_tile) return false;
+    local other = this._TransportSpanEnd(tile, "rail");
+    if (other != null) {
+      if (prev_tile == other) return this._RailFaces(tile, next_tile);
+      if (next_tile == other) return this._RailFaces(tile, prev_tile);
+      return false;
+    }
+    // A depot has one entrance. It can be an endpoint, not a through junction.
+    if (GSRail.IsRailDepotTile(tile)) return false;
+    return GSRail.AreTilesConnected(prev_tile, tile, next_tile);
+  }
+
+  function _TraceEndpointTiles(tile, station_id, kind) {
+    if (station_id == null) return [tile];
+    local endpoints = [];
+    local tiles = GSTileList_StationType(station_id, GSStation.STATION_ANY);
+    foreach (candidate, _ in tiles) {
+      if (kind == "rail" ? GSRail.IsRailStationTile(candidate)
+                         : GSRoad.IsRoadStationTile(candidate)) endpoints.append(candidate);
+    }
+    return endpoints;
+  }
+
+  // Trace existing infrastructure. Tile queries are exact; station queries may use
+  // any platform or stop of the requested transport type belonging to that station.
   function CmdTraceRoute(p) {
     local pair = this._ResolveTilePair(p);
     if (pair == null) {
@@ -1035,31 +1099,35 @@ class NttdGS extends GSController {
                      + "so a track walk does not describe it." };
     }
     local max_iter = ("max_iterations" in p) ? p.max_iterations : 20000;
-    // Every GSRoad test below answers false while the script's current road type is
-    // unset, which it is until some build command sets it. Set it here so a walk asked
-    // before any road was built answers about the road and not about the missing type.
     if (kind == "road") GSRoad.SetCurrentRoadType(("road_type" in p) ? p.road_type : 0);
     local start = pair.from.tile;
     local goal = pair.to.tile;
-
-    local dir_dx = [1, 0, -1, 0];
-    local dir_dy = [0, 1, 0, -1];
+    local from_station = ("from_station_id" in p) ? p.from_station_id : null;
+    local to_station = ("to_station_id" in p) ? p.to_station_id : null;
+    if ((from_station != null && !GSStation.IsValidStation(from_station))
+        || (to_station != null && !GSStation.IsValidStation(to_station))) {
+      return { success = false, error = "Invalid station ID" };
+    }
+    local starts = this._TraceEndpointTiles(start, from_station, kind);
+    local goals = {};
+    foreach (tile in this._TraceEndpointTiles(goal, to_station, kind)) goals[tile] <- true;
     local seen = {};
     local queue = [];
     local reached = false;
     local visited_tiles = {};
     local steps = 0;
 
-    // A rail state is a tile plus the direction it was entered from, because
-    // AreTilesConnected asks about a triple and a train may not reverse. Road has no such
-    // constraint, so its state is the tile alone, entered as direction 0.
-    for (local d = 0; d < 4; d++) {
-      local key = start * 4 + d;
+    // Preserve the actual predecessor across spans. A seed has no incoming direction.
+    foreach (tile in starts) {
+      local carries_track = kind == "rail"
+        ? GSRail.IsRailTile(tile) || GSRail.IsRailDepotTile(tile)
+        : GSRoad.IsRoadTile(tile) || GSRoad.IsRoadStationTile(tile) || GSRoad.IsRoadDepotTile(tile);
+      if (!carries_track && this._TransportSpanEnd(tile, kind) == null) continue;
+      local key = tile * 5;
       seen[key] <- true;
-      queue.append({ tile = start, dir = d });
-      if (kind == "road") break;
+      queue.append({ tile = tile, prev = null });
+      visited_tiles[tile] <- true;
     }
-    visited_tiles[start] <- true;
 
     local head = 0;
     while (head < queue.len() && steps < max_iter) {
@@ -1067,74 +1135,26 @@ class NttdGS extends GSController {
       if (steps % 500 == 0) this._YieldAndProcessEvents();
       local node = queue[head];
       head++;
-      if (node.tile == goal) { reached = true; break; }
+      if (node.tile in goals) { reached = true; break; }
 
-      local cx = GSMap.GetTileX(node.tile), cy = GSMap.GetTileY(node.tile);
-      local reverse = (node.dir + 2) % 4;
-
-      // A bridge or tunnel exists only as its two end tiles; the tiles between carry no
-      // road or track. A vehicle crosses in one move, so the walk jumps to the other end.
-      local transport = (kind == "road") ? GSTile.TRANSPORT_ROAD : GSTile.TRANSPORT_RAIL;
-      if ((GSBridge.IsBridgeTile(node.tile) || GSTunnel.IsTunnelTile(node.tile))
-          && GSTile.HasTransportType(node.tile, transport)) {
-        local other = GSBridge.IsBridgeTile(node.tile)
-          ? GSBridge.GetOtherBridgeEnd(node.tile) : GSTunnel.GetOtherTunnelEnd(node.tile);
-        local ox = GSMap.GetTileX(other), oy = GSMap.GetTileY(other);
-        local span_dir = (ox > cx) ? 0 : (oy > cy) ? 1 : (ox < cx) ? 2 : 3;
-        // A train enters the head along the span, so it leaves along the span too.
-        if (kind == "road" || node.tile == start || node.dir == span_dir) {
-          local other_key = (kind == "road") ? other * 4 : other * 4 + span_dir;
-          if (!(other_key in seen)) {
-            seen[other_key] <- true;
-            visited_tiles[other] <- true;
-            queue.append({ tile = other, dir = span_dir });
-          }
+      local neighbours = [];
+      for (local exit_dir = 0; exit_dir < 4; exit_dir++) {
+        local next = this._GetAdjacentTile(node.tile, exit_dir);
+        if (GSMap.IsValidTile(next) && GSMap.DistanceManhattan(node.tile, next) == 1) {
+          neighbours.append(next);
         }
       }
-      for (local exit_dir = 0; exit_dir < 4; exit_dir++) {
-        if (kind == "rail" && exit_dir == reverse) continue;
-        local nx = cx + dir_dx[exit_dir], ny = cy + dir_dy[exit_dir];
-        local next = GSMap.GetTileIndex(nx, ny);
-        if (!GSMap.IsValidTile(next)) continue;
-        local key = (kind == "road") ? next * 4 : next * 4 + exit_dir;
+      local other = this._TransportSpanEnd(node.tile, kind);
+      if (other != null) neighbours.append(other);
+      foreach (next in neighbours) {
+        local dir = this._TravelDirection(node.tile, next);
+        local key = next * 5 + (kind == "rail" ? dir + 1 : 0);
         if (key in seen) continue;
-
-        local joined = false;
-        if (kind == "road") {
-          // IsRoadTile rejects bay stops and depots, so a walk to a bay stop could never
-          // reach its goal. A stop or depot counts when the road bits actually join it.
-          local is_road = GSRoad.IsRoadTile(next) || GSRoad.IsRoadStationTile(next)
-                          || GSRoad.IsRoadDepotTile(next)
-                          || GSTile.HasTransportType(next, GSTile.TRANSPORT_ROAD);
-          joined = is_road && GSRoad.AreRoadTilesConnected(node.tile, next);
-        } else {
-          local is_track = GSRail.IsRailTile(next) || GSRail.IsRailStationTile(next)
-                           || GSRail.IsRailDepotTile(next)
-                           || GSTile.HasTransportType(next, GSTile.TRANSPORT_RAIL);
-          if (node.tile == start) {
-            // THE FIRST HOP HAS NO INCOMING DIRECTION. AreTilesConnected asks about a triple,
-            // from-through-to, and at the start there is no "from": the code used to invent one
-            // by stepping backwards from a seeded direction, which produced a tile that often
-            // held no track at all. The game then answered false for an illegal triple and the
-            // walk could not leave the start tile, reporting tiles_reachable 1.
-            //
-            // Measured: a depot the game itself reported connected, and whose train then ran the
-            // route at 107 km/h, traced as line_exists false. Every route starting at a depot, a
-            // platform end or a buffer was affected, because none of them has track on all sides.
-            //
-            // Adjacency only for this one hop, then the triple test from the second tile on,
-            // where a real incoming direction exists.
-            joined = is_track;
-          } else {
-            local prev = GSMap.GetTileIndex(cx - dir_dx[node.dir], cy - dir_dy[node.dir]);
-            if (!GSMap.IsValidTile(prev)) prev = node.tile;
-            joined = is_track && GSRail.AreTilesConnected(prev, node.tile, next);
-          }
-        }
-        if (!joined) continue;
+        if (!this._TransportTilesJoined(node.tile, next, kind)) continue;
+        if (kind == "rail" && !this._RailTurnExists(node.prev, node.tile, next)) continue;
         seen[key] <- true;
         visited_tiles[next] <- true;
-        queue.append({ tile = next, dir = exit_dir });
+        queue.append({ tile = next, prev = node.tile });
       }
     }
 
@@ -2595,6 +2615,8 @@ class NttdGS extends GSController {
   // or null if no path found. Runs inside GSTestMode so BuildRoad checks do not spend money.
   // Cost model matches pathfinder.road defaults.
   function _FindRoadPath(from_tile, to_tile, max_iterations) {
+    // Candidate probes are planning work, not the price of the chosen route.
+    local accounting = GSAccounting();
     local test_mode = GSTestMode();
     // Cost parameters: same as pathfinder.road.
     local C_TILE = 100;
@@ -2950,23 +2972,9 @@ class NttdGS extends GSController {
     return GSCompany.GetBankBalance(who);
   }
 
-  // Walk the finished route and ask the game whether it actually joins up.
-  //
-  // Counting successful builds is not the same question. A segment can build and still
-  // leave the line unconnected, and ERR_ALREADY_BUILT tells you something is there but
-  // not that it links to its neighbour. This is the only check that answers "can a
-  // vehicle get from one end to the other", which is the thing the caller wanted.
-  //
-  // Reported rather than enforced: a break here is worth knowing about even when every
-  // build succeeded, and refusing on it would discard work that is already paid for.
-  // Whether a tile already lets a train pass from prev to next.
-  //
-  // Two ways it can. The track joining those neighbours is already laid, which is what
-  // AreTilesConnected answers. Or the tile is part of a station, which trains run through
-  // by definition and on which no track can be laid at all.
+  // Whether the required rail piece already exists on this tile.
   function _AlreadyCarriesRail(prev_tile, cur_tile, next_tile) {
-    if (GSStation.GetStationID(cur_tile) != GSStation.STATION_INVALID) return true;
-    return GSRail.AreTilesConnected(prev_tile, cur_tile, next_tile);
+    return this._RailTurnExists(prev_tile, cur_tile, next_tile);
   }
 
   // Where a train can get into or out of a rail station.
@@ -3060,28 +3068,9 @@ class NttdGS extends GSController {
     return GSTile.IsBuildable(entry) || GSRail.IsRailTile(entry);
   }
 
-  // Whether a train can actually pass from an entry tile into the platform it adjoins.
-  //
-  // This is the question, and has_rail is not it. Track on an entry tile can lead
-  // anywhere: laid without a hint, the last piece of a connection points away from the
-  // platform, so the entry carries rail that joins nothing. Measured on a passenger route
-  // whose entry reported has_rail true while the train reached the tile beyond it, turned
-  // around, and carried nobody for eleven steps.
-  //
-  // A train may arrive at the entry from any side, including around a corner, so every
-  // neighbour is offered to AreTilesConnected rather than only the one along the axis.
+  // Whether the entry and platform tracks face each other.
   function _CanEnterPlatform(entry, platform) {
-    if (!GSRail.IsRailTile(entry)) return false;
-    local x = GSMap.GetTileX(entry), y = GSMap.GetTileY(entry);
-    local around = [
-      GSMap.GetTileIndex(x + 1, y), GSMap.GetTileIndex(x - 1, y),
-      GSMap.GetTileIndex(x, y + 1), GSMap.GetTileIndex(x, y - 1),
-    ];
-    foreach (side in around) {
-      if (side == platform || !GSMap.IsValidTile(side)) continue;
-      if (GSRail.AreTilesConnected(side, entry, platform)) return true;
-    }
-    return false;
+    return this._TransportTilesJoined(entry, platform, "rail");
   }
 
   // The entry a line coming from `towards` should aim at.
@@ -3109,35 +3098,23 @@ class NttdGS extends GSController {
     return best;
   }
 
-  function _RouteGaps(path, is_rail) {
+  // Check each edge and each interior rail turn, including station hint endpoints.
+  function _RouteGaps(path, is_rail, from_hint = null, to_hint = null) {
+    local tiles = [];
+    if (from_hint != null) tiles.append(from_hint);
+    foreach (point in path) {
+      if (tiles.len() == 0 || tiles.top() != point.tile) tiles.append(point.tile);
+    }
+    if (to_hint != null && (tiles.len() == 0 || tiles.top() != to_hint)) tiles.append(to_hint);
     local gaps = [];
-    for (local i = 1; i < path.len(); i++) {
-      local a = path[i - 1].tile;
-      local b = path[i].tile;
-      // Bridges and tunnels span more than one tile, so adjacency does not apply.
-      if (GSMap.DistanceManhattan(a, b) != 1) continue;
-      // A station tile gets NO special treatment here, deliberately. Treating one as
-      // automatically joined was tried and is wrong: a platform is enterable along its own
-      // axis and not across it, AreTilesConnected answers that correctly, and overriding it
-      // hid the most expensive failure in the game.
-      //
-      // AreTilesConnected asks about the MIDDLE tile of a triple: can a train reach `to`
-      // from `from` by way of `tile`. So it needs a tile on each side, and the first
-      // segment has nothing before it.
-      //
-      // Passing `a` as its own predecessor, which is what this did, asks whether a train
-      // can enter a tile from itself. That is always false, so every route ever built
-      // reported a gap on its first segment, every connect_rail came back "partial", and
-      // a line with nothing wrong with it was indistinguishable from a broken one.
-      //
-      // The interior triples are what this can honestly answer. Whether the two ends
-      // reach their stations is a different question, answered by the entry tiles in
-      // get_station_info, and guessing at it here produced the false alarm.
-      if (is_rail && i < 2) continue;
-      local joined = is_rail
-        ? GSRail.AreTilesConnected(path[i - 2].tile, a, b)
-        : GSRoad.AreRoadTilesConnected(a, b);
-      if (!joined) gaps.append({ x = path[i].x, y = path[i].y });
+    local kind = is_rail ? "rail" : "road";
+    for (local i = 1; i < tiles.len(); i++) {
+      local a = tiles[i - 1], b = tiles[i];
+      local joined = this._TransportTilesJoined(a, b, kind);
+      if (joined && is_rail && i >= 2) {
+        joined = this._RailTurnExists(tiles[i - 2], a, b);
+      }
+      if (!joined) gaps.append({ x = GSMap.GetTileX(b), y = GSMap.GetTileY(b) });
     }
     return gaps;
   }
@@ -3233,7 +3210,7 @@ class NttdGS extends GSController {
     return { built = built, existing = existing, failed = failed };
   }
 
-  function CmdConnectRoad(p) {
+  function CmdConnectRoad(p, estimate_only = false) {
     local company_mode = GSCompanyMode(p.company_id);
     local road_type = ("road_type" in p) ? p.road_type : 0;
     GSRoad.SetCurrentRoadType(road_type);
@@ -3260,7 +3237,7 @@ class NttdGS extends GSController {
     // A segment that would not build leaves a gap, and a gap means no route. Saying
     // success here made a broken line indistinguishable from a working one to the
     // caller, the action log, and the route report.
-    local gaps = this._RouteGaps(pf.path, false);
+    local gaps = estimate_only ? [] : this._RouteGaps(pf.path, false);
     local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
       error = complete ? null : this._PartialError(build.failed, pf.path.len(), gaps),
@@ -3322,59 +3299,42 @@ class NttdGS extends GSController {
   }
 
   function CmdConnectDepot(p) {
-    // Join a depot to the line beside it. Pure mechanism, and it took three attempts to get
-    // right by hand: find the neighbour carrying running line, then add the curve piece that
-    // touches the depot's edge. connect_rail cannot do this job at all, because it lays rail on
-    // both endpoints and so fails ERR_AREA_NOT_CLEAR against the very depot it is aiming at.
-    //
-    // The direction bits are the part nobody should have to rediscover: x+ is SW, x- is NE,
-    // y+ is SE, y- is NW, so a depot reached from the SW needs its neighbour to carry
-    // RAILTRACK_NW_SW or RAILTRACK_SW_SE.
+    // A depot connects only through its door, never through a side or its rear.
     local company_mode = GSCompanyMode(p.company_id);
     local tile = ("tile" in p && p.tile != null)
       ? p.tile : GSMap.GetTileIndex(p.x, p.y);
     if (!GSRail.IsRailDepotTile(tile)) {
       return { success = false, error = "not a rail depot: nothing to connect" };
     }
-    // Which neighbour holds running line, tried in the order a depot is usually built against.
-    local curves = {};
-    curves[0] <- [16, 8];    // line to the SW of the depot
-    curves[2] <- [4, 32];    // to the NE
-    curves[1] <- [8, 32];    // to the SE
-    curves[3] <- [4, 16];    // to the NW
+    GSRail.SetCurrentRailType(GSRail.GetRailType(tile));
+    local front = GSRail.GetRailDepotFrontTile(tile);
+    if (this._TransportTilesJoined(tile, front, "rail")) {
+      return { success = true, result = {
+        tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
+        joined_at = [GSMap.GetTileX(front), GSMap.GetTileY(front)],
+        already_connected = true
+      }};
+    }
+    if (GSRail.IsRailStationTile(front)) {
+      return { success = false,
+               error = "the depot faces the side of a station platform; track cannot join its door" };
+    }
     local tried = [];
-    foreach (dir, pieces in curves) {
-      local neighbour = this._GetAdjacentTile(tile, dir);
-      if (!GSMap.IsValidTile(neighbour)) continue;
-      if (!GSRail.IsRailTile(neighbour)) continue;
-      // A platform sets the rail bit too, and no track piece can ever be added to one.
-      if (GSStation.GetStationID(neighbour) != GSStation.STATION_INVALID) {
-        tried.append({ x = GSMap.GetTileX(neighbour), y = GSMap.GetTileY(neighbour),
-                       error = "that neighbour is a station platform, not running line" });
-        continue;
+    for (local dir = 0; dir < 4; dir++) {
+      local side = this._GetAdjacentTile(front, dir);
+      if (side == tile || !this._RailFaces(side, front)) continue;
+      if (GSRail.BuildRail(side, front, tile)) {
+        return { success = true, result = {
+          tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
+          joined_at = [GSMap.GetTileX(front), GSMap.GetTileY(front)],
+          already_connected = false
+        }};
       }
-      foreach (piece in pieces) {
-        if (GSRail.BuildRailTrack(neighbour, piece)) {
-          return { success = true, result = {
-            tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
-            joined_at = [GSMap.GetTileX(neighbour), GSMap.GetTileY(neighbour)],
-            track = piece, already_connected = false
-          }};
-        }
-        local err = GSError.GetLastErrorString();
-        if (err == "ERR_ALREADY_BUILT") {
-          return { success = true, result = {
-            tile = [GSMap.GetTileX(tile), GSMap.GetTileY(tile)],
-            joined_at = [GSMap.GetTileX(neighbour), GSMap.GetTileY(neighbour)],
-            track = piece, already_connected = true
-          }};
-        }
-        tried.append({ x = GSMap.GetTileX(neighbour), y = GSMap.GetTileY(neighbour),
-                       track = piece, error = err });
-      }
+      tried.append({ x = GSMap.GetTileX(front), y = GSMap.GetTileY(front),
+                     error = GSError.GetLastErrorString() });
     }
     return { success = false,
-             error = "no neighbouring running line would take a curve into this depot",
+             error = "no running line can connect through this depot's front tile",
              result = { tried = tried } };
   }
 
@@ -3393,16 +3353,15 @@ class NttdGS extends GSController {
     // Auto-connect: build rail on the front tile linking existing track to depot.
     // Find an adjacent rail tile next to the front tile (excluding the depot tile)
     // and build a rail piece: adj_rail -> front -> depot.
-    local connected = false;
     local adj = this._GetAdjacentRailTrack(GSMap.GetTileX(front), GSMap.GetTileY(front));
     foreach (a in adj) {
       local adj_tile = GSMap.GetTileIndex(a.nx, a.ny);
       if (adj_tile == tile) continue;
       if (GSRail.BuildRail(adj_tile, front, tile)) {
-        connected = true;
         break;
       }
     }
+    local connected = this._TransportTilesJoined(tile, front, "rail");
     return { success = true, result = { tile = [r.x, r.y], connected = connected } };
   }
 
@@ -3538,6 +3497,7 @@ class NttdGS extends GSController {
   // No U-turns allowed. Bridge/tunnel only in straight direction.
   // Runs inside GSTestMode. Returns path or null.
   function _FindRailPath(from_tile, to_tile, max_iterations) {
+    local accounting = GSAccounting();
     local test_mode = GSTestMode();
     // Cost parameters: matching nttd Python rail pathfinder (rail.py).
     local C_FLAT = 100;
@@ -3860,7 +3820,7 @@ class NttdGS extends GSController {
     return { built = built, existing = existing, failed = failed };
   }
 
-  function CmdConnectRail(p) {
+  function CmdConnectRail(p, estimate_only = false) {
     local company_mode = GSCompanyMode(p.company_id);
     local rail_type = ("rail_type" in p) ? p.rail_type : 0;
     GSRail.SetCurrentRailType(rail_type);
@@ -3938,7 +3898,7 @@ class NttdGS extends GSController {
     // A segment that would not build leaves a gap, and a gap means no route. Saying
     // success here made a broken line indistinguishable from a working one to the
     // caller, the action log, and the route report.
-    local gaps = this._RouteGaps(pf.path, true);
+    local gaps = estimate_only ? [] : this._RouteGaps(pf.path, true, from_hint, to_hint);
     local complete = (build.failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
       error = complete ? null : this._PartialError(build.failed, pf.path.len(), gaps),
@@ -4102,7 +4062,7 @@ class NttdGS extends GSController {
     return this._Refused();
   }
 
-  function CmdBuildPath(p) {
+  function CmdBuildPath(p, estimate_only = false) {
     // Executes a pre-calculated path from the Python A* pathfinder.
     // p.steps = [{x, y, action, ...}, ...] from pathfind() result.
     // p.transport_type = "road" or "rail"
@@ -4290,12 +4250,18 @@ class NttdGS extends GSController {
       });
     }
 
-    local complete = (failed.len() == 0);
+    local path = [];
+    foreach (step in steps) {
+      path.append({ tile = GSMap.GetTileIndex(step.x, step.y) });
+    }
+    local gaps = (estimate_only || is_water) ? [] : this._RouteGaps(path, is_rail);
+    local complete = (failed.len() == 0 && gaps.len() == 0);
     return { success = complete,
-      error = complete ? null : this._PartialError(failed, steps.len()),
+      error = complete ? null : this._PartialError(failed, steps.len(), gaps),
+      error_name = complete ? null : this._PartialName(failed, gaps),
       result = {
       status = complete ? "complete" : "partial",
-      built = built, existing = existing, failed = failed, skipped = skipped,
+      built = built, existing = existing, failed = failed, skipped = skipped, gaps = gaps,
       total_steps = steps.len(), errors = failed.len()
     }};
   }
@@ -5336,8 +5302,25 @@ class NttdGS extends GSController {
       local accounting = GSAccounting();
       {
         local test = GSTestMode();
-        local result = this._Dispatch({ action = p.action, params = nested });
-        if (!result.success) return result;
+        // Test builds do not change the map. Validate command refusals here;
+        // only real builds can validate the resulting infrastructure.
+        local result;
+        if (p.action == "connect_rail") result = this.CmdConnectRail(nested, true);
+        else if (p.action == "connect_road") result = this.CmdConnectRoad(nested, true);
+        else if (p.action == "build_path") result = this.CmdBuildPath(nested, true);
+        else result = this._Dispatch({ action = p.action, params = nested });
+        if (!result.success) {
+          // A partial test build has changed nothing. Keep its diagnostics separate
+          // from the real construction fields used by action and route reports.
+          local details = { action = p.action, estimate_only = true };
+          if ("result" in result) details.rawset("tested_command_result", result.result);
+          local refusal = { success = false, result = details,
+            error = "Cost estimate refused: " + (("error" in result) ? result.error : "command failed") };
+          foreach (field in ["error_code", "error_name", "error_category"]) {
+            if (field in result) refusal.rawset(field, result[field]);
+          }
+          return refusal;
+        }
       }
       cost = accounting.GetCosts();
     }

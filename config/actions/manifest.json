@@ -478,7 +478,7 @@
       }
     },
     "build_path": {
-      "description": "Lay a route you have already chosen, tile by tile. This is how you build a line of your own design: give the tiles and nttd works out how each piece must sit, including the three-tile context rail needs, so nothing has to reason about track orientation. Bridges and tunnels are steps like any other. Steps that only pass over infrastructure already there are skipped rather than paid for. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed. Use connect_rail or connect_road instead when you would rather nttd chose the route.",
+      "description": "Build a route you have already chosen from its tile steps. Rail pieces use neighboring path steps to determine their orientation. Bridges and tunnels are explicit steps. The result reports new construction, existing pieces, skipped steps, and refusals. Road and rail paths also check actual connections, including skipped steps. A refusal or a gap makes the result partial. Water paths report construction refusals. Use connect_rail or connect_road to let the build planner choose the path.",
       "tier": "participant",
       "category": "marine",
       "gamescript_function": "CmdBuildPath",
@@ -612,6 +612,7 @@
           "errors",
           "existing",
           "failed",
+          "gaps",
           "skipped",
           "status",
           "total_steps"
@@ -1465,7 +1466,7 @@
       }
     },
     "connect_depot": {
-      "description": "Join a rail depot to the running line beside it. A depot is not connected by building it: the neighbouring track needs a curve piece facing the depot's entrance, and connect_rail cannot supply one because it lays rail on both endpoints and so fails against the depot itself. Reports which tile it joined to and whether the connection already existed. Refuses when the only neighbouring rail is a station platform, which can never take a track piece.",
+      "description": "Join a rail depot through its actual front tile to adjacent running track. Track beside the rear or side does not connect the depot. Reports the front tile and whether the connection already existed. A platform already facing the door can connect; track cannot be added to a platform facing the wrong way.",
       "tier": "participant",
       "category": "rail",
       "gamescript_function": "CmdConnectDepot",
@@ -1503,7 +1504,6 @@
           "already_connected",
           "joined_at",
           "tile",
-          "track",
           "tried"
         ],
         "nested": {
@@ -2004,7 +2004,7 @@
       }
     },
     "estimate_cost": {
-      "description": "Report what an action would cost without doing it. The action runs in test mode, so nothing is built and no money moves. A failure here is a genuine refusal and worth reading before committing.",
+      "description": "Estimate an action's cost without performing it. Nothing is built and no money moves. Road estimates can charge clearing shared tiles more than once. A failed estimate includes the tested command's refusal.",
       "tier": "participant",
       "category": "planning",
       "gamescript_function": "CmdEstimateCost",
@@ -5644,11 +5644,17 @@
       }
     },
     "trace_route": {
-      "description": "Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal. line_exists is null when the bounded search is exhausted before deciding; exhausted=true is inconclusive, not proof that no connection exists.",
+      "description": "Check a physical rail or road connection over existing infrastructure. Rail checks require connected entry and exit directions, including at platforms and depots. Bridges and tunnels preserve the direction of travel. Optional station IDs search matching station tiles instead of one coordinate anchor. Otherwise, endpoints are exact tiles. Signals, train reversal, traffic rules, vehicle compatibility, and service orders are not evaluated. A connection does not guarantee successful vehicle operation. line_exists is true when a path is found, false when the completed search finds none, and null when the search limit leaves the answer unknown.",
       "tier": "read_only",
       "category": "query",
       "gamescript_function": "CmdTraceRoute",
       "parameters": {
+        "from_station_id": {
+          "required": false,
+          "default": null,
+          "description": "Optional starting station ID. Search its rail or road station tiles instead of the starting coordinate.",
+          "type": "integer"
+        },
         "from_x": {
           "required": false,
           "via": "tile_resolver",
@@ -5683,6 +5689,12 @@
           "required": false,
           "via": "tile_resolver",
           "description": "Tile index to finish at. An alternative to to_x and to_y.",
+          "type": "integer"
+        },
+        "to_station_id": {
+          "required": false,
+          "default": null,
+          "description": "Optional destination station ID. Accept its rail or road station tiles instead of the destination coordinate.",
           "type": "integer"
         },
         "to_x": {

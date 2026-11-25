@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 async def line_exists(
     client: Any, from_x: int, from_y: int, to_x: int, to_y: int, transport_type: str,
     *, timeout: float = 20.0,
+    from_station_id: int | None = None, to_station_id: int | None = None,
 ) -> bool | None:
     """Whether a vehicle could travel it now, asked of the game rather than of the cache.
 
@@ -22,14 +23,17 @@ async def line_exists(
         return None
     if not client.connected:
         return None
+    params = {
+        "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y,
+        "transport_type": transport_type,
+    }
+    if from_station_id is not None:
+        params["from_station_id"] = from_station_id
+    if to_station_id is not None:
+        params["to_station_id"] = to_station_id
     try:
         reply = await client.send_gamescript(
-            "trace_route",
-            {
-                "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y,
-                "transport_type": transport_type,
-            },
-            timeout=timeout,
+            "trace_route", params, timeout=timeout,
         )
     except Exception:
         logger.debug("Could not trace the existing line", exc_info=True)

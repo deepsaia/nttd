@@ -179,18 +179,20 @@ class Situation:
         }
 
     def _route_health(self, route: Route) -> dict[str, Any]:
-        """One route, and whether it is actually working.
-
-        A route is only working when every part is present. Stations without track,
-        track without a depot, a depot without a vehicle: each is a state that looks
-        like progress and earns nothing, and each is a state a run can sit in for
-        dozens of steps without noticing.
-        """
+        """Report missing infrastructure separately from unresolved connection checks."""
         missing = []
+        unchecked = []
         if len(route.station_ids) < 2:
             missing.append("a second station")
         if not route.track_confirmed_at:
-            missing.append("a connection between the stations")
+            if route.connection_checked_at:
+                missing.append("a connection between the stations")
+            else:
+                unchecked.append("the connection between the stations")
+        if route.vehicles_without_path:
+            missing.append("station access for vehicles " + ", ".join(map(str, route.vehicles_without_path)))
+        if route.vehicles_with_unknown_path:
+            unchecked.append("station access for vehicles " + ", ".join(map(str, route.vehicles_with_unknown_path)))
         # A depot is not part of a working route. It is how vehicles are bought and
         # serviced, and once they are running the route earns without one: a route can be
         # built from a depot that was later sold, or share one with another line, and
@@ -209,8 +211,9 @@ class Situation:
             "depot_tile": route.depot_tile or None,
             "vehicles": route.vehicle_count,
             "profit_this_year": route.total_profit_this_year,
-            "working": not missing,
+            "working": False if missing else None if unchecked else True,
             "missing": missing,
+            "unchecked": unchecked,
         }
 
     def _tiles_of(self, station_ids: list[int]) -> list[int | None]:
@@ -231,7 +234,7 @@ class Situation:
 
         for route in self._routes:
             health = self._route_health(route)
-            if not health["working"]:
+            if health["missing"]:
                 tiles = ", ".join(str(t) for t in health["station_tiles"] if t)
                 found.append({
                     "problem": f"route {route.route_id} is unfinished",
@@ -240,9 +243,14 @@ class Situation:
                         + (f"; its stations are at tiles {tiles}" if tiles else "")
                     ),
                     "why_it_matters": (
-                        "an unfinished route earns nothing while having already cost "
-                        "what it cost, so finishing it beats starting another"
+                        "Missing stations, connections, or vehicle access can prevent planned trips."
                     ),
+                })
+            if health["unchecked"]:
+                found.append({
+                    "problem": f"route {route.route_id} has unchecked connectivity",
+                    "detail": "Not yet confirmed: " + ", ".join(health["unchecked"]),
+                    "why_it_matters": "An incomplete check does not establish a missing connection.",
                 })
 
         served = {sid for r in self._routes for sid in r.station_ids}

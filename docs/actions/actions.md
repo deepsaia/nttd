@@ -288,14 +288,14 @@ Returns `tile`.
 
 ### `build_path`
 
-Lay a route you have already chosen, tile by tile. This is how you build a line of your own design: give the tiles and nttd works out how each piece must sit, including the three-tile context rail needs, so nothing has to reason about track orientation. Bridges and tunnels are steps like any other. Steps that only pass over infrastructure already there are skipped rather than paid for. It succeeds only if nothing was refused, and the reply reports what was built, what was already there, what was skipped and what failed. Use connect_rail or connect_road instead when you would rather nttd chose the route.
+Build a route you have already chosen from its tile steps. Rail pieces use neighboring path steps to determine their orientation. Bridges and tunnels are explicit steps. The result reports new construction, existing pieces, skipped steps, and refusals. Road and rail paths also check actual connections, including skipped steps. A refusal or a gap makes the result partial. Water paths report construction refusals. Use connect_rail or connect_road to let the build planner choose the path.
 
 - `rail_type` (integer, default 0) Which rail technology to build with. Numbered by the running game and gated by year, so ask get_rail_types.
 - `road_type` (integer, default 0) Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.
 - `steps` (array, required) At least two path steps. Each contains integer x/y and an optional action (default move). Bridge steps also require bridge_from_x/y; tunnel steps require tunnel_from_x/y.
 - `transport_type` (string, default "road") What the path carries: rail, road or water. Other values are rejected.
 
-Returns `built`, `errors`, `existing`, `failed`, `skipped`, `status`, `total_steps`.
+Returns `built`, `errors`, `existing`, `failed`, `gaps`, `skipped`, `status`, `total_steps`.
 
 Each `failed` carries `action`, `error`, `error_category`, `error_code`, `x`, `y`.
 
@@ -519,7 +519,7 @@ Returns no data beyond success.
 
 ### `estimate_cost`
 
-Report what an action would cost without doing it. The action runs in test mode, so nothing is built and no money moves. A failure here is a genuine refusal and worth reading before committing.
+Estimate an action's cost without performing it. Nothing is built and no money moves. Road estimates can charge clearing shared tiles more than once. A failed estimate includes the tested command's refusal.
 
 - `action` (string, required) Name of the action to price, exactly as it would be submitted.
 - `params` (object, required) Parameters of the action being estimated, with the same requirements as a normal command. The server supplies the company automatically; do not include company_id.
@@ -603,7 +603,7 @@ Returns `tile`.
 
 ### `connect_depot`
 
-Join a rail depot to the running line beside it. A depot is not connected by building it: the neighbouring track needs a curve piece facing the depot's entrance, and connect_rail cannot supply one because it lays rail on both endpoints and so fails against the depot itself. Reports which tile it joined to and whether the connection already existed. Refuses when the only neighbouring rail is a station platform, which can never take a track piece.
+Join a rail depot through its actual front tile to adjacent running track. Track beside the rear or side does not connect the depot. Reports the front tile and whether the connection already existed. A platform already facing the door can connect; track cannot be added to a platform facing the wrong way.
 
 Supply one of: `tile` or `x` and `y`.
 
@@ -611,7 +611,7 @@ Supply one of: `tile` or `x` and `y`.
 - `x` (integer, optional) X coordinate on the map, counting from 0.
 - `y` (integer, optional) Y coordinate on the map, counting from 0.
 
-Returns `already_connected`, `joined_at`, `tile`, `track`, `tried`.
+Returns `already_connected`, `joined_at`, `tile`, `tried`.
 
 Each `tried` carries `error`, `x`, `y`.
 

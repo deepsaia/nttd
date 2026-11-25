@@ -69,7 +69,8 @@ def with_vehicle_state_words(snapshot: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(route, dict):
             continue
         for vid in route.get("vehicle_ids") or []:
-            if vid in (route.get("vehicles_without_path") or []):
+            if (vid in (route.get("vehicles_without_path") or [])
+                    or (route.get("connection_checked_at") and not route.get("track_confirmed_at"))):
                 reachability[vid] = "no_path"
             elif vid in (route.get("vehicles_with_unknown_path") or []):
                 reachability[vid] = "unknown"

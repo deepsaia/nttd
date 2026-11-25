@@ -92,10 +92,9 @@ _DISPATCH_WITH_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cm
 _DISPATCH_NO_PARAMS = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+this\.(Cmd\w+)\(\)')
 _DISPATCH_INLINE = re.compile(r'case\s+"([a-z_0-9]+)":\s*return\s+\{')
 
-# The parameter list is optional: a handler that takes nothing, such as CmdGetTowns, still
-# has a body worth reading for the shape of its reply. Matching only `(p)` left those
-# fifteen handlers with an empty body and so no documented return.
-_FUNCTION = re.compile(r'\n  function (Cmd\w+)\((?:p(?:\s*=\s*\{\})?)?\)\s*\{')
+# Read handlers with no arguments, a parameter table, or additional internal arguments.
+# Published parameters come from accesses to p, not from these internal controls.
+_FUNCTION = re.compile(r'\n  function (Cmd\w+)\([^)]*\)\s*\{')
 
 # local x = ("name" in p) ? p.name : default;
 _OPTIONAL = re.compile(r'"([a-z_0-9]+)"\s+in\s+p\)?\s*\?\s*p\.[a-z_0-9]+\s*:\s*([^;,\)]+)')

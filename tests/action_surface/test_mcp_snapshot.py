@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from nttd.mcp.snapshot import TIMEOUT_NOTE, explain_timeouts, rename_income, reshape, with_vehicle_state_words
+from nttd.mcp.snapshot import (
+    TIMEOUT_NOTE,
+    explain_timeouts,
+    rename_income,
+    reshape,
+    reshape_query,
+    with_vehicle_state_words,
+)
 
 
 def test_every_vehicle_carries_its_state_as_a_word() -> None:
@@ -76,7 +83,6 @@ def test_a_search_timeout_is_explained() -> None:
 
 
 def test_path_problem_does_not_hide_stopped_broken_or_crashed_state():
-    from nttd.mcp.snapshot import reshape_query
     for state, word in [(1, 'stopped'), (4, 'broken_down'), (5, 'crashed')]:
         vehicle = {'id': 9, 'state': state, 'current_speed': 0}
         observed = reshape({'vehicles': [vehicle], 'routes': [{'vehicle_ids': [9], 'vehicles_without_path': [9]}]})
@@ -88,3 +94,25 @@ def test_path_problem_does_not_hide_stopped_broken_or_crashed_state():
 
 def test_missing_state_is_unknown_not_halted():
     assert reshape({'vehicles': [{'id': 1, 'state': None}]})['vehicles'][0]['state'] == 'unknown'
+
+
+def test_a_known_station_disconnection_is_not_hidden_by_an_unchecked_vehicle() -> None:
+    snapshot = {
+        "vehicles": [{"id": 7, "state": 0}],
+        "routes": [{
+            "vehicle_ids": [7], "connection_checked_at": 500,
+            "track_confirmed_at": 0, "vehicles_with_unknown_path": [7],
+        }],
+    }
+    assert reshape(snapshot)["vehicles"][0]["route_reachability"] == "no_path"
+
+
+def test_confirmed_station_track_does_not_prove_unchecked_vehicle_access() -> None:
+    snapshot = {
+        "vehicles": [{"id": 7, "state": 0}],
+        "routes": [{
+            "vehicle_ids": [7], "connection_checked_at": 500,
+            "track_confirmed_at": 500, "vehicles_with_unknown_path": [7],
+        }],
+    }
+    assert reshape(snapshot)["vehicles"][0]["route_reachability"] == "unknown"

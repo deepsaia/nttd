@@ -459,18 +459,20 @@ Each `water` carries `x`, `y`.
 
 ### `trace_route`
 
-Walk existing track from one point to another and say whether the chain of pieces joins up. Answers rail and road; a ship crosses open water, so a track walk does not describe one. Track geometry IS modelled: each step tests whether a vehicle can come from the previous tile, through this one, and out to the next, so a curve that does not join or track meeting side-on is rejected. What it does NOT model is everything about the endpoints and the vehicle: whether a platform can be entered on the approach axis, whether a train would have to reverse in a dead end, train length against platform length, or signals. So a yes means the track exists, not that a vehicle will run it. The exact answer is only available after dispatch, from `lost` on get_vehicle_info, which is the game's own signal. line_exists is null when the bounded search is exhausted before deciding; exhausted=true is inconclusive, not proof that no connection exists.
+Check a physical rail or road connection over existing infrastructure. Rail checks require connected entry and exit directions, including at platforms and depots. Bridges and tunnels preserve the direction of travel. Optional station IDs search matching station tiles instead of one coordinate anchor. Otherwise, endpoints are exact tiles. Signals, train reversal, traffic rules, vehicle compatibility, and service orders are not evaluated. A connection does not guarantee successful vehicle operation. line_exists is true when a path is found, false when the completed search finds none, and null when the search limit leaves the answer unknown.
 
 Supply one of: `tile_from` or `from_x` and `from_y`.
 
 Supply one of: `tile_to` or `to_x` and `to_y`.
 
+- `from_station_id` (integer, default null) Optional starting station ID. Search its rail or road station tiles instead of the starting coordinate.
 - `from_x` (integer, optional) X coordinate of the starting tile.
 - `from_y` (integer, optional) Y coordinate of the starting tile.
 - `max_iterations` (integer, default 20000) How hard the pathfinder may try before giving up. Raising it costs time, not money.
 - `road_type` (integer, default 0) Which road technology to build with. Numbered by the running game, so ask get_road_types. Tram tracks are road types too.
 - `tile_from` (integer, optional) Tile index to start from. An alternative to from_x and from_y.
 - `tile_to` (integer, optional) Tile index to finish at. An alternative to to_x and to_y.
+- `to_station_id` (integer, default null) Optional destination station ID. Accept its rail or road station tiles instead of the destination coordinate.
 - `to_x` (integer, optional) X coordinate of the finishing tile.
 - `to_y` (integer, optional) Y coordinate of the finishing tile.
 - `transport_type` (string, default "rail") rail or road. Defaults to rail.

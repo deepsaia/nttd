@@ -15,7 +15,10 @@ from typing import Any
 
 import pytest
 
+from nttd.bridge.trace_route import line_exists
 from nttd.runtime.orchestrator import Orchestrator
+from nttd.schemas.action_envelope import ActionEnvelope
+from nttd.schemas.action_result import ActionResult, ActionStatus
 from nttd.schemas.station import Station
 from nttd.schemas.vehicle import Order, Vehicle
 from nttd.state.route_registry import RouteRegistry
@@ -237,8 +240,6 @@ def test_connection_cache_expires_and_detects_removed_track():
 
 
 def test_infrastructure_mutation_invalidates_without_a_tile_recorder():
-    from nttd.schemas.action_envelope import ActionEnvelope
-    from nttd.schemas.action_result import ActionResult, ActionStatus
     world = _world('road', [1, 2])
     client = _TracingClient({((10, 10), (40, 10))})
     orchestrator = _orchestrator(world, client)
@@ -282,7 +283,6 @@ def test_a_one_way_outward_path_does_not_prove_a_repeating_service() -> None:
 
 
 def test_explicit_null_connectivity_remains_unknown() -> None:
-    from nttd.bridge.trace_route import line_exists
     client = _TracingClient(set(), reply={'success': True, 'result': {'line_exists': None}})
     assert asyncio.run(line_exists(client, 10, 10, 40, 10, 'road')) is None
     assert client.timeouts == [20.0]
@@ -443,3 +443,63 @@ def test_changed_orders_bypass_retry_delay() -> None:
 
     assert len(client.asked) == 6
     assert world._derive_routes()[0].status == "active"
+
+
+def test_station_probes_identify_the_station_and_vehicle_probes_keep_their_actual_start() -> None:
+    world = _world("train", [1, 2], positions={7: DEPOT})
+    client = _TracingClient({((10, 10), (40, 10)), (DEPOT, (10, 10))})
+
+    asyncio.run(_orchestrator(world, client).confirm_route_connections())
+
+    station_queries = [p for p in client.asked if "from_station_id" in p]
+    assert {(p["from_station_id"], p["to_station_id"]) for p in station_queries} == {(1, 2), (2, 1)}
+    vehicle_query = next(p for p in client.asked if "from_station_id" not in p)
+    assert (vehicle_query["from_x"], vehicle_query["from_y"]) == DEPOT
+    assert vehicle_query["to_station_id"] == 1
+
+
+def test_exact_tile_queries_do_not_expand_to_station_tiles() -> None:
+    client = _TracingClient({((10, 10), (40, 10))})
+    assert asyncio.run(line_exists(client, 10, 10, 40, 10, "rail")) is True
+    assert "from_station_id" not in client.asked[0]
+    assert "to_station_id" not in client.asked[0]
+
+
+@pytest.mark.parametrize("action,params", [
+    ("build_rail_track", {"tile": 2570, "track": 1}),
+    ("remove_rail_track", {"tile": 2570, "track": 1}),
+    ("remove_rail", {"from_tile": 2569, "tile": 2570, "to_tile": 2571}),
+    ("remove_rail_station", {"x1": 10, "y1": 10, "x2": 12, "y2": 10}),
+    ("remove_road_stop", {"tile": 2570}),
+    ("remove_road_depot", {"tile": 2570}),
+    ("remove_road", {"tile_from": 2570, "tile_to": 2580}),
+    ("convert_rail", {"x1": 10, "y1": 10, "x2": 12, "y2": 10, "rail_type": 1}),
+    ("convert_road_type", {"x1": 10, "y1": 10, "x2": 12, "y2": 10, "road_type": 1}),
+    ("build_one_way_road", {"x1": 10, "y1": 10, "x2": 12, "y2": 10}),
+    ("connect_depot", {"tile": 2570}),
+    ("build_bridge", {"start_x": 10, "start_y": 10, "end_x": 20, "end_y": 10}),
+    ("build_tunnel", {"x": 10, "y": 10}),
+    ("build_path", {"steps": [{"x": 10, "y": 10, "action": "build_rail"}]}),
+    ("level_tiles", {"x1": 10, "y1": 10, "x2": 12, "y2": 10}),
+])
+@pytest.mark.parametrize("status", [ActionStatus.SUCCESS, ActionStatus.PARTIAL])
+def test_topology_changes_discard_old_connectivity_even_without_a_map_recorder(
+    action: str, params: dict[str, Any], status: ActionStatus,
+) -> None:
+    world = _world("road", [1, 2])
+    client = _TracingClient({((10, 10), (40, 10))})
+    orchestrator = _orchestrator(world, client)
+    orchestrator.tile_writer = None
+    asyncio.run(orchestrator.confirm_route_connections())
+    assert world._derive_routes()[0].status == "active"
+
+    asyncio.run(orchestrator.refresh_changed_tiles(
+        ActionEnvelope(action_id="change", company_id=0, action_type=action, parameters=params),
+        ActionResult(action_id="change", status=status),
+    ))
+
+    route = world._derive_routes()[0]
+    assert route.status == "unchecked"
+    assert route.track_confirmed_at == 0
+    assert route.vehicles_without_path == []
+    assert route.vehicles_with_unknown_path == [7]

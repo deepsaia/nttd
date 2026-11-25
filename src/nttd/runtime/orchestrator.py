@@ -409,6 +409,7 @@ class Orchestrator:
         routes = self.world._derive_routes()
         station_by_tile = {s.y * (self.world.game.map_width or 256) + s.x: s for s in stations.values()}
         probes: dict[CheckKey, tuple[int, int, int, int, str]] = {}
+        probe_stations: dict[CheckKey, dict[str, int]] = {}
         station_keys: dict[str, list[CheckKey] | None] = {}
         vehicle_keys: dict[tuple[str, int], CheckKey | None] = {}
         for route in routes:
@@ -429,6 +430,7 @@ class Orchestrator:
                 a, b = station_by_tile[tile_a], station_by_tile[tile_b]
                 key = (route.route_id, "station", tile_a, tile_b)
                 probes[key] = (a.x, a.y, b.x, b.y, transport_type)
+                probe_stations[key] = {"from_station_id": a.id, "to_station_id": b.id}
                 route_keys.append(key)
             for vid in route.vehicle_ids:
                 vehicle = self.world.vehicles.get(vid)
@@ -441,6 +443,7 @@ class Orchestrator:
                     continue
                 key = (route.route_id, "vehicle", vid, 0)
                 probes[key] = (vehicle.x, vehicle.y, first.x, first.y, transport_type)
+                probe_stations[key] = {"to_station_id": first.id}
                 vehicle_keys[route.route_id, vid] = key
 
         keys = set(probes)
@@ -457,7 +460,8 @@ class Orchestrator:
                 break
             try:
                 answer = await asyncio.wait_for(
-                    line_exists(self.client, *probes[key], timeout=remaining), timeout=remaining,
+                    line_exists(self.client, *probes[key], timeout=remaining, **probe_stations[key]),
+                    timeout=remaining,
                 )
             except TimeoutError:
                 answer = None

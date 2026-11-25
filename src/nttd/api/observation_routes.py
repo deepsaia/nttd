@@ -15,6 +15,7 @@ from nttd.api.participant_auth import (
 )
 from nttd.bridge.trace_route import line_exists
 from nttd.constants import KNOWN_ACTIONS, OPERATOR_ACTIONS, READ_ONLY_GS_ACTIONS
+from nttd.pathfinding import service as pf_service
 from nttd.schemas.compact_snapshot import (
     CompactCompany,
     CompactRecentAction,
@@ -150,8 +151,6 @@ async def plan_route(
     would be a number that looks authoritative and is not. Length, bridges and tunnels are
     what predict the bill; ask ``estimate_cost`` for money.
     """
-    from nttd.pathfinding import service as pf_service  # noqa: PLC0415
-
     runtime = deps.get_runtime(session_id)
     width = runtime.world.game.map_width
     height = runtime.world.game.map_height
@@ -208,19 +207,18 @@ async def plan_route(
         "searched_tiles": found.get("tiles_explored", 0),
         "search_ms": found.get("estimated_time_ms", 0),
     }
-    if not answer["can_build"] and not answer["line_exists"]:
-        # Why it gave up, in the two ways it can. Hitting the iteration ceiling is a
-        # different problem from there being no route, and an agent that cannot tell them
-        # apart abandons a corridor that only needed a longer search.
-        #
-        # Not said when the line already exists: "no route" about a standing line is the
-        # misreport this pair of fields was added to prevent.
-        answer["reason"] = (
-            "the search hit its iteration limit, so raise max_iterations before "
-            "concluding there is no route"
+    if not answer["can_build"] and answer["line_exists"] is not True:
+        planning_reason = (
+            "The build search reached its iteration limit. Build feasibility is unknown."
             if found.get("iterations", 0) >= max_iterations
-            else "no route exists for this transport type between these points"
+            else "The build planner found no new route between these points."
         )
+        connection_reason = (
+            "Existing connectivity is unknown."
+            if answer["line_exists"] is None
+            else "No existing connection was found for this transport type."
+        )
+        answer["reason"] = f"{planning_reason} {connection_reason}"
     if include_path:
         answer["path"] = path
     return answer
